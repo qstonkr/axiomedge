@@ -1,0 +1,71 @@
+.PHONY: setup start stop api dashboard crawl ingest search
+
+# === Setup ===
+setup:
+	uv sync
+	@echo "Download BGE-M3 ONNX model:"
+	@echo "  huggingface-cli download BAAI/bge-m3 --local-dir ./models/bge-m3"
+	@echo "Pull EXAONE model:"
+	@echo "  docker exec -it $$(docker ps -q -f name=ollama) ollama pull exaone3.5:7.8b"
+
+# === Infrastructure ===
+start:
+	docker compose up -d
+	@echo "Qdrant: http://localhost:6333"
+	@echo "Neo4j:  http://localhost:7474"
+	@echo "Ollama: http://localhost:11434"
+
+stop:
+	docker compose down
+
+# === Services ===
+api:
+	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+dashboard:
+	uv run streamlit run dashboard/app.py --server.port 8501
+
+# === CLI ===
+crawl:
+	uv run python -m cli.crawl $(ARGS)
+
+ingest:
+	uv run python -m cli.ingest $(ARGS)
+
+search:
+	uv run python -m cli.search $(ARGS)
+
+# === Docker Build ===
+docker-build:
+	docker build --target api -t knowledge-local:latest .
+
+# === K8s (k3s + local-path) ===
+k8s-install-k3s:
+	@echo "Install k3s (single node):"
+	@echo "  curl -sfL https://get.k3s.io | sh -"
+	@echo "  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+
+k8s-deploy:
+	kubectl apply -k k8s/
+	@echo ""
+	@echo "Dashboard: http://localhost:30501"
+	@echo "Waiting for pods..."
+	kubectl -n knowledge wait --for=condition=ready pod -l app=qdrant --timeout=120s || true
+	kubectl -n knowledge wait --for=condition=ready pod -l app=neo4j --timeout=120s || true
+	kubectl -n knowledge get pods
+
+k8s-status:
+	kubectl -n knowledge get pods,svc,pvc
+
+k8s-teardown:
+	kubectl delete -k k8s/ --ignore-not-found
+
+k8s-logs:
+	kubectl -n knowledge logs -f deploy/knowledge-api
+
+# === Tests ===
+test:
+	uv run pytest tests/ -v --no-cov
+
+test-unit:
+	uv run pytest tests/unit/ -v --no-cov

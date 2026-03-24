@@ -1,0 +1,516 @@
+"""QdrantSearchEngine -- hybrid search, ColBERT rerank, and hydration.
+
+Standalone version extracted from oreo-ecosystem.
+FeatureFlags replaced with config booleans on QdrantConfig.
+StatsD metric calls are retained as no-ops via QdrantClientProvider stubs.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+from .client import (
+    DEFAULT_COLBERT_WEIGHT,
+    DEFAULT_DENSE_WEIGHT,
+    DEFAULT_HYDRATION_EXCLUDE_FIELDS,
+    DEFAULT_SPARSE_WEIGHT,
+    RETRIEVAL_PAYLOAD_FIELDS,
+    QdrantClientProvider,
+    QdrantSearchResult,
+)
+from .collections import QdrantCollectionManager
+
+logger = logging.getLogger(__name__)
+
+
+class QdrantSearchEngine:
+    """Hybrid search (RRF fusion) and ColBERT late-interaction reranking.
+
+    Two-phase search pipeline:
+    1. Candidate retrieval via ``query_points`` (dense + sparse prefetch).
+    2. Payload hydration via ``retrieve`` (exclude heavy fields).
+    3. Result merging.
+    """
+
+    def __init__(
+        self,
+        provider: QdrantClientProvider,
+        collection_mgr: QdrantCollectionManager,
+    ) -> None:
+        self._provider = provider
+        self._collection_mgr = collection_mgr
+
+    # ==================== Query candidates ====================
+
+    async def query_candidates(
+        self,
+        *,
+        kb_id: str,
+        dense_vector: list[float],
+        sparse_vector: dict[int, float] | None,
+        top_k: int,
+        score_threshold: float | None,
+        filter_conditions: dict[str, Any] | None,
+        with_payload: Any | None,
+        prefetch_multiplier: int | None = None,
+        prefetch_max: int | None = None,
+    ) -> list[QdrantSearchResult]:
+        """Run a Qdrant query_points request and normalize points into results."""
+        client = await self._provider.ensure_client()
+        collection_name = await self._collection_mgr.resolve_collection_name(kb_id)
+        cfg = self._provider.config
+        prefetch_limit = min(
+            max(1, top_k)
+            * (
+                prefetch_multiplier
+                if prefetch_multiplier is not None
+                else cfg.hybrid_prefetch_multiplier
+            ),
+            (
+                prefetch_max
+                if prefetch_max is not None
+                else cfg.hybrid_prefetch_max
+            ),
+        )
+
+        from qdrant_client.models import (
+            FieldCondition,
+            Filter,
+            Fusion,
+            FusionQuery,
+            MatchAny,
+            MatchValue,
+            Prefetch,
+            SparseVector,
+        )
+        try:
+            from qdrant_client.http.exceptions import UnexpectedResponse
+        except Exception:
+            UnexpectedResponse = ValueError  # type: ignore[assignment,misc]
+
+        qdrant_filter = None
+        if filter_conditions:
+            conditions = []
+            for key, value in filter_conditions.items():
+                if isinstance(value, list):
+                    if not value:
+                        continue
+                    conditions.append(
+                        FieldCondition(key=key, match=MatchAny(any=value))
+                    )
+                elif isinstance(value, dict) and "match_text" in value:
+                    from qdrant_client.models import MatchText
+                    conditions.append(
+                        FieldCondition(key=key, match=MatchText(text=value["match_text"]))
+                    )
+                else:
+                    conditions.append(
+                        FieldCondition(key=key, match=MatchValue(value=value))
+                    )
+            if conditions:
+                qdrant_filter = Filter(must=conditions)
+
+        config = self._provider.config
+        query_kwargs: dict[str, Any] = {"collection_name": collection_name, "limit": top_k}
+        if with_payload is not None:
+            query_kwargs["with_payload"] = with_payload
+
+        if sparse_vector:
+            sparse_indices = sorted(sparse_vector.keys())
+            sparse_values = [sparse_vector[i] for i in sparse_indices]
+
+            try:
+                results = await client.query_points(
+                    prefetch=[
+                        Prefetch(
+                            query=dense_vector,
+                            using=config.dense_vector_name,
+                            limit=prefetch_limit,
+                            filter=qdrant_filter,
+                        ),
+                        Prefetch(
+                            query=SparseVector(
+                                indices=sparse_indices,
+                                values=sparse_values,
+                            ),
+                            using=config.sparse_vector_name,
+                            limit=prefetch_limit,
+                            filter=qdrant_filter,
+                        ),
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    **query_kwargs,
+                )
+            except (UnexpectedResponse, ValueError) as primary_error:
+                status = getattr(primary_error, "status_code", None)
+                if status is not None and status >= 500:
+                    logger.error(
+                        "Qdrant server error %s for collection %s, failing fast",
+                        status, collection_name,
+                        extra={"status_code": status, "kb_id": kb_id},
+                    )
+                    raise
+                logger.warning(
+                    "Named vector query failed, retrying with legacy dense/sparse names: %s",
+                    primary_error,
+                )
+                results = await client.query_points(
+                    prefetch=[
+                        Prefetch(
+                            query=dense_vector,
+                            using="dense",
+                            limit=prefetch_limit,
+                            filter=qdrant_filter,
+                        ),
+                        Prefetch(
+                            query=SparseVector(
+                                indices=sparse_indices,
+                                values=sparse_values,
+                            ),
+                            using="sparse",
+                            limit=prefetch_limit,
+                            filter=qdrant_filter,
+                        ),
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    **query_kwargs,
+                )
+        else:
+            try:
+                results = await client.query_points(
+                    query=dense_vector,
+                    using=config.dense_vector_name,
+                    query_filter=qdrant_filter,
+                    **query_kwargs,
+                )
+            except (UnexpectedResponse, ValueError) as primary_error:
+                status = getattr(primary_error, "status_code", None)
+                if status is not None and status >= 500:
+                    logger.error(
+                        "Qdrant server error %s for collection %s, failing fast",
+                        status, collection_name,
+                        extra={"status_code": status, "kb_id": kb_id},
+                    )
+                    raise
+                logger.warning(
+                    "Dense named vector query failed, retrying with legacy dense name: %s",
+                    primary_error,
+                )
+                results = await client.query_points(
+                    query=dense_vector,
+                    using="dense",
+                    query_filter=qdrant_filter,
+                    **query_kwargs,
+                )
+
+        search_results: list[QdrantSearchResult] = []
+        for point in results.points:
+            score = point.score or 0.0
+            if score_threshold is not None and score < score_threshold:
+                continue
+
+            payload = point.payload or {}
+            search_results.append(
+                QdrantSearchResult(
+                    point_id=str(point.id),
+                    score=score,
+                    content=str(payload.get("content", "")),
+                    metadata={k: v for k, v in payload.items() if k != "content"},
+                )
+            )
+        return search_results
+
+    # ==================== Hybrid search ====================
+
+    async def search(
+        self,
+        kb_id: str,
+        dense_vector: list[float],
+        sparse_vector: dict[int, float] | None = None,
+        top_k: int = 10,
+        dense_weight: float = DEFAULT_DENSE_WEIGHT,
+        sparse_weight: float = DEFAULT_SPARSE_WEIGHT,
+        score_threshold: float | None = None,
+        filter_conditions: dict[str, Any] | None = None,
+        prefetch_multiplier: int | None = None,
+        prefetch_max: int | None = None,
+        metric_tags: list[str] | None = None,
+    ) -> list[QdrantSearchResult]:
+        """Hybrid search with RRF fusion and optional two-phase projection."""
+        projection_enabled = self._provider.config.retrieval_projection_enabled
+        retrieval_selector = QdrantClientProvider.build_retrieval_payload_selector(
+            RETRIEVAL_PAYLOAD_FIELDS
+        )
+        retrieval_start = time.perf_counter()
+        base_results = await self.query_candidates(
+            kb_id=kb_id,
+            dense_vector=dense_vector,
+            sparse_vector=sparse_vector,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            filter_conditions=filter_conditions,
+            with_payload=retrieval_selector if projection_enabled else None,
+            prefetch_multiplier=prefetch_multiplier,
+            prefetch_max=prefetch_max,
+        )
+        retrieval_ms = (time.perf_counter() - retrieval_start) * 1000
+        self._provider.emit_search_metric(
+            "knowledge_search.retrieval_ms",
+            retrieval_ms,
+            tags=[f"kb_id:{kb_id}", *(metric_tags or [])],
+        )
+
+        if not projection_enabled or not base_results:
+            return base_results
+
+        finalist_ids = list(dict.fromkeys(result.point_id for result in base_results))
+
+        hydration_start = time.perf_counter()
+        hydrated_results = await self.hydrate_by_ids(
+            kb_id=kb_id,
+            point_ids=finalist_ids,
+        )
+        hydration_ms = (time.perf_counter() - hydration_start) * 1000
+        self._provider.emit_search_metric(
+            "knowledge_search.hydration_ms",
+            hydration_ms,
+            tags=[f"kb_id:{kb_id}", *(metric_tags or [])],
+        )
+
+        merged_results = [
+            QdrantClientProvider.merge_search_result_payloads(result, hydrated_results.get(result.point_id))
+            for result in base_results
+        ]
+        return merged_results
+
+    # ==================== ColBERT reranking ====================
+
+    async def search_with_colbert_rerank(
+        self,
+        kb_id: str,
+        dense_vector: list[float],
+        sparse_vector: dict[int, float] | None = None,
+        colbert_vectors: list[list[float]] | None = None,
+        top_k: int = 10,
+        dense_weight: float = DEFAULT_DENSE_WEIGHT,
+        sparse_weight: float = DEFAULT_SPARSE_WEIGHT,
+        colbert_weight: float = DEFAULT_COLBERT_WEIGHT,
+        score_threshold: float | None = None,
+        filter_conditions: dict[str, Any] | None = None,
+        prefetch_multiplier: int | None = None,
+        prefetch_max: int | None = None,
+        metric_tags: list[str] | None = None,
+    ) -> list[QdrantSearchResult]:
+        """ColBERT late-interaction reranking on top of hybrid search."""
+        cfg = self._provider.config
+        projection_enabled = cfg.retrieval_projection_enabled
+        candidate_multiplier = cfg.colbert_rerank_candidate_multiplier
+        candidate_top_k = max(1, top_k) * candidate_multiplier
+
+        if not projection_enabled:
+            base_results = await self.search(
+                kb_id=kb_id,
+                dense_vector=dense_vector,
+                sparse_vector=sparse_vector,
+                top_k=candidate_top_k,
+                dense_weight=dense_weight,
+                sparse_weight=sparse_weight,
+                score_threshold=None,
+                filter_conditions=filter_conditions,
+                prefetch_multiplier=prefetch_multiplier,
+                prefetch_max=prefetch_max,
+                metric_tags=metric_tags,
+            )
+        else:
+            base_results = await self.query_candidates(
+                kb_id=kb_id,
+                dense_vector=dense_vector,
+                sparse_vector=sparse_vector,
+                top_k=candidate_top_k,
+                score_threshold=None,
+                filter_conditions=filter_conditions,
+                with_payload=QdrantClientProvider.build_retrieval_payload_selector(
+                    RETRIEVAL_PAYLOAD_FIELDS
+                ),
+                prefetch_multiplier=prefetch_multiplier,
+                prefetch_max=prefetch_max,
+            )
+
+        if not base_results or not colbert_vectors:
+            return base_results[:top_k]
+
+        candidate_ids = list(dict.fromkeys(result.point_id for result in base_results))
+        colbert_by_id = (
+            await self._fetch_colbert_vectors(
+                kb_id=kb_id,
+                point_ids=candidate_ids,
+            )
+            if projection_enabled
+            else {
+                result.point_id: result.metadata.get("colbert_vectors")
+                for result in base_results
+            }
+        )
+
+        # Phase 2: ColBERT MaxSim reranking
+        reranked: list[tuple[float, QdrantSearchResult]] = []
+        for result in base_results:
+            stored_colbert = colbert_by_id.get(result.point_id)
+            if not stored_colbert or not isinstance(stored_colbert, list):
+                combined = (1.0 - colbert_weight) * result.score
+                reranked.append((combined, result))
+                continue
+
+            # MaxSim: for each query token, find max similarity across document tokens
+            maxsim_total = 0.0
+            for q_vec in colbert_vectors:
+                max_sim = max(
+                    (self._cosine_sim(q_vec, d_vec) for d_vec in stored_colbert),
+                    default=0.0,
+                )
+                maxsim_total += max_sim
+            maxsim_score = maxsim_total / max(len(colbert_vectors), 1)
+
+            combined = (1.0 - colbert_weight) * result.score + colbert_weight * maxsim_score
+            reranked.append((combined, result))
+
+        reranked.sort(key=lambda x: x[0], reverse=True)
+
+        final: list[QdrantSearchResult] = []
+        finalists = reranked[:top_k]
+        hydrated = (
+            await self.hydrate_by_ids(
+                kb_id=kb_id,
+                point_ids=[result.point_id for _score, result in finalists],
+            )
+            if projection_enabled
+            else {}
+        )
+        for score, result in finalists:
+            if score_threshold is not None and score < score_threshold:
+                continue
+            merged = QdrantClientProvider.merge_search_result_payloads(
+                result,
+                hydrated.get(result.point_id),
+            )
+            final.append(
+                QdrantSearchResult(
+                    point_id=merged.point_id,
+                    score=score,
+                    content=merged.content,
+                    metadata=merged.metadata,
+                )
+            )
+        return final
+
+    # ==================== Hydration ====================
+
+    async def hydrate_by_ids(
+        self,
+        kb_id: str,
+        point_ids: list[str],
+        exclude_fields: list[str] | None = None,
+    ) -> dict[str, QdrantSearchResult]:
+        """Batch-hydrate finalist points with richer payload, excluding heavy fields."""
+        if not point_ids:
+            return {}
+
+        client = await self._provider.ensure_client()
+        collection_name = await self._collection_mgr.resolve_collection_name(kb_id)
+        unique_point_ids = list(dict.fromkeys(str(pid) for pid in point_ids if pid))
+        if not unique_point_ids:
+            return {}
+
+        payload_selector = QdrantClientProvider.build_hydration_payload_selector(
+            exclude_fields or list(DEFAULT_HYDRATION_EXCLUDE_FIELDS)
+        )
+        try:
+            records = await client.retrieve(
+                collection_name=collection_name,
+                ids=unique_point_ids,
+                with_vectors=False,
+                with_payload=payload_selector,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Qdrant hydrate_by_ids failed for kb_id=%s collection=%s: %s",
+                kb_id, collection_name, exc,
+            )
+            return {}
+
+        hydrated: dict[str, QdrantSearchResult] = {}
+        for record in records:
+            if record is None:
+                continue
+            payload = record.payload or {}
+            record_id = str(record.id)
+            hydrated[record_id] = QdrantSearchResult(
+                point_id=record_id,
+                score=float(record.score) if hasattr(record, "score") and record.score is not None else 0.75,
+                content=str(payload.get("content", "")),
+                metadata={k: v for k, v in payload.items() if k != "content"},
+            )
+        return hydrated
+
+    # ==================== ColBERT vector fetch ====================
+
+    async def _fetch_colbert_vectors(
+        self, *, kb_id: str, point_ids: list[str],
+    ) -> dict[str, list[list[float]]]:
+        if not point_ids:
+            return {}
+
+        client = await self._provider.ensure_client()
+        collection_name = await self._collection_mgr.resolve_collection_name(kb_id)
+        unique_point_ids = list(dict.fromkeys(str(pid) for pid in point_ids if pid))
+        if not unique_point_ids:
+            return {}
+
+        try:
+            records = await client.retrieve(
+                collection_name=collection_name,
+                ids=unique_point_ids,
+                with_vectors=False,
+                with_payload=["colbert_vectors"],
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch ColBERT vectors for kb_id=%s collection=%s: %s",
+                kb_id, collection_name, exc,
+            )
+            return {}
+
+        colbert_by_id: dict[str, list[list[float]]] = {}
+        for record in records:
+            if record is None:
+                continue
+            payload = record.payload or {}
+            vectors = payload.get("colbert_vectors")
+            if isinstance(vectors, list):
+                colbert_by_id[str(record.id)] = vectors
+        return colbert_by_id
+
+    # ==================== Math utilities ====================
+
+    @staticmethod
+    def _cosine_sim(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        try:
+            import numpy as np
+
+            a_arr = np.asarray(a, dtype=np.float32)
+            b_arr = np.asarray(b, dtype=np.float32)
+            norm_a = np.linalg.norm(a_arr)
+            norm_b = np.linalg.norm(b_arr)
+            if norm_a == 0 or norm_b == 0:
+                return 0.0
+            return float(np.dot(a_arr, b_arr) / (norm_a * norm_b))
+        except ImportError:
+            dot = sum(x * y for x, y in zip(a, b, strict=False))
+            norm_a = sum(x * x for x in a) ** 0.5
+            norm_b = sum(x * x for x in b) ** 0.5
+            if norm_a == 0 or norm_b == 0:
+                return 0.0
+            return dot / (norm_a * norm_b)

@@ -1,0 +1,72 @@
+[project]
+name = "knowledge-local"
+version = "0.1.0"
+description = "Standalone Knowledge Management System - Local-first"
+requires-python = ">=3.12"
+dependencies = [
+    # Web
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "httpx>=0.27.0",
+    # Dashboard
+    "streamlit>=1.40.0",
+    "plotly>=5.24.0",
+    "pyvis>=0.3.2",
+    "pandas>=2.2.0",
+    # Vector DB
+    "qdrant-client>=1.12.0",
+    # Graph DB
+    "neo4j>=5.14.0",
+    # Embedding (BGE-M3 ONNX)
+    "onnxruntime>=1.17.0",
+    "transformers>=4.48.0",
+    "numpy>=1.26.0",
+    # Korean NLP
+    "kiwipiepy>=0.22.2",
+    "kss>=4.0",
+    # Database (PostgreSQL)
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14",
+    # Config
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-dotenv>=1.0.0",
+    # Document parsing
+    "python-pptx>=1.0.0",
+    "python-docx>=1.0.0",
+    "openpyxl>=3.1.0",
+    "pymupdf>=1.24.0",
+    # Similarity & Reranking
+    "rapidfuzz>=3.6.0",
+    "langdetect>=1.0.9",
+    "sentence-transformers>=3.0.0,<5.0",
+    # BGE-M3 native sparse vectors
+    "FlagEmbedding>=1.2",
+    "torch>=2.0.0",
+    # OCR (PaddleOCR for Korean text extraction)
+    "paddleocr>=2.7.0",
+    "paddlepaddle>=2.5.0",
+    # Computer Vision (shape/arrow detection)
+    "opencv-python-headless>=4.9.0",
+    "Pillow>=12.1.1",
+    # JSON repair for LLM output parsing
+    "json-repair>=0.1",
+    # Utilities
+    "python-multipart>=0.0.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "cli", "dashboard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

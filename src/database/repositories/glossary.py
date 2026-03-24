@@ -1,0 +1,271 @@
+"""Glossary Repository - PostgreSQL backed.
+
+Extracted from oreo-ecosystem PgGlossaryRepository.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import UTC, datetime
+from collections.abc import AsyncIterator
+from typing import Any
+
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from src.database.models import GlossaryTermModel
+
+logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+class GlossaryRepository:
+    """Async SQLAlchemy glossary repository."""
+
+    def __init__(self, session_maker: async_sessionmaker) -> None:
+        self._session_maker = session_maker
+        self._search_available = True
+
+    async def _get_session(self) -> AsyncSession:
+        return self._session_maker()
+
+    def _scope_filter(self, kb_id: str):
+        if kb_id and kb_id.lower() != "all":
+            return or_(
+                GlossaryTermModel.scope == "global",
+                GlossaryTermModel.kb_id == kb_id,
+            )
+        return None
+
+    async def save(self, term_data: dict[str, Any]) -> None:
+        """Save a term (upsert by kb_id + term, case-insensitive)."""
+        async with await self._get_session() as session:
+            try:
+                stmt = select(GlossaryTermModel).where(
+                    and_(
+                        GlossaryTermModel.kb_id == term_data["kb_id"],
+                        func.lower(GlossaryTermModel.term) == term_data["term"].lower(),
+                    )
+                )
+                result = await session.execute(stmt)
+                existing = result.scalar_one_or_none()
+
+                now = _utc_now()
+
+                if existing:
+                    for key, value in term_data.items():
+                        if key in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
+                            setattr(existing, key, json.dumps(value if isinstance(value, list) else []))
+                        elif hasattr(existing, key):
+                            setattr(existing, key, value)
+                    existing.updated_at = now
+                else:
+                    model_data = dict(term_data)
+                    for field in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
+                        if field in model_data:
+                            val = model_data[field]
+                            model_data[field] = json.dumps(val if isinstance(val, list) else [])
+                    model_data.setdefault("created_at", now)
+                    model_data.setdefault("updated_at", now)
+                    model = GlossaryTermModel(**model_data)
+                    session.add(model)
+
+                await session.commit()
+            except SQLAlchemyError as e:
+                await session.rollback()
+                logger.error("Database error saving glossary term", extra={"error": str(e)})
+                raise
+
+    async def get_by_id(self, term_id: str) -> dict[str, Any] | None:
+        async with await self._get_session() as session:
+            stmt = select(GlossaryTermModel).where(GlossaryTermModel.id == term_id)
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._model_to_dict(model) if model else None
+
+    async def get_by_term(self, kb_id: str, term: str) -> dict[str, Any] | None:
+        async with await self._get_session() as session:
+            conditions = [func.lower(GlossaryTermModel.term) == term.lower()]
+            scope_cond = self._scope_filter(kb_id)
+            if scope_cond is not None:
+                conditions.append(scope_cond)
+            stmt = (
+                select(GlossaryTermModel)
+                .where(and_(*conditions))
+                .order_by(GlossaryTermModel.scope.asc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model = result.scalars().first()
+            return self._model_to_dict(model) if model else None
+
+    async def list_by_kb(
+        self,
+        kb_id: str,
+        status: str | None = None,
+        source: str | None = None,
+        scope: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        term_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        async with await self._get_session() as session:
+            stmt = select(GlossaryTermModel)
+
+            if scope is not None:
+                stmt = stmt.where(GlossaryTermModel.scope == scope)
+                if scope != "global" and kb_id and kb_id.lower() != "all":
+                    stmt = stmt.where(GlossaryTermModel.kb_id == kb_id)
+            else:
+                scope_cond = self._scope_filter(kb_id)
+                if scope_cond is not None:
+                    stmt = stmt.where(scope_cond)
+
+            if status is not None:
+                stmt = stmt.where(GlossaryTermModel.status == status)
+            if source is not None:
+                stmt = stmt.where(GlossaryTermModel.source == source)
+            if term_type is not None:
+                stmt = stmt.where(GlossaryTermModel.term_type == term_type)
+
+            stmt = stmt.order_by(GlossaryTermModel.term).limit(limit).offset(offset)
+            result = await session.execute(stmt)
+            models = result.scalars().all()
+            return [self._model_to_dict(m) for m in models]
+
+    async def count_by_kb(
+        self,
+        kb_id: str,
+        status: str | None = None,
+        scope: str | None = None,
+        term_type: str | None = None,
+    ) -> int:
+        async with await self._get_session() as session:
+            stmt = select(func.count()).select_from(GlossaryTermModel)
+
+            if scope is not None:
+                stmt = stmt.where(GlossaryTermModel.scope == scope)
+                if scope != "global" and kb_id and kb_id.lower() != "all":
+                    stmt = stmt.where(GlossaryTermModel.kb_id == kb_id)
+            else:
+                scope_cond = self._scope_filter(kb_id)
+                if scope_cond is not None:
+                    stmt = stmt.where(scope_cond)
+
+            if status is not None:
+                stmt = stmt.where(GlossaryTermModel.status == status)
+            if term_type is not None:
+                stmt = stmt.where(GlossaryTermModel.term_type == term_type)
+
+            result = await session.execute(stmt)
+            return result.scalar() or 0
+
+    async def search(self, kb_id: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        query_lower = query.lower().strip()
+        if not query_lower or not self._search_available:
+            return []
+
+        async with await self._get_session() as session:
+            try:
+                conditions = [
+                    GlossaryTermModel.status == "approved",
+                    or_(
+                        func.lower(GlossaryTermModel.term).contains(query_lower),
+                        func.lower(func.coalesce(GlossaryTermModel.term_ko, "")).contains(query_lower),
+                        func.lower(func.coalesce(GlossaryTermModel.physical_meaning, "")).contains(query_lower),
+                        func.lower(GlossaryTermModel.synonyms).contains(query_lower),
+                        func.lower(GlossaryTermModel.abbreviations).contains(query_lower),
+                    ),
+                ]
+                scope_cond = self._scope_filter(kb_id)
+                if scope_cond is not None:
+                    conditions.insert(0, scope_cond)
+
+                stmt = (
+                    select(GlossaryTermModel)
+                    .where(and_(*conditions))
+                    .order_by(GlossaryTermModel.term)
+                    .limit(limit)
+                )
+                result = await session.execute(stmt)
+                models = result.scalars().all()
+                return [self._model_to_dict(m) for m in models]
+            except SQLAlchemyError:
+                return []
+
+    async def delete(self, term_id: str) -> bool:
+        async with await self._get_session() as session:
+            try:
+                stmt = select(GlossaryTermModel).where(GlossaryTermModel.id == term_id)
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                if not model:
+                    return False
+
+                await session.delete(model)
+                await session.commit()
+                return True
+            except SQLAlchemyError as e:
+                await session.rollback()
+                logger.error("Database error deleting glossary term", extra={"error": str(e)})
+                raise
+
+    async def bulk_delete(self, term_ids: list[str]) -> int:
+        if not term_ids:
+            return 0
+
+        async with await self._get_session() as session:
+            try:
+                stmt = delete(GlossaryTermModel).where(GlossaryTermModel.id.in_(term_ids))
+                result = await session.execute(stmt)
+                await session.commit()
+                return result.rowcount
+            except SQLAlchemyError as e:
+                await session.rollback()
+                raise
+
+    @staticmethod
+    def _model_to_dict(model: GlossaryTermModel) -> dict[str, Any]:
+        def _load_json_list(value: Any) -> list[str]:
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return value
+            try:
+                return json.loads(value)
+            except Exception:
+                return []
+
+        return {
+            "id": str(model.id),
+            "term_id": str(model.id),
+            "kb_id": model.kb_id,
+            "term": model.term,
+            "term_ko": model.term_ko,
+            "definition": model.definition,
+            "synonyms": _load_json_list(model.synonyms),
+            "abbreviations": _load_json_list(model.abbreviations),
+            "related_terms": _load_json_list(model.related_terms),
+            "source": model.source,
+            "confidence_score": model.confidence_score,
+            "status": model.status,
+            "occurrence_count": model.occurrence_count or 0,
+            "category": getattr(model, "category", None),
+            "created_by": getattr(model, "created_by", None),
+            "approved_by": getattr(model, "approved_by", None),
+            "approved_at": getattr(model, "approved_at", None),
+            "created_at": model.created_at,
+            "updated_at": model.updated_at,
+            "scope": getattr(model, "scope", "kb"),
+            "source_kb_ids": _load_json_list(getattr(model, "source_kb_ids", None)),
+            "physical_meaning": getattr(model, "physical_meaning", None),
+            "composition_info": getattr(model, "composition_info", None),
+            "domain_name": getattr(model, "domain_name", None),
+            "term_type": getattr(model, "term_type", "term"),
+        }

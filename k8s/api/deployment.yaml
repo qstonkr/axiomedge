@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge-api
+  namespace: knowledge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: knowledge-api
+  template:
+    metadata:
+      labels:
+        app: knowledge-api
+    spec:
+      containers:
+        - name: api
+          image: knowledge-local:latest
+          # Use 'api' build target
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: QDRANT_URL
+              value: "http://qdrant.knowledge.svc:6333"
+            - name: NEO4J_URI
+              value: "bolt://neo4j.knowledge.svc:7687"
+            - name: NEO4J_AUTH
+              value: "none"
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama.knowledge.svc:11434"
+            - name: OLLAMA_MODEL
+              value: "exaone3.5:7.8b"
+            - name: KNOWLEDGE_BGE_ONNX_MODEL_PATH
+              value: "/models/bge-m3"
+          volumeMounts:
+            - name: bge-model
+              mountPath: /models/bge-m3
+              readOnly: true
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: bge-model
+          persistentVolumeClaim:
+            claimName: bge-model-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bge-model-pvc
+  namespace: knowledge
+spec:
+  storageClassName: local-path
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knowledge-api
+  namespace: knowledge
+spec:
+  selector:
+    app: knowledge-api
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
