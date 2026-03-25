@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,6 +44,11 @@ class ParseResult:
         return "\n".join(p for p in parts if p.strip())
 
 
+from src.config_weights import weights as _w
+
+MAX_FILE_SIZE = _w.pipeline.max_file_size_mb * 1024 * 1024  # default 200MB
+
+
 def parse_file(filepath: str | Path) -> str:
     """Parse a local file and return its text content.
 
@@ -51,6 +59,9 @@ def parse_file(filepath: str | Path) -> str:
     if not path.exists() or not path.is_file():
         logger.warning("File not found: %s", path)
         return ""
+    file_size = path.stat().st_size
+    if file_size > MAX_FILE_SIZE:
+        raise ValueError(f"File too large: {file_size / 1e6:.0f}MB (max {MAX_FILE_SIZE / 1e6:.0f}MB)")
     data = path.read_bytes()
     return parse_bytes(data, path.name)
 
@@ -64,6 +75,9 @@ def parse_file_enhanced(filepath: str | Path) -> ParseResult:
     if not path.exists() or not path.is_file():
         logger.warning("File not found: %s", path)
         return ParseResult()
+    file_size = path.stat().st_size
+    if file_size > MAX_FILE_SIZE:
+        raise ValueError(f"File too large: {file_size / 1e6:.0f}MB (max {MAX_FILE_SIZE / 1e6:.0f}MB)")
     data = path.read_bytes()
     return parse_bytes_enhanced(data, path.name)
 
@@ -85,8 +99,10 @@ def parse_bytes(data: bytes, filename: str) -> str:
     elif ext == ".pptx":
         return _parse_pptx(data, filename)
     elif ext == ".ppt":
-        logger.warning("Legacy .ppt format is not supported (use .pptx): %s", filename)
-        return ""
+        converted = _convert_ppt_to_pptx(data, filename)
+        if converted is None:
+            return ""
+        return _parse_pptx(converted, filename)
     elif ext in (".xlsx", ".xls", ".xlsm"):
         return _parse_xlsx(data, filename)
     elif ext in (".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml"):
@@ -104,12 +120,89 @@ def parse_bytes_enhanced(data: bytes, filename: str) -> ParseResult:
         return _parse_pdf_enhanced(data, filename)
     elif ext == ".pptx":
         return _parse_pptx_enhanced(data, filename)
+    elif ext == ".ppt":
+        converted = _convert_ppt_to_pptx(data, filename)
+        if converted is None:
+            return ParseResult(text=f"[Error] Failed to convert .ppt file: {filename}. LibreOffice (soffice) is required.")
+        return _parse_pptx_enhanced(converted, filename)
     elif ext in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff"):
         return _parse_image(data, filename)
     else:
         # For other types, wrap plain text in ParseResult
         text = parse_bytes(data, filename)
         return ParseResult(text=text)
+
+
+# ---------------------------------------------------------------------------
+# Legacy format conversion
+# ---------------------------------------------------------------------------
+
+
+def _convert_ppt_to_pptx(data: bytes, filename: str) -> bytes | None:
+    """Convert legacy .ppt to .pptx using LibreOffice CLI.
+
+    Returns the .pptx file bytes on success, or None if conversion fails
+    (e.g. LibreOffice not installed).
+    """
+    soffice = shutil.which("soffice")
+    if soffice is None:
+        logger.warning(
+            "LibreOffice (soffice) not found on PATH. Cannot convert .ppt file: %s. "
+            "Install LibreOffice to enable .ppt support.",
+            filename,
+        )
+        return None
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ppt_path = Path(tmpdir) / Path(filename).name
+            ppt_path.write_bytes(data)
+
+            result = subprocess.run(
+                [
+                    soffice,
+                    "--headless",
+                    "--convert-to",
+                    "pptx",
+                    "--outdir",
+                    tmpdir,
+                    str(ppt_path),
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                stderr = result.stderr.decode("utf-8", errors="replace").strip()
+                logger.warning(
+                    "LibreOffice conversion failed for %s (exit %d): %s",
+                    filename,
+                    result.returncode,
+                    stderr,
+                )
+                return None
+
+            pptx_path = ppt_path.with_suffix(".pptx")
+            if not pptx_path.exists():
+                logger.warning(
+                    "LibreOffice conversion produced no output for %s", filename
+                )
+                return None
+
+            converted_bytes = pptx_path.read_bytes()
+            logger.info(
+                "Converted .ppt to .pptx: %s (%d bytes)", filename, len(converted_bytes)
+            )
+            return converted_bytes
+
+    except subprocess.TimeoutExpired:
+        logger.warning(
+            "LibreOffice conversion timed out (30s) for %s", filename
+        )
+        return None
+    except Exception as e:
+        logger.warning("LibreOffice conversion error for %s: %s", filename, e)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -147,14 +240,38 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     scanned_pages: list[int] = []
     extracted_images: list[bytes] = []
 
+    def _is_garbled_text(text: str) -> bool:
+        """Detect garbled text from broken font mapping in PDFs.
+
+        Patterns: repeated single chars (손손손), CJK chars with no meaning,
+        very low unique char ratio, etc.
+        """
+        if not text or len(text.strip()) < 10:
+            return False
+        stripped = text.strip()
+        # High repetition ratio: same char appears > 30% of text
+        from collections import Counter
+        char_counts = Counter(stripped.replace(" ", "").replace("\n", ""))
+        if char_counts:
+            most_common_ratio = char_counts.most_common(1)[0][1] / max(len(stripped), 1)
+            if most_common_ratio > 0.3:
+                return True
+        # Very low unique char ratio (garbled = few unique chars repeated)
+        unique_ratio = len(set(stripped)) / max(len(stripped), 1)
+        if unique_ratio < 0.05 and len(stripped) > 50:
+            return True
+        return False
+
     for page_num, page in enumerate(doc):
         # Text extraction
         text = page.get_text()
-        if text.strip():
+        if text.strip() and not _is_garbled_text(text):
             texts.append(f"[Page {page_num + 1}]\n{text}")
         else:
-            # Scanned PDF detection: page has no extractable text
+            # Scanned page OR garbled text → needs OCR
             scanned_pages.append(page_num + 1)
+            if text.strip():
+                logger.info("Garbled text detected on page %d of %s, routing to OCR", page_num + 1, filename)
 
         # Table extraction using PyMuPDF find_tables()
         page_tables = page.find_tables()
@@ -395,61 +512,134 @@ def _parse_text(data: bytes) -> str:
 def _process_images_ocr(
     images: list[bytes],
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Route extracted images through OCR (synchronous).
+    """Route extracted images through PaddleOCR Docker API server.
 
-    Uses PaddleOCR via OCRWithCoords for direct synchronous text extraction.
-    This avoids asyncio.run() issues when called from an already-running event loop
-    (e.g. FastAPI async context).
+    When ``weights.ocr.enable_vision_analysis`` is True, calls ``/analyze``
+    instead of ``/ocr`` to get shape/arrow detection alongside OCR text.
 
     Returns:
         (ocr_text, visual_analyses)
     """
+    import base64
+    import httpx
+    import os
+
     ocr_texts: list[str] = []
     visual_analyses: list[dict[str, Any]] = []
+    base_url = os.getenv("PADDLEOCR_API_URL", "http://localhost:8866")
+    # Strip trailing path if user set full URL like "http://host:8866/ocr"
+    if base_url.endswith("/ocr") or base_url.endswith("/analyze"):
+        base_url = base_url.rsplit("/", 1)[0]
+
+    vision_enabled = _w.ocr.enable_vision_analysis
+    endpoint = f"{base_url}/analyze" if vision_enabled else f"{base_url}/ocr"
+
+    if not images:
+        return "", []
+
+    client = httpx.Client(timeout=60.0)
+
+    def _resize_image(raw: bytes, scale: float = 0.75) -> bytes | None:
+        """Resize image as fallback when OCR fails on the original."""
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(raw))
+            new_w = max(int(img.width * scale), 32)
+            new_h = max(int(img.height * scale), 32)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            return buf.getvalue()
+        except Exception:
+            return None
+
+    def _ocr_request(payload: bytes) -> dict | None:
+        """Send OCR request with one retry using resized image on failure."""
+        b64_image = base64.b64encode(payload).decode("utf-8")
+        try:
+            resp = client.post(endpoint, json={"image": b64_image}, timeout=60.0)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception:
+            return None
+
+    # Pre-filter: skip images too small to contain meaningful text
+    MIN_W, MIN_H = 20, 20
 
     for i, img_bytes in enumerate(images):
-        # Use OCRWithCoords for synchronous OCR (no asyncio needed)
         try:
-            from src.cv_pipeline.ocr_with_coords import OCRWithCoords
-
-            ocr = OCRWithCoords()
-            boxes = ocr.extract(img_bytes)
-            if boxes:
-                text = " ".join(b.text for b in boxes if b.text.strip())
-                if text:
-                    ocr_texts.append(f"[Image {i + 1} OCR] {text}")
+            from PIL import Image
+            import io
+            _img = Image.open(io.BytesIO(img_bytes))
+            if _img.width < MIN_W or _img.height < MIN_H:
+                logger.debug("Skipping image %d: too small (%dx%d)", i + 1, _img.width, _img.height)
                 continue
-        except ImportError:
-            pass
 
-        # Fallback: direct PaddleOCR via sync path
-        try:
-            from src.ocr.paddle_ocr_provider import PaddleOCRProvider
+            result = _ocr_request(img_bytes)
 
-            provider = PaddleOCRProvider()
-            # Use the sync _parse_result + engine directly to avoid async
-            engine = provider._ocr  # May be None if not initialized
-            if engine is None:
-                try:
-                    from paddleocr import PaddleOCR  # type: ignore[import-not-found]
+            # Retry with resized image on failure
+            if result is None:
+                resized = _resize_image(img_bytes)
+                if resized:
+                    logger.info("Retrying image %d with resized version", i + 1)
+                    result = _ocr_request(resized)
 
-                    engine = PaddleOCR(lang="korean", use_gpu=False, use_angle_cls=True)
-                except (ImportError, TypeError):
-                    logger.debug("PaddleOCR not available for image %d", i + 1)
-                    continue
+            if result is None:
+                logger.warning("PaddleOCR failed for image %d after retry, skipping", i + 1)
+                continue
 
-            import tempfile
+            # Parse OCR text (same keys for both /ocr and /analyze)
+            text_lines = result.get("texts", result.get("result", []))
+            if isinstance(text_lines, list):
+                text = " ".join(str(t) for t in text_lines if t)
+            elif isinstance(text_lines, str):
+                text = text_lines
+            else:
+                text = str(text_lines)
 
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as f:
-                f.write(img_bytes)
-                f.flush()
-                raw = engine.ocr(f.name, cls=True)
-            text, _confidence = provider._parse_result(raw)
             if text.strip():
                 ocr_texts.append(f"[Image {i + 1} OCR] {text}")
-        except ImportError:
-            logger.debug("Neither OCRWithCoords nor PaddleOCR available for image %d", i + 1)
+                logger.info("OCR success for image %d: %d chars", i + 1, len(text))
 
+            # When vision analysis is enabled, capture shapes/arrows/mappings
+            if vision_enabled:
+                shapes = result.get("shapes", [])
+                arrows = result.get("arrows", [])
+                mappings = result.get("text_shape_mappings", [])
+                if shapes or arrows or mappings:
+                    analysis: dict[str, Any] = {
+                        "image_index": i + 1,
+                        "shapes": shapes,
+                        "arrows": arrows,
+                        "text_shape_mappings": mappings,
+                        "shape_count": result.get("shape_count", len(shapes)),
+                        "arrow_count": result.get("arrow_count", len(arrows)),
+                        "ocr_confidence": result.get("ocr_confidence", 0.0),
+                    }
+                    visual_analyses.append(analysis)
+
+                    # Build a structured textual description of the diagram
+                    desc_parts: list[str] = []
+                    if shapes:
+                        shape_types = [s.get("type", "unknown") for s in shapes]
+                        desc_parts.append(f"Shapes: {', '.join(shape_types)}")
+                    if arrows:
+                        desc_parts.append(f"Arrows: {len(arrows)} connections")
+                    if mappings:
+                        for m in mappings:
+                            shape_label = m.get("shape_type", "shape")
+                            texts_in = m.get("texts", m.get("text", ""))
+                            if texts_in:
+                                desc_parts.append(f"  [{shape_label}] {texts_in}")
+                    if desc_parts:
+                        diagram_desc = "\n".join(desc_parts)
+                        ocr_texts.append(f"[Image {i + 1} Diagram]\n{diagram_desc}")
+
+        except Exception as e:
+            logger.warning("PaddleOCR API failed for image %d: %s", i + 1, e)
+
+    client.close()
     return "\n".join(ocr_texts), visual_analyses
 
 
@@ -467,9 +657,9 @@ def _table_to_markdown(data: list[list[str]], max_rows: int = 50) -> str:
     lines.append("| " + " | ".join(header) + " |")
     lines.append("| " + " | ".join(["---"] * len(header)) + " |")
     for row in data[1:max_rows]:
-        row = row + [""] * (len(header) - len(row))
-        row = row[: len(header)]
-        lines.append("| " + " | ".join(row) + " |")
+        padded_row = row + [""] * (len(header) - len(row))
+        padded_row = padded_row[: len(header)]
+        lines.append("| " + " | ".join(padded_row) + " |")
     if len(data) > max_rows:
         lines.append(f"... ({len(data) - max_rows} rows omitted)")
     return "\n".join(lines)

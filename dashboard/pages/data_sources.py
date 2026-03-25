@@ -35,20 +35,10 @@ if api_failed(sources_result):
 
 sources = sources_result.get("items", sources_result.get("sources", []))
 
-# CONFLUENCE 타입은 레거시(Dify 검색 전용)이므로 대시보드에서 제외.
-# 실제 크롤+인제스천 결과는 CRAWL_RESULT 타입으로 관리됨.
-_HIDDEN_SOURCE_TYPES = {"CONFLUENCE", "confluence"}
-sources = [s for s in sources if s.get("connector_type", s.get("source_type", "")) not in _HIDDEN_SOURCE_TYPES]
-
-# ── 커넥터 타입별 아이콘 ──
+# ── 커넥터 타입별 아이콘 (로컬 지원 타입만) ──
 connector_icons = {
-    "CONFLUENCE": "📝",
-    "JIRA": "🎫",
-    "GIT": "🔀",
-    "TEAMS": "💬",
-    "GWIKI": "📚",
-    "SHAREPOINT": "📂",
-    "MANUAL": "✋",
+    "file_upload": "📄",
+    "crawl_result": "🔍",
 }
 
 # ── 메트릭 요약 ──
@@ -197,8 +187,8 @@ with st.expander("📄 파일 업로드 인제스천", expanded=False):
         else:
             kbs = kb_list_result.get("kbs", kb_list_result.get("items", []))
             kb_options = [
-                f"{kb.get('id', '')} — {kb.get('name', '')}"
-                for kb in kbs if kb.get("id")
+                f"{kb.get('kb_id', kb.get('id', ''))} — {kb.get('name', '')}"
+                for kb in kbs if kb.get("kb_id") or kb.get("id")
             ]
 
         if kb_options:
@@ -280,10 +270,11 @@ with st.expander("➕ 새 데이터소스 추가", expanded=False):
     with st.form("add_data_source_form"):
         ds_type = st.selectbox(
             "커넥터 타입",
-            options=["confluence", "jira", "git", "teams", "gwiki", "sharepoint", "crawl_result", "manual"],
-            format_func=lambda x: {"confluence": "📝 Confluence", "jira": "🎫 Jira", "git": "🔀 Git",
-                                    "teams": "💬 Teams", "gwiki": "📚 GWiki", "sharepoint": "📂 SharePoint",
-                                    "crawl_result": "🔍 Crawl Result", "manual": "✋ Manual"}.get(x, x),
+            options=["file_upload", "crawl_result"],
+            format_func=lambda x: {
+                "file_upload": "📄 파일 업로드",
+                "crawl_result": "🔍 크롤 결과 (JSON/JSONL)",
+            }.get(x, x),
         )
         ds_kb_id = st.text_input("KB ID", placeholder="기존 또는 신규 KB ID")
         ds_url = st.text_input("연결 URL (선택)", placeholder="예: https://wiki.example.com")
