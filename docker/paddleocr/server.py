@@ -36,20 +36,23 @@ _ocr_engine = None
 def get_engine():
     global _ocr_engine
     if _ocr_engine is None:
+        import paddle
+        paddle.set_flags({
+            'FLAGS_use_mkldnn': False,
+            'FLAGS_enable_pir_api': 0,
+        })
+
         from paddleocr import PaddleOCR
+        # PaddleOCR 3.x API with PP-OCRv5 Korean model (pre-downloaded in Dockerfile)
         _ocr_engine = PaddleOCR(
-            lang="korean",
-            use_gpu=False,
-            use_angle_cls=False,
-            show_log=False,
-            use_mkldnn=False,
-            rec_batch_num=1,
-            rec_image_shape="3, 48, 640",
-            det_model_dir="/root/.paddleocr/whl/det/ml/Multilingual_PP-OCRv3_det_infer/Multilingual_PP-OCRv3_det_infer",
-            rec_model_dir="/root/.paddleocr/whl/rec/korean/korean_PP-OCRv4_rec_infer/korean_PP-OCRv4_rec_infer",
-            cls_model_dir="/root/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/ch_ppocr_mobile_v2.0_cls_infer",
+            text_recognition_model_name="korean_PP-OCRv5_mobile_rec",
+            text_detection_model_name="PP-OCRv5_mobile_det",
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+            device="cpu",
         )
-        logger.info("PaddleOCR engine initialized (Korean, pre-downloaded models)")
+        logger.info("PaddleOCR 3.x engine initialized (Korean PP-OCRv5 mobile rec + server det)")
     return _ocr_engine
 
 
@@ -141,35 +144,44 @@ def _resize_to_multiple(img_bytes, multiple=32):
 
 
 def _run_ocr_once(img_bytes):
-    """Single OCR attempt. Returns (texts, boxes, avg_conf) or raises."""
+    """Single OCR attempt using PaddleOCR 3.x predict() API."""
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         f.write(img_bytes)
         tmp_path = f.name
 
     try:
         engine = get_engine()
-        result = engine.ocr(tmp_path, cls=False)
+        results = engine.predict(tmp_path)
 
         texts = []
         boxes = []
         confidences = []
 
-        if result and result[0]:
-            for line in result[0]:
-                if len(line) >= 2:
-                    box_coords = line[0]
-                    text, score = line[1]
-                    texts.append(text)
-                    boxes.append({
-                        "text": text,
-                        "polygon": box_coords,
-                        "confidence": score,
-                        "center": [
-                            sum(p[0] for p in box_coords) / 4,
-                            sum(p[1] for p in box_coords) / 4,
-                        ],
-                    })
-                    confidences.append(score)
+        for res in results:
+            data = res["res"] if isinstance(res, dict) else getattr(res, "res", res)
+            rec_texts = data.get("rec_texts", [])
+            rec_scores = data.get("rec_scores", [])
+            rec_polys = data.get("rec_polys", data.get("dt_polys", []))
+
+            for i, text in enumerate(rec_texts):
+                score = rec_scores[i] if i < len(rec_scores) else 0.0
+                polygon = rec_polys[i] if i < len(rec_polys) else []
+                if hasattr(polygon, "tolist"):
+                    polygon = polygon.tolist()
+                texts.append(text)
+                confidences.append(score)
+                center = [0, 0]
+                if polygon and len(polygon) >= 4:
+                    center = [
+                        sum(p[0] for p in polygon) / len(polygon),
+                        sum(p[1] for p in polygon) / len(polygon),
+                    ]
+                boxes.append({
+                    "text": text,
+                    "polygon": polygon,
+                    "confidence": score,
+                    "center": center,
+                })
 
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
         return texts, boxes, avg_conf

@@ -117,6 +117,11 @@ services:
       - "8866:8866"
     environment:
       - LANG=C.UTF-8
+      - FLAGS_use_mkldnn=0
+      - FLAGS_use_onednn=0
+      - MKLDNN_VERBOSE=0
+      - PADDLE_MKLDNN_CAPACITY=0
+      - FLAGS_enable_pir_api=0
     deploy:
       resources:
         reservations:

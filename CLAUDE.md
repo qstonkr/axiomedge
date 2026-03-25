@@ -88,7 +88,42 @@ Query types are classified (`OWNER_QUERY`, `PROCEDURE`, `TROUBLESHOOT`, `CONCEPT
 
 ### Ingestion Pipeline Detail
 
-4-stage dedup: bloom filter → exact hash → semantic similarity → LLM conflict detection. Supports PDF, DOCX, PPTX, XLSX, images (PaddleOCR). GraphRAG extraction produces entities and relationships for Neo4j.
+Two-stage pipeline with JSONL checkpoint for crash safety:
+
+```
+Stage 1 (parse/OCR):  file → parse_file_enhanced() → broken CMap detection → 300 DPI render
+                      → PaddleOCR → LLM noise correction (EXAONE) → JSONL checkpoint
+Stage 2 (ingest):     JSONL → preprocess → chunk → passage clean → contextual retrieval prefix
+                      → embed (dense+sparse) → Qdrant/Neo4j store
+```
+
+- **JSONL checkpoint** (`src/pipeline/jsonl_checkpoint.py`): crash-safe append+fsync. If OCR segfaults, already-parsed docs survive. Re-run Stage 2 via `POST /api/v1/knowledge/reingest-from-jsonl`
+- **Broken CMap font detection** (`_has_broken_cmap_fonts()`): PowerPoint PDF exports often have stripped ToUnicode CMap tables. Pages with broken fonts (large embedded font but <20 Unicode mappings) are routed to OCR instead of text extraction
+- **Contextual Retrieval** (Anthropic pattern): each chunk gets `[Context] Document: {title} | Section {i}/{n}` + `[Summary]` prefix before embedding (35-49% retrieval improvement)
+- **Passage Cleaning**: sentence dedup + incomplete fragment removal before embedding
+- 4-stage dedup: bloom filter → exact hash → semantic similarity → LLM conflict detection
+- Supports PDF, DOCX, PPTX, XLSX, images (PaddleOCR). GraphRAG extraction produces entities and relationships for Neo4j
+
+### PaddleOCR (Critical: build from source)
+
+PaddleOCR runs in a Docker container (`docker/paddleocr/`). **PaddlePaddle must be built from source with `-DWITH_MKLDNN=OFF`**.
+
+Why: PaddlePaddle 3.x PIR executor auto-inserts OneDNN passes at graph lowering (compile time). Runtime flags (`FLAGS_use_mkldnn`, `FLAGS_enable_pir_api`) are ineffective — the OneDNN dialect is already baked in. This causes `ConvertPirAttribute2RuntimeAttribute not support` errors on CPU. The only solution is a source build without OneDNN.
+
+```bash
+# Build PaddlePaddle wheel (one-time, ~1-2 hours)
+docker build -f docker/paddleocr/build_paddle.Dockerfile -t paddle-builder docker/paddleocr/
+docker run --rm -v $(pwd)/docker/paddleocr/wheels:/out paddle-builder cp /paddle/dist/*.whl /out/
+
+# The wheel is then used in the PaddleOCR Dockerfile
+```
+
+Key PaddleOCR settings:
+- Model: `korean_PP-OCRv5_mobile_rec` (88% accuracy, +65% vs v3) + `PP-OCRv5_mobile_det`
+- API: PaddleOCR 3.x (`paddleocr>=3.4.0`) with `.predict()` (not `.ocr()`)
+- `use_angle_cls=False` (segfault trigger), pre-filter images <20x20px
+- `restart: unless-stopped` on Docker container
+- Models pre-downloaded to `/root/.paddlex/official_models/` (avoid SSL issues)
 
 ## Code Conventions
 

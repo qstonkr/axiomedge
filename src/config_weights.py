@@ -10,8 +10,9 @@ Usage:
 
 from __future__ import annotations
 
+import copy
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, asdict
 
 
 def _env_float(key: str, default: float) -> float:
@@ -83,6 +84,7 @@ class HybridSearchWeights:
     prefetch_max: int = 100
 
     # ColBERT rerank
+    enable_colbert_reranking: bool = True
     colbert_rerank_candidate_multiplier: int = 3
     colbert_max_tokens: int = 128
 
@@ -193,6 +195,7 @@ class QualityConfig:
     silver_min_chars: int = 500
     silver_structured_min_chars: int = 200
     bronze_min_chars: int = 50
+    min_content_length: int = 50
     noise_max_chars: int = 50
 
     # Freshness
@@ -215,7 +218,7 @@ class QualityConfig:
 class OCRConfig:
     """OCR processing parameters."""
 
-    paddle_model: str = "korean_PP-OCRv5_server_rec"
+    paddle_model: str = "korean_PP-OCRv5_mobile_rec"
     use_gpu: bool = False
     enable_orientation: bool = True
     min_confidence: float = 0.3
@@ -228,6 +231,9 @@ class OCRConfig:
 
     # CV Pipeline
     cv_max_workers: int = 2
+
+    # Vision analysis: when True, use /analyze endpoint for shape/arrow detection
+    enable_vision_analysis: bool = False
 
 
 # ============================================================================
@@ -309,6 +315,9 @@ class PipelineConfig:
     qdrant_upsert_batch_size: int = 64
     neo4j_batch_size: int = 5000
 
+    # File size guard
+    max_file_size_mb: int = 200  # 200MB (PPTX/PDF 대용량 허용)
+
     # Workers
     max_workers: int = 4
 
@@ -341,6 +350,22 @@ class TimeoutConfig:
 
 
 # ============================================================================
+# Dedup Pipeline
+# ============================================================================
+
+@dataclass(frozen=True)
+class DedupConfig:
+    """4-Stage dedup pipeline thresholds."""
+
+    near_duplicate_threshold: float = 0.80    # Jaccard (Stage 2)
+    semantic_duplicate_threshold: float = 0.90  # Cosine (Stage 3)
+    stage3_skip_threshold: float = 0.85        # Jaccard below this -> skip Stage 3
+    enable_stage4: bool = True                 # LLM conflict detection
+    bloom_expected_items: int = 100000
+    bloom_false_positive_rate: float = 0.01
+
+
+# ============================================================================
 # Search Defaults
 # ============================================================================
 
@@ -362,12 +387,73 @@ class SearchDefaults:
 
 
 # ============================================================================
-# Aggregated Config
+# Trust Score (KTS)
 # ============================================================================
 
 @dataclass(frozen=True)
+class TrustScoreWeights:
+    """Knowledge Trust Score signal weights.
+
+    Matches oreo-ecosystem KTS_WEIGHTS SSOT:
+        KTS = 0.20 * source_credibility
+            + 0.20 * freshness
+            + 0.25 * user_validation (was 0.20 in v1, raised for local)
+            + 0.10 * usage
+            + 0.15 * hallucination
+            + 0.10 * consistency
+
+    Env-var overridable with KTS_WEIGHT_* prefix.
+    """
+
+    source_credibility_weight: float = 0.20
+    freshness_weight: float = 0.20
+    user_validation_weight: float = 0.25
+    usage_weight: float = 0.10
+    hallucination_weight: float = 0.15
+    consistency_weight: float = 0.10
+
+    # Confidence tier score boundaries
+    tier_high: float = 85.0
+    tier_medium: float = 70.0
+    tier_low: float = 50.0
+
+    # Verification threshold (documents below this KTS need review)
+    verification_threshold: float = 50.0
+
+
+# ============================================================================
+# Cache (Multi-Layer)
+# ============================================================================
+
+@dataclass(frozen=True)
+class CacheConfig:
+    """Multi-layer cache parameters."""
+
+    l1_max_entries: int = 10000
+    l1_ttl_seconds: int = 300
+    l2_similarity_threshold: float = 0.92
+    l2_max_entries: int = 50000
+    l2_ttl_seconds: int = 21600   # 6 hours
+    enable_semantic_cache: bool = False
+    idempotency_ttl_seconds: int = 60
+
+    # Domain-specific thresholds (used by MultiLayerCache)
+    # policy=1.0 (exact only), code=0.95, kb=0.92, general=0.85
+    threshold_policy: float = 1.0
+    threshold_code: float = 0.95
+    threshold_kb: float = 0.92
+    threshold_general: float = 0.85
+
+
+# ============================================================================
+# Aggregated Config
+# ============================================================================
+
 class Weights:
     """All weights and thresholds in one place.
+
+    Mutable singleton: supports runtime hot-reload via ``update_from_dict``
+    and ``reset``.
 
     Usage:
         from src.config_weights import weights
@@ -379,20 +465,112 @@ class Weights:
         weights.search.top_k               # 5
     """
 
-    reranker: RerankerWeights = field(default_factory=RerankerWeights)
-    hybrid_search: HybridSearchWeights = field(default_factory=HybridSearchWeights)
-    similarity: SimilarityThresholds = field(default_factory=SimilarityThresholds)
-    preprocessor: PreprocessorConfig = field(default_factory=PreprocessorConfig)
-    confidence: ConfidenceConfig = field(default_factory=ConfidenceConfig)
-    response: ResponseConfig = field(default_factory=ResponseConfig)
-    quality: QualityConfig = field(default_factory=QualityConfig)
-    ocr: OCRConfig = field(default_factory=OCRConfig)
-    llm: LLMConfig = field(default_factory=LLMConfig)
-    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
-    chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
-    pipeline: PipelineConfig = field(default_factory=PipelineConfig)
-    timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
-    search: SearchDefaults = field(default_factory=SearchDefaults)
+    _SECTION_CLASSES: dict[str, type] = {
+        "reranker": RerankerWeights,
+        "hybrid_search": HybridSearchWeights,
+        "similarity": SimilarityThresholds,
+        "preprocessor": PreprocessorConfig,
+        "confidence": ConfidenceConfig,
+        "response": ResponseConfig,
+        "quality": QualityConfig,
+        "ocr": OCRConfig,
+        "llm": LLMConfig,
+        "embedding": EmbeddingConfig,
+        "chunking": ChunkingConfig,
+        "pipeline": PipelineConfig,
+        "timeouts": TimeoutConfig,
+        "search": SearchDefaults,
+        "trust_score": TrustScoreWeights,
+        "dedup": DedupConfig,
+        "cache": CacheConfig,
+    }
+
+    def __init__(self) -> None:
+        self._init_defaults()
+
+    def _init_defaults(self) -> None:
+        """Initialize all sections with their default values."""
+        for name, cls in self._SECTION_CLASSES.items():
+            object.__setattr__(self, name, cls())
+
+    # ----- Serialization -----
+
+    def to_dict(self) -> dict[str, dict[str, Any]]:
+        """Serialize all sections to a nested dict."""
+        result: dict[str, dict[str, Any]] = {}
+        for name in self._SECTION_CLASSES:
+            section = getattr(self, name)
+            result[name] = asdict(section)
+        return result
+
+    # ----- Hot-reload -----
+
+    def update_from_dict(self, overrides: dict[str, Any]) -> dict[str, Any]:
+        """Apply partial updates to weight sections.
+
+        ``overrides`` is ``{"section.field": value}`` or ``{"section": {"field": value}}``.
+        Returns a dict of applied changes ``{"section.field": {"old": ..., "new": ...}}``.
+        """
+        applied: dict[str, Any] = {}
+
+        # Normalize: accept both flat "section.field" keys and nested dicts
+        normalized: dict[str, dict[str, Any]] = {}
+        for key, value in overrides.items():
+            if isinstance(value, dict) and key in self._SECTION_CLASSES:
+                normalized[key] = value
+            elif "." in key:
+                section_name, field_name = key.split(".", 1)
+                normalized.setdefault(section_name, {})[field_name] = value
+
+        for section_name, field_overrides in normalized.items():
+            if section_name not in self._SECTION_CLASSES:
+                continue
+            cls = self._SECTION_CLASSES[section_name]
+            current = getattr(self, section_name)
+            current_dict = asdict(current)
+            valid_fields = {f.name for f in fields(cls)}
+
+            changes: dict[str, Any] = {}
+            for field_name, new_value in field_overrides.items():
+                if field_name not in valid_fields:
+                    continue
+                old_value = current_dict.get(field_name)
+                # Coerce type to match the dataclass field type
+                expected_type = next(f.type for f in fields(cls) if f.name == field_name)
+                try:
+                    coerced = _coerce_value(new_value, expected_type)
+                except (ValueError, TypeError):
+                    continue
+                changes[field_name] = coerced
+                applied[f"{section_name}.{field_name}"] = {"old": old_value, "new": coerced}
+
+            if changes:
+                merged = {**current_dict, **changes}
+                object.__setattr__(self, section_name, cls(**merged))
+
+        return applied
+
+    # ----- Reset -----
+
+    def reset(self) -> None:
+        """Reset all sections to their default values."""
+        self._init_defaults()
+
+
+def _coerce_value(value: Any, type_hint: str) -> Any:
+    """Best-effort type coercion for JSON values to dataclass field types."""
+    type_map: dict[str, type] = {
+        "float": float,
+        "int": int,
+        "bool": bool,
+        "str": str,
+    }
+    target = type_map.get(type_hint)
+    if target is None:
+        return value
+    if target is bool and isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    return target(value)
 
 
 # Singleton

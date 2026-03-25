@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from src.api.routes.jobs import create_job, is_cancelled, update_job
 from src.api.routes.metrics import inc as metrics_inc
@@ -87,6 +87,144 @@ async def get_rag_stats():
 # File Upload & Ingest (background processing with job ID)
 # ============================================================================
 
+async def _stage1_parse_to_jsonl(
+    job_id: str,
+    file_paths: list[tuple[str, str]],
+    effective_kb_id: str,
+) -> tuple[str, list[str]]:
+    """Stage 1: Parse files and write results to JSONL checkpoint.
+
+    Returns (jsonl_path, errors).
+    """
+    import hashlib
+    import os
+    import shutil
+
+    from src.pipeline.document_parser import parse_file_enhanced
+    from src.pipeline.jsonl_checkpoint import (
+        JsonlCheckpointWriter,
+        get_already_parsed_ids,
+        get_jsonl_path,
+        serialize_parse_result,
+    )
+
+    jsonl_path = get_jsonl_path(effective_kb_id)
+    already_parsed = get_already_parsed_ids(jsonl_path)
+    errors: list[str] = []
+    parsed_count = 0
+
+    with JsonlCheckpointWriter(jsonl_path) as writer:
+        for fname, tmp_path in file_paths:
+            if await is_cancelled(job_id):
+                logger.info("Job %s cancelled during Stage 1", job_id)
+                break
+
+            try:
+                # Compute content hash for dedup / doc_id
+                with open(tmp_path, "rb") as f:
+                    content_hash = hashlib.sha256(f.read()).hexdigest()[:16]
+
+                # Skip if already parsed (resume after crash)
+                if content_hash in already_parsed:
+                    logger.info("Skipping already-parsed file: %s (%s)", fname, content_hash)
+                    parsed_count += 1
+                    continue
+
+                # Save permanent copy
+                uploads_dir = os.path.join(
+                    os.getenv("KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR", "/tmp/knowledge-local"),
+                    "uploads", effective_kb_id,
+                )
+                os.makedirs(uploads_dir, exist_ok=True)
+                shutil.copy2(tmp_path, os.path.join(uploads_dir, fname))
+
+                # Parse (OCR happens here)
+                parse_result = await asyncio.to_thread(parse_file_enhanced, tmp_path)
+                text = parse_result.full_text if hasattr(parse_result, "full_text") else str(parse_result)
+                if not text:
+                    errors.append(f"{fname}: empty content after parsing")
+                    continue
+
+                # LLM correction for OCR noise
+                if parse_result.ocr_text:
+                    try:
+                        from src.api.app import _get_state
+                        from src.pipeline.ocr_corrector import correct_ocr_chunks
+                        llm = _get_state().get("llm")
+                        if llm:
+                            parse_result.ocr_text = await correct_ocr_chunks(
+                                parse_result.ocr_text, llm,
+                            )
+                    except Exception as _corr_err:
+                        logger.warning("OCR LLM correction skipped: %s", _corr_err)
+
+                # Write to JSONL checkpoint
+                json_line = serialize_parse_result(
+                    doc_id=content_hash,
+                    filename=fname,
+                    source_path=tmp_path,
+                    content_hash=content_hash,
+                    parse_result=parse_result,
+                )
+                writer.write_record(json_line)
+                parsed_count += 1
+                logger.info("Stage 1: parsed %s -> %d chars (%s)", fname, len(text), content_hash)
+
+            except Exception as e:
+                errors.append(f"{fname}: {e}")
+                metrics_inc("errors")
+
+            await update_job(job_id, processed=0, chunks=0, errors=errors[:])
+
+    logger.info("Stage 1 complete: %d parsed, %d errors, JSONL: %s", parsed_count, len(errors), jsonl_path)
+    return str(jsonl_path), errors
+
+
+async def _stage2_ingest_from_jsonl(
+    job_id: str,
+    jsonl_path: str,
+    pipeline: Any,
+    effective_kb_id: str,
+) -> tuple[int, int, list[str]]:
+    """Stage 2: Read JSONL checkpoint and ingest (chunk/embed/store).
+
+    Returns (total_docs, total_chunks, errors).
+    """
+    from src.domain.models import RawDocument
+    from src.pipeline.jsonl_checkpoint import JsonlCheckpointReader
+
+    reader = JsonlCheckpointReader(jsonl_path)
+    total_docs = 0
+    total_chunks = 0
+    errors: list[str] = []
+
+    for record, parse_result in reader:
+        if await is_cancelled(job_id):
+            logger.info("Job %s cancelled during Stage 2", job_id)
+            break
+
+        try:
+            raw = RawDocument(
+                doc_id=record.doc_id,
+                title=record.filename,
+                content=parse_result.full_text,
+                source_uri=record.filename,
+            )
+            ingest_result = await pipeline.ingest(
+                raw, collection_name=effective_kb_id, parse_result=parse_result,
+            )
+            total_docs += 1
+            total_chunks += ingest_result.chunks_stored
+        except Exception as e:
+            errors.append(f"{record.filename}: {e}")
+            metrics_inc("errors")
+
+        await update_job(job_id, processed=total_docs, chunks=total_chunks, errors=errors[:])
+
+    logger.info("Stage 2 complete: %d docs, %d chunks, %d errors", total_docs, total_chunks, len(errors))
+    return total_docs, total_chunks, errors
+
+
 async def _process_files(
     job_id: str,
     file_paths: list[tuple[str, str]],
@@ -94,59 +232,26 @@ async def _process_files(
     effective_kb_id: str,
     save_dir: str = "",
 ) -> None:
-    """Background task: ingest uploaded files and update job status.
+    """Background task: two-stage ingestion with JSONL checkpoint.
 
-    ``file_paths`` is a list of (original_filename, saved_disk_path) tuples.
-    Files are saved to disk in the request handler to avoid UploadFile closure.
+    Stage 1: parse files + OCR -> JSONL (crash-safe, resumable)
+    Stage 2: JSONL -> chunk + embed + store to Qdrant/Neo4j
     """
-    import hashlib
-    import os
-    import shutil
+    # Stage 1: Parse to JSONL
+    jsonl_path, stage1_errors = await _stage1_parse_to_jsonl(
+        job_id, file_paths, effective_kb_id,
+    )
 
-    from src.domain.models import RawDocument
-    from src.pipeline.document_parser import parse_file_enhanced
+    if await is_cancelled(job_id):
+        await update_job(job_id, status="cancelled", errors=stage1_errors)
+        return
 
-    total_docs = 0
-    total_chunks = 0
-    errors: list[str] = []
+    # Stage 2: Ingest from JSONL
+    total_docs, total_chunks, stage2_errors = await _stage2_ingest_from_jsonl(
+        job_id, jsonl_path, pipeline, effective_kb_id,
+    )
 
-    for fname, tmp_path in file_paths:
-        if await is_cancelled(job_id):
-            logger.info("Job %s cancelled by user", job_id)
-            break
-
-        try:
-            # Save permanent copy of uploaded file
-            uploads_dir = os.path.join(
-                os.getenv("KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR", "/tmp/knowledge-local"),
-                "uploads", effective_kb_id,
-            )
-            os.makedirs(uploads_dir, exist_ok=True)
-            permanent_path = os.path.join(uploads_dir, fname)
-            shutil.copy2(tmp_path, permanent_path)
-
-            parse_result = await asyncio.to_thread(parse_file_enhanced, tmp_path)
-            text = parse_result.full_text if hasattr(parse_result, 'full_text') else str(parse_result)
-            if not text:
-                errors.append(f"{fname}: empty content")
-                continue
-
-            with open(tmp_path, "rb") as f:
-                content_hash = hashlib.sha256(f.read()).hexdigest()[:16]
-            raw = RawDocument(
-                doc_id=content_hash,
-                title=fname,
-                content=text,
-                source_uri=fname,
-            )
-            ingest_result = await pipeline.ingest(raw, collection_name=effective_kb_id)
-            total_docs += 1
-            total_chunks += ingest_result.chunks_stored
-        except Exception as e:
-            errors.append(f"{fname}: {e}")
-            metrics_inc("errors")
-
-        await update_job(job_id, processed=total_docs, chunks=total_chunks, errors=errors[:])
+    all_errors = stage1_errors + stage2_errors
 
     metrics_inc("ingest_documents", total_docs)
     metrics_inc("ingest_chunks", total_chunks)
@@ -172,10 +277,10 @@ async def _process_files(
         status=status,
         processed=total_docs,
         chunks=total_chunks,
-        errors=errors,
+        errors=all_errors,
     )
 
-    # Clean up temp directory
+    # Clean up temp directory (keep JSONL and permanent uploads)
     if save_dir:
         import shutil as _shutil
         _shutil.rmtree(save_dir, ignore_errors=True)
@@ -316,6 +421,76 @@ async def upload_and_ingest(
         "job_id": job_id,
         "kb_id": effective_kb_id,
         "message": f"Ingestion started for {len(upload_files)} file(s). Poll /api/v1/jobs/{job_id} for status.",
+    }
+
+
+# ============================================================================
+# POST /api/v1/knowledge/reingest-from-jsonl
+# ============================================================================
+
+@knowledge_router.post("/reingest-from-jsonl")
+async def reingest_from_jsonl(
+    kb_id: str = Form(...),
+    jsonl_path: str | None = Form(default=None),
+):
+    """Re-run Stage 2 (chunk/embed/store) from an existing JSONL checkpoint.
+
+    Skips parsing/OCR entirely. Useful when Stage 1 succeeded but Stage 2 failed.
+    """
+    from src.pipeline.jsonl_checkpoint import get_jsonl_path, JsonlCheckpointReader
+    from src.pipeline.ingestion import IngestionPipeline
+
+    state = _get_state()
+    store = state.get("qdrant_store")
+    embedder = state.get("embedder")
+    if not store or not embedder:
+        raise HTTPException(status_code=503, detail="Ingestion services not initialized")
+
+    path = jsonl_path or str(get_jsonl_path(kb_id))
+    reader = JsonlCheckpointReader(path)
+    record_count = reader.count()
+    if record_count == 0:
+        raise HTTPException(status_code=404, detail=f"No records in JSONL: {path}")
+
+    from src.api.routes.ingest import _OnnxSparseEmbedder
+    sparse_embedder = _OnnxSparseEmbedder(embedder)
+    pipeline = IngestionPipeline(
+        embedder=embedder,
+        sparse_embedder=sparse_embedder,
+        vector_store=store,
+        graph_store=state.get("graph_repo"),
+        dedup_cache=state.get("dedup_cache"),
+        dedup_pipeline=state.get("dedup_pipeline"),
+        enable_ingestion_gate=True,
+        enable_term_extraction=True,
+        enable_graphrag=True,
+        term_extractor=state.get("term_extractor"),
+        graphrag_extractor=state.get("graphrag_extractor"),
+    )
+
+    job_id = await create_job(kb_id, record_count)
+    task = asyncio.create_task(_stage2_ingest_from_jsonl(job_id, path, pipeline, kb_id))
+
+    async def _finalize(t: asyncio.Task) -> None:
+        try:
+            total_docs, total_chunks, errors = t.result()
+            st = "completed" if total_docs > 0 else "failed"
+            await update_job(job_id, status=st, processed=total_docs, chunks=total_chunks, errors=errors)
+        except Exception as e:
+            await update_job(job_id, status="failed", errors=[str(e)])
+
+    task.add_done_callback(lambda t: asyncio.ensure_future(_finalize(t)))
+    bg_tasks: set = state.setdefault("_background_tasks", set())
+    bg_tasks.add(task)
+    task.add_done_callback(bg_tasks.discard)
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "kb_id": kb_id,
+        "jsonl_path": path,
+        "records": record_count,
+        "message": f"Re-ingestion started from JSONL ({record_count} records). Poll /api/v1/jobs/{job_id}.",
     }
 
 

@@ -240,38 +240,102 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     scanned_pages: list[int] = []
     extracted_images: list[bytes] = []
 
+    def _has_broken_cmap_fonts(page) -> bool:
+        """Detect fonts with broken ToUnicode CMaps (common in PowerPoint PDF exports).
+
+        Type0/Identity-H fonts with large embedded TrueType but very few Unicode
+        mappings indicate stripped CMap tables — all Korean chars map to a single
+        character (e.g. 폐 or 손).
+        """
+        import re as _re
+        for xref, _ext, ftype, _basefont, _name, encoding in page.get_fonts():
+            if ftype != "Type0" or encoding != "Identity-H":
+                continue
+            try:
+                obj = doc.xref_object(xref)
+                tounicode_match = _re.search(r"/ToUnicode (\d+) 0 R", obj)
+                if not tounicode_match:
+                    return True  # No ToUnicode at all for CID font
+                cmap = doc.xref_stream(int(tounicode_match.group(1))).decode("latin-1", errors="replace")
+                bfchar_count = sum(int(m) for m in _re.findall(r"(\d+)\s+beginbfchar", cmap))
+                bfrange_count = sum(int(m) for m in _re.findall(r"(\d+)\s+beginbfrange", cmap))
+                total_mappings = bfchar_count + bfrange_count
+                # Find embedded font size
+                desc_match = _re.search(r"/DescendantFonts\s+(\d+)\s+0\s+R", obj)
+                if not desc_match:
+                    continue
+                desc_arr = doc.xref_object(int(desc_match.group(1)))
+                cidfont_xref = _re.search(r"(\d+)\s+0\s+R", desc_arr)
+                if not cidfont_xref:
+                    continue
+                cidfont = doc.xref_object(int(cidfont_xref.group(1)))
+                fd_match = _re.search(r"/FontDescriptor\s+(\d+)\s+0\s+R", cidfont)
+                if not fd_match:
+                    continue
+                fd = doc.xref_object(int(fd_match.group(1)))
+                ff2_match = _re.search(r"/FontFile2\s+(\d+)\s+0\s+R", fd)
+                if not ff2_match:
+                    continue
+                font_size = len(doc.xref_stream(int(ff2_match.group(1))))
+                # Large font (>10KB) but very few mappings (<20) = broken CMap
+                if font_size > 10_000 and total_mappings < 20:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def _is_garbled_text(text: str) -> bool:
         """Detect garbled text from broken font mapping in PDFs.
 
-        Patterns: repeated single chars (손손손), CJK chars with no meaning,
-        very low unique char ratio, etc.
+        Patterns: repeated single chars (손손손, 폐폐폐), CJK chars with no meaning,
+        very low unique char ratio, top-N chars dominating text, etc.
         """
         if not text or len(text.strip()) < 10:
             return False
         stripped = text.strip()
-        # High repetition ratio: same char appears > 30% of text
+        clean = stripped.replace(" ", "").replace("\n", "")
+        if not clean:
+            return False
         from collections import Counter
-        char_counts = Counter(stripped.replace(" ", "").replace("\n", ""))
-        if char_counts:
-            most_common_ratio = char_counts.most_common(1)[0][1] / max(len(stripped), 1)
-            if most_common_ratio > 0.3:
+        char_counts = Counter(clean)
+        total = len(clean)
+
+        # Top-1 char > 25% of text (lowered from 30%)
+        top1_ratio = char_counts.most_common(1)[0][1] / total
+        if top1_ratio > 0.25:
+            return True
+
+        # Top-3 CJK chars dominate > 50% of text
+        cjk_counts = [(ch, cnt) for ch, cnt in char_counts.most_common(10)
+                       if '\u4e00' <= ch <= '\u9fff' or '\uac00' <= ch <= '\ud7a3']
+        if len(cjk_counts) >= 2:
+            top3_cjk_total = sum(cnt for _, cnt in cjk_counts[:3])
+            if top3_cjk_total / total > 0.4:
                 return True
+
         # Very low unique char ratio (garbled = few unique chars repeated)
-        unique_ratio = len(set(stripped)) / max(len(stripped), 1)
-        if unique_ratio < 0.05 and len(stripped) > 50:
+        unique_ratio = len(set(clean)) / total
+        if unique_ratio < 0.08 and total > 30:
             return True
         return False
 
     for page_num, page in enumerate(doc):
-        # Text extraction
+        # Font-level broken CMap detection (most reliable)
+        has_broken_fonts = _has_broken_cmap_fonts(page)
         text = page.get_text()
-        if text.strip() and not _is_garbled_text(text):
+
+        if has_broken_fonts or (text.strip() and _is_garbled_text(text)):
+            # Broken font CMap or garbled text → route entire page to OCR
+            scanned_pages.append(page_num + 1)
+            if has_broken_fonts:
+                logger.info("Broken CMap font on page %d of %s, routing to OCR", page_num + 1, filename)
+            elif text.strip():
+                logger.info("Garbled text on page %d of %s, routing to OCR", page_num + 1, filename)
+        elif text.strip():
             texts.append(f"[Page {page_num + 1}]\n{text}")
         else:
-            # Scanned page OR garbled text → needs OCR
+            # Empty page (scanned) → needs OCR
             scanned_pages.append(page_num + 1)
-            if text.strip():
-                logger.info("Garbled text detected on page %d of %s, routing to OCR", page_num + 1, filename)
 
         # Table extraction using PyMuPDF find_tables()
         page_tables = page.find_tables()
@@ -307,7 +371,7 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
         for page_num in scanned_pages:
             page = doc2[page_num - 1]
             # Render page at 200 DPI for OCR
-            pix = page.get_pixmap(dpi=200)
+            pix = page.get_pixmap(dpi=300)
             img_bytes = pix.tobytes("png")
             extracted_images.append(img_bytes)
         doc2.close()
