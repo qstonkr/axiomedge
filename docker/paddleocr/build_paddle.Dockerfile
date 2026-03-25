@@ -23,22 +23,34 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install --no-cache-dir protobuf numpy setuptools wheel
 
+# Disable SSL verification globally (corporate proxy)
+ENV GIT_SSL_NO_VERIFY=1
+ENV CURL_CA_BUNDLE=""
+ENV REQUESTS_CA_BUNDLE=""
+ENV SSL_CERT_FILE=""
+ENV PIP_TRUSTED_HOST="pypi.org pypi.python.org files.pythonhosted.org"
+
 WORKDIR /paddle
 
 RUN git config --global http.sslVerify false \
-    && git clone --depth 1 --branch v3.0.0 https://github.com/PaddlePaddle/Paddle.git . \
-    && git submodule update --init --recursive --depth 1
+    && git clone --branch v3.0.0 https://github.com/PaddlePaddle/Paddle.git .
+
+RUN git config --global http.sslVerify false \
+    && git submodule update --init --recursive || true
 
 RUN mkdir build && cd build && cmake .. \
+    -DCMAKE_TLS_VERIFY=OFF \
     -DWITH_MKLDNN=OFF \
     -DWITH_GPU=OFF \
     -DWITH_TESTING=OFF \
     -DWITH_INFERENCE_API_TEST=OFF \
     -DON_INFER=ON \
     -DWITH_PYTHON=ON \
-    -DWITH_AVX=ON \
+    -DWITH_AVX=OFF \
+    -DWITH_SSE42=OFF \
     -DWITH_DISTRIBUTE=OFF \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_FLAGS="-Wno-error" \
     && make -j$(nproc)
 
 RUN cd build && pip wheel . -w /paddle/dist/

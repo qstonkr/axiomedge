@@ -4,8 +4,13 @@ RUN apt-get update && \
     apt-get install -y libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 && \
     rm -rf /var/lib/apt/lists/*
 
+# Install PaddlePaddle from source-built wheel (MKLDNN=OFF)
+# See build_paddle.Dockerfile for build instructions
+COPY wheels/paddlepaddle-3.0.0-cp310-cp310-linux_x86_64.whl /tmp/
+RUN pip install --no-cache-dir /tmp/paddlepaddle-3.0.0-cp310-cp310-linux_x86_64.whl && \
+    rm /tmp/paddlepaddle-3.0.0-cp310-cp310-linux_x86_64.whl
+
 RUN pip install --no-cache-dir \
-    paddlepaddle>=3.0.0 \
     paddleocr>=3.4.0 \
     flask==3.1.0 \
     opencv-python-headless>=4.9.0 \
