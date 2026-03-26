@@ -50,9 +50,24 @@ def _load_model():
             os.environ.setdefault("CURL_CA_BUNDLE", "")
             os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
 
+            # Monkey-patch requests to skip SSL verify
+            import urllib3
+            urllib3.disable_warnings()
+
             import requests
-            _orig_verify = requests.Session.verify
-            requests.Session.verify = False  # type: ignore
+            _orig_get = requests.Session.get
+            _orig_post = requests.Session.post
+
+            def _get_no_verify(self, *a, **kw):
+                kw.setdefault("verify", False)
+                return _orig_get(self, *a, **kw)
+
+            def _post_no_verify(self, *a, **kw):
+                kw.setdefault("verify", False)
+                return _orig_post(self, *a, **kw)
+
+            requests.Session.get = _get_no_verify  # type: ignore
+            requests.Session.post = _post_no_verify  # type: ignore
 
             from sentence_transformers import CrossEncoder
             _model = CrossEncoder(
@@ -60,7 +75,8 @@ def _load_model():
                 max_length=CROSS_ENCODER_MAX_LENGTH,
             )
 
-            requests.Session.verify = _orig_verify  # type: ignore
+            requests.Session.get = _orig_get  # type: ignore
+            requests.Session.post = _orig_post  # type: ignore
             logger.info("Cross-encoder loaded: %s", CROSS_ENCODER_MODEL)
         except Exception as e:
             logger.warning("Cross-encoder load failed (graceful degradation): %s", e)
