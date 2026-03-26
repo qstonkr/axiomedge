@@ -199,26 +199,38 @@ async def admin_kb_aggregation():
     store = state.get("qdrant_store")
 
     total_chunks = 0
+    total_documents = 0
     total_kbs = 0
 
-    if collections:
+    # Get document counts from DB
+    kb_registry = state.get("kb_registry")
+    if kb_registry:
+        try:
+            kbs = await kb_registry.list_all()
+            total_kbs = len(kbs)
+            total_documents = sum(kb.get("document_count", 0) for kb in kbs)
+        except Exception:
+            pass
+
+    # Get chunk counts from Qdrant
+    if collections and store:
         try:
             raw_names = await collections.get_existing_collection_names()
+            if not total_kbs:
+                total_kbs = len(raw_names)
             prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
-            total_kbs = len(raw_names)
-            if store:
-                for raw_name in raw_names:
-                    kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
-                    try:
-                        total_chunks += await store.count(kb_id)
-                    except Exception:
-                        pass
+            for raw_name in raw_names:
+                kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
+                try:
+                    total_chunks += await store.count(kb_id)
+                except Exception:
+                    pass
         except Exception:
             pass
 
     return {
         "total_kbs": total_kbs,
-        "total_documents": 0,
+        "total_documents": total_documents,
         "total_chunks": total_chunks,
         "by_tier": {},
         "by_status": {},
