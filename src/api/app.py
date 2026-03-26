@@ -423,18 +423,24 @@ async def _init_services():
     else:
         logger.error("No embedding provider available. Search will not work.")
 
-    # LLM client
+    # LLM client — USE_SAGEMAKER_LLM=true switches to SageMaker
     try:
-        from src.llm.ollama_client import OllamaClient, OllamaConfig
-
-        llm_config = OllamaConfig(
-            base_url=settings.ollama.base_url,
-            model=settings.ollama.model,
-            context_length=settings.ollama.context_length,
-        )
-        llm = OllamaClient(config=llm_config)
-        _state["llm"] = llm
-        logger.info("Ollama LLM initialized: %s (%s)", settings.ollama.base_url, settings.ollama.model)
+        use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
+        if use_sagemaker:
+            from src.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
+            llm = SageMakerLLMClient(config=SageMakerConfig())
+            _state["llm"] = llm
+            logger.info("SageMaker LLM initialized: %s", SageMakerConfig().endpoint_name)
+        else:
+            from src.llm.ollama_client import OllamaClient, OllamaConfig
+            llm_config = OllamaConfig(
+                base_url=settings.ollama.base_url,
+                model=settings.ollama.model,
+                context_length=settings.ollama.context_length,
+            )
+            llm = OllamaClient(config=llm_config)
+            _state["llm"] = llm
+            logger.info("Ollama LLM initialized: %s (%s)", settings.ollama.base_url, settings.ollama.model)
     except Exception as e:
         logger.warning("LLM init failed: %s", e)
 

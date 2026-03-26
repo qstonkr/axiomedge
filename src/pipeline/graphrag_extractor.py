@@ -269,6 +269,43 @@ class ExtractionResult:
 _SHARED_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 
+class _SageMakerLLMClient:
+    """AWS SageMaker LLM adapter for GraphRAG extraction.
+
+    Uses boto3 sagemaker-runtime to invoke a deployed EXAONE endpoint.
+    Env vars: SAGEMAKER_ENDPOINT_NAME, SAGEMAKER_REGION, AWS_PROFILE.
+    """
+
+    def __init__(self) -> None:
+        self._endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+        self._region = os.getenv("SAGEMAKER_REGION", "ap-northeast-2")
+        self._profile = os.getenv("AWS_PROFILE", "jeongbeomkim")
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            import boto3
+            session = boto3.Session(profile_name=self._profile, region_name=self._region)
+            self._client = session.client("sagemaker-runtime")
+        return self._client
+
+    def invoke(self, *, document: str, prompt_template: str) -> str:
+        import json as _json
+        prompt = prompt_template.format(document=document)
+        body = {
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 2048,
+            "temperature": _w.llm.graphrag_temperature,
+        }
+        resp = self._get_client().invoke_endpoint(
+            EndpointName=self._endpoint,
+            ContentType="application/json",
+            Body=_json.dumps(body),
+        )
+        result = _json.loads(resp["Body"].read())
+        return result["choices"][0]["message"]["content"]
+
+
 class _OllamaLLMClient:
     """Local Ollama LLM adapter for GraphRAG extraction.
 
@@ -368,12 +405,22 @@ class GraphRAGExtractor:
         self._neo4j_driver = neo4j_driver
 
     def _get_llm(self):
-        """LLM client 가져오기 (lazy loading)."""
+        """LLM client 가져오기 (lazy loading).
+
+        GRAPHRAG_USE_SAGEMAKER=true 이면 SageMaker 엔드포인트 사용,
+        아니면 로컬 Ollama 사용.
+        """
         if self._llm is None:
-            self._llm = _OllamaLLMClient(
-                base_url=self.ollama_base_url,
-                model=self.ollama_model,
-            )
+            use_sagemaker = os.getenv("GRAPHRAG_USE_SAGEMAKER", "false").lower() == "true"
+            if use_sagemaker:
+                self._llm = _SageMakerLLMClient()
+                logger.info("GraphRAG LLM: SageMaker (%s)", self._llm._endpoint)
+            else:
+                self._llm = _OllamaLLMClient(
+                    base_url=self.ollama_base_url,
+                    model=self.ollama_model,
+                )
+                logger.info("GraphRAG LLM: Ollama (%s)", self.ollama_model)
         return self._llm
 
     def _get_neo4j_driver(self):
