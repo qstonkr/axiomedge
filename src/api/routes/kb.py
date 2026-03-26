@@ -60,7 +60,7 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
             else:
                 kbs = await kb_registry.list_all()
 
-            # Enrich with Qdrant chunk counts
+            # Enrich with Qdrant chunk counts + ensure doc_count
             store = state.get("qdrant_store")
             if store:
                 for kb in kbs:
@@ -69,6 +69,7 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
                         kb["chunk_count"] = await store.count(kb_id)
                     except Exception:
                         kb.setdefault("chunk_count", 0)
+                    kb["doc_count"] = kb.get("document_count", 0)
 
             return {"kbs": kbs}
         except Exception as e:

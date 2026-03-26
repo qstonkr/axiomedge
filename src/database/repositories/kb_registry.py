@@ -324,4 +324,7 @@ class KBRegistryRepository:
             "settings": model.settings or {},
             "created_at": _to_aware_utc(model.created_at),
             "updated_at": _to_aware_utc(model.updated_at),
+            "document_count": getattr(model, "document_count", 0) or 0,
+            "chunk_count": getattr(model, "chunk_count", 0) or 0,
+            "last_ingested_at": _to_aware_utc(getattr(model, "last_ingested_at", None)),
         }
