@@ -477,6 +477,14 @@ async def reingest_from_jsonl(
             total_docs, total_chunks, errors = t.result()
             st = "completed" if total_docs > 0 else "failed"
             await update_job(job_id, status=st, processed=total_docs, chunks=total_chunks, errors=errors)
+            # Update KB registry counts
+            if total_docs > 0:
+                try:
+                    kb_registry = state.get("kb_registry")
+                    if kb_registry:
+                        await kb_registry.update_counts(kb_id, total_docs, total_chunks)
+                except Exception as _e:
+                    logger.warning("KB count update failed: %s", _e)
         except Exception as e:
             await update_job(job_id, status="failed", errors=[str(e)])
 
