@@ -294,7 +294,7 @@ class ChunkingConfig:
     max_chunk_chars: int = 2500
     overlap_sentences: int = 1
     max_chunks_per_document: int = 500
-    graphrag_max_document_length: int = 3000
+    graphrag_max_document_length: int = 15000
 
 
 # ============================================================================
