@@ -894,6 +894,7 @@ class IngestionPipeline:
                             source_title=raw.title,
                             source_page_id=raw.doc_id,
                             source_updated_at=raw.updated_at.isoformat() if raw.updated_at else None,
+                            kb_id=collection_name,
                         )
                     )
                     if extraction_result.node_count > 0 or extraction_result.relationship_count > 0:
