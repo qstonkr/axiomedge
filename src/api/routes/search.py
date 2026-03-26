@@ -43,6 +43,7 @@ class HubSearchRequest(BaseModel):
     kb_filter: KBFilter | None = None
     group_id: str | None = None      # 검색 그룹 ID (BU/팀 스코프)
     group_name: str | None = None    # 검색 그룹 이름 (편의용)
+    document_filter: list[str] | None = None  # 문서명 필터 (특정 문서만 검색)
     top_k: int = Field(default=5, ge=1, le=50)
     include_answer: bool = True
     stream: bool = False
@@ -268,12 +269,17 @@ async def hub_search(request: HubSearchRequest):
         chunks = []
         for r in results:
             chunk_meta = r.metadata or {}
+            doc_name = chunk_meta.get("document_name", "")
+            # Document filter: skip chunks not matching filter
+            if request.document_filter:
+                if not any(f.lower() in doc_name.lower() for f in request.document_filter):
+                    continue
             chunks.append({
                 "chunk_id": r.point_id,
                 "content": r.content,
                 "score": r.score,
                 "kb_id": collection,
-                "document_name": chunk_meta.get("document_name", ""),
+                "document_name": doc_name,
                 "source_uri": chunk_meta.get("source_uri", ""),
                 "updated_at": chunk_meta.get("last_modified") or chunk_meta.get("updated_at"),
                 "is_stale": bool(chunk_meta.get("is_stale", False)),

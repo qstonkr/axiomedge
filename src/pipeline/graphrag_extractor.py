@@ -59,10 +59,14 @@ ALLOWED_NODES = [
     "Document",    # 문서
     "Policy",      # 정책
     "Logic",       # 비즈니스 로직
-    "Process",     # 프로세스
+    "Process",     # 프로세스/절차
     "Term",        # 용어
     "Project",     # 프로젝트
     "Role",        # 역할
+    "Store",       # 점포/매장
+    "Location",    # 지역/위치
+    "Product",     # 상품/서비스
+    "Event",       # 사건/활동
 ]
 
 ALLOWED_RELATIONSHIPS = [
@@ -76,6 +80,11 @@ ALLOWED_RELATIONSHIPS = [
     "PART_OF",          # 포함
     "RELATED_TO",       # 관련
     "EXTRACTED_FROM",   # 추출 출처
+    "LOCATED_IN",       # 위치
+    "OPERATES",         # 운영
+    "FOLLOWS",          # 절차 순서
+    "APPLIES_TO",       # 적용 대상
+    "SELLS",            # 판매
 ]
 
 # 이력 관계 매핑 (현재 -> 과거)
@@ -94,13 +103,18 @@ HISTORY_RELATIONSHIP_MAP = {
 # =============================================================================
 # Korean Optimized Prompt (Simple & Effective)
 # =============================================================================
-KOREAN_EXTRACTION_PROMPT = """다음 문서에서 사람, 팀, 시스템을 추출하세요.
+KOREAN_EXTRACTION_PROMPT = """다음 문서에서 엔티티와 관계를 추출하세요.
 문서에 명시된 정보만 추출하고, 추측하지 마세요.
+
+추출 대상:
+- Person(사람), Team(팀/부서), System(시스템)
+- Store(점포/매장), Location(지역), Process(절차/프로세스)
+- Product(상품), Event(활동/사건), Policy(정책/규정)
 
 문서: {document}
 
 아래 JSON 형식으로만 출력하세요:
-{{"nodes":[{{"id":"이름","type":"Person"}},{{"id":"팀명","type":"Team"}},{{"id":"시스템명","type":"System"}}],"relationships":[{{"source":"사람","type":"MEMBER_OF","target":"팀"}},{{"source":"사람","type":"MANAGES","target":"시스템"}}]}}
+{{"nodes":[{{"id":"이름","type":"Person"}},{{"id":"팀명","type":"Team"}},{{"id":"시스템명","type":"System"}},{{"id":"점포명","type":"Store"}},{{"id":"절차명","type":"Process"}}],"relationships":[{{"source":"사람","type":"MEMBER_OF","target":"팀"}},{{"source":"점포","type":"PART_OF","target":"지역"}},{{"source":"사람","type":"MANAGES","target":"점포"}}]}}
 
 JSON:"""
 
