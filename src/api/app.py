@@ -465,6 +465,14 @@ async def _init_services():
     except Exception as e:
         logger.warning("CompositeReranker init failed: %s", e)
 
+    # Cross-encoder warmup (fire-and-forget background model load)
+    try:
+        from src.search.cross_encoder_reranker import warmup as ce_warmup
+        ce_warmup()
+        logger.info("Cross-encoder warmup started")
+    except Exception as e:
+        logger.warning("Cross-encoder warmup failed: %s", e)
+
     # QueryClassifier (cached singleton, P1-4 perf fix)
     try:
         from src.search.query_classifier import QueryClassifier

@@ -268,6 +268,21 @@ async def hub_search(request: HubSearchRequest):
     all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
     all_chunks = all_chunks[: request.top_k * weights.search.rerank_pool_multiplier]
 
+    # 4.5. Passage cleaning - normalize text before reranking
+    from src.search.passage_cleaner import clean_chunks
+    all_chunks = clean_chunks(all_chunks)
+
+    # 4.6. Cross-encoder reranking - neural relevance scoring
+    try:
+        from src.search.cross_encoder_reranker import async_rerank_with_cross_encoder
+        all_chunks = await async_rerank_with_cross_encoder(
+            query=corrected_query,
+            chunks=all_chunks,
+            top_k=request.top_k * weights.search.rerank_pool_multiplier,
+        )
+    except Exception as _ce_err:
+        logger.warning("Cross-encoder reranking skipped: %s", _ce_err)
+
     # 5. CompositeReranker - rerank results with weighted fusion
     rerank_applied = False
     composite_reranker = state.get("composite_reranker")
