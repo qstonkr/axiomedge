@@ -59,6 +59,17 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
                 kbs = await kb_registry.list_by_tier(tier)
             else:
                 kbs = await kb_registry.list_all()
+
+            # Enrich with Qdrant chunk counts
+            store = state.get("qdrant_store")
+            if store:
+                for kb in kbs:
+                    kb_id = kb.get("kb_id") or kb.get("id", "")
+                    try:
+                        kb["chunk_count"] = await store.count(kb_id)
+                    except Exception:
+                        kb.setdefault("chunk_count", 0)
+
             return {"kbs": kbs}
         except Exception as e:
             logger.warning("KB registry query failed, falling back to Qdrant: %s", e)
@@ -70,18 +81,22 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
         return {"kbs": []}
 
     try:
-        names = await collections.get_existing_collection_names()
+        raw_names = await collections.get_existing_collection_names()
+        # Strip collection prefix to get original kb_id
+        prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
         kbs = []
-        for name in names:
+        for raw_name in raw_names:
+            kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
             count = 0
             if store:
                 try:
-                    count = await store.count(name)
-                except Exception:
-                    pass
+                    # Pass original kb_id (store will add prefix internally)
+                    count = await store.count(kb_id)
+                except Exception as e:
+                    logger.debug("Count failed for %s: %s", kb_id, e)
             kbs.append({
-                "kb_id": name,
-                "name": name,
+                "kb_id": kb_id,
+                "name": kb_id,
                 "description": "",
                 "tier": "global",
                 "doc_count": 0,
@@ -129,7 +144,9 @@ async def delete_kb(kb_id: str):
 
     try:
         client = await provider.ensure_client()
-        await client.delete_collection(kb_id)
+        collections = state.get("qdrant_collections")
+        collection_name = collections.get_collection_name(kb_id) if collections else kb_id
+        await client.delete_collection(collection_name)
         return {"success": True, "kb_id": kb_id, "message": f"KB '{kb_id}' deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -185,12 +202,14 @@ async def admin_kb_aggregation():
 
     if collections:
         try:
-            names = await collections.get_existing_collection_names()
-            total_kbs = len(names)
+            raw_names = await collections.get_existing_collection_names()
+            prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
+            total_kbs = len(raw_names)
             if store:
-                for name in names:
+                for raw_name in raw_names:
+                    kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
                     try:
-                        total_chunks += await store.count(name)
+                        total_chunks += await store.count(kb_id)
                     except Exception:
                         pass
         except Exception:
@@ -210,8 +229,17 @@ async def admin_kb_aggregation():
 # ---------------------------------------------------------------------------
 @admin_router.post("/search-cache/clear")
 async def clear_search_cache():
-    """Clear search cache."""
-    return {"success": True, "message": "Search cache cleared"}
+    """Clear search cache (Redis-backed)."""
+    state = _get_state()
+    search_cache = state.get("search_cache")
+    deleted = 0
+    if search_cache:
+        try:
+            deleted = await search_cache.clear()
+        except Exception as e:
+            logger.warning("Search cache clear failed: %s", e)
+            return {"success": False, "message": f"Cache clear error: {e}", "deleted": 0}
+    return {"success": True, "message": "Search cache cleared", "deleted": deleted}
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +309,9 @@ async def admin_delete_kb(kb_id: str):
 
     try:
         client = await provider.ensure_client()
-        await client.delete_collection(kb_id)
+        collections = state.get("qdrant_collections")
+        collection_name = collections.get_collection_name(kb_id) if collections else kb_id
+        await client.delete_collection(collection_name)
         return {"success": True, "kb_id": kb_id, "message": f"KB '{kb_id}' deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

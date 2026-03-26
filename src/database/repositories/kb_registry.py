@@ -234,6 +234,46 @@ class KBRegistryRepository:
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
+    async def update_counts(self, kb_id: str, documents_added: int, chunks_added: int) -> bool:
+        """Increment document/chunk counts after ingestion."""
+        async with await self._get_session() as session:
+            try:
+                stmt = select(KBConfigModel).where(KBConfigModel.id == kb_id)
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                if not model:
+                    return False
+
+                model.document_count = (model.document_count or 0) + documents_added
+                model.chunk_count = (model.chunk_count or 0) + chunks_added
+                model.last_ingested_at = _utc_now()
+                model.updated_at = _utc_now()
+                await session.commit()
+                return True
+            except SQLAlchemyError as e:
+                await session.rollback()
+                logger.warning("Failed to update counts for %s: %s", kb_id, e)
+                return False
+
+    async def sync_counts_from_qdrant(self, kb_id: str, chunk_count: int) -> bool:
+        """Sync chunk count from Qdrant (overwrite, not increment)."""
+        async with await self._get_session() as session:
+            try:
+                stmt = select(KBConfigModel).where(KBConfigModel.id == kb_id)
+                result = await session.execute(stmt)
+                model = result.scalar_one_or_none()
+                if not model:
+                    return False
+
+                model.chunk_count = chunk_count
+                model.updated_at = _utc_now()
+                await session.commit()
+                return True
+            except SQLAlchemyError as e:
+                await session.rollback()
+                logger.warning("Failed to sync counts for %s: %s", kb_id, e)
+                return False
+
     async def mark_synced(self, kb_id: str) -> bool:
         """Mark KB as synced."""
         async with await self._get_session() as session:

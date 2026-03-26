@@ -23,6 +23,9 @@ from .citation_formatter import CitationFormatter
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex for citation extraction
+_CITATION_REF_PATTERN = re.compile(r"\[(\d+)\]")
+
 
 # ---------------------------------------------------------------------------
 # LLM Client interface (simplified from oreo ILLMClient)
@@ -379,14 +382,9 @@ class TieredResponseGenerator:
     def _format_context(self, context: RAGContext) -> str:
         """Format context with metadata."""
         formatted = []
-        for i, (chunk, source) in enumerate(
-            zip(
-                context.retrieved_chunks,
-                context.chunk_sources or [{}] * len(context.retrieved_chunks),
-                strict=False,
-            ),
-            1,
-        ):
+        sources = context.chunk_sources if context.chunk_sources else ()
+        for i, chunk in enumerate(context.retrieved_chunks, 1):
+            source = sources[i - 1] if i - 1 < len(sources) else {}
             source_info = source.get("document_name", f"문서 {i}")
             metadata = source.get("metadata") or {}
 
@@ -408,7 +406,7 @@ class TieredResponseGenerator:
     def _extract_citations(self, response: str, context: RAGContext) -> list[dict]:
         """Extract citations from response."""
         citations: list[dict] = []
-        raw_refs = {int(ref) for ref in re.findall(r"\[(\d+)\]", response)}
+        raw_refs = {int(ref) for ref in _CITATION_REF_PATTERN.findall(response)}
         if not raw_refs:
             return citations
 

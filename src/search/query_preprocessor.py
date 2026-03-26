@@ -101,6 +101,10 @@ class PreprocessedQuery:
         return self.corrected_query != self.normalized_query
 
 
+_HANGUL_PATTERN = re.compile(r"[\uac00-\ud7a3]")
+_LATIN_PATTERN = re.compile(r"[A-Za-z]")
+
+
 class QueryPreprocessor:
     """Normalize and typo-correct knowledge search queries."""
 
@@ -281,8 +285,8 @@ class QueryPreprocessor:
         if not content:
             return "unknown"
 
-        hangul_count = len(re.findall(r"[\uac00-\ud7a3]", content))
-        latin_count = len(re.findall(r"[A-Za-z]", content))
+        hangul_count = len(_HANGUL_PATTERN.findall(content))
+        latin_count = len(_LATIN_PATTERN.findall(content))
         alpha_total = hangul_count + latin_count
         if alpha_total <= 0:
             return "other"

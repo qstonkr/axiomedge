@@ -25,7 +25,7 @@ def _safe_int(env_key: str, default: int) -> int:
         return default
 
 
-API_TIMEOUT = _safe_int("API_TIMEOUT", 30)
+API_TIMEOUT = _safe_int("API_TIMEOUT", 600)  # 10분 (OCR 포함 대용량 인제스천)
 API_SEARCH_TIMEOUT = _safe_int("API_SEARCH_TIMEOUT", 120)
 API_RETRY_COUNT = _safe_int("API_RETRY_COUNT", 1)  # Simplified for local
 

@@ -14,7 +14,7 @@ dependencies = [
     "pyvis>=0.3.2",
     "pandas>=2.2.0",
     # Vector DB
-    "qdrant-client>=1.12.0",
+    "qdrant-client>=1.12.0,<1.14.0",
     # Graph DB
     "neo4j>=5.14.0",
     # Embedding (BGE-M3 ONNX)
@@ -44,16 +44,25 @@ dependencies = [
     # BGE-M3 native sparse vectors
     "FlagEmbedding>=1.2",
     "torch>=2.0.0",
-    # OCR (PaddleOCR for Korean text extraction)
-    "paddleocr>=2.7.0",
-    "paddlepaddle>=2.5.0",
     # Computer Vision (shape/arrow detection)
     "opencv-python-headless>=4.9.0",
     "Pillow>=12.1.1",
     # JSON repair for LLM output parsing
     "json-repair>=0.1",
+    # Redis (search cache + dedup cache)
+    "redis[hiredis]>=5.0",
+    # Auth (JWT verification for Keycloak/AzureAD)
+    "PyJWT[crypto]>=2.8.0",
     # Utilities
     "python-multipart>=0.0.9",
+    "pdfplumber>=0.11.9",
+]
+
+[project.optional-dependencies]
+# PaddleOCR: Linux x86_64 only (Mac ARM64 not supported by paddlepaddle)
+ocr = [
+    "paddleocr>=2.7.0",
+    "paddlepaddle>=2.5.0",
 ]
 
 [build-system]
@@ -65,7 +74,10 @@ packages = ["src", "cli", "dashboard"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
+markers = [
+    "integration: integration tests requiring running API server",
+    "e2e: end-to-end tests requiring running API server and all services",
+]
 
 [tool.ruff]
 target-version = "py312"

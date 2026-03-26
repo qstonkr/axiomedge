@@ -33,6 +33,14 @@ spec:
               value: "exaone3.5:7.8b"
             - name: KNOWLEDGE_BGE_ONNX_MODEL_PATH
               value: "/models/bge-m3"
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://knowledge:knowledge@postgres.knowledge.svc:5432/knowledge_db"
+            - name: REDIS_URL
+              value: "redis://redis.knowledge.svc:6379"
+            - name: PADDLEOCR_API_URL
+              value: "http://paddleocr.knowledge.svc:8866/ocr"
+            - name: BGE_TEI_URL
+              value: "http://bge-m3.knowledge.svc:80"
           volumeMounts:
             - name: bge-model
               mountPath: /models/bge-m3

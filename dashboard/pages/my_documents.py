@@ -134,7 +134,7 @@ with tab_pending:
         if api_failed(verification_result):
             st.warning("검증 대기 목록을 불러올 수 없습니다.")
         else:
-            pending_items = verification_result.get("items", verification_result.get("pending", []))
+            pending_items = verification_result.get("items", verification_result.get("pending", verification_result.get("documents", [])))
             my_pending = [
                 p for p in pending_items
                 if p.get("owner_user_id", p.get("user_id", "")) == current_user
@@ -160,7 +160,7 @@ with tab_pending:
 
         # 피드백 대기
         st.markdown("#### 피드백 대기")
-        feedback_result = api_client.list_feedback(status="PENDING")
+        feedback_result = api_client.list_feedback(status="pending")
         if api_failed(feedback_result):
             st.warning("피드백 목록을 불러올 수 없습니다.")
         else:
@@ -181,7 +181,7 @@ with tab_pending:
 
         # 오류 신고 대기
         st.markdown("#### 오류 신고 대기")
-        error_result = api_client.list_error_reports(status="OPEN")
+        error_result = api_client.list_error_reports(status="pending")
         if api_failed(error_result):
             st.warning("오류 신고 목록을 불러올 수 없습니다.")
         else:

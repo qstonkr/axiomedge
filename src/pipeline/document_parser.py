@@ -362,33 +362,41 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
 
     doc.close()
 
-    # Process scanned pages via OCR
+    # Process scanned/garbled pages via OCR — per-page tagging
     ocr_texts = []
+    visual_analyses = []
+    total_images = 0
+
     if scanned_pages:
-        logger.info("Detected %d scanned pages in %s: %s", len(scanned_pages), filename, scanned_pages)
-        # Re-open and render scanned pages as images for OCR
+        logger.info("Detected %d scanned/garbled pages in %s: %s", len(scanned_pages), filename, scanned_pages)
         doc2 = pymupdf.open(stream=data, filetype="pdf")
         for page_num in scanned_pages:
             page = doc2[page_num - 1]
-            # Render page at 200 DPI for OCR
             pix = page.get_pixmap(dpi=300)
             img_bytes = pix.tobytes("png")
-            extracted_images.append(img_bytes)
+            logger.info("Rendered page %d: %dx%d (%d bytes)", page_num, pix.width, pix.height, len(img_bytes))
+            page_ocr_text, page_analyses = _process_images_ocr([img_bytes])
+            if page_ocr_text.strip():
+                # Replace [Image 1 OCR] with [Page N OCR] for page renders
+                page_ocr_clean = page_ocr_text.replace("[Image 1 OCR] ", "").strip()
+                ocr_texts.append(f"[Page {page_num} OCR] {page_ocr_clean}")
+                total_images += 1
+            visual_analyses.extend(page_analyses)
         doc2.close()
 
-    # Route extracted images through OCR/CV pipeline
-    visual_analyses = []
+    # Process embedded images (non-page) — keep [Image N OCR] tags
     if extracted_images:
-        ocr_text, analyses = _process_images_ocr(extracted_images)
-        if ocr_text:
-            ocr_texts.append(ocr_text)
-        visual_analyses = analyses
+        img_ocr_text, img_analyses = _process_images_ocr(extracted_images)
+        if img_ocr_text.strip():
+            ocr_texts.append(img_ocr_text)
+            total_images += len(extracted_images)
+        visual_analyses.extend(img_analyses)
 
     return ParseResult(
         text="\n\n".join(texts),
         tables=tables,
         ocr_text="\n".join(ocr_texts),
-        images_processed=len(extracted_images),
+        images_processed=total_images,
         visual_analyses=visual_analyses,
     )
 
@@ -635,10 +643,20 @@ def _process_images_ocr(
         try:
             from PIL import Image
             import io
-            _img = Image.open(io.BytesIO(img_bytes))
+            try:
+                _img = Image.open(io.BytesIO(img_bytes))
+            except Exception:
+                logger.debug("Skipping image %d: cannot decode", i + 1)
+                continue
             if _img.width < MIN_W or _img.height < MIN_H:
                 logger.debug("Skipping image %d: too small (%dx%d)", i + 1, _img.width, _img.height)
                 continue
+            # Convert to RGB PNG to handle EMF/WMF/CMYK/palette formats
+            if _img.mode not in ("RGB", "L"):
+                _img = _img.convert("RGB")
+            _buf = io.BytesIO()
+            _img.save(_buf, format="PNG")
+            img_bytes = _buf.getvalue()
 
             result = _ocr_request(img_bytes)
 

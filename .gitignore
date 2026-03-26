@@ -9,3 +9,6 @@ build/
 .ruff_cache/
 .pytest_cache/
 /tmp/
+docker/paddleocr/wheels/
+/1st_jsonl/
+/2nd_jsonl/

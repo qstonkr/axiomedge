@@ -142,7 +142,7 @@ if api_failed(reports_data):
         st.cache_data.clear()
         st.rerun()
 else:
-    reports = reports_data.get("items", [])
+    reports = reports_data.get("items", reports_data.get("reports", []))
     total = reports_data.get("total", 0)
     er_page_size = 20
     total_pages = max(1, (total + er_page_size - 1) // er_page_size)

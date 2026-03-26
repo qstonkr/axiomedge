@@ -48,7 +48,7 @@ with tab_quality:
             trust_data = api_client.get_kb_trust_scores(kb_id)
             trust_items = []
             if not api_failed(trust_data):
-                trust_items = trust_data.get("items", [])
+                trust_items = trust_data.get("items", trust_data.get("scores", []))
 
             if trust_items:
                 # ── KTS 6-Signal 레이더 차트 (trust score 데이터 있을 때) ──
@@ -147,7 +147,7 @@ with tab_quality:
 
                 doc_items = []
                 if not api_failed(doc_data):
-                    doc_items = doc_data.get("items", [])
+                    doc_items = doc_data.get("items", doc_data.get("documents", []))
 
                 cat_items = []
                 if not api_failed(cat_data):
@@ -283,7 +283,7 @@ with tab_rag:
         st.subheader("RAG 평가 이력")
 
         # API returns "jobs" key, fallback to "items" for compatibility
-        evaluations = eval_data.get("jobs", eval_data.get("items", []))
+        evaluations = eval_data.get("jobs", eval_data.get("items", eval_data.get("evaluations", [])))
         if evaluations:
             # Metrics summary
             latest = evaluations[0] if evaluations else {}
@@ -456,7 +456,7 @@ with tab_kts:
                 # Fetch trust scores to compute signal contributions
                 trust_for_signal = api_client.get_kb_trust_scores(kb_id2)
                 if not api_failed(trust_for_signal):
-                    signal_items = trust_for_signal.get("items", [])
+                    signal_items = trust_for_signal.get("items", trust_for_signal.get("scores", []))
                     if signal_items:
                         SIGNAL_FIELDS = {
                             "accuracy": ("정확도 (0.25)", "hallucination_score"),
@@ -490,10 +490,10 @@ with tab_transparency:
     else:
         st.subheader("투명성 지표")
 
-        # Main metrics from API response
-        total_citations = transp_data.get("total_citations", 0)
-        source_coverage_rate = transp_data.get("source_coverage_rate", 0)
-        avg_sources = transp_data.get("avg_sources_per_response", 0)
+        # Main metrics from API response (map backend keys to dashboard keys)
+        total_citations = transp_data.get("total_citations", transp_data.get("total_documents", 0))
+        source_coverage_rate = transp_data.get("source_coverage_rate", transp_data.get("transparency_score", 0))
+        avg_sources = transp_data.get("avg_sources_per_response", transp_data.get("with_provenance", 0))
 
         # Summary metrics
         st.markdown("#### 출처 인용 통계")

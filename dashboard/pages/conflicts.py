@@ -43,8 +43,17 @@ with tab_dedup:
             "Stage 3: SemHash (~50ms) -> Stage 4: LLM ConflictDetector (~100ms)"
         )
 
-        # Stage별 통계
-        stages = dedup_result.get("stages", {})
+        # Stage별 통계 (map backend keys to dashboard keys)
+        raw_stages = dedup_result.get("stages", {})
+        STAGE_KEY_MAP = {
+            "bloom": "bloom_filter",
+            "lsh": "minhash_lsh",
+            "llm": "conflict_detector",
+        }
+        stages = {}
+        for k, v in raw_stages.items():
+            mapped_key = STAGE_KEY_MAP.get(k, k)
+            stages[mapped_key] = v
 
         stage_defs = [
             {

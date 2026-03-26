@@ -17,6 +17,12 @@ from src.config_weights import weights
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns
+_SENTENCE_SPLIT_PATTERN = re.compile(
+    r'(?<=[.!?])\s+|(?<=다\.)\s+|(?<=요\.)\s+|(?<=음\.)\s+'
+)
+_HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$')
+
 
 class ChunkStrategy(str, Enum):
     """Chunking strategy."""
@@ -26,12 +32,21 @@ class ChunkStrategy(str, Enum):
 
 
 @dataclass
+class HeadingChunk:
+    """A chunk with its heading hierarchy path."""
+
+    text: str
+    heading_path: str  # e.g. "설치 가이드 > 사전 요구사항 > Python 설정"
+
+
+@dataclass
 class ChunkResult:
     """Chunking result."""
 
     chunks: list[str]
     total_chunks: int
     metadata: dict[str, Any] = field(default_factory=dict)
+    heading_chunks: list[HeadingChunk] = field(default_factory=list)
 
 
 class Chunker:
@@ -58,6 +73,11 @@ class Chunker:
         self._initialized = False
         self._init_lock = threading.Lock()
 
+    @property
+    def strategy_name(self) -> str:
+        """Public accessor for the chunking strategy name."""
+        return self._strategy.value
+
     def _ensure_initialized(self) -> None:
         if self._initialized:
             return
@@ -72,8 +92,14 @@ class Chunker:
                 logger.info("kss not available, using regex sentence splitting")
             self._initialized = True
 
+    _KSS_MAX_CHARS = 2000  # Max chars per KSS call to prevent pecab hang
+
     def split_sentences(self, text: str) -> list[str]:
-        """Split text into sentences. Uses KSS for Korean, regex fallback."""
+        """Split text into sentences. Uses KSS for Korean, regex fallback.
+
+        Long texts are split into segments (by page markers or paragraphs)
+        before KSS processing to prevent pecab hang on very large inputs.
+        """
         if not text or not text.strip():
             return []
 
@@ -82,12 +108,57 @@ class Chunker:
         if self._kss_available:
             try:
                 import kss
+                # Split long text into segments to prevent KSS/pecab hang
+                if len(text) > self._KSS_MAX_CHARS:
+                    return self._split_sentences_chunked(text, kss)
                 sentences = kss.split_sentences(text)
                 return [s.strip() for s in sentences if s.strip()]
             except Exception as e:
                 logger.warning("KSS sentence split failed, using fallback: %s", e)
 
         return self._regex_split_sentences(text)
+
+    def _split_sentences_chunked(self, text: str, kss) -> list[str]:
+        """Split long text into segments, apply KSS to each segment."""
+        # Split by page/slide markers or double newlines
+        segments = re.split(r'\n\[(?:Page|Slide|Image)\s+\d+', text)
+        if len(segments) <= 1:
+            segments = text.split("\n\n")
+
+        all_sentences: list[str] = []
+        for seg in segments:
+            seg = seg.strip()
+            if not seg:
+                continue
+            # Further split if segment still too long
+            if len(seg) > self._KSS_MAX_CHARS:
+                sub_segs = [seg[i:i + self._KSS_MAX_CHARS]
+                            for i in range(0, len(seg), self._KSS_MAX_CHARS)]
+            else:
+                sub_segs = [seg]
+
+            for sub in sub_segs:
+                try:
+                    import signal
+
+                    def _kss_timeout_handler(signum, frame):
+                        raise TimeoutError("KSS timeout")
+
+                    old_handler = signal.signal(signal.SIGALRM, _kss_timeout_handler)
+                    signal.alarm(30)  # 30 second timeout per segment
+                    try:
+                        sentences = kss.split_sentences(sub)
+                        all_sentences.extend(s.strip() for s in sentences if s.strip())
+                    finally:
+                        signal.alarm(0)
+                        signal.signal(signal.SIGALRM, old_handler)
+                except (Exception, TimeoutError) as e:
+                    if "timeout" in str(e).lower():
+                        logger.warning("KSS timeout on %d chars, using regex fallback", len(sub))
+                    # Fallback to regex for this segment
+                    all_sentences.extend(self._regex_split_sentences(sub))
+
+        return all_sentences
 
     def chunk(self, text: str) -> ChunkResult:
         """Chunk text using the configured strategy.
@@ -194,9 +265,89 @@ class Chunker:
             },
         )
 
+    def chunk_with_headings(self, text: str) -> ChunkResult:
+        """Chunk text while preserving heading hierarchy paths.
+
+        Extracts heading structure (# / ## / ###) from the content,
+        then chunks each section. Each chunk carries its heading_path
+        (e.g. "설치 가이드 > 사전 요구사항").
+
+        Falls back to normal chunking if no headings are found.
+        """
+        sections = extract_heading_sections(text)
+        if not sections:
+            return self.chunk(text)
+
+        all_chunks: list[str] = []
+        heading_chunks: list[HeadingChunk] = []
+
+        for heading_path, section_text in sections:
+            if not section_text.strip():
+                continue
+            section_result = self.chunk(section_text)
+            for chunk_text in section_result.chunks:
+                all_chunks.append(chunk_text)
+                heading_chunks.append(HeadingChunk(text=chunk_text, heading_path=heading_path))
+
+        if not all_chunks:
+            return self.chunk(text)
+
+        avg_len = sum(len(c) for c in all_chunks) / len(all_chunks) if all_chunks else 0
+        return ChunkResult(
+            chunks=all_chunks,
+            total_chunks=len(all_chunks),
+            metadata={
+                "strategy": self._strategy.value,
+                "avg_chunk_chars": round(avg_len, 1),
+                "max_chunk_chars": self._max_chunk_chars,
+                "has_heading_paths": True,
+            },
+            heading_chunks=heading_chunks,
+        )
+
     @staticmethod
     def _regex_split_sentences(text: str) -> list[str]:
         """Regex-based sentence splitting for Korean and English."""
-        pattern = r'(?<=[.!?])\s+|(?<=다\.)\s+|(?<=요\.)\s+|(?<=음\.)\s+'
-        parts = re.split(pattern, text)
+        parts = _SENTENCE_SPLIT_PATTERN.split(text)
         return [p.strip() for p in parts if p.strip()]
+
+
+def extract_heading_sections(content: str) -> list[tuple[str, str]]:
+    """Extract heading hierarchy for each section.
+
+    Parses markdown headings (# / ## / ###) and builds a hierarchy path
+    for each section of text. Returns a list of (heading_path, section_text)
+    tuples.
+
+    Example:
+        "# Guide\\n## Install\\nDo this..." ->
+        [("Guide > Install", "Do this...")]
+    """
+    lines = content.split("\n")
+    current_path: list[str] = []
+    sections: list[tuple[str, str]] = []
+    current_text: list[str] = []
+
+    for line in lines:
+        heading_match = _HEADING_PATTERN.match(line)
+        if heading_match:
+            # Flush current section
+            if current_text:
+                path_str = " > ".join(current_path) if current_path else ""
+                sections.append((path_str, "\n".join(current_text)))
+                current_text = []
+
+            level = len(heading_match.group(1))  # 1 for #, 2 for ##, etc.
+            heading_text = heading_match.group(2).strip()
+
+            # Trim path to parent level, then append current heading
+            current_path = current_path[:level - 1] + [heading_text]
+        else:
+            current_text.append(line)
+
+    # Flush remaining text
+    if current_text:
+        path_str = " > ".join(current_path) if current_path else ""
+        sections.append((path_str, "\n".join(current_text)))
+
+    return sections

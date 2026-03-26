@@ -1,4 +1,4 @@
-"""Search Analytics API endpoints - stub routes for dashboard compatibility."""
+"""Search Analytics API endpoints - backed by UsageLogRepository."""
 
 from __future__ import annotations
 
@@ -6,8 +6,14 @@ import logging
 
 from fastapi import APIRouter, Query
 
+from src.api.app import _get_state
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin/search", tags=["Search Analytics"])
+
+
+def _get_usage_repo():
+    return _get_state().get("usage_log_repo")
 
 
 # ---------------------------------------------------------------------------
@@ -19,9 +25,20 @@ async def get_search_history(
     page_size: int = Query(default=50, ge=1, le=200),
 ):
     """Get search history."""
+    repo = _get_usage_repo()
+    if not repo:
+        return {
+            "searches": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+        }
+
+    offset = (page - 1) * page_size
+    result = await repo.list_recent(limit=page_size, offset=offset)
     return {
-        "searches": [],
-        "total": 0,
+        "searches": result["searches"],
+        "total": result["total"],
         "page": page,
         "page_size": page_size,
     }
@@ -31,16 +48,50 @@ async def get_search_history(
 # GET /api/v1/admin/search/analytics
 # ---------------------------------------------------------------------------
 @router.get("/analytics")
-async def get_search_analytics():
+async def get_search_analytics(
+    days: int = Query(default=30, ge=1, le=365),
+):
     """Get search analytics."""
+    repo = _get_usage_repo()
+    if not repo:
+        return {
+            "total_searches": 0,
+            "unique_queries": 0,
+            "avg_results_per_query": 0.0,
+            "avg_response_time_ms": 0.0,
+            "top_queries": [],
+            "zero_result_queries": [],
+        }
+
+    analytics = await repo.get_analytics(days=days)
     return {
-        "total_searches": 0,
-        "unique_queries": 0,
-        "avg_results_per_query": 0.0,
-        "avg_response_time_ms": 0.0,
-        "top_queries": [],
+        "total_searches": analytics["total_searches"],
+        "unique_queries": len(analytics["top_queries"]),
+        "avg_results_per_query": analytics["avg_results_per_query"],
+        "avg_response_time_ms": analytics["avg_response_time_ms"],
+        "top_queries": analytics["top_queries"],
+        "top_kbs": analytics["top_kbs"],
+        "period_days": analytics["period_days"],
+        "unique_users": analytics["unique_users"],
         "zero_result_queries": [],
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/admin/search/user-history
+# ---------------------------------------------------------------------------
+@router.get("/user-history")
+async def get_user_search_history(
+    user_id: str = Query(...),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Get search history for a specific user."""
+    repo = _get_usage_repo()
+    if not repo:
+        return {"searches": [], "user_id": user_id}
+
+    searches = await repo.get_by_user(user_id=user_id, limit=limit)
+    return {"searches": searches, "user_id": user_id}
 
 
 # ---------------------------------------------------------------------------

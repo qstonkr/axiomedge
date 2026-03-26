@@ -1,4 +1,4 @@
-.PHONY: setup start stop api dashboard crawl ingest search
+.PHONY: setup start stop api dashboard crawl ingest search test test-unit test-integration test-e2e
 
 # === Setup ===
 setup:
@@ -20,10 +20,10 @@ stop:
 
 # === Services ===
 api:
-	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --workers 2 --timeout-keep-alive 300
 
 dashboard:
-	uv run streamlit run dashboard/app.py --server.port 8501
+	uv run streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
 
 # === CLI ===
 crawl:
@@ -69,3 +69,9 @@ test:
 
 test-unit:
 	uv run pytest tests/unit/ -v --no-cov
+
+test-integration:
+	uv run pytest tests/integration/ -v --no-cov
+
+test-e2e:
+	uv run pytest tests/e2e/ -v --no-cov -m e2e

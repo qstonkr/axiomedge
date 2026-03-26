@@ -206,8 +206,24 @@ class QueryExpansionService:
 
         glossary_term = matched_terms[0]
 
-        # Collect all variants
-        all_variants = glossary_term.get_all_variants()
+        # Differentiate expansion strategy by term_type:
+        # - "word": Simple 1:1 bidirectional mapping (term <-> term_ko).
+        #   No fuzzy expansion with synonyms/abbreviations.
+        # - "term": Full expansion with synonyms, abbreviations, term_ko.
+        if glossary_term.get("term_type") == "word":
+            all_variants = [glossary_term["term"]]
+            if glossary_term.get("term_ko"):
+                all_variants.append(glossary_term["term_ko"])
+            # Deduplicate: remove the original query term if it's already
+            # present so we get a clean bidirectional mapping.
+            all_variants = [v for v in all_variants if v]
+        else:
+            # Full expansion: term + synonyms + abbreviations + term_ko
+            all_variants = [glossary_term["term"]]
+            all_variants.extend(glossary_term.get("synonyms", []))
+            all_variants.extend(glossary_term.get("abbreviations", []))
+            if glossary_term.get("term_ko"):
+                all_variants.append(glossary_term["term_ko"])
 
         if len(all_variants) > self._max_expansions:
             all_variants = all_variants[: self._max_expansions]
@@ -215,7 +231,7 @@ class QueryExpansionService:
         return TermExpansion(
             original_term=term,
             expanded_terms=all_variants,
-            glossary_term_id=glossary_term.id,
+            glossary_term_id=glossary_term.get("id"),
             source="glossary",
         )
 
@@ -358,12 +374,14 @@ class SearchQueryExpander:
         query: str,
         query_type: str | None = None,
         query_language: str | None = None,
+        kb_id: str | None = None,
     ) -> str:
         """Back-compatible query expansion wrapper returning only query text."""
         decision = await self.expand_query_with_metadata(
             query=query,
             query_type=query_type,
             query_language=query_language,
+            kb_id=kb_id,
         )
         return decision.expanded_query
 
@@ -372,6 +390,7 @@ class SearchQueryExpander:
         query: str,
         query_type: str | None = None,
         query_language: str | None = None,
+        kb_id: str | None = None,
     ) -> QueryExpansionDecision:
         """Expand query using glossary-based QueryExpansionService.
 
@@ -383,7 +402,7 @@ class SearchQueryExpander:
         if self._query_expansion:
             try:
                 expansion_result = await self._query_expansion.expand_query(
-                    kb_id="default",
+                    kb_id=kb_id or "all",
                     query=query,
                 )
                 if (

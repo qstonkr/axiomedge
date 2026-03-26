@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
@@ -43,7 +44,7 @@ class OllamaEmbeddingProvider:
         self,
         base_url: str | None = None,
         model: str = "bge-m3:latest",
-        timeout: float = 60.0,
+        timeout: float = 300.0,
     ):
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
         self._model = model
@@ -85,14 +86,19 @@ class OllamaEmbeddingProvider:
         if not texts:
             return empty
 
+        # Batch embedding to avoid Ollama timeout on large inputs
+        BATCH_SIZE = 5
         client = self._get_client()
-        resp = client.post(
-            f"{self._base_url}/api/embed",
-            json={"model": self._model, "input": texts},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        embeddings = data.get("embeddings", [])
+        embeddings = []
+        for i in range(0, len(texts), BATCH_SIZE):
+            batch = texts[i:i + BATCH_SIZE]
+            resp = client.post(
+                f"{self._base_url}/api/embed",
+                json={"model": self._model, "input": batch},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            embeddings.extend(data.get("embeddings", []))
 
         if not embeddings:
             return empty
@@ -122,14 +128,12 @@ class OllamaEmbeddingProvider:
 
     async def embed(self, text: str) -> list[float]:
         """Single text embedding (async)."""
-        import asyncio
         result = await asyncio.to_thread(self.encode, [text], True, False, False)
         dense = result.get("dense_vecs", [])
         return dense[0] if dense and dense[0] else []
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Batch embedding (async)."""
-        import asyncio
         result = await asyncio.to_thread(self.encode, texts, True, False, False)
         return result.get("dense_vecs", [[] for _ in texts])
 

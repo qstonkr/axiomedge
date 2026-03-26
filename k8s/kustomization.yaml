@@ -9,5 +9,9 @@ resources:
   - qdrant/deployment.yaml
   - neo4j/deployment.yaml
   - ollama/deployment.yaml
+  - redis/deployment.yaml
+  - paddleocr/deployment.yaml
   - api/deployment.yaml
+  - api/hpa.yaml
+  - tei/deployment.yaml
   - dashboard/deployment.yaml

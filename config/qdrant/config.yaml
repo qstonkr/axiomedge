@@ -1,0 +1,15 @@
+storage:
+  optimizers:
+    default_segment_number: 2
+    max_segment_size_kb: 200000
+    memmap_threshold_kb: 50000
+    indexing_threshold_kb: 20000
+    flush_interval_sec: 5
+
+  hnsw_index:
+    m: 16
+    ef_construct: 100
+
+  performance:
+    max_search_threads: 0
+    max_optimization_threads: 2

@@ -52,7 +52,7 @@ if api_failed(data):
         st.rerun()
     st.stop()
 
-items = data.get("items", [])
+items = data.get("items", data.get("searches", []))
 total = data.get("total", 0)
 
 st.markdown(f"**총 {total:,}건** (페이지 {page})")

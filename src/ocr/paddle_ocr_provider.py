@@ -25,7 +25,7 @@ import tempfile
 from typing import Any
 
 from ..config_weights import weights as _w
-from .hybrid_ocr_service import OCRInput, OCRProvider, OCRResult
+from .models import OCRInput, OCRProvider, OCRResult
 
 
 class PaddleOCRProvider(OCRProvider):

@@ -42,6 +42,20 @@ from .enhanced_similarity_matcher import (
     MatchDecision,
 )
 from .dense_term_index import DenseTermIndex
+from .answer_guard import AnswerGuard
+from .crag_evaluator import (
+    ABSTENTION_MESSAGES,
+    CONFIDENCE_RECOMMENDATIONS,
+    CRAGEvaluation,
+    CRAGRetrievalEvaluator,
+    ConfidenceLevel,
+    RetrievalAction,
+)
+from .graph_expander import (
+    ExpandedSearchResult,
+    GraphSearchExpander,
+    NoOpGraphSearchExpander,
+)
 
 __all__ = [
     "QueryClassifier",
@@ -92,4 +106,17 @@ __all__ = [
     "EnhancedMatcherConfig",
     "MatchDecision",
     "DenseTermIndex",
+    # Answer guard (generic answer detection)
+    "AnswerGuard",
+    # CRAG evaluator
+    "ABSTENTION_MESSAGES",
+    "CONFIDENCE_RECOMMENDATIONS",
+    "CRAGEvaluation",
+    "CRAGRetrievalEvaluator",
+    "ConfidenceLevel",
+    "RetrievalAction",
+    # Graph expander
+    "ExpandedSearchResult",
+    "GraphSearchExpander",
+    "NoOpGraphSearchExpander",
 ]

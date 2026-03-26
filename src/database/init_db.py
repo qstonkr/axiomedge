@@ -15,6 +15,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from src.database.models import KnowledgeBase, RegistryBase
 from src.database.session import to_async_database_url
 
+# Import auth models so they register with KnowledgeBase.metadata
+import src.auth.models  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db"

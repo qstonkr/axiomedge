@@ -318,6 +318,33 @@ def get_similarity_distribution() -> dict:
     return _get("/api/v1/admin/glossary/similarity-distribution")
 
 
+def list_synonyms(term_id: str) -> dict:
+    """GET /api/v1/admin/glossary/{term_id}/synonyms"""
+    return _get(f"/api/v1/admin/glossary/{term_id}/synonyms")
+
+
+def remove_synonym(term_id: str, synonym: str) -> dict:
+    """DELETE /api/v1/admin/glossary/{term_id}/synonyms/{synonym}"""
+    import urllib.parse
+    encoded = urllib.parse.quote(synonym, safe="")
+    return _request("DELETE", f"/api/v1/admin/glossary/{term_id}/synonyms/{encoded}")
+
+
+def list_discovered_synonyms(status: str = "pending", page: int = 1, page_size: int = 50) -> dict:
+    """GET /api/v1/admin/glossary/discovered-synonyms"""
+    return _get("/api/v1/admin/glossary/discovered-synonyms", status=status, page=page, page_size=page_size)
+
+
+def approve_discovered_synonyms(synonym_ids: list[str]) -> dict:
+    """POST /api/v1/admin/glossary/discovered-synonyms/approve"""
+    return _post("/api/v1/admin/glossary/discovered-synonyms/approve", {"synonym_ids": synonym_ids})
+
+
+def reject_discovered_synonyms(synonym_ids: list[str]) -> dict:
+    """POST /api/v1/admin/glossary/discovered-synonyms/reject"""
+    return _post("/api/v1/admin/glossary/discovered-synonyms/reject", {"synonym_ids": synonym_ids})
+
+
 # ============================================================================
 # Ownership
 # ============================================================================

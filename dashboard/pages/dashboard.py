@@ -131,12 +131,12 @@ with tab_pipeline:
     else:
         # ── 파이프라인 상태 요약 ──
         pipeline_status = pipeline_result.get("status", "idle")
-        active_jobs = pipeline_result.get("active_jobs", 0)
+        active_jobs = pipeline_result.get("active_jobs", pipeline_result.get("active_runs", 0))
         error_count = pipeline_result.get("error_count_24h", 0)
         current_kb = pipeline_result.get("current_kb")
         current_step = pipeline_result.get("current_step")
         current_stage = pipeline_result.get("current_stage")
-        mode = pipeline_result.get("mode", "canonical")
+        mode = pipeline_result.get("mode", pipeline_result.get("status", "canonical"))
         target_kb_id = pipeline_result.get("target_kb_id")
         collection_kind = pipeline_result.get("collection_kind", "live")
         publish_status = pipeline_result.get("publish_status", "not_started")
@@ -222,8 +222,8 @@ with tab_pipeline:
         if not api_failed(stats_result):
             st.subheader("인제스천 통계")
             total_runs = stats_result.get("total_runs", 0)
-            success_count = stats_result.get("success_count", 0)
-            error_count_stats = stats_result.get("error_count", 0)
+            success_count = stats_result.get("success_count", stats_result.get("successful", 0))
+            error_count_stats = stats_result.get("error_count", stats_result.get("failed", 0))
             avg_dur = stats_result.get("avg_duration_ms", 0)
             last_run = stats_result.get("last_run_at", "-")
 
@@ -356,6 +356,8 @@ with tab_pipeline:
                 else:
                     st.caption("아직 latest experiment run 이 없습니다.")
 
+                dry_run_state_key = f"pipeline_publish_dry_run_result_{selected_kb_id}"
+
                 sync_sources = selected_kb.get("sync_sources") or []
                 if isinstance(sync_sources, list) and sync_sources:
                     st.markdown("##### Experiment sync 시작")
@@ -430,8 +432,6 @@ with tab_pipeline:
                             st.rerun()
                 else:
                     st.caption("등록된 sync source가 없어 experiment sync를 시작할 수 없습니다.")
-
-                dry_run_state_key = f"pipeline_publish_dry_run_result_{selected_kb_id}"
 
                 if st.button("Dry-run publish 확인", key="pipeline_publish_dry_run"):
                     dry_run_result = api_client.publish_experiment_dry_run(
@@ -543,7 +543,7 @@ with tab_l1:
             st.rerun()
     else:
         # ── L1 카테고리 마스터 목록 ──
-        l1_cats = l1_cats_result.get("items", l1_cats_result) if isinstance(l1_cats_result, dict) else l1_cats_result
+        l1_cats = l1_cats_result.get("items", l1_cats_result.get("categories", [])) if isinstance(l1_cats_result, dict) else l1_cats_result
         if not isinstance(l1_cats, list):
             l1_cats = []
 
@@ -561,8 +561,8 @@ with tab_l1:
         # ── L1 분포 (집계 API 1회 호출) ──
         if not api_failed(l1_stats_result):
             l1_counts = l1_stats_result.get("l1_counts", {})
-            total_docs = l1_stats_result.get("total_docs", 0)
-            etc_count = l1_stats_result.get("etc_count", 0)
+            total_docs = l1_stats_result.get("total_docs", l1_stats_result.get("total_documents", 0))
+            etc_count = l1_stats_result.get("etc_count", l1_stats_result.get("uncategorized", 0))
             etc_ratio = l1_stats_result.get("etc_ratio", 0.0)
             kb_breakdown = l1_stats_result.get("kb_breakdown", [])
 

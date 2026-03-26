@@ -437,6 +437,7 @@ async def reingest_from_jsonl(
 
     Skips parsing/OCR entirely. Useful when Stage 1 succeeded but Stage 2 failed.
     """
+    from src.api.app import _get_state
     from src.pipeline.jsonl_checkpoint import get_jsonl_path, JsonlCheckpointReader
     from src.pipeline.ingestion import IngestionPipeline
 

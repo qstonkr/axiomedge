@@ -81,18 +81,27 @@ def _render_dict_subtab(term_type_value: str, term_type_label: str, key_prefix: 
 
     st.markdown("---")
 
-    # ── CSV 임포트 ──
+    # ── CSV 임포트 (여러 파일 동시 업로드 가능) ──
     with st.expander(f"📥 {term_type_label} CSV 가져오기"):
-        st.caption(f"{term_type_label} CSV 파일을 가져옵니다. 필수 컬럼: 물리명(term), 논리명(term_ko)")
-        csv_file = st.file_uploader("CSV 파일 선택", type=["csv"], key=f"{key_prefix}_csv_upload")
+        st.caption(f"{term_type_label} CSV 파일을 가져옵니다. 여러 파일을 동시에 선택할 수 있습니다.")
+        st.caption("필수 컬럼: 물리명(term), 논리명(term_ko)")
+        csv_files = st.file_uploader(
+            "CSV 파일 선택 (여러 개 가능)",
+            type=["csv"],
+            accept_multiple_files=True,
+            key=f"{key_prefix}_csv_upload",
+        )
         csv_enc = st.selectbox("인코딩", options=["utf-8", "euc-kr", "cp949"], key=f"{key_prefix}_csv_enc")
 
-        if csv_file is not None:
+        if csv_files:
+            # 첫 번째 파일 미리보기
             try:
-                preview_df = pd.read_csv(csv_file, nrows=5, encoding=csv_enc)
-                csv_file.seek(0)
-                st.markdown("**미리보기 (첫 5행)**")
+                preview_df = pd.read_csv(csv_files[0], nrows=5, encoding=csv_enc)
+                csv_files[0].seek(0)
+                st.markdown(f"**미리보기: {csv_files[0].name} (첫 5행)**")
                 st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                if len(csv_files) > 1:
+                    st.info(f"총 {len(csv_files)}개 파일 선택됨")
 
                 required = {"물리명", "논리명"}
                 alt_required = {"term", "term_ko"}
@@ -100,27 +109,34 @@ def _render_dict_subtab(term_type_value: str, term_type_label: str, key_prefix: 
                 if not (required & cols) and not (alt_required & cols):
                     st.error(f"필수 컬럼이 없습니다. 필요: {required} 또는 {alt_required}")
                 else:
-                    if st.button(f"📥 {term_type_label} 가져오기", key=f"{key_prefix}_import_btn", type="primary"):
-                        file_bytes = csv_file.read()
-                        result = api_client.import_glossary_csv(
-                            file_bytes=file_bytes,
-                            filename=csv_file.name,
-                            encoding=csv_enc,
-                            term_type=term_type_value,
-                        )
-                        if api_failed(result):
-                            st.error(f"임포트 실패: {result.get('error', 'Unknown error')}")
-                        else:
-                            st.success(
-                                f"임포트 완료: 전체 {result.get('total_rows', 0)}행, "
-                                f"등록 {result.get('imported_count', 0)}건, "
-                                f"건너뜀 {result.get('skipped_count', 0)}건"
+                    if st.button(f"📥 {term_type_label} 가져오기 ({len(csv_files)}개 파일)", key=f"{key_prefix}_import_btn", type="primary"):
+                        total_imported = 0
+                        total_skipped = 0
+                        all_errors = []
+
+                        for csv_file in csv_files:
+                            file_bytes = csv_file.read()
+                            result = api_client.import_glossary_csv(
+                                file_bytes=file_bytes,
+                                filename=csv_file.name,
+                                encoding=csv_enc,
+                                term_type=term_type_value,
                             )
-                            if result.get("errors"):
-                                for err in result["errors"][:5]:
-                                    st.warning(err)
-                            st.cache_data.clear()
-                            st.rerun()
+                            if api_failed(result):
+                                all_errors.append(f"{csv_file.name}: {result.get('error', 'Unknown')}")
+                            else:
+                                total_imported += result.get("imported", result.get("imported_count", 0))
+                                total_skipped += result.get("skipped", result.get("skipped_count", 0))
+
+                        if all_errors:
+                            st.error(f"일부 실패: {'; '.join(all_errors)}")
+                        st.success(
+                            f"임포트 완료: {len(csv_files)}개 파일, "
+                            f"등록 {total_imported}건, "
+                            f"건너뜀 {total_skipped}건"
+                        )
+                        st.cache_data.clear()
+                        st.rerun()
             except Exception as e:
                 st.error(f"파일 읽기 실패: {e}")
 
@@ -139,19 +155,87 @@ def _render_dict_subtab(term_type_value: str, term_type_label: str, key_prefix: 
 
 
 # =============================================================================
-# 탭 1: 용어 관리 (단어사전 / 용어사전 서브탭)
+# 탭 1: 용어 관리 (CSV 임포트 통합 + 단어/용어 분리 조회)
 # =============================================================================
 with tab_list:
     st.subheader("용어 관리")
 
-    sub_word, sub_term = st.tabs(["단어사전", "용어사전"])
+    # ── CSV 임포트 (통합 - 자동 판별) ──
+    with st.expander("📥 CSV 가져오기 (단어/용어 자동 판별)", expanded=False):
+        st.caption("CSV 파일을 업로드하면 **구성정보** 컬럼 기준으로 단어/용어를 자동 판별합니다.")
+        st.caption("구성정보 1단어 → 단어(word) | 구성정보 2단어+ → 용어(term)")
+        st.caption("필수 컬럼: 물리명(term) 또는 논리명(term_ko)")
+
+        csv_files = st.file_uploader(
+            "CSV 파일 선택 (여러 개 가능)",
+            type=["csv"],
+            accept_multiple_files=True,
+            key="unified_csv_upload",
+        )
+        csv_enc = st.selectbox("인코딩", options=["utf-8", "euc-kr", "cp949"], key="unified_csv_enc")
+
+        if csv_files:
+            try:
+                preview_df = pd.read_csv(csv_files[0], nrows=5, encoding=csv_enc)
+                csv_files[0].seek(0)
+                st.markdown(f"**미리보기: {csv_files[0].name} (첫 5행)**")
+                st.dataframe(preview_df, use_container_width=True, hide_index=True)
+                if len(csv_files) > 1:
+                    st.info(f"총 {len(csv_files)}개 파일 선택됨")
+
+                required = {"물리명", "논리명"}
+                alt_required = {"term", "term_ko"}
+                cols = set(preview_df.columns)
+                if not (required & cols) and not (alt_required & cols):
+                    st.error(f"필수 컬럼이 없습니다. 필요: {required} 또는 {alt_required}")
+                else:
+                    if st.button(f"📥 가져오기 ({len(csv_files)}개 파일)", key="unified_import_btn", type="primary"):
+                        total_imported = 0
+                        total_skipped = 0
+                        total_words = 0
+                        total_terms = 0
+                        all_errors = []
+
+                        for csv_file in csv_files:
+                            file_bytes = csv_file.read()
+                            result = api_client.import_glossary_csv(
+                                file_bytes=file_bytes,
+                                filename=csv_file.name,
+                                encoding=csv_enc,
+                                term_type="term",  # 디폴트, 구성정보로 자동 오버라이드됨
+                            )
+                            if api_failed(result):
+                                all_errors.append(f"{csv_file.name}: {result.get('error', 'Unknown')}")
+                            else:
+                                total_imported += result.get("imported", 0)
+                                total_skipped += result.get("skipped", 0)
+                                total_words += result.get("auto_detected_words", 0)
+                                total_terms += result.get("auto_detected_terms", 0)
+
+                        if all_errors:
+                            st.error(f"일부 실패: {'; '.join(all_errors[:5])}")
+                        st.success(
+                            f"임포트 완료: {len(csv_files)}개 파일, "
+                            f"등록 {total_imported:,}건 "
+                            f"(단어 {total_words:,} + 용어 {total_terms:,}), "
+                            f"건너뜀 {total_skipped:,}건"
+                        )
+                        st.cache_data.clear()
+                        st.rerun()
+            except Exception as e:
+                st.error(f"파일 읽기 실패: {e}")
+
+    st.markdown("---")
+
+    # ── 조회/관리는 탭 분리 유지 ──
+    sub_word, sub_term = st.tabs(["📖 단어사전", "📚 용어사전"])
 
     with sub_word:
-        st.caption("원자 단어 (L1 exact match + L1.5 형태소 분해용)")
+        st.caption("원자 단어 (영문 약어 ↔ 한국어 매핑, L1 exact match)")
         _render_dict_subtab("word", "단어사전", "word")
 
     with sub_term:
-        st.caption("복합 용어 (L2 유사도 매칭용)")
+        st.caption("복합 용어 (유의어/약어 포함, L2 유사도 매칭)")
         _render_dict_subtab("term", "용어사전", "term")
 
     st.markdown("---")
@@ -231,6 +315,58 @@ with tab_list:
                                 st.success("수정 완료")
                                 st.cache_data.clear()
                                 st.rerun()
+
+                # ── 동의어 관리 (Synonym Editor) ──
+                st.markdown("**동의어 관리**")
+                current_synonyms = term_detail.get("synonyms", [])
+                if current_synonyms:
+                    syn_cols = st.columns(min(len(current_synonyms), 5))
+                    for syn_idx, syn in enumerate(current_synonyms):
+                        col_idx = syn_idx % min(len(current_synonyms), 5)
+                        with syn_cols[col_idx]:
+                            sc1, sc2 = st.columns([3, 1])
+                            with sc1:
+                                st.code(syn, language=None)
+                            with sc2:
+                                if st.button(
+                                    "X",
+                                    key=f"rm_syn_{edit_term_id}_{syn_idx}",
+                                    help=f"'{syn}' 동의어 삭제",
+                                ):
+                                    rm_result = api_client.remove_synonym(edit_term_id, syn)
+                                    if not api_failed(rm_result):
+                                        st.success(f"'{syn}' 삭제됨")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    else:
+                                        st.error(f"삭제 실패: {rm_result.get('error', '')}")
+                else:
+                    st.caption("등록된 동의어가 없습니다.")
+
+                # Add new synonym
+                add_syn_col1, add_syn_col2 = st.columns([3, 1])
+                with add_syn_col1:
+                    new_syn = st.text_input(
+                        "새 동의어 추가",
+                        placeholder="동의어 입력",
+                        key=f"new_syn_{edit_term_id}",
+                        label_visibility="collapsed",
+                    )
+                with add_syn_col2:
+                    if st.button("추가", key=f"add_syn_btn_{edit_term_id}", type="primary"):
+                        if new_syn and new_syn.strip():
+                            add_result = api_client.add_synonym_to_standard(
+                                standard_term_id=edit_term_id,
+                                synonym=new_syn.strip(),
+                            )
+                            if not api_failed(add_result):
+                                st.success(f"'{new_syn.strip()}' 동의어 추가됨")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error(f"추가 실패: {add_result.get('error', '')}")
+                        else:
+                            st.warning("동의어를 입력해 주세요.")
             else:
                 st.warning("해당 ID의 용어를 찾을 수 없습니다.")
 
@@ -260,32 +396,34 @@ with tab_pending:
       with st.expander("🔍 유사도 체크 & 자동 정리", expanded=False):
         st.caption("PENDING 용어를 페이지 단위(50건)로 표준 용어사전과 3-Layer 매칭합니다.")
 
-        # 분포 분석 결과 기반 추천 임계값 표시
+        # 분포 분석 결과 기반 추천 임계값 (Dense 임베딩 기준)
         dr = st.session_state["dist_result"]
+        dense_stats = dr.get("score_stats", {}).get("dense_cosine", {})
         rf_stats = dr.get("score_stats", {}).get("rapidfuzz", {})
-        jac_stats = dr.get("score_stats", {}).get("jaccard", {})
-        rf_p90 = rf_stats.get("p90", 0)
-        rf_p50 = rf_stats.get("p50", 0)
-        jac_p90 = jac_stats.get("p90", 0)
-        jac_p50 = jac_stats.get("p50", 0)
+        def_stats = dr.get("score_stats", {}).get("definition", {})
 
-        if rf_p90 > 0:
-            rec_auto = round(rf_p90, 2)
-            rec_review = round(rf_p50, 2)
+        dense_p90 = dense_stats.get("p90", 0)
+        dense_p50 = dense_stats.get("p50", 0)
+
+        if dense_p90 > 0:
+            rec_auto = round(dense_p90, 2)
+            rec_review = round(dense_p50, 2)
             st.info(
-                f"**추천 임계값** (분포 기반 자동 산출)\n\n"
-                f"| Zone | RapidFuzz | Jaccard |\n"
-                f"|------|-----------|--------|\n"
-                f"| AUTO_MATCH | ≥ {rec_auto} | ≥ {round(jac_p90, 2)} |\n"
-                f"| REVIEW | {rec_review} ~ {rec_auto} | {round(jac_p50, 2)} ~ {round(jac_p90, 2)} |\n"
-                f"| NEW_TERM | < {rec_review} | < {round(jac_p50, 2)} |"
+                f"**추천 임계값** (Dense 임베딩 분포 기준 — 의미 기반 유사도)\n\n"
+                f"| Zone | Dense Cosine | RapidFuzz | Definition |\n"
+                f"|------|:---:|:---:|:---:|\n"
+                f"| AUTO_MATCH | **≥ {rec_auto}** | ≥ {round(rf_stats.get('p90', 0), 2)} | ≥ {round(def_stats.get('p90', 0), 2)} |\n"
+                f"| REVIEW | **{rec_review} ~ {rec_auto}** | {round(rf_stats.get('p50', 0), 2)} ~ {round(rf_stats.get('p90', 0), 2)} | {round(def_stats.get('p50', 0), 2)} ~ {round(def_stats.get('p90', 0), 2)} |\n"
+                f"| NEW_TERM | **< {rec_review}** | < {round(rf_stats.get('p50', 0), 2)} | < {round(def_stats.get('p50', 0), 2)} |"
             )
             default_threshold = rec_auto
         else:
-            default_threshold = 0.7
+            # Dense 결과 없으면 RapidFuzz fallback
+            rf_p90 = rf_stats.get("p90", 0)
+            default_threshold = round(rf_p90, 2) if rf_p90 > 0 else 0.7
 
         threshold = st.slider(
-            "유사도 기준점", 0.5, 1.0, default_threshold, 0.05,
+            "유사도 기준점 (Dense Cosine 기준)", 0.3, 1.0, default_threshold, 0.05,
             help="이 값 이상이면 표준 용어와 동일/유사한 것으로 판단",
             key="sim_threshold",
         )
@@ -501,19 +639,17 @@ with tab_pending:
                 f"샘플: {dr.get('sample_size', 0):,}개"
             )
             channel_map = {
-                "RapidFuzz (S_edit)": ("rapidfuzz_scores", "rapidfuzz"),
-                "N-gram Jaccard (S_sparse)": ("jaccard_scores", "jaccard"),
-                "Dense Cosine (S_dense)": ("dense_cosine_scores", "dense_cosine"),
+                "RapidFuzz (용어명 유사도)": ("rapidfuzz_scores", "rapidfuzz"),
+                "N-gram Jaccard (구조 유사도)": ("jaccard_scores", "jaccard"),
+                "Definition (정의 유사도)": ("definition_scores", "definition"),
+                "Dense Cosine (임베딩 유사도)": ("dense_cosine_scores", "dense_cosine"),
             }
             all_stats = dr.get("score_stats", {})
             for ch_label, (scores_key, stats_key) in channel_map.items():
                 scores = dr.get(scores_key, [])
                 stats = all_stats.get(stats_key, {})
                 if not scores:
-                    if "Dense" in ch_label:
-                        st.markdown(f"**{ch_label}** — 분포 분석 미지원 (임베딩 비용으로 제외, 실제 매칭에서 사용)")
-                    else:
-                        st.markdown(f"**{ch_label}** — 데이터 없음")
+                    st.markdown(f"**{ch_label}** — 데이터 없음")
                     continue
                 st.markdown(f"**{ch_label}** — count={int(stats.get('count', 0))}, "
                             f"mean={stats.get('mean', 0):.3f}, "
@@ -530,8 +666,8 @@ with tab_pending:
     else:
         # 분석 미실행 → 분석 버튼 표시
         with st.expander("📊 유사도 점수 분포 분석", expanded=True):
-            st.caption("PENDING 용어 샘플(최대 100개)에 대해 채널별 유사도 점수 분포를 분석합니다. "
-                       "임계값 캘리브레이션에 활용합니다.")
+            st.caption("용어 샘플(최대 500개)에 대해 RapidFuzz/Jaccard 유사도 점수 분포를 분석합니다. "
+                       "PENDING이 없으면 APPROVED 샘플로 분석합니다. 임계값 캘리브레이션에 활용합니다.")
             if st.button("📊 분포 분석 실행", type="primary", key="dist_btn"):
                 with st.spinner("채널별 점수 분포 수집 중 (최대 30초)..."):
                     dist_result = api_client.get_similarity_distribution()
@@ -540,6 +676,96 @@ with tab_pending:
                         st.rerun()
                     else:
                         st.error(f"분포 분석 실패: {dist_result.get('error', '')}")
+
+    st.markdown("---")
+
+    # ── 자동 발견 동의어 후보 (Auto-discovered synonym candidates) ──
+    with st.expander("🔗 자동 발견 동의어 후보", expanded=False):
+        st.caption(
+            "인제스천 중 문서 텍스트에서 패턴 매칭으로 자동 발견된 동의어 후보입니다. "
+            "승인하면 해당 용어의 동의어 목록에 추가됩니다."
+        )
+        disc_page = st.number_input("페이지", min_value=1, value=1, key="disc_syn_page")
+        disc_result = api_client.list_discovered_synonyms(status="pending", page=disc_page, page_size=50)
+
+        if not api_failed(disc_result):
+            disc_synonyms = disc_result.get("discovered_synonyms", [])
+            disc_total = disc_result.get("total", 0)
+
+            if disc_synonyms:
+                st.info(f"검토 대기 중인 자동 발견 동의어: {disc_total}개")
+
+                # Bulk approve/reject
+                all_disc_ids = [d.get("id") for d in disc_synonyms if d.get("id")]
+
+                bulk_col1, bulk_col2 = st.columns(2)
+                with bulk_col1:
+                    if st.button(
+                        f"일괄 승인 ({len(all_disc_ids)}건)",
+                        key="disc_bulk_approve",
+                        type="primary",
+                    ):
+                        bulk_res = api_client.approve_discovered_synonyms(all_disc_ids)
+                        if not api_failed(bulk_res):
+                            st.success(f"{bulk_res.get('approved', 0)}건 승인 완료")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"일괄 승인 실패: {bulk_res.get('error', '')}")
+                with bulk_col2:
+                    if st.button(
+                        f"일괄 거부 ({len(all_disc_ids)}건)",
+                        key="disc_bulk_reject",
+                    ):
+                        bulk_res = api_client.reject_discovered_synonyms(all_disc_ids)
+                        if not api_failed(bulk_res):
+                            st.success(f"{bulk_res.get('rejected', 0)}건 거부 완료")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"일괄 거부 실패: {bulk_res.get('error', '')}")
+
+                # Individual items
+                for d_idx, disc in enumerate(disc_synonyms):
+                    disc_id = disc.get("id", "-")
+                    disc_term = disc.get("term", "-")
+                    disc_def = disc.get("definition", "-")
+                    disc_cat = disc.get("category", "-")
+                    disc_synonyms_list = disc.get("synonyms", [])
+                    base_terms = ", ".join(disc_synonyms_list) if disc_synonyms_list else "-"
+
+                    with st.container(border=True):
+                        dc1, dc2, dc3 = st.columns([3, 3, 2])
+                        with dc1:
+                            st.markdown(f"**{disc_term}**")
+                            st.caption(f"패턴: {disc_cat}")
+                        with dc2:
+                            st.markdown(f"기준 용어: {base_terms}")
+                            st.caption(f"ID: {disc_id}")
+                        with dc3:
+                            dac1, dac2 = st.columns(2)
+                            with dac1:
+                                if st.button("승인", key=f"disc_approve_{d_idx}", type="primary"):
+                                    res = api_client.approve_discovered_synonyms([disc_id])
+                                    if not api_failed(res):
+                                        st.success("승인 완료")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    else:
+                                        st.error("승인 실패")
+                            with dac2:
+                                if st.button("거부", key=f"disc_reject_{d_idx}"):
+                                    res = api_client.reject_discovered_synonyms([disc_id])
+                                    if not api_failed(res):
+                                        st.success("거부 완료")
+                                        st.cache_data.clear()
+                                        st.rerun()
+                                    else:
+                                        st.error("거부 실패")
+            else:
+                st.success("자동 발견된 동의어 후보가 없습니다.")
+        else:
+            st.warning("자동 발견 동의어 조회 실패")
 
     st.markdown("---")
 
@@ -663,25 +889,46 @@ with tab_stats:
             fig_type.update_layout(margin=dict(l=20, r=20, t=40, b=20))
             st.plotly_chart(fig_type, use_container_width=True)
 
-        # ── 카테고리별 분포 (approved 500건 샘플) ──
-        sample_result = api_client.list_glossary_terms(status="approved", page_size=500)
-        if not api_failed(sample_result):
-            sample_terms = sample_result.get("items", sample_result.get("terms", []))
-            if sample_terms:
-                categories = {}
-                for t in sample_terms:
-                    cat = t.get("category", "미분류") or "미분류"
-                    categories[cat] = categories.get(cat, 0) + 1
+        # ── 도메인별 분포 (전체 데이터, DB 집계) ──
+        st.markdown("### 도메인별 분포")
+        domain_result = api_client._request("GET", "/api/v1/admin/glossary/domain-stats")
+        if not api_failed(domain_result):
+            domains = domain_result.get("domains", {})
+            if domains:
+                # 상위 20개 도메인
+                sorted_domains = sorted(domains.items(), key=lambda x: x[1], reverse=True)[:20]
+                domain_names = [d[0] for d in sorted_domains]
+                domain_counts = [d[1] for d in sorted_domains]
 
-                if categories:
-                    fig_cat = px.pie(
-                        names=list(categories.keys()),
-                        values=list(categories.values()),
-                        title=f"카테고리별 분포 (상위 500건 샘플)",
-                        hole=0.3,
-                    )
-                    fig_cat.update_layout(margin=dict(l=20, r=20, t=40, b=20))
-                    st.plotly_chart(fig_cat, use_container_width=True)
+                fig_domain = px.bar(
+                    x=domain_counts, y=domain_names,
+                    orientation="h",
+                    title=f"도메인별 용어 분포 (전체 {total_count:,}건, 상위 20개)",
+                    labels={"x": "용어 수", "y": "도메인"},
+                )
+                fig_domain.update_layout(margin=dict(l=20, r=20, t=40, b=20), height=500, yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig_domain, use_container_width=True)
+
+                st.caption(f"총 {len(domains)}개 도메인, {total_count:,}건")
+            else:
+                st.info("도메인 정보가 없습니다.")
+        else:
+            st.warning("도메인 통계를 불러올 수 없습니다.")
+
+        # ── 표준분류(kb_id)별 분포 ──
+        st.markdown("### 표준분류별 분포")
+        source_result = api_client._request("GET", "/api/v1/admin/glossary/source-stats")
+        if not api_failed(source_result):
+            sources = source_result.get("sources", {})
+            if sources:
+                fig_src = px.pie(
+                    names=list(sources.keys()),
+                    values=list(sources.values()),
+                    title=f"표준분류별 분포 (전체 {total_count:,}건)",
+                    hole=0.3,
+                )
+                fig_src.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+                st.plotly_chart(fig_src, use_container_width=True)
 
         if total_count == 0:
             st.info("용어 데이터가 없습니다.")

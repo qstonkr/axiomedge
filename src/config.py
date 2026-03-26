@@ -58,6 +58,7 @@ class OllamaSettings(BaseSettings):
     model: str = Field(default="exaone3.5:7.8b")
     embedding_model: str = Field(default="bge-m3:latest")
     timeout: int = Field(default=60, ge=10, le=300)
+    context_length: int = Field(default=32768, ge=1024, le=32768)
     max_content_length: int = Field(default=4000, ge=100, le=32000)
 
 
@@ -95,6 +96,28 @@ class PipelineSettings(BaseSettings):
         return os.path.join(self.runtime_base_dir, "full_crawl")
 
 
+class AuthSettings(BaseSettings):
+    """Auth configuration. Set AUTH_ENABLED=true to activate."""
+
+    model_config = SettingsConfigDict(env_prefix="AUTH_")
+
+    enabled: bool = Field(default=False)
+    provider: str = Field(default="local")  # local | keycloak | azure_ad
+
+    # Keycloak
+    keycloak_url: str = Field(default="")
+    keycloak_realm: str = Field(default="knowledge")
+    keycloak_client_id: str = Field(default="knowledge-local")
+    keycloak_client_secret: str = Field(default="")
+
+    # Azure AD
+    azure_ad_tenant_id: str = Field(default="")
+    azure_ad_client_id: str = Field(default="")
+
+    # Local dev API keys (JSON: {"key": {"email": "...", "name": "...", "roles": [...]}})
+    local_api_keys: str = Field(default="{}")
+
+
 class ApiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="API_")
 
@@ -120,6 +143,7 @@ class Settings(BaseSettings):
     embedding: EmbeddingSettings = Field(default_factory=EmbeddingSettings)
     quality: QualitySettings = Field(default_factory=QualitySettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
 

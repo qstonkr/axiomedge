@@ -146,7 +146,7 @@ with tab_owners:
             topics_result = api_client.list_topic_owners(selected_kb_id)
 
             if not api_failed(topics_result):
-                topics = topics_result.get("items", topics_result.get("owners", []))
+                topics = topics_result.get("items", topics_result.get("owners", topics_result.get("topics", [])))
                 if topics:
                     rows = []
                     for t in topics:

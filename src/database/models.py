@@ -752,6 +752,11 @@ class KBConfigModel(RegistryBase):
     sync_schedule = Column(String(100), nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
 
+    # Document/chunk counts (updated after ingestion)
+    document_count = Column(Integer, nullable=False, default=0)
+    chunk_count = Column(Integer, nullable=False, default=0)
+    last_ingested_at = Column(DateTime, nullable=True)
+
     # Status and settings
     status = Column(String(20), nullable=False, default="pending", index=True)
     settings = Column(JSONB, nullable=False, default=dict)

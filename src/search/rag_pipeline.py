@@ -75,12 +75,14 @@ class KnowledgeRAGPipeline:
         graph_client: Any = None,
         embedder: Any = None,
         query_preprocessor: Any = None,
+        query_expander: Any = None,
     ):
         self._search = search_engine
         self._llm = llm_client
         self._graph = graph_client
         self._embedder = embedder
         self._query_preprocessor = query_preprocessor
+        self._query_expander = query_expander
 
     async def process(self, request: RAGRequest) -> RAGResponse:
         """Execute RAG pipeline."""
@@ -101,6 +103,19 @@ class KnowledgeRAGPipeline:
         except Exception as e:
             logger.warning("QueryPreprocessor failed in RAG pipeline, using original: %s", e)
 
+        # Query expansion via glossary synonyms
+        if self._query_expander:
+            try:
+                expanded = await self._query_expander.expand_query(
+                    kb_id=request.kb_id or "all",
+                    query=preprocessed_query,
+                )
+                expanded_text = getattr(expanded, "expanded_query", None)
+                if expanded_text and expanded_text != preprocessed_query:
+                    preprocessed_query = expanded_text
+            except Exception as e:
+                logger.warning("Query expansion failed: %s", e)
+
         query_type = self._classify_query(preprocessed_query)
 
         # Owner queries: graph DB direct (no hallucination)
@@ -120,20 +135,35 @@ class KnowledgeRAGPipeline:
                 query_type=query_type,
             )
 
-        # Embed the preprocessed query
+        # Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
+        colbert_enabled = weights.hybrid_search.enable_colbert_reranking
         encoded = await asyncio.to_thread(
-            self._embedder.encode, [preprocessed_query], True, True, False,
+            self._embedder.encode, [preprocessed_query], True, True, colbert_enabled,
         )
         dense_vector = encoded["dense_vecs"][0]
         sparse_weights = encoded["lexical_weights"][0] if encoded.get("lexical_weights") else {}
         sparse_vector = {int(k): float(v) for k, v in sparse_weights.items()} if sparse_weights else None
-
-        search_results = await self._search.search(
-            kb_id=request.kb_id or "knowledge",
-            dense_vector=dense_vector,
-            sparse_vector=sparse_vector,
-            top_k=request.top_k,
+        colbert_vectors = (
+            encoded["colbert_vecs"][0]
+            if colbert_enabled and encoded.get("colbert_vecs")
+            else None
         )
+
+        if colbert_enabled and colbert_vectors:
+            search_results = await self._search.search_with_colbert_rerank(
+                kb_id=request.kb_id or "knowledge",
+                dense_vector=dense_vector,
+                sparse_vector=sparse_vector,
+                colbert_vectors=colbert_vectors,
+                top_k=request.top_k,
+            )
+        else:
+            search_results = await self._search.search(
+                kb_id=request.kb_id or "knowledge",
+                dense_vector=dense_vector,
+                sparse_vector=sparse_vector,
+                top_k=request.top_k,
+            )
 
         if not search_results:
             return RAGResponse(
@@ -217,20 +247,35 @@ class KnowledgeRAGPipeline:
             yield "임베딩 프로바이더가 초기화되지 않았습니다."
             return
 
-        # Embed the preprocessed query
+        # Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
+        colbert_enabled = weights.hybrid_search.enable_colbert_reranking
         encoded = await asyncio.to_thread(
-            self._embedder.encode, [preprocessed_query], True, True, False,
+            self._embedder.encode, [preprocessed_query], True, True, colbert_enabled,
         )
         dense_vector = encoded["dense_vecs"][0]
         sparse_weights = encoded["lexical_weights"][0] if encoded.get("lexical_weights") else {}
         sparse_vector = {int(k): float(v) for k, v in sparse_weights.items()} if sparse_weights else None
-
-        search_results = await self._search.search(
-            kb_id=request.kb_id or "knowledge",
-            dense_vector=dense_vector,
-            sparse_vector=sparse_vector,
-            top_k=request.top_k,
+        colbert_vectors = (
+            encoded["colbert_vecs"][0]
+            if colbert_enabled and encoded.get("colbert_vecs")
+            else None
         )
+
+        if colbert_enabled and colbert_vectors:
+            search_results = await self._search.search_with_colbert_rerank(
+                kb_id=request.kb_id or "knowledge",
+                dense_vector=dense_vector,
+                sparse_vector=sparse_vector,
+                colbert_vectors=colbert_vectors,
+                top_k=request.top_k,
+            )
+        else:
+            search_results = await self._search.search(
+                kb_id=request.kb_id or "knowledge",
+                dense_vector=dense_vector,
+                sparse_vector=sparse_vector,
+                top_k=request.top_k,
+            )
 
         if not search_results:
             yield f"'{query}'에 대한 관련 문서를 찾을 수 없습니다."

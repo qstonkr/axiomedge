@@ -181,8 +181,8 @@ class CompositeReranker:
         if not chunks:
             return []
 
-        weights = self._source_weights.copy()
         if source_weights:
+            weights = self._source_weights.copy()
             for key, value in source_weights.items():
                 source_key = str(key).lower()
                 weights[source_key] = self._safe_weight(
@@ -190,6 +190,8 @@ class CompositeReranker:
                     default=self._source_type_weights.get(source_key, 1.0),
                     source_type=source_key,
                 )
+        else:
+            weights = self._source_weights
 
         model_scores, base_scores = self._extract_component_scores(chunks)
         normalized_model_scores = self._normalize_scores(model_scores)
@@ -283,14 +285,13 @@ class CompositeReranker:
         if not values:
             return []
 
-        raw_scores = [CompositeReranker._safe_float(score, default=0.0) for score in values]
-        max_score = max(raw_scores)
-        min_score = min(raw_scores)
+        max_score = max(values)
+        min_score = min(values)
         if max_score == min_score:
-            return [0.5 for _ in values]
+            return [0.5] * len(values)
 
         delta = max_score - min_score
-        return [(score - min_score) / delta for score in raw_scores]
+        return [(score - min_score) / delta for score in values]
 
     def _mmr_rerank(
         self,
@@ -312,6 +313,14 @@ class CompositeReranker:
             tuple[SearchChunk, float, float, float, float, float]
         ] = list(pre_sorted)
 
+        # Pre-compute word sets once for all chunks (P1-3 perf fix)
+        word_sets: dict[int, set[str]] = {}
+        for item in remaining:
+            chunk = item[0]
+            word_sets[id(chunk)] = set(
+                (chunk.content or "").lower().split()
+            )
+
         selected.append(remaining.pop(0))
 
         while len(selected) < target_count and remaining:
@@ -320,12 +329,14 @@ class CompositeReranker:
             for idx, candidate in enumerate(remaining):
                 relevance = candidate[1]
                 max_sim = 0.0
+                candidate_words = word_sets.get(id(candidate[0]), set())
                 for picked in selected:
+                    picked_words = word_sets.get(id(picked[0]), set())
                     max_sim = max(
                         max_sim,
-                        self._jaccard_similarity(
-                            candidate[0].content,
-                            picked[0].content,
+                        self._jaccard_similarity_sets(
+                            candidate_words,
+                            picked_words,
                         ),
                     )
                 mmr_score = self._mmr_lambda * relevance - (
@@ -363,6 +374,16 @@ class CompositeReranker:
     def _jaccard_similarity(text1: str, text2: str) -> float:
         words1 = set((text1 or "").lower().split())
         words2 = set((text2 or "").lower().split())
+        if not words1 or not words2:
+            return 0.0
+        union = words1 | words2
+        if not union:
+            return 0.0
+        return len(words1 & words2) / len(union)
+
+    @staticmethod
+    def _jaccard_similarity_sets(words1: set[str], words2: set[str]) -> float:
+        """Jaccard similarity from pre-computed word sets (avoids re-splitting)."""
         if not words1 or not words2:
             return 0.0
         union = words1 | words2

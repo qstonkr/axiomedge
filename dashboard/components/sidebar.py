@@ -57,54 +57,41 @@ def render_sidebar(show_admin: bool = False, user_role: str | None = None):
             st.page_link("pages/my_feedback.py", label="📝 내 피드백")
             st.page_link("pages/my_documents.py", label="📄 내 담당 문서")
             st.page_link("pages/search_history.py", label="🕐 검색 이력")
+            st.page_link("pages/my_activities.py", label="📋 나의 활동")
 
         # -- Group 3: Knowledge Management (always visible for local) --
         if ff.admin_enabled:
             with st.expander("📚 지식 관리", expanded=show_admin):
                 st.page_link("pages/dashboard.py", label="📊 KB 현황")
+                st.page_link("pages/search_groups.py", label="📂 검색 그룹")
                 st.page_link("pages/quality.py", label="📈 품질 관리")
-                if ff.graph_enabled:
-                    st.page_link("pages/graph.py", label="🕸️ 지식 그래프")
                 st.page_link("pages/glossary.py", label="📖 용어집")
                 st.page_link("pages/owners.py", label="👥 담당자 관리")
                 st.page_link("pages/conflicts.py", label="⚠️ 충돌 / 중복")
-                st.page_link("pages/traceability.py", label="🔗 추적 / 버전")
-                st.page_link("pages/gaps.py", label="📉 지식 갭")
                 st.page_link("pages/verification.py", label="✅ 검증 관리")
-                st.page_link("pages/feedback_admin.py", label="💬 피드백 관리")
+                st.page_link("pages/graph_explorer.py", label="🔗 지식 그래프")
+                st.page_link("pages/doc_lifecycle.py", label="📋 문서 라이프사이클")
 
         # -- Group 4: System Operations (always visible for local) --
         if ff.operations_enabled:
             with st.expander("⚙️ 시스템 운영", expanded=False):
-                st.page_link("pages/operations.py", label="🔄 파이프라인 현황")
                 st.page_link("pages/ingestion_jobs.py", label="📥 인제스천 작업")
                 st.page_link("pages/data_sources.py", label="📁 데이터 소스")
-                st.page_link("pages/search_analytics.py", label="🔍 검색 분석")
-                st.page_link("pages/impact.py", label="📊 영향도 / 사용량")
-                st.page_link("pages/evaluation.py", label="🧪 RAG 평가")
-                st.page_link("pages/rag_quality.py", label="🎯 RAG 품질 검증")
-                if ff.graph_enabled:
-                    st.page_link("pages/graph_integrity.py", label="🛡️ 그래프 무결성")
-                st.page_link("pages/pipeline_health.py", label="🏥 파이프라인 건강")
-                st.page_link("pages/whitelist.py", label="🔑 접근 허용 목록")
+                st.page_link("pages/job_monitor.py", label="⚙️ Job Monitor")
+                st.page_link("pages/config_weights.py", label="⚖️ Config Weights")
+                st.page_link("pages/ingestion_gate.py", label="🚦 인제스천 게이트")
+                st.page_link("pages/auth_management.py", label="🔐 Auth / RBAC")
 
         st.markdown("---")
-        col_cache1, col_cache2 = st.columns(2)
-        with col_cache1:
-            if st.button("🗑️ UI 캐시", use_container_width=True, help="대시보드 캐시 초기화"):
-                st.cache_data.clear()
-                st.toast("UI 캐시가 초기화되었습니다.")
-                st.rerun()
-        with col_cache2:
-            if st.button("🔄 검색 캐시", use_container_width=True, help="서버 검색 캐시 삭제"):
-                from services import api_client
-                result = api_client.clear_search_cache()
-                if not api_client.api_failed(result):
-                    st.cache_data.clear()
-                    st.toast("서버 검색 캐시가 삭제되었습니다.")
-                else:
-                    st.toast("캐시 삭제 실패", icon="⚠️")
-                st.rerun()
+        if st.button("🗑️ 캐시 전체 삭제", use_container_width=True, help="UI 캐시 + 서버 검색 캐시 모두 삭제"):
+            from services import api_client
+            # 1. 서버 검색 캐시 (Redis)
+            api_client.clear_search_cache()
+            # 2. Streamlit 서버 메모리 캐시
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.toast("모든 캐시가 삭제되었습니다.")
+            st.rerun()
 
         # 모델 정보 표시
         st.markdown("---")

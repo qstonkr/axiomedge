@@ -24,6 +24,7 @@ Usage:
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import os
@@ -163,6 +164,10 @@ class ExtractionResult:
         }
 
 
+# Module-level shared executor for sync-in-async bridging (P2-5 perf fix)
+_SHARED_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
 class _OllamaLLMClient:
     """Local Ollama LLM adapter for GraphRAG extraction.
 
@@ -199,11 +204,9 @@ class _OllamaLLMClient:
             loop = None
 
         if loop and loop.is_running():
-            # We're inside an async context; create a new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(asyncio.run, client.generate(prompt, temperature=_w.llm.graphrag_temperature))
-                return future.result()
+            # We're inside an async context; use shared executor (P2-5)
+            future = _SHARED_EXECUTOR.submit(asyncio.run, client.generate(prompt, temperature=_w.llm.graphrag_temperature))
+            return future.result()
         else:
             return asyncio.run(client.generate(prompt, temperature=_w.llm.graphrag_temperature))
 
@@ -422,41 +425,45 @@ class GraphRAGExtractor:
         }
 
         with driver.session() as session:
-            # 노드 생성/업데이트
+            # 노드 생성/업데이트 (batched by type for efficiency)
+            nodes_by_type: dict[str, list[dict]] = {}
             for node in result.nodes:
+                if not _is_safe_cypher_label(node.type):
+                    logger.error(f"안전하지 않은 노드 타입 스킵: {node.type}")
+                    continue
+                properties = {"id": node.id, **node.properties}
+                if result.source_page_id:
+                    properties["source_page_id"] = result.source_page_id
+                if result.source_document:
+                    properties["source_document"] = result.source_document
+                nodes_by_type.setdefault(node.type, []).append(properties)
+
+            for node_type, node_params in nodes_by_type.items():
                 try:
-                    properties = {"id": node.id, **node.properties}
-                    if result.source_page_id:
-                        properties["source_page_id"] = result.source_page_id
-                    if result.source_document:
-                        properties["source_document"] = result.source_document
-
-                    # 노드 타입 검증 (Cypher Injection 방지)
-                    if not _is_safe_cypher_label(node.type):
-                        logger.error(f"안전하지 않은 노드 타입 스킵: {node.type}")
-                        continue
-
-                    query = f"""
-                        MERGE (n:{node.type} {{id: $id}})
+                    batch_query = f"""
+                        UNWIND $nodes AS props
+                        MERGE (n:{node_type} {{id: props.id}})
                         ON CREATE SET
                             n.created_at = $now,
                             n.updated_at = $now,
-                            n += $properties
+                            n += props
                         ON MATCH SET
                             n.updated_at = $now,
-                            n += $properties
+                            n += props
                         SET n:__Entity__
                         RETURN n.created_at = $now AS is_new
                     """
-                    rec = session.run(query, id=node.id, properties=properties, now=now).single()
-                    if rec and rec["is_new"]:
-                        stats["nodes_created"] += 1
-                    else:
-                        stats["nodes_updated"] += 1
+                    records = session.run(batch_query, nodes=node_params, now=now)
+                    for rec in records:
+                        if rec and rec["is_new"]:
+                            stats["nodes_created"] += 1
+                        else:
+                            stats["nodes_updated"] += 1
                 except Exception as e:
-                    logger.error(f"노드 생성 실패 ({node.id}): {e}")
+                    logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
 
             # 관계 생성 (이력 보존 + 최신성 기반)
+            # Simple relationships (non-history) are batched; history-aware ones use individual queries
             for rel in result.relationships:
                 try:
                     # 관계 타입 검증 (Cypher Injection 방지)

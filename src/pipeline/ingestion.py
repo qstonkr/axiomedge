@@ -408,16 +408,29 @@ class IngestionPipeline:
         self.enable_term_extraction = enable_term_extraction
         self.min_quality_tier = min_quality_tier
 
+    _EMBED_MAX_RETRIES = 3
+    _EMBED_RETRY_DELAY = 5  # seconds
+
     async def _embed_dense(self, texts: list[str]) -> list[list[float]]:
-        """Embed texts using the provider's encode() or legacy embed_documents()."""
-        encode_fn = getattr(self.embedder, "encode", None)
-        if encode_fn is not None:
-            result = await asyncio.to_thread(
-                lambda: encode_fn(texts, return_dense=True)
-            )
-            return result["dense_vecs"]
-        # Fallback to legacy async interface (NoOpEmbedder, tests)
-        return await self.embedder.embed_documents(texts)
+        """Embed texts with retry on timeout/connection errors."""
+        for attempt in range(1, self._EMBED_MAX_RETRIES + 1):
+            try:
+                encode_fn = getattr(self.embedder, "encode", None)
+                if encode_fn is not None:
+                    result = await asyncio.to_thread(
+                        lambda: encode_fn(texts, return_dense=True)
+                    )
+                    return result["dense_vecs"]
+                return await self.embedder.embed_documents(texts)
+            except Exception as e:
+                if attempt < self._EMBED_MAX_RETRIES:
+                    logger.warning(
+                        "Embedding attempt %d/%d failed: %s. Retrying in %ds...",
+                        attempt, self._EMBED_MAX_RETRIES, e, self._EMBED_RETRY_DELAY,
+                    )
+                    await asyncio.sleep(self._EMBED_RETRY_DELAY)
+                else:
+                    raise
 
     async def ingest(
         self,
@@ -555,7 +568,10 @@ class IngestionPipeline:
             doc_summary = _extract_document_summary(body_content)
 
             # 3. Chunk body text with heading paths (META-04)
-            chunk_result = self.chunker.chunk_with_headings(body_content)
+            # KSS sentence splitter is CPU-bound and blocks the event loop on large texts
+            chunk_result = await asyncio.to_thread(
+                self.chunker.chunk_with_headings, body_content,
+            )
             if not chunk_result.chunks and not (parse_result and (parse_result.tables or parse_result.ocr_text)):
                 return IngestionResult.failure_result(
                     reason="No chunks produced from document content",
@@ -583,16 +599,30 @@ class IngestionPipeline:
                     if table_md.strip():
                         typed_chunks.append((table_md, "table", ""))
 
-            # OCR chunks (VEC-03) - OCR text as separate chunk(s)
+            # OCR chunks (VEC-03) - split by Page/Slide unit (merge images within same page)
             if parse_result and parse_result.ocr_text.strip():
-                # Split OCR text if it's very long
+                import re as _re
                 ocr_text = parse_result.ocr_text.strip()
-                if len(ocr_text) > weights.chunking.max_chunk_chars:
-                    ocr_chunk_result = self.chunker.chunk(ocr_text)
-                    for oc in ocr_chunk_result.chunks:
-                        typed_chunks.append((oc, "ocr", ""))
-                else:
-                    typed_chunks.append((ocr_text, "ocr", ""))
+                # Split by [Page N ...] or [Slide N ...] boundaries
+                page_segments = _re.split(
+                    r'(?=\[(?:Page|Slide)\s+\d+[^\]]*\])', ocr_text,
+                )
+                # If no page/slide markers, fall back to [Image N] split
+                if len(page_segments) <= 1:
+                    page_segments = _re.split(
+                        r'(?=\[Image\s+\d+[^\]]*\])', ocr_text,
+                    )
+                for seg in page_segments:
+                    seg = seg.strip()
+                    if not seg:
+                        continue
+                    # If segment still too long, chunk it further
+                    if len(seg) > weights.chunking.max_chunk_chars:
+                        sub_result = await asyncio.to_thread(self.chunker.chunk, seg)
+                        for sc in sub_result.chunks:
+                            typed_chunks.append((sc, "ocr", ""))
+                    else:
+                        typed_chunks.append((seg, "ocr", ""))
 
             if not typed_chunks:
                 return IngestionResult.failure_result(
@@ -627,10 +657,21 @@ class IngestionPipeline:
                 chunk_types.append(chunk_type)
                 chunk_heading_paths.append(heading_path)
 
-            # 6. Embed (dense + sparse) in parallel
+            # 6. Embed (dense + sparse) in parallel with retry
+            async def _embed_sparse_with_retry(texts):
+                for attempt in range(1, self._EMBED_MAX_RETRIES + 1):
+                    try:
+                        return await self.sparse_embedder.embed_sparse(texts)
+                    except Exception as e:
+                        if attempt < self._EMBED_MAX_RETRIES:
+                            logger.warning("Sparse embed attempt %d/%d failed: %s", attempt, self._EMBED_MAX_RETRIES, e)
+                            await asyncio.sleep(self._EMBED_RETRY_DELAY)
+                        else:
+                            raise
+
             dense_vectors, sparse_vectors = await asyncio.gather(
                 self._embed_dense(prefixed_chunks),
-                self.sparse_embedder.embed_sparse(prefixed_chunks),
+                _embed_sparse_with_retry(prefixed_chunks),
             )
 
             if len(dense_vectors) != len(prefixed_chunks):

@@ -20,12 +20,22 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Pipeline"])
 @router.get("/pipeline/status")
 async def get_pipeline_status():
     """Get pipeline status."""
-    return {
-        "status": "idle",
-        "active_runs": 0,
-        "queued": 0,
-        "last_run": None,
-    }
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if repo:
+        try:
+            recent = await repo.list_recent(limit=10)
+            active = [r for r in recent if r.get("status") in ("running", "pending")]
+            last_run = recent[0] if recent else None
+            return {
+                "status": "running" if active else "idle",
+                "active_runs": len(active),
+                "queued": len([r for r in active if r.get("status") == "pending"]),
+                "last_run": last_run,
+            }
+        except Exception as e:
+            logger.warning("Pipeline status query failed: %s", e)
+    return {"status": "idle", "active_runs": 0, "queued": 0, "last_run": None}
 
 
 # ---------------------------------------------------------------------------
@@ -34,13 +44,47 @@ async def get_pipeline_status():
 @router.get("/pipeline/metrics")
 async def get_pipeline_metrics():
     """Get pipeline metrics."""
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if repo:
+        try:
+            runs = await repo.list_recent(limit=1000)
+            total_runs = len(runs)
+            successful = [r for r in runs if r.get("status") == "completed"]
+            failed = [r for r in runs if r.get("status") == "failed"]
+            total_docs = sum(r.get("documents_ingested", 0) for r in runs)
+            total_chunks = sum(r.get("chunks_stored", 0) for r in runs)
+
+            durations = []
+            for r in successful:
+                started = r.get("started_at")
+                completed = r.get("completed_at")
+                if started and completed:
+                    from datetime import datetime
+                    if isinstance(started, str):
+                        started = datetime.fromisoformat(started)
+                    if isinstance(completed, str):
+                        completed = datetime.fromisoformat(completed)
+                    try:
+                        diff = (completed - started).total_seconds()
+                        durations.append(diff)
+                    except (TypeError, AttributeError):
+                        pass
+            avg_duration = sum(durations) / len(durations) if durations else 0
+
+            return {
+                "total_runs": total_runs,
+                "successful_runs": len(successful),
+                "failed_runs": len(failed),
+                "average_duration_seconds": round(avg_duration, 1),
+                "total_documents_processed": total_docs,
+                "total_chunks_created": total_chunks,
+            }
+        except Exception as e:
+            logger.warning("Pipeline metrics query failed: %s", e)
     return {
-        "total_runs": 0,
-        "successful_runs": 0,
-        "failed_runs": 0,
-        "average_duration_seconds": 0,
-        "total_documents_processed": 0,
-        "total_chunks_created": 0,
+        "total_runs": 0, "successful_runs": 0, "failed_runs": 0,
+        "average_duration_seconds": 0, "total_documents_processed": 0, "total_chunks_created": 0,
     }
 
 
@@ -50,14 +94,18 @@ async def get_pipeline_metrics():
 @router.get("/pipeline/runs/{run_id}")
 async def get_pipeline_run_detail(run_id: str):
     """Get pipeline run detail."""
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if repo:
+        try:
+            run = await repo.get_by_id(run_id)
+            if run:
+                return run
+        except Exception as e:
+            logger.warning("Pipeline run detail query failed: %s", e)
     return {
-        "run_id": run_id,
-        "status": "unknown",
-        "started_at": None,
-        "completed_at": None,
-        "documents_processed": 0,
-        "chunks_created": 0,
-        "errors": [],
+        "run_id": run_id, "status": "unknown", "started_at": None,
+        "completed_at": None, "documents_processed": 0, "chunks_created": 0, "errors": [],
     }
 
 
@@ -67,12 +115,22 @@ async def get_pipeline_run_detail(run_id: str):
 @router.get("/pipeline/experiments/{kb_id}/latest")
 async def get_latest_experiment_run(kb_id: str):
     """Get latest experiment run for a KB."""
-    return {
-        "kb_id": kb_id,
-        "run_id": None,
-        "status": "none",
-        "created_at": None,
-    }
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if repo:
+        try:
+            runs = await repo.list_by_kb(kb_id, limit=1)
+            if runs:
+                latest = runs[0]
+                return {
+                    "kb_id": kb_id,
+                    "run_id": latest.get("run_id"),
+                    "status": latest.get("status", "none"),
+                    "created_at": latest.get("created_at"),
+                }
+        except Exception as e:
+            logger.warning("Latest experiment run query failed: %s", e)
+    return {"kb_id": kb_id, "run_id": None, "status": "none", "created_at": None}
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +235,9 @@ async def list_ingestion_runs(
                 runs = await repo.list_by_kb(kb_id, limit=page_size)
             else:
                 runs = await repo.list_recent(limit=page_size)
+            # Apply status filter if provided
+            if status:
+                runs = [r for r in runs if r.get("status") == status]
             return {"runs": runs, "total": len(runs), "page": page, "page_size": page_size}
         except Exception as e:
             logger.warning("Ingestion run repo query failed: %s", e)
@@ -240,13 +301,28 @@ async def get_ingestion_stats(
     kb_id: str | None = Query(default=None),
 ):
     """Get ingestion stats."""
-    return {
-        "total_runs": 0,
-        "successful": 0,
-        "failed": 0,
-        "total_documents": 0,
-        "total_chunks": 0,
-    }
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if repo:
+        try:
+            if kb_id:
+                runs = await repo.list_by_kb(kb_id, limit=1000)
+            else:
+                runs = await repo.list_recent(limit=1000)
+            successful = [r for r in runs if r.get("status") == "completed"]
+            failed = [r for r in runs if r.get("status") == "failed"]
+            total_docs = sum(r.get("documents_ingested", 0) for r in runs)
+            total_chunks = sum(r.get("chunks_stored", 0) for r in runs)
+            return {
+                "total_runs": len(runs),
+                "successful": len(successful),
+                "failed": len(failed),
+                "total_documents": total_docs,
+                "total_chunks": total_chunks,
+            }
+        except Exception as e:
+            logger.warning("Ingestion stats query failed: %s", e)
+    return {"total_runs": 0, "successful": 0, "failed": 0, "total_documents": 0, "total_chunks": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +340,14 @@ async def list_ingestion_schedules():
 @router.get("/categories")
 async def list_l1_categories():
     """List L1 categories."""
+    state = _get_state()
+    repo = state.get("category_repo")
+    if repo:
+        try:
+            categories = await repo.get_l1_categories()
+            return {"categories": categories, "total": len(categories)}
+        except Exception as e:
+            logger.warning("Category repo query failed: %s", e)
     return {"categories": [], "total": 0}
 
 
@@ -273,8 +357,16 @@ async def list_l1_categories():
 @router.get("/categories/stats")
 async def get_l1_stats():
     """Get L1 category stats."""
-    return {
-        "categories": [],
-        "total_documents": 0,
-        "uncategorized": 0,
-    }
+    state = _get_state()
+    repo = state.get("category_repo")
+    if repo:
+        try:
+            categories = await repo.get_all_categories()
+            return {
+                "categories": categories,
+                "total_documents": 0,
+                "uncategorized": 0,
+            }
+        except Exception as e:
+            logger.warning("Category stats query failed: %s", e)
+    return {"categories": [], "total_documents": 0, "uncategorized": 0}

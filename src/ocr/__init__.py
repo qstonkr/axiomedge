@@ -1,17 +1,9 @@
-"""OCR Module for knowledge-local.
+"""OCR Module - PaddleOCR for Korean text extraction.
 
-PaddleOCR-only text extraction from scanned PDFs and images.
-No fallback providers -- errors propagate for easier debugging.
-
-Environment variables:
-- OCR_PROVIDER: "paddle" (default)
+No fallback providers. Errors propagate for debugging.
 """
 
-from src.ocr.hybrid_ocr_service import (
-    OCRInput,
-    OCRProvider,
-    OCRResult,
-)
+from src.ocr.models import OCRInput, OCRProvider, OCRResult
 from src.ocr.paddle_ocr_provider import PaddleOCRProvider
 
 __all__ = [

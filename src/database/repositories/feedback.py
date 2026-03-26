@@ -131,11 +131,13 @@ class FeedbackRepository:
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def count(self, status: str | None = None) -> int:
+    async def count(self, status: str | None = None, feedback_type: str | None = None) -> int:
         async with await self._get_session() as session:
             stmt = select(func.count()).select_from(KnowledgeFeedbackModel)
             if status:
                 stmt = stmt.where(KnowledgeFeedbackModel.status == status)
+            if feedback_type:
+                stmt = stmt.where(KnowledgeFeedbackModel.feedback_type == feedback_type)
             result = await session.execute(stmt)
             return result.scalar() or 0
 

@@ -158,16 +158,20 @@ def _run_ocr_once(img_bytes):
         confidences = []
 
         for res in results:
-            # PaddleOCR 3.x returns OCRResult objects with direct attributes
-            if hasattr(res, "rec_texts"):
-                data = res
-            elif isinstance(res, dict):
-                data = type("R", (), res)()
-            else:
-                continue
-            rec_texts = getattr(data, "rec_texts", []) or []
-            rec_scores = getattr(data, "rec_scores", []) or []
-            rec_polys = getattr(data, "rec_polys", getattr(data, "dt_polys", [])) or []
+            # PaddleOCR 3.x: try direct attr first, then json['res'] fallback
+            rec_texts = getattr(res, "rec_texts", None)
+            rec_scores = getattr(res, "rec_scores", None)
+            rec_polys = getattr(res, "rec_polys", None)
+            if rec_texts is None and hasattr(res, "json"):
+                data = res.json
+                if isinstance(data, dict):
+                    data = data.get("res", data)
+                rec_texts = data.get("rec_texts", [])
+                rec_scores = data.get("rec_scores", [])
+                rec_polys = data.get("rec_polys", data.get("dt_polys", []))
+            rec_texts = rec_texts or []
+            rec_scores = rec_scores or []
+            rec_polys = rec_polys or []
 
             for i, text in enumerate(rec_texts):
                 score = rec_scores[i] if i < len(rec_scores) else 0.0

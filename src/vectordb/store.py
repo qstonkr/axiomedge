@@ -137,12 +137,12 @@ class QdrantStoreOperations:
             return []
 
         config = self._provider.config
-        points = []
         point_ids = []
 
-        for item in valid_items:
+        BATCH_CHUNK_SIZE = _w.pipeline.qdrant_upsert_batch_size
+
+        def _build_point(item: dict[str, Any]) -> tuple[str, PointStruct]:
             pid = item.get("point_id") or str(uuid.uuid4())
-            point_ids.append(pid)
 
             payload = {
                 "content": item["content"],
@@ -166,18 +166,25 @@ class QdrantStoreOperations:
                 values = [sparse[i] for i in indices]
                 vectors[config.sparse_vector_name] = SparseVector(indices=indices, values=values)
 
-            points.append(
-                PointStruct(id=pid, vector=vectors, payload=payload)
-            )
+            return pid, PointStruct(id=pid, vector=vectors, payload=payload)
 
-        await client.upsert(
-            collection_name=collection_name,
-            points=points,
-        )
+        # Build all points and upsert in chunks (P2-3 perf fix)
+        all_points: list[PointStruct] = []
+        for item in valid_items:
+            pid, point = _build_point(item)
+            point_ids.append(pid)
+            all_points.append(point)
+
+        for i in range(0, len(all_points), BATCH_CHUNK_SIZE):
+            batch = all_points[i:i + BATCH_CHUNK_SIZE]
+            await client.upsert(
+                collection_name=collection_name,
+                points=batch,
+            )
 
         logger.info(
             "Batch upsert completed",
-            extra={"collection": collection_name, "count": len(points)},
+            extra={"collection": collection_name, "count": len(all_points)},
         )
         return point_ids
 

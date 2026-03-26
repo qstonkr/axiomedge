@@ -30,6 +30,11 @@ from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled regex patterns for token estimation
+_LATIN_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+_CJK_TOKEN_RE = re.compile(r"[\uAC00-\uD7A3]")
+_PUNCT_TOKEN_RE = re.compile(r"[^\sA-Za-z0-9\uAC00-\uD7A3]")
+
 
 def _sanitize_text(text: str, max_length: int = weights.llm.max_query_length) -> str:
     """Simple input sanitization with length truncation."""
@@ -92,7 +97,7 @@ class OllamaClient:
         else:
             self._config = OllamaConfig()
         self._client: httpx.AsyncClient | None = None
-        self._client_lock: asyncio.Lock | None = None
+        self._client_lock: asyncio.Lock = asyncio.Lock()
 
     @staticmethod
     def _estimate_token_count(value: str) -> int:
@@ -103,9 +108,9 @@ class OllamaClient:
         if not normalized:
             return 0
 
-        latin_tokens = len(re.findall(r"[A-Za-z0-9]+", normalized))
-        cjk_tokens = len(re.findall(r"[\uAC00-\uD7A3]", normalized))
-        punctuation_tokens = len(re.findall(r"[^\sA-Za-z0-9\uAC00-\uD7A3]", normalized))
+        latin_tokens = len(_LATIN_TOKEN_RE.findall(normalized))
+        cjk_tokens = len(_CJK_TOKEN_RE.findall(normalized))
+        punctuation_tokens = len(_PUNCT_TOKEN_RE.findall(normalized))
 
         estimated = latin_tokens + cjk_tokens + punctuation_tokens
         if estimated == 0:
@@ -113,14 +118,9 @@ class OllamaClient:
 
         return max(1, estimated)
 
-    def _get_client_lock(self) -> asyncio.Lock:
-        if self._client_lock is None:
-            self._client_lock = asyncio.Lock()
-        return self._client_lock
-
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            async with self._get_client_lock():
+            async with self._client_lock:
                 if self._client is None:
                     self._client = httpx.AsyncClient(timeout=self._config.timeout)
         return self._client
@@ -186,6 +186,7 @@ class OllamaClient:
                 "options": {
                     "num_predict": effective_max_tokens,
                     "temperature": effective_temperature,
+                    "num_ctx": self._config.context_length,
                 },
             },
         )
@@ -224,6 +225,7 @@ class OllamaClient:
                 "options": {
                     "num_predict": effective_max_tokens,
                     "temperature": effective_temperature,
+                    "num_ctx": self._config.context_length,
                 },
             },
         )
@@ -345,6 +347,7 @@ class OllamaClient:
                 "options": {
                     "num_predict": self._config.max_tokens,
                     "temperature": self._config.temperature,
+                    "num_ctx": self._config.context_length,
                 },
             },
         )
@@ -432,6 +435,7 @@ class OllamaClient:
                 "options": {
                     "num_predict": self._config.max_tokens,
                     "temperature": self._config.temperature,
+                    "num_ctx": self._config.context_length,
                 },
             },
         ) as response:
@@ -449,7 +453,7 @@ class OllamaClient:
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        async with self._get_client_lock():
+        async with self._client_lock:
             if self._client is None:
                 return
             if not self._client.is_closed:

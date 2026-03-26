@@ -128,7 +128,7 @@ class IKnowledgeConnector(Protocol):
 # SearchChunk
 # ---------------------------------------------------------------------------
 
-@dataclass
+@dataclass(slots=True)
 class SearchChunk:
     """A chunk returned from vector search."""
 

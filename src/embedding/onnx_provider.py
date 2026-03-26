@@ -30,6 +30,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -75,8 +77,9 @@ class OnnxBgeEmbeddingProvider:
         self._tokenizer: Any | None = None
         self._output_names: list[str] = []
         self._ready = False
-        # P1: LRU cache for query embeddings (512 entries, ~4MB)
-        self._cache: dict[str, dict[str, Any]] = {}
+        # P1: Thread-safe LRU cache for query embeddings (512 entries, ~4MB)
+        self._cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._cache_lock = threading.Lock()
         self._cache_max = int(os.getenv("KNOWLEDGE_EMBEDDING_CACHE_SIZE", str(weights.embedding.cache_size)))
         self._cache_hits = 0
         self._cache_misses = 0
@@ -185,13 +188,15 @@ class OnnxBgeEmbeddingProvider:
         if self._session is None or self._tokenizer is None:
             return empty
 
-        # P1: LRU cache for single-text queries (search hot path)
+        # P1: Thread-safe LRU cache for single-text queries (search hot path)
         if len(texts) == 1 and not return_colbert_vecs:
-            cache_key = texts[0]
-            if cache_key in self._cache:
-                self._cache_hits += 1
-                return self._cache[cache_key]
-            self._cache_misses += 1
+            cache_key = f"{texts[0]}::d={return_dense}::s={return_sparse}"
+            with self._cache_lock:
+                if cache_key in self._cache:
+                    self._cache_hits += 1
+                    self._cache.move_to_end(cache_key)
+                    return self._cache[cache_key]
+                self._cache_misses += 1
 
         # Tokenize
         encoded = self._tokenizer(
@@ -240,14 +245,14 @@ class OnnxBgeEmbeddingProvider:
             "colbert_vecs": colbert_vecs,
         }
 
-        # P1: Store in cache for single-text queries
+        # P1: Store in thread-safe LRU cache for single-text queries
         if len(texts) == 1 and not return_colbert_vecs:
-            cache_key = texts[0]
-            if len(self._cache) >= self._cache_max:
-                # Evict oldest entry (FIFO approximation)
-                oldest = next(iter(self._cache))
-                del self._cache[oldest]
-            self._cache[cache_key] = result
+            cache_key = f"{texts[0]}::d={return_dense}::s={return_sparse}"
+            with self._cache_lock:
+                if len(self._cache) >= self._cache_max:
+                    # Evict LRU entry (oldest in OrderedDict)
+                    self._cache.popitem(last=False)
+                self._cache[cache_key] = result
 
         return result
 

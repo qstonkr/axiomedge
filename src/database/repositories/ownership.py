@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any
 
 from sqlalchemy import select
@@ -47,6 +48,8 @@ class DocumentOwnerRepository:
                         if hasattr(existing, key):
                             setattr(existing, key, value)
                 else:
+                    if "id" not in data or not data["id"]:
+                        data["id"] = str(uuid.uuid4())
                     model = DocumentOwnerModel(**data)
                     session.add(model)
 
@@ -145,6 +148,8 @@ class TopicOwnerRepository:
                         existing.escalation_chain = json.dumps(data["escalation_chain"])
                 else:
                     model_data = dict(data)
+                    if "id" not in model_data or not model_data["id"]:
+                        model_data["id"] = str(uuid.uuid4())
                     if "topic_keywords" in model_data:
                         model_data["topic_keywords"] = json.dumps(model_data["topic_keywords"])
                     if "escalation_chain" in model_data:

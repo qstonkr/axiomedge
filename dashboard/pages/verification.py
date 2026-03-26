@@ -41,7 +41,7 @@ if api_failed(pending_data):
         st.rerun()
     st.stop()
 
-pending_items = pending_data.get("items", [])
+pending_items = pending_data.get("items", pending_data.get("documents", []))
 total_pending = pending_data.get("total", len(pending_items))
 
 # Summary metrics

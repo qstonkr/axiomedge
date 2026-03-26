@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paddleocr
+  namespace: knowledge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: paddleocr
+  template:
+    metadata:
+      labels:
+        app: paddleocr
+    spec:
+      containers:
+        - name: paddleocr
+          image: knowledge-paddleocr:latest
+          # Build from docker/paddleocr; platform: linux/amd64
+          ports:
+            - containerPort: 8866
+              name: http
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8866
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8866
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      nodeSelector:
+        kubernetes.io/arch: amd64
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paddleocr
+  namespace: knowledge
+spec:
+  selector:
+    app: paddleocr
+  ports:
+    - port: 8866
+      targetPort: 8866
+      name: http

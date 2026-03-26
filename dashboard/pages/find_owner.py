@@ -68,7 +68,7 @@ if query:
             st.cache_data.clear()
             st.rerun()
     else:
-        owners = result.get("owners", result.get("results", result.get("items", [])))
+        owners = result.get("owners", result.get("results", result.get("items", result.get("experts", []))))
         search_confidence = result.get("confidence", 0)
 
         if owners:

@@ -11,6 +11,11 @@ from .node_registry import (
     build_graph_indexes,
 )
 from .lucene_utils import sanitize_lucene, build_lucene_or_query
+from .indexer import ensure_indexes
+from .schema import apply_schema
+from .entity_resolver import EntityResolver, ResolvedEntity, ResolutionStage, EntityType
+from .multi_hop_searcher import MultiHopSearcher, RelatedNode, Expert, KnowledgePath
+from .integrity import GraphIntegrityChecker, IntegrityReport, IntegrityIssue
 
 __all__ = [
     "Neo4jClient",
@@ -25,4 +30,17 @@ __all__ = [
     "build_graph_indexes",
     "sanitize_lucene",
     "build_lucene_or_query",
+    "ensure_indexes",
+    "apply_schema",
+    "EntityResolver",
+    "ResolvedEntity",
+    "ResolutionStage",
+    "EntityType",
+    "MultiHopSearcher",
+    "RelatedNode",
+    "Expert",
+    "KnowledgePath",
+    "GraphIntegrityChecker",
+    "IntegrityReport",
+    "IntegrityIssue",
 ]

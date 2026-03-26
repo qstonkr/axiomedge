@@ -82,6 +82,73 @@ class GlossaryRepository:
                 logger.error("Database error saving glossary term", extra={"error": str(e)})
                 raise
 
+    async def save_batch(self, items: list[dict[str, Any]]) -> int:
+        """Bulk INSERT glossary terms via raw asyncpg connection.
+
+        Bypasses SQLAlchemy ORM entirely for maximum performance.
+        ~78K rows in seconds.
+        """
+        if not items:
+            return 0
+
+        now = _utc_now()
+        valid_keys = {c.key for c in GlossaryTermModel.__table__.columns}
+
+        columns = [
+            "id", "kb_id", "term", "term_ko", "definition",
+            "synonyms", "abbreviations", "related_terms", "source_kb_ids",
+            "source", "status", "term_type", "scope",
+            "physical_meaning", "composition_info", "domain_name",
+            "confidence_score", "occurrence_count",
+            "created_at", "updated_at",
+        ]
+
+        tuples = []
+        for item in items:
+            row = dict(item)
+            for field in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
+                val = row.get(field)
+                row[field] = json.dumps(val if isinstance(val, list) else []) if val else "[]"
+            row.setdefault("related_terms", "[]")
+            row.setdefault("source_kb_ids", "[]")
+            row.setdefault("confidence_score", 0)
+            row.setdefault("occurrence_count", 0)
+            row.setdefault("created_at", now)
+            row.setdefault("updated_at", now)
+            for k in columns:
+                row.setdefault(k, None)
+            tuples.append(tuple(row.get(c) for c in columns))
+
+        if not tuples:
+            return 0
+
+        col_names = ", ".join(columns)
+        placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
+        sql = f"INSERT INTO glossary_terms ({col_names}) VALUES ({placeholders})"
+
+        # Direct asyncpg connection (bypass SQLAlchemy for bulk performance)
+        import asyncpg
+        import os
+
+        # Get URL from session factory's bind if available
+        bind = self._session_maker.kw.get("bind")
+        if bind:
+            pg_url = str(bind.url).replace("postgresql+asyncpg://", "postgresql://")
+        else:
+            db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
+            pg_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+
+        try:
+            conn = await asyncpg.connect(pg_url)
+            try:
+                await conn.executemany(sql, tuples)
+                return len(tuples)
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.error("Batch insert failed: %s", e)
+            raise
+
     async def get_by_id(self, term_id: str) -> dict[str, Any] | None:
         async with await self._get_session() as session:
             stmt = select(GlossaryTermModel).where(GlossaryTermModel.id == term_id)

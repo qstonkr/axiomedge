@@ -27,6 +27,7 @@ from .quality_processor import (
     get_quality_summary,
     process_quality,
 )
+from .term_extractor import ExtractedTerm, TermExtractor
 
 __all__ = [
     "ChunkResult",
@@ -55,4 +56,7 @@ __all__ = [
     "process_quality",
     "str_to_uuid",
     "truncate_content",
+    # Term extraction
+    "ExtractedTerm",
+    "TermExtractor",
 ]

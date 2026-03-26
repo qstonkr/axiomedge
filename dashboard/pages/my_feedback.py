@@ -121,7 +121,7 @@ if api_failed(data):
         st.cache_data.clear()
         st.rerun()
 else:
-    items = data.get("items", [])
+    items = data.get("items", data.get("feedback", []))
     total = data.get("total", 0)
 
     st.markdown(f"**총 {total:,}건**")
