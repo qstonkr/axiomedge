@@ -4,9 +4,9 @@ Adapted from oreo-ecosystem cross_encoder.py.
 Uses BGE-Reranker-v2-m3 (multilingual/Korean) via sentence-transformers.
 
 Features:
+- Background model loading (never blocks search requests)
 - Batch inference with configurable batch size
-- Singleton model loading (lazy)
-- Graceful degradation when model unavailable
+- Graceful degradation when model unavailable or loading
 - Sigmoid score normalization
 """
 
@@ -16,7 +16,6 @@ import asyncio
 import logging
 import math
 import os
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -29,59 +28,55 @@ CROSS_ENCODER_BATCH_SIZE = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "32"))
 CROSS_ENCODER_MAX_LENGTH = int(os.getenv("CROSS_ENCODER_MAX_LENGTH", "1024"))
 
 _model = None
-_model_lock = threading.Lock()
+_loading = False  # True while background load is in progress
+_load_attempted = False  # True after first load attempt (success or fail)
 _executor = ThreadPoolExecutor(max_workers=1)
 
 
-def _load_model():
-    """Load cross-encoder model (singleton)."""
-    global _model
-    if _model is not None:
-        return _model
+def _load_model_sync():
+    """Load cross-encoder model. Called only from background thread."""
+    global _model, _loading, _load_attempted
+    _loading = True
+    try:
+        # SSL bypass for corporate proxy
+        import ssl
+        ssl._create_default_https_context = ssl._create_unverified_context
+        os.environ.setdefault("CURL_CA_BUNDLE", "")
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
 
-    with _model_lock:
-        if _model is not None:
-            return _model
-        try:
-            # SSL bypass for corporate proxy
-            import ssl
-            import os
-            ssl._create_default_https_context = ssl._create_unverified_context
-            os.environ.setdefault("CURL_CA_BUNDLE", "")
-            os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+        import urllib3
+        urllib3.disable_warnings()
 
-            # Monkey-patch requests to skip SSL verify
-            import urllib3
-            urllib3.disable_warnings()
+        import requests
+        _orig_get = requests.Session.get
+        _orig_post = requests.Session.post
 
-            import requests
-            _orig_get = requests.Session.get
-            _orig_post = requests.Session.post
+        def _get_no_verify(self, *a, **kw):
+            kw.setdefault("verify", False)
+            return _orig_get(self, *a, **kw)
 
-            def _get_no_verify(self, *a, **kw):
-                kw.setdefault("verify", False)
-                return _orig_get(self, *a, **kw)
+        def _post_no_verify(self, *a, **kw):
+            kw.setdefault("verify", False)
+            return _orig_post(self, *a, **kw)
 
-            def _post_no_verify(self, *a, **kw):
-                kw.setdefault("verify", False)
-                return _orig_post(self, *a, **kw)
+        requests.Session.get = _get_no_verify  # type: ignore
+        requests.Session.post = _post_no_verify  # type: ignore
 
-            requests.Session.get = _get_no_verify  # type: ignore
-            requests.Session.post = _post_no_verify  # type: ignore
+        from sentence_transformers import CrossEncoder
+        _model = CrossEncoder(
+            CROSS_ENCODER_MODEL,
+            max_length=CROSS_ENCODER_MAX_LENGTH,
+        )
 
-            from sentence_transformers import CrossEncoder
-            _model = CrossEncoder(
-                CROSS_ENCODER_MODEL,
-                max_length=CROSS_ENCODER_MAX_LENGTH,
-            )
-
-            requests.Session.get = _orig_get  # type: ignore
-            requests.Session.post = _orig_post  # type: ignore
-            logger.info("Cross-encoder loaded: %s", CROSS_ENCODER_MODEL)
-        except Exception as e:
-            logger.warning("Cross-encoder load failed (graceful degradation): %s", e)
-            _model = None
-    return _model
+        requests.Session.get = _orig_get  # type: ignore
+        requests.Session.post = _orig_post  # type: ignore
+        logger.info("Cross-encoder loaded: %s", CROSS_ENCODER_MODEL)
+    except Exception as e:
+        logger.warning("Cross-encoder load failed (graceful degradation): %s", e)
+        _model = None
+    finally:
+        _loading = False
+        _load_attempted = True
 
 
 def _sigmoid(x: float, temperature: float = 3.0) -> float:
@@ -98,44 +93,27 @@ def rerank_with_cross_encoder(
 ) -> list[dict[str, Any]]:
     """Rerank chunks using cross-encoder model.
 
-    Args:
-        query: Search query.
-        chunks: Retrieved chunks with 'content' field.
-        top_k: Number of results to return.
-        score_key: Key to store cross-encoder score in chunk.
-
-    Returns:
-        Reranked chunks sorted by cross-encoder score.
+    If model is still loading (warmup), returns chunks unchanged (no blocking).
     """
-    model = _load_model()
-    if model is None or not chunks:
+    if _model is None or not chunks:
         return chunks[:top_k]
 
-    # Build pairs
-    pairs = []
-    for chunk in chunks:
-        content = chunk.get("content", "")
-        # Truncate to max_length for cross-encoder
-        pairs.append([query, content[:CROSS_ENCODER_MAX_LENGTH]])
+    pairs = [[query, chunk.get("content", "")[:CROSS_ENCODER_MAX_LENGTH]] for chunk in chunks]
 
-    # Batch predict
     try:
-        scores = model.predict(
+        scores = _model.predict(
             pairs,
             batch_size=CROSS_ENCODER_BATCH_SIZE,
             show_progress_bar=False,
         )
 
-        # Attach normalized scores
         for i, chunk in enumerate(chunks):
             raw_score = float(scores[i])
             chunk[score_key] = _sigmoid(raw_score)
-            # Also set in metadata for CompositeReranker
             if "metadata" not in chunk:
                 chunk["metadata"] = {}
             chunk["metadata"]["cross_encoder_score"] = _sigmoid(raw_score)
 
-        # Sort by cross-encoder score
         chunks.sort(key=lambda c: c.get(score_key, 0), reverse=True)
 
     except Exception as e:
@@ -149,7 +127,9 @@ async def async_rerank_with_cross_encoder(
     chunks: list[dict[str, Any]],
     top_k: int = 10,
 ) -> list[dict[str, Any]]:
-    """Async wrapper for cross-encoder reranking."""
+    """Async wrapper. Never blocks — skips if model not ready."""
+    if _model is None:
+        return chunks[:top_k]
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         _executor,
@@ -158,5 +138,7 @@ async def async_rerank_with_cross_encoder(
 
 
 def warmup():
-    """Pre-load model in background (fire-and-forget)."""
-    _executor.submit(_load_model)
+    """Pre-load model in background thread. Never blocks the caller."""
+    if _load_attempted or _loading:
+        return
+    _executor.submit(_load_model_sync)
