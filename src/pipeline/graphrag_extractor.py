@@ -172,6 +172,8 @@ def build_extraction_prompt(document: str, kb_id: str | None = None) -> str:
     nodes = schema.get("nodes", ALLOWED_NODES)
 
     # Build example nodes for prompt
+    # NOTE: Result must be .format(document=...) compatible.
+    # Use doubled braces {{}} for literal braces in the output.
     examples = []
     for n in nodes[:5]:
         label_map = {
@@ -188,21 +190,20 @@ def build_extraction_prompt(document: str, kb_id: str | None = None) -> str:
             "Project": ("프로젝트명", "Project"),
         }
         id_label, type_label = label_map.get(n, ("이름", n))
-        examples.append(f'{{"id":"{id_label}","type":"{type_label}"}}')
+        examples.append(f'{{{{"id":"{id_label}","type":"{type_label}"}}}}')
 
     nodes_example = ",".join(examples)
 
-    return f"""다음 문서에서 엔티티와 관계를 추출하세요.
-문서에 명시된 정보만 추출하고, 추측하지 마세요.
-
-추출 대상: {focus}
-
-문서: {{document}}
-
-아래 JSON 형식으로만 출력하세요:
-{{"nodes":[{nodes_example}],"relationships":[{{"source":"엔티티A","type":"RELATED_TO","target":"엔티티B"}}]}}
-
-JSON:"""
+    # Use string concatenation to keep .format() compatibility
+    return (
+        "다음 문서에서 엔티티와 관계를 추출하세요.\n"
+        "문서에 명시된 정보만 추출하고, 추측하지 마세요.\n\n"
+        f"추출 대상: {focus}\n\n"
+        "문서: {document}\n\n"
+        "아래 JSON 형식으로만 출력하세요:\n"
+        f'{{{{"nodes":[{nodes_example}],"relationships":[{{{{"source":"엔티티A","type":"RELATED_TO","target":"엔티티B"}}}}]}}}}\n\n'
+        "JSON:"
+    )
 
 
 # =============================================================================
