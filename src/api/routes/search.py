@@ -16,6 +16,8 @@ from src.config_weights import weights
 from src.domain.models import SearchChunk
 from src.search.answer_guard import AnswerGuard
 from src.search.crag_evaluator import RetrievalAction
+from src.search.passage_cleaner import clean_chunks
+from src.search.cross_encoder_reranker import async_rerank_with_cross_encoder
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
@@ -297,12 +299,10 @@ async def hub_search(request: HubSearchRequest):
     all_chunks = all_chunks[: request.top_k * weights.search.rerank_pool_multiplier]
 
     # 4.5. Passage cleaning - normalize text before reranking
-    from src.search.passage_cleaner import clean_chunks
     all_chunks = clean_chunks(all_chunks)
 
     # 4.6. Cross-encoder reranking - neural relevance scoring
     try:
-        from src.search.cross_encoder_reranker import async_rerank_with_cross_encoder
         all_chunks = await async_rerank_with_cross_encoder(
             query=corrected_query,
             chunks=all_chunks,

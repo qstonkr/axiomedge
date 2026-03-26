@@ -200,7 +200,6 @@ class _OllamaLLMClient:
         import asyncio
 
         prompt = prompt_template.format(document=document)
-        client = self._get_client()
 
         try:
             loop = asyncio.get_running_loop()
@@ -208,8 +207,12 @@ class _OllamaLLMClient:
             loop = None
 
         # Create fresh client each call to avoid event loop binding issues
-        from src.llm.ollama_client import OllamaClient
-        fresh_client = OllamaClient()
+        from src.llm.ollama_client import OllamaClient, OllamaConfig
+        fresh_client = OllamaClient(OllamaConfig(
+            base_url=self._base_url,
+            model=self._model,
+            temperature=_w.llm.graphrag_temperature,
+        ))
 
         if loop and loop.is_running():
             future = _SHARED_EXECUTOR.submit(

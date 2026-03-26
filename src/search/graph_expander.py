@@ -171,8 +171,8 @@ class GraphSearchExpander:
                     scope_kb_ids=None,  # No KB scope = cross-KB
                 )
                 cross_kb_uris -= related_uris  # Remove already found
-            except Exception:
-                pass  # Cross-KB is best-effort
+            except Exception as _xkb_err:
+                logger.debug("Cross-KB graph expansion failed (best-effort): %s", _xkb_err)
 
             all_related = related_uris | cross_kb_uris
             new_uris = all_related - existing_uris

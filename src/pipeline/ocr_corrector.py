@@ -90,12 +90,13 @@ async def correct_ocr_text(text: str, ollama_client) -> str:
     logger.info("OCR correction: noise_score=%.3f, text_len=%d", score_before, len(text))
 
     try:
-        prompt = _CORRECTION_PROMPT.format(text=text[:3000])  # limit input length
+        input_text = text[:3000]  # limit input length
+        prompt = _CORRECTION_PROMPT.format(text=input_text)
         corrected = await ollama_client.generate(prompt, temperature=0.0, max_tokens=3000)
         corrected = corrected.strip()
 
-        # Safety: if correction is too short, keep original
-        if len(corrected) < len(text) * 0.3:
+        # Safety: compare against input length (not full original) to avoid false rejection
+        if len(corrected) < len(input_text) * 0.3:
             logger.warning(
                 "OCR correction too short (%d vs %d), keeping original",
                 len(corrected), len(text),

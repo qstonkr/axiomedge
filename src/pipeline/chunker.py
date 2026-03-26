@@ -139,21 +139,14 @@ class Chunker:
 
             for sub in sub_segs:
                 try:
-                    import signal
-
-                    def _kss_timeout_handler(signum, frame):
-                        raise TimeoutError("KSS timeout")
-
-                    old_handler = signal.signal(signal.SIGALRM, _kss_timeout_handler)
-                    signal.alarm(30)  # 30 second timeout per segment
-                    try:
-                        sentences = kss.split_sentences(sub)
+                    # Use threading-safe timeout (signal.SIGALRM only works in main thread)
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        future = pool.submit(kss.split_sentences, sub)
+                        sentences = future.result(timeout=10)  # 10s timeout
                         all_sentences.extend(s.strip() for s in sentences if s.strip())
-                    finally:
-                        signal.alarm(0)
-                        signal.signal(signal.SIGALRM, old_handler)
-                except (Exception, TimeoutError) as e:
-                    if "timeout" in str(e).lower():
+                except (concurrent.futures.TimeoutError, Exception) as e:
+                    if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):
                         logger.warning("KSS timeout on %d chars, using regex fallback", len(sub))
                     # Fallback to regex for this segment
                     all_sentences.extend(self._regex_split_sentences(sub))

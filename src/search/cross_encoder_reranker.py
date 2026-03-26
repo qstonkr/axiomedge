@@ -56,8 +56,9 @@ def _load_model():
 
 
 def _sigmoid(x: float, temperature: float = 3.0) -> float:
-    """Normalize raw score to [0, 1] via sigmoid."""
-    return 1.0 / (1.0 + math.exp(-x / temperature))
+    """Normalize raw score to [0, 1] via sigmoid (clamped to prevent overflow)."""
+    clamped = max(-500, min(500, x / temperature))
+    return 1.0 / (1.0 + math.exp(-clamped))
 
 
 def rerank_with_cross_encoder(
@@ -120,7 +121,8 @@ async def async_rerank_with_cross_encoder(
     top_k: int = 10,
 ) -> list[dict[str, Any]]:
     """Async wrapper for cross-encoder reranking."""
-    return await asyncio.get_event_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
         _executor,
         lambda: rerank_with_cross_encoder(query, chunks, top_k),
     )

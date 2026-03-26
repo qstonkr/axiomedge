@@ -53,10 +53,10 @@ def clean_passage(text: str, min_length: int = 10) -> str:
     if len(text) > 15:
         last_chunk = text[-15:]
         if not _SENTENCE_END_RE.search(last_chunk):
-            for sep in ('.', '다.', '요.', '!', '?', '。'):
+            for sep in ('다.', '요.', '음.', '.', '!', '?', '。'):
                 pos = text.rfind(sep)
                 if pos > len(text) - 100 and pos > 0:
-                    text = text[:pos + 1]
+                    text = text[:pos + len(sep)]  # Include full separator
                     break
 
     return text

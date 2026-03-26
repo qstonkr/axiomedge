@@ -136,7 +136,8 @@ async def _stage1_parse_to_jsonl(
                     "uploads", effective_kb_id,
                 )
                 os.makedirs(uploads_dir, exist_ok=True)
-                shutil.copy2(tmp_path, os.path.join(uploads_dir, fname))
+                safe_fname = os.path.basename(fname)  # Prevent path traversal
+                shutil.copy2(tmp_path, os.path.join(uploads_dir, safe_fname))
 
                 # Parse (OCR happens here)
                 parse_result = await asyncio.to_thread(parse_file_enhanced, tmp_path)
@@ -448,6 +449,12 @@ async def reingest_from_jsonl(
         raise HTTPException(status_code=503, detail="Ingestion services not initialized")
 
     path = jsonl_path or str(get_jsonl_path(kb_id))
+    # Security: validate path is within allowed directory
+    import os as _os
+    allowed_base = _os.getenv("KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR", "/tmp/knowledge-local")
+    real_path = _os.path.realpath(path)
+    if not real_path.startswith(_os.path.realpath(allowed_base)):
+        raise HTTPException(status_code=400, detail="Invalid JSONL path: must be within upload directory")
     reader = JsonlCheckpointReader(path)
     record_count = reader.count()
     if record_count == 0:

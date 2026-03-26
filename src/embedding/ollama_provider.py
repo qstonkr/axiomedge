@@ -112,7 +112,8 @@ class OllamaEmbeddingProvider:
                 tokens = text.split()
                 sparse: dict[int, float] = {}
                 for token in tokens:
-                    h = hash(token) % 100000
+                    import hashlib as _hl
+                    h = int(_hl.md5(token.encode()).hexdigest(), 16) % 100000
                     if h > 0:
                         sparse[h] = sparse.get(h, 0.0) + 1.0
                 if sparse:
