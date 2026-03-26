@@ -566,24 +566,24 @@ async def hub_search(request: HubSearchRequest):
     # Store in caches (fire-and-forget)
     _response_dict = response.model_dump()
 
-    # MultiLayerCache
-    if multi_cache:
-        try:
-            from src.cache.cache_types import CacheDomain
-            await multi_cache.set(
-                query, _response_dict, domain=CacheDomain.KB_SEARCH,
-                metadata={"kb_ids": collections},
-                kb_ids=collections, top_k=effective_top_k,
-            )
-        except Exception:
-            pass
+    # Only cache results that include an answer (avoid serving empty answers from cache)
+    if response.answer:
+        if multi_cache:
+            try:
+                from src.cache.cache_types import CacheDomain
+                await multi_cache.set(
+                    query, _response_dict, domain=CacheDomain.KB_SEARCH,
+                    metadata={"kb_ids": collections},
+                    kb_ids=collections, top_k=effective_top_k,
+                )
+            except Exception:
+                pass
 
-    # Legacy SearchCache
-    if search_cache:
-        try:
-            await search_cache.set(query, collections, _response_dict, effective_top_k)
-        except Exception:
-            pass  # Don't fail search because of caching
+        if search_cache:
+            try:
+                await search_cache.set(query, collections, _response_dict, effective_top_k)
+            except Exception:
+                pass
 
     return response
 
