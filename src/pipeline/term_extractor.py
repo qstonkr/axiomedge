@@ -203,6 +203,10 @@ class IGlossaryRepo:
 class TermExtractor:
     """Extract domain terms from chunk content and store with scope='kb'.
 
+    Uses KiwiPy morphological analysis to extract meaningful nouns and
+    compound terms, with noise filtering. Falls back to regex patterns
+    if KiwiPy is unavailable.
+
     During extraction:
     - Skip terms that already exist as scope='global' in the glossary.
     - Store extracted terms with scope='kb' and the source kb_id.
@@ -211,7 +215,31 @@ class TermExtractor:
     # Minimum occurrences to consider a term valid
     MIN_OCCURRENCES = 2
 
-    # Pre-built pattern list (avoids re-creation per _extract_patterns call)
+    # Minimum term length (chars)
+    MIN_TERM_LENGTH = 2
+
+    # Noun POS tags to extract from KiwiPy
+    _NOUN_TAGS = frozenset({"NNG", "NNP"})  # 일반명사, 고유명사
+    _FOREIGN_TAG = "SL"  # 외국어 (ESPA, OFC, GS25 등)
+
+    # Single-char nouns to skip (too generic)
+    _SKIP_SINGLE_NOUNS = frozenset({
+        "것", "수", "등", "중", "때", "곳", "점", "건", "번", "일",
+        "금", "명", "권", "부", "용", "내", "외", "상", "하", "전",
+        "후", "간", "량", "율", "도", "망", "실", "손", "원",
+    })
+
+    # Generic nouns to skip (high frequency, low domain value)
+    _STOP_NOUNS = frozenset({
+        "경우", "내용", "사항", "관련", "기준", "사용", "이용", "확인",
+        "처리", "진행", "안내", "문의", "요청", "변경", "등록", "삭제",
+        "조회", "입력", "설정", "관리", "운영", "적용", "발생", "필요",
+        "가능", "완료", "시작", "종료", "대상", "방법", "절차", "결과",
+        "현황", "정보", "데이터", "시스템", "서비스", "기능", "항목",
+        "화면", "페이지", "버튼", "메뉴", "탭", "표시", "출력",
+    })
+
+    # Pre-built regex pattern list (fallback when KiwiPy unavailable)
     _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         (CAMEL_CASE_PATTERN, "camel_case"),
         (ACRONYM_PATTERN, "acronym"),
@@ -227,6 +255,21 @@ class TermExtractor:
     ) -> None:
         self._glossary_repo = glossary_repo
         self._min_occurrences = min_occurrences or self.MIN_OCCURRENCES
+        self._kiwi = None
+        self._kiwi_available: bool | None = None  # None = not checked yet
+
+    def _get_kiwi(self):
+        """Lazy-load KiwiPy tokenizer."""
+        if self._kiwi_available is None:
+            try:
+                from kiwipiepy import Kiwi
+                self._kiwi = Kiwi()
+                self._kiwi_available = True
+                logger.info("KiwiPy loaded for term extraction")
+            except ImportError:
+                self._kiwi_available = False
+                logger.warning("KiwiPy not available, using regex fallback")
+        return self._kiwi
 
     async def extract_from_chunks(
         self,
@@ -235,6 +278,9 @@ class TermExtractor:
         kb_id: str,
     ) -> list[ExtractedTerm]:
         """Extract terms from a list of chunk texts.
+
+        Uses KiwiPy morphological analysis (NNG/NNP + compound noun merging)
+        with fallback to regex patterns if KiwiPy is unavailable.
 
         Args:
             chunks: List of chunk text strings.
@@ -246,18 +292,25 @@ class TermExtractor:
         term_counter: Counter[str] = Counter()
         term_types: dict[str, str] = {}
         term_contexts: dict[str, list[str]] = {}
-        original_case: dict[str, str] = {}  # count_key -> original casing
+        original_case: dict[str, str] = {}
+
+        kiwi = self._get_kiwi()
+        use_kiwi = kiwi is not None
 
         for chunk_text in chunks:
             if not chunk_text:
                 continue
-            self._extract_patterns(
-                chunk_text, term_counter, term_types, term_contexts,
-                _original_case=original_case,
-            )
+            if use_kiwi:
+                self._extract_terms_kiwi(
+                    chunk_text, kiwi, term_counter, term_types,
+                    term_contexts, original_case,
+                )
+            else:
+                self._extract_patterns(
+                    chunk_text, term_counter, term_types,
+                    term_contexts, _original_case=original_case,
+                )
 
-        # Filter by minimum occurrences
-        # Use original casing (preserves acronyms like KB, RAG, LLM)
         candidates = [
             ExtractedTerm(
                 term=original_case.get(term, term),
@@ -274,10 +327,127 @@ class TermExtractor:
             candidates = await self._filter_global_terms(candidates, kb_id)
 
         logger.info(
-            "Term extraction: %d candidates from %d chunks (kb_id=%s)",
+            "Term extraction (%s): %d candidates from %d chunks (kb_id=%s)",
+            "kiwi" if use_kiwi else "regex",
             len(candidates), len(chunks), kb_id,
         )
         return candidates
+
+    def _extract_terms_kiwi(
+        self,
+        text: str,
+        kiwi: Any,
+        counter: Counter[str],
+        types: dict[str, str],
+        contexts: dict[str, list[str]],
+        original_case: dict[str, str],
+    ) -> None:
+        """Extract terms using KiwiPy morphological analysis.
+
+        Strategy:
+        1. Tokenize with KiwiPy
+        2. Extract NNG (common nouns), NNP (proper nouns), SL (foreign words)
+        3. Merge adjacent nouns into compound terms (경영+주→경영주, 정산+금→정산금)
+        4. Filter single-char nouns and stopwords
+        """
+        try:
+            tokens = kiwi.tokenize(text)
+        except Exception:
+            return
+
+        # Pass 1: Merge adjacent noun tokens into compound terms
+        # Rules:
+        # - Max 3 tokens per compound (avoid 담배권망실점포)
+        # - Max 8 chars per compound
+        # - SL (foreign) tokens stand alone unless adjacent to SL/SN
+        # - NNP (proper nouns) stand alone (사람 이름 분리)
+        _MAX_COMPOUND_TOKENS = 3
+        _MAX_COMPOUND_CHARS = 8
+
+        compounds: list[tuple[str, str]] = []  # (term, tag_type)
+        buf_forms: list[str] = []
+        buf_tags: list[str] = []
+
+        def _flush():
+            if not buf_forms:
+                return
+            merged = "".join(buf_forms)
+            has_nnp = any(t == "NNP" for t in buf_tags)
+            has_sl = any(t == self._FOREIGN_TAG for t in buf_tags)
+
+            # Emit compound (only if all parts are 2+ chars)
+            all_parts_valid = all(len(f) >= 2 for f in buf_forms)
+            if len(buf_forms) > 1 and len(merged) <= _MAX_COMPOUND_CHARS and all_parts_valid:
+                tag = "compound_noun"
+                compounds.append((merged, tag))
+            # Always emit individual meaningful tokens
+            for form, t in zip(buf_forms, buf_tags):
+                if len(form) < self.MIN_TERM_LENGTH:
+                    continue
+                if t == "NNP":
+                    compounds.append((form, "proper_noun"))
+                elif t == self._FOREIGN_TAG:
+                    compounds.append((form, "foreign"))
+                elif t == "NNG":
+                    compounds.append((form, "noun"))
+            buf_forms.clear()
+            buf_tags.clear()
+
+        for token in tokens:
+            tag = token.tag
+            if tag in self._NOUN_TAGS or tag == self._FOREIGN_TAG:
+                # NNP (proper nouns like 김철수) break compound
+                if tag == "NNP" and buf_forms:
+                    _flush()
+                    buf_forms.append(token.form)
+                    buf_tags.append(tag)
+                    _flush()
+                # SL (foreign) only compounds with adjacent SL
+                elif tag == self._FOREIGN_TAG and buf_forms and buf_tags[-1] != self._FOREIGN_TAG:
+                    _flush()
+                    buf_forms.append(token.form)
+                    buf_tags.append(tag)
+                # Max compound size
+                elif len(buf_forms) >= _MAX_COMPOUND_TOKENS:
+                    _flush()
+                    buf_forms.append(token.form)
+                    buf_tags.append(tag)
+                else:
+                    buf_forms.append(token.form)
+                    buf_tags.append(tag)
+            else:
+                _flush()
+        _flush()
+
+        # Pass 2: Filter and count
+        for term, tag_type in compounds:
+            # Length check
+            if len(term) < self.MIN_TERM_LENGTH:
+                continue
+            # Single-char Korean noun filter
+            if len(term) == 1 and term in self._SKIP_SINGLE_NOUNS:
+                continue
+            # Repeated character filter (손손, ㅋㅋㅋ)
+            if len(set(term)) <= 1:
+                continue
+            # Stopword filter
+            if term in self._STOP_NOUNS:
+                continue
+            # Code artifact filter
+            if _is_code_artifact(term):
+                continue
+
+            count_key = term.lower()
+            counter[count_key] += 1
+            types.setdefault(count_key, tag_type)
+            if count_key not in original_case:
+                original_case[count_key] = term
+            if count_key not in contexts:
+                contexts[count_key] = []
+            if len(contexts[count_key]) < 3:
+                ctx = self._extract_context(text, term)
+                if ctx:
+                    contexts[count_key].append(ctx)
 
     async def save_extracted_terms(
         self,
