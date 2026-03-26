@@ -108,8 +108,8 @@ class EnhancedMatcherConfig:
     """
     enable_synonym_expansion: bool = True
     enable_rapidfuzz: bool = True
-    enable_dense_search: bool = False
-    enable_cross_encoder: bool = False
+    enable_dense_search: bool = True
+    enable_cross_encoder: bool = True
 
 
 # =============================================================================
