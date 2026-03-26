@@ -278,6 +278,21 @@ def _clean_passage(text: str) -> str:
     return result
 
 
+_MAX_PREFIX_CHARS = 150  # Prefix should be <15% of typical 2500-char chunk
+
+
+def _shorten_title(title: str, max_len: int = 60) -> str:
+    """Shorten long filenames: remove S3 numeric IDs, truncate."""
+    import re
+    # Remove leading numeric S3 key (e.g., "1773997188896735843_")
+    title = re.sub(r"^\d{10,}_", "", title)
+    # Remove file extension
+    title = re.sub(r"\.(pptx?|pdf|docx?|xlsx?|csv)$", "", title, flags=re.IGNORECASE)
+    if len(title) > max_len:
+        title = title[:max_len] + "…"
+    return title
+
+
 def _build_document_context_prefix(
     raw: RawDocument,
     *,
@@ -287,52 +302,47 @@ def _build_document_context_prefix(
     total_chunks: int = 0,
     doc_summary: str = "",
 ) -> str:
-    """Build a document context prefix string for chunk text.
+    """Build a compact document context prefix for embedding.
 
-    Follows the Contextual Retrieval pattern (Anthropic):
-    [Context] Document: {title} | Source: {source} | Section {i}/{n}
-    [Summary] {doc summary}
+    Target: < 150 chars to avoid diluting chunk content in embeddings.
+    Format: [Context] {short_title} | Section {i}/{n}
     """
     parts: list[str] = []
 
-    # Context line
+    # Context line — compact, no source_uri duplication
+    short_title = _shorten_title(raw.title) if raw.title else ""
     context_parts: list[str] = []
-    if raw.title:
-        context_parts.append(f"Document: {raw.title}")
-    if raw.source_uri:
-        context_parts.append(f"Source: {raw.source_uri}")
+    if short_title:
+        context_parts.append(short_title)
     if raw.author:
-        context_parts.append(f"Author: {raw.author}")
+        context_parts.append(raw.author)
     if total_chunks > 0:
-        context_parts.append(f"Section {chunk_index + 1}/{total_chunks}")
+        context_parts.append(f"§{chunk_index + 1}/{total_chunks}")
     if context_parts:
         parts.append(f"[Context] {' | '.join(context_parts)}")
 
-    # Summary line
-    if doc_summary:
+    # Summary — only if short and meaningful (skip boilerplate)
+    if doc_summary and len(doc_summary) <= 80:
         parts.append(f"[Summary] {doc_summary}")
 
-    # META-02: Labels
-    labels = raw.metadata.get("labels", [])
-    if labels:
-        parts.append(f"[태그: {', '.join(labels)}]")
-
-    # META-08: Parent page title
-    parent_title = raw.metadata.get("parent_title", "")
-    if parent_title:
-        parts.append(f"[상위문서: {parent_title}]")
-
-    # META-04: Heading hierarchy path
+    # Heading path (usually short)
     if heading_path:
         parts.append(f"[섹션: {heading_path}]")
 
-    # Chunk type indicator for non-body chunks
+    # Chunk type for non-body
     if chunk_type != "body":
         parts.append(f"[유형: {chunk_type}]")
 
     if not parts:
         return ""
-    return "\n".join(parts) + "\n\n"
+
+    prefix = "\n".join(parts) + "\n\n"
+
+    # Hard limit: truncate prefix if still too long
+    if len(prefix) > _MAX_PREFIX_CHARS:
+        prefix = prefix[:_MAX_PREFIX_CHARS - 3] + "…\n\n"
+
+    return prefix
 
 
 # ---------------------------------------------------------------------------
