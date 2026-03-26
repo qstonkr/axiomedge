@@ -153,6 +153,7 @@ class GraphSearchExpander:
                 existing_uris.add(uri)
 
         try:
+            # Single-KB expansion (scoped)
             related_uris = await self._graph_repo.find_related_chunks(
                 entity_names,
                 max_hops=self._max_hops,
@@ -160,14 +161,29 @@ class GraphSearchExpander:
                 scope_kb_ids=scope_kb_ids,
             )
 
-            # Only new URIs not already in the initial result set
-            new_uris = related_uris - existing_uris
+            # Cross-KB expansion (unscoped) — find relationships across all KBs
+            cross_kb_uris: set[str] = set()
+            try:
+                cross_kb_uris = await self._graph_repo.find_related_chunks(
+                    entity_names,
+                    max_hops=self._max_hops,
+                    max_results=self._max_expansion // 2,
+                    scope_kb_ids=None,  # No KB scope = cross-KB
+                )
+                cross_kb_uris -= related_uris  # Remove already found
+            except Exception:
+                pass  # Cross-KB is best-effort
+
+            all_related = related_uris | cross_kb_uris
+            new_uris = all_related - existing_uris
             graph_related_count = len(new_uris)
 
             logger.info(
-                "Graph expansion: %d entities -> %d related docs (%d new)",
+                "Graph expansion: %d entities -> %d related (%d same-KB, %d cross-KB, %d new)",
                 len(entity_names),
+                len(all_related),
                 len(related_uris),
+                len(cross_kb_uris),
                 graph_related_count,
             )
 

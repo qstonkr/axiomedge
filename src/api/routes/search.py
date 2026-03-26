@@ -158,6 +158,18 @@ async def hub_search(request: HubSearchRequest):
     if not collections:
         collections = ["knowledge"]
 
+    # 1.5 KB tier access control — filter collections by user's accessible tiers
+    kb_registry = state.get("kb_registry")
+    if kb_registry and collections != ["knowledge"]:
+        try:
+            accessible_kbs = await kb_registry.list_all()
+            active_kb_ids = {kb["kb_id"] for kb in accessible_kbs if kb.get("status") == "active"}
+            filtered = [c for c in collections if c in active_kb_ids]
+            if filtered:
+                collections = filtered
+        except Exception:
+            pass  # Graceful degradation: use original collections
+
     # 2. QueryPreprocessor - correct typos BEFORE embedding
     corrected_query = query
     preprocess_info: QueryPreprocessInfo | None = None
@@ -191,6 +203,22 @@ async def hub_search(request: HubSearchRequest):
                 corrected_query = expanded_q
         except Exception as e:
             logger.warning("Query expansion failed: %s", e)
+
+    # 2.5 Query type classification — adjust strategy per type
+    query_classification = None
+    classifier = state.get("query_classifier")
+    if classifier:
+        try:
+            from src.search.query_classifier import QueryClassifier
+            query_classification = classifier.classify(corrected_query)
+            # Owner queries: increase top_k for better recall
+            if query_classification.query_type.value == "owner_query":
+                request.top_k = max(request.top_k, 10)
+            # Concept queries: use broader search
+            elif query_classification.query_type.value == "concept":
+                request.top_k = max(request.top_k, 8)
+        except Exception:
+            pass
 
     # 3. Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
     embedder = state.get("embedder")
@@ -369,10 +397,13 @@ async def hub_search(request: HubSearchRequest):
     query_type = ""
     confidence = ""
 
-    # If CRAG says INCORRECT, skip answer generation and use abstention message
+    # Inline quality blocking: skip answer when confidence too low
     if crag_evaluation and crag_evaluation.action == RetrievalAction.INCORRECT:
         answer = crag_evaluation.recommendation
         confidence = crag_evaluation.confidence_level.value
+    elif crag_evaluation and crag_evaluation.confidence_score < 0.3:
+        answer = "검색 결과의 신뢰도가 낮아 정확한 답변을 제공하기 어렵습니다. 질문을 더 구체적으로 해주세요."
+        confidence = "낮음"
     elif request.include_answer and all_chunks:
         # Try TieredResponseGenerator first, fall back to AnswerService
         tiered_gen = state.get("tiered_response_generator")
@@ -460,6 +491,23 @@ async def hub_search(request: HubSearchRequest):
                                 "warning": f"KB '{kb_a}'와 '{kb_b}'의 답변이 상이할 수 있습니다.",
                             })
 
+    # 9.6 Follow-up question generation
+    follow_ups: list[str] = []
+    if answer and all_chunks:
+        try:
+            llm = state.get("llm")
+            if llm:
+                follow_up_prompt = (
+                    f"다음 질문과 답변을 바탕으로, 사용자가 추가로 궁금해할 수 있는 후속 질문 3개를 생성하세요.\n"
+                    f"각 질문은 한 줄씩, 번호 없이 작성하세요.\n\n"
+                    f"질문: {corrected_query}\n답변: {answer[:500]}\n\n후속 질문:"
+                )
+                follow_up_result = await llm.generate(follow_up_prompt, temperature=0.3, max_tokens=200)
+                if follow_up_result:
+                    follow_ups = [q.strip().lstrip("- ·•123.") for q in follow_up_result.strip().split("\n") if q.strip()][:3]
+        except Exception as _fu_err:
+            logger.debug("Follow-up generation skipped: %s", _fu_err)
+
     elapsed = (time.time() - start) * 1000
 
     # Log search usage (fire-and-forget, never fail the search)
@@ -478,6 +526,11 @@ async def hub_search(request: HubSearchRequest):
                     "search_time_ms": elapsed,
                     "mode": request.mode,
                     "group_name": request.group_name,
+                    "embed_calls": 1,
+                    "llm_calls": 1 if answer else 0,
+                    "cross_encoder_calls": 1 if all_chunks else 0,
+                    "follow_up_generated": len(follow_ups) > 0,
+                    "rerank_applied": rerank_applied,
                 },
             )
         except Exception:
@@ -506,6 +559,7 @@ async def hub_search(request: HubSearchRequest):
                 "crag_recommendation": crag_evaluation.recommendation,
                 } if crag_evaluation else {}),
             **({"conflicts": conflicts} if conflicts else {}),
+            **({"follow_up_questions": follow_ups} if follow_ups else {}),
         },
     )
 
