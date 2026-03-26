@@ -671,14 +671,37 @@ def _process_images_ocr(
                 logger.warning("PaddleOCR failed for image %d after retry, skipping", i + 1)
                 continue
 
-            # Parse OCR text (same keys for both /ocr and /analyze)
-            text_lines = result.get("texts", result.get("result", []))
-            if isinstance(text_lines, list):
-                text = " ".join(str(t) for t in text_lines if t)
-            elif isinstance(text_lines, str):
-                text = text_lines
+            # Parse OCR text with per-word confidence filtering
+            # PaddleOCR boxes contain {"text", "confidence", "polygon"} per text region
+            boxes = result.get("boxes", [])
+            min_conf = float(os.getenv("OCR_MIN_CONFIDENCE", "0.65"))
+
+            if boxes:
+                # Filter by per-region confidence score
+                filtered_texts = []
+                dropped = 0
+                for box in boxes:
+                    conf = box.get("confidence", 0.0)
+                    box_text = box.get("text", "")
+                    if conf >= min_conf and box_text.strip():
+                        filtered_texts.append(box_text)
+                    elif box_text.strip():
+                        dropped += 1
+                text = " ".join(filtered_texts)
+                if dropped > 0:
+                    logger.info(
+                        "OCR confidence filter: kept %d, dropped %d (< %.0f%%) for image %d",
+                        len(filtered_texts), dropped, min_conf * 100, i + 1,
+                    )
             else:
-                text = str(text_lines)
+                # Fallback: no boxes available, use texts directly
+                text_lines = result.get("texts", result.get("result", []))
+                if isinstance(text_lines, list):
+                    text = " ".join(str(t) for t in text_lines if t)
+                elif isinstance(text_lines, str):
+                    text = text_lines
+                else:
+                    text = str(text_lines)
 
             if text.strip():
                 ocr_texts.append(f"[Image {i + 1} OCR] {text}")
