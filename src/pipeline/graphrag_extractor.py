@@ -192,7 +192,11 @@ class _OllamaLLMClient:
         return self._client
 
     def invoke(self, *, document: str, prompt_template: str) -> str:
-        """Synchronous invoke using asyncio.run on the OllamaClient.generate method."""
+        """Synchronous invoke using a fresh event loop per call.
+
+        asyncio.run() closes the loop after each call, causing 'Event loop is
+        closed' on subsequent calls. Instead, create a new loop each time.
+        """
         import asyncio
 
         prompt = prompt_template.format(document=document)
@@ -203,12 +207,30 @@ class _OllamaLLMClient:
         except RuntimeError:
             loop = None
 
+        # Create fresh client each call to avoid event loop binding issues
+        from src.llm.ollama_client import OllamaClient
+        fresh_client = OllamaClient()
+
         if loop and loop.is_running():
-            # We're inside an async context; use shared executor (P2-5)
-            future = _SHARED_EXECUTOR.submit(asyncio.run, client.generate(prompt, temperature=_w.llm.graphrag_temperature))
+            future = _SHARED_EXECUTOR.submit(
+                self._run_in_new_loop,
+                fresh_client.generate(prompt, temperature=_w.llm.graphrag_temperature),
+            )
             return future.result()
         else:
-            return asyncio.run(client.generate(prompt, temperature=_w.llm.graphrag_temperature))
+            return self._run_in_new_loop(
+                fresh_client.generate(prompt, temperature=_w.llm.graphrag_temperature),
+            )
+
+    @staticmethod
+    def _run_in_new_loop(coro):
+        """Run a coroutine in a fresh event loop (avoids 'Event loop is closed')."""
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 
 
 # =============================================================================
