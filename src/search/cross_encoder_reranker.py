@@ -43,11 +43,24 @@ def _load_model():
         if _model is not None:
             return _model
         try:
+            # SSL bypass for corporate proxy
+            import ssl
+            import os
+            ssl._create_default_https_context = ssl._create_unverified_context
+            os.environ.setdefault("CURL_CA_BUNDLE", "")
+            os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+
+            import requests
+            _orig_verify = requests.Session.verify
+            requests.Session.verify = False  # type: ignore
+
             from sentence_transformers import CrossEncoder
             _model = CrossEncoder(
                 CROSS_ENCODER_MODEL,
                 max_length=CROSS_ENCODER_MAX_LENGTH,
             )
+
+            requests.Session.verify = _orig_verify  # type: ignore
             logger.info("Cross-encoder loaded: %s", CROSS_ENCODER_MODEL)
         except Exception as e:
             logger.warning("Cross-encoder load failed (graceful degradation): %s", e)
