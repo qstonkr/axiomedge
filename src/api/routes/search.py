@@ -429,6 +429,37 @@ async def hub_search(request: HubSearchRequest):
     if answer:
         answer = _answer_guard.guard(answer, all_chunks, corrected_query)
 
+    # 9.5 Conflict detection - detect contradictory answers from different KBs
+    conflicts: list[dict[str, Any]] = []
+    if len(searched_kbs) > 1 and all_chunks:
+        kb_answers: dict[str, list[str]] = {}
+        for c in all_chunks[:10]:
+            kb = c.get("kb_id", "")
+            content = c.get("content", "")[:200]
+            if kb and content:
+                kb_answers.setdefault(kb, []).append(content)
+        if len(kb_answers) > 1:
+            # Simple conflict detection: check if top chunks from different KBs
+            # have very different content (low overlap)
+            kb_list = list(kb_answers.keys())
+            for i in range(len(kb_list)):
+                for j in range(i + 1, len(kb_list)):
+                    kb_a, kb_b = kb_list[i], kb_list[j]
+                    texts_a = " ".join(kb_answers[kb_a][:3])
+                    texts_b = " ".join(kb_answers[kb_b][:3])
+                    # Check word overlap ratio
+                    words_a = set(texts_a.split())
+                    words_b = set(texts_b.split())
+                    if words_a and words_b:
+                        overlap = len(words_a & words_b) / min(len(words_a), len(words_b))
+                        if overlap < 0.1:  # Very low overlap = potential conflict
+                            conflicts.append({
+                                "kb_a": kb_a,
+                                "kb_b": kb_b,
+                                "overlap_ratio": round(overlap, 3),
+                                "warning": f"KB '{kb_a}'와 '{kb_b}'의 답변이 상이할 수 있습니다.",
+                            })
+
     elapsed = (time.time() - start) * 1000
 
     # Log search usage (fire-and-forget, never fail the search)
@@ -474,6 +505,7 @@ async def hub_search(request: HubSearchRequest):
                 "crag_confidence": crag_evaluation.confidence_score,
                 "crag_recommendation": crag_evaluation.recommendation,
                 } if crag_evaluation else {}),
+            **({"conflicts": conflicts} if conflicts else {}),
         },
     )
 
