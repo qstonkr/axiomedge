@@ -434,7 +434,7 @@ class CacheConfig:
     l2_similarity_threshold: float = 0.92
     l2_max_entries: int = 50000
     l2_ttl_seconds: int = 21600   # 6 hours
-    enable_semantic_cache: bool = False
+    enable_semantic_cache: bool = True
     idempotency_ttl_seconds: int = 60
 
     # Domain-specific thresholds (used by MultiLayerCache)

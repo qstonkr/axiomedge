@@ -33,7 +33,7 @@ class CompositeRerankerConfig:
     position_weight: float = _w.reranker.position_weight
     mmr_lambda: float = _w.reranker.mmr_lambda
     faq_boost: float = _w.reranker.faq_boost
-    mmr_enabled: bool = False
+    mmr_enabled: bool = True
 
 
 class CompositeReranker:
@@ -75,7 +75,7 @@ class CompositeReranker:
         graph_distance_weight: float = 0.0,
         faq_boost: float = _w.reranker.faq_boost,
         mmr_lambda: float = _w.reranker.mmr_lambda,
-        mmr_enabled: bool = False,
+        mmr_enabled: bool = True,
         source_weights: dict[str, float] | None = None,
         axis_boosts: dict[str, float] | None = None,
     ) -> None:

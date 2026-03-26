@@ -147,7 +147,7 @@ class QueryExpansionService:
         self,
         glossary_repository: IGlossaryRepository | None = None,
         max_expansions_per_term: int = 5,
-        enable_semantic_fallback: bool = False,
+        enable_semantic_fallback: bool = True,
         llm_expander: Any | None = None,
         decomposition_service: Any | None = None,
     ):
