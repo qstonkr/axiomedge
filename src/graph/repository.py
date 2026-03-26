@@ -256,11 +256,11 @@ class Neo4jGraphRepository:
 
         UNWIND start_nodes AS start
         MATCH path = (start)-[*1..{safe_hops}]-(d:Document)
-        WHERE d.url IS NOT NULL
+        WHERE d.title IS NOT NULL
           {scope_filter}
         WITH d, MIN(size(relationships(path))) AS hops
         ORDER BY hops ASC
-        RETURN d.url AS source_uri
+        RETURN d.title AS source_uri
         LIMIT $max_results
         """
 
