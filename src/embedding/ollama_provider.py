@@ -108,11 +108,11 @@ class OllamaEmbeddingProvider:
         # Synthesize sparse vectors (TF-based, same approach as ONNX provider)
         sparse_vecs = []
         if return_sparse:
+            import hashlib as _hl
             for text in texts:
                 tokens = text.split()
                 sparse: dict[int, float] = {}
                 for token in tokens:
-                    import hashlib as _hl
                     h = int(_hl.md5(token.encode()).hexdigest(), 16) % 100000
                     if h > 0:
                         sparse[h] = sparse.get(h, 0.0) + 1.0

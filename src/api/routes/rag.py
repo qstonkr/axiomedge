@@ -495,7 +495,13 @@ async def reingest_from_jsonl(
         except Exception as e:
             await update_job(job_id, status="failed", errors=[str(e)])
 
-    task.add_done_callback(lambda t: asyncio.ensure_future(_finalize(t)))
+    def _safe_finalize_callback(t: asyncio.Task) -> None:
+        try:
+            asyncio.ensure_future(_finalize(t))
+        except RuntimeError:
+            logger.warning("Event loop closed, finalize skipped for job %s", job_id)
+
+    task.add_done_callback(_safe_finalize_callback)
     bg_tasks: set = state.setdefault("_background_tasks", set())
     bg_tasks.add(task)
     task.add_done_callback(bg_tasks.discard)

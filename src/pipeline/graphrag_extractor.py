@@ -627,6 +627,9 @@ class GraphRAGExtractor:
     ) -> None:
         """기존 관계를 이력 관계(WAS_*)로 변환"""
         history_type = HISTORY_RELATIONSHIP_MAP.get(rel_type, f"WAS_{rel_type}")
+        if not _is_safe_cypher_label(history_type):
+            logger.warning("Unsafe Cypher label for history type: %s", history_type)
+            return
 
         query = f"""
             MATCH (a {{id: $source}})-[r:{rel_type}]->(b {{id: $target}})

@@ -93,6 +93,7 @@ class Chunker:
             self._initialized = True
 
     _KSS_MAX_CHARS = 2000  # Max chars per KSS call to prevent pecab hang
+    _kss_executor = None  # Shared executor for KSS timeout
 
     def split_sentences(self, text: str) -> list[str]:
         """Split text into sentences. Uses KSS for Korean, regex fallback.
@@ -141,9 +142,10 @@ class Chunker:
                 try:
                     # Use threading-safe timeout (signal.SIGALRM only works in main thread)
                     import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                        future = pool.submit(kss.split_sentences, sub)
-                        sentences = future.result(timeout=10)  # 10s timeout
+                    if self._kss_executor is None:
+                        self.__class__._kss_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                    future = self._kss_executor.submit(kss.split_sentences, sub)
+                    sentences = future.result(timeout=10)  # 10s timeout
                         all_sentences.extend(s.strip() for s in sentences if s.strip())
                 except (concurrent.futures.TimeoutError, Exception) as e:
                     if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):

@@ -207,18 +207,18 @@ async def hub_search(request: HubSearchRequest):
             logger.warning("Query expansion failed: %s", e)
 
     # 2.5 Query type classification — adjust strategy per type
+    # Use local top_k to avoid mutating request model (cache key consistency)
+    effective_top_k = request.top_k
     query_classification = None
     classifier = state.get("query_classifier")
     if classifier:
         try:
             from src.search.query_classifier import QueryClassifier
             query_classification = classifier.classify(corrected_query)
-            # Owner queries: increase top_k for better recall
             if query_classification.query_type.value == "owner_query":
-                request.top_k = max(request.top_k, 10)
-            # Concept queries: use broader search
+                effective_top_k = max(effective_top_k, 10)
             elif query_classification.query_type.value == "concept":
-                request.top_k = max(request.top_k, 8)
+                effective_top_k = max(effective_top_k, 8)
         except Exception:
             pass
 
@@ -256,14 +256,14 @@ async def hub_search(request: HubSearchRequest):
                 dense_vector=dense_vector,
                 sparse_vector=sparse_vector,
                 colbert_vectors=colbert_vectors,
-                top_k=request.top_k,
+                top_k=effective_top_k,
             )
         else:
             results = await search_engine.search(
                 kb_id=collection,
                 dense_vector=dense_vector,
                 sparse_vector=sparse_vector,
-                top_k=request.top_k,
+                top_k=effective_top_k,
             )
         chunks = []
         for r in results:
@@ -296,7 +296,7 @@ async def hub_search(request: HubSearchRequest):
 
     # Sort by score; keep top_k * 3 candidates for reranking, then trim to top_k after
     all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-    all_chunks = all_chunks[: request.top_k * weights.search.rerank_pool_multiplier]
+    all_chunks = all_chunks[: effective_top_k * weights.search.rerank_pool_multiplier]
 
     # 4.5. Passage cleaning - normalize text before reranking
     all_chunks = clean_chunks(all_chunks)
@@ -306,7 +306,7 @@ async def hub_search(request: HubSearchRequest):
         all_chunks = await async_rerank_with_cross_encoder(
             query=corrected_query,
             chunks=all_chunks,
-            top_k=request.top_k * weights.search.rerank_pool_multiplier,
+            top_k=effective_top_k * weights.search.rerank_pool_multiplier,
         )
     except Exception as _ce_err:
         logger.warning("Cross-encoder reranking skipped: %s", _ce_err)
@@ -330,7 +330,7 @@ async def hub_search(request: HubSearchRequest):
         reranked = composite_reranker.rerank(
             query=corrected_query,
             chunks=search_chunks,
-            top_k=request.top_k,
+            top_k=effective_top_k,
         )
 
         if reranked:
@@ -353,7 +353,7 @@ async def hub_search(request: HubSearchRequest):
             rerank_applied = True
 
     # Trim to final top_k after reranking
-    all_chunks = all_chunks[: request.top_k]
+    all_chunks = all_chunks[: effective_top_k]
 
     # 6. Graph Expansion - enrich results with structurally related content
     #    Must run BEFORE answer generation so expanded chunks are included in the answer.
@@ -491,9 +491,9 @@ async def hub_search(request: HubSearchRequest):
                                 "warning": f"KB '{kb_a}'와 '{kb_b}'의 답변이 상이할 수 있습니다.",
                             })
 
-    # 9.6 Follow-up question generation
+    # 9.6 Follow-up question generation (only when answer is included)
     follow_ups: list[str] = []
-    if answer and all_chunks:
+    if request.include_answer and answer and all_chunks:
         try:
             llm = state.get("llm")
             if llm:
@@ -573,7 +573,7 @@ async def hub_search(request: HubSearchRequest):
             await multi_cache.set(
                 query, _response_dict, domain=CacheDomain.KB_SEARCH,
                 metadata={"kb_ids": collections},
-                kb_ids=collections, top_k=request.top_k,
+                kb_ids=collections, top_k=effective_top_k,
             )
         except Exception:
             pass
@@ -581,7 +581,7 @@ async def hub_search(request: HubSearchRequest):
     # Legacy SearchCache
     if search_cache:
         try:
-            await search_cache.set(query, collections, _response_dict, request.top_k)
+            await search_cache.set(query, collections, _response_dict, effective_top_k)
         except Exception:
             pass  # Don't fail search because of caching
 

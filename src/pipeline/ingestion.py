@@ -413,7 +413,8 @@ class IngestionPipeline:
 
     async def _embed_dense(self, texts: list[str]) -> list[list[float]]:
         """Embed texts with retry on timeout/connection errors."""
-        for attempt in range(1, self._EMBED_MAX_RETRIES + 1):
+        max_retries = max(self._EMBED_MAX_RETRIES, 1)  # Ensure at least 1 attempt
+        for attempt in range(1, max_retries + 1):
             try:
                 encode_fn = getattr(self.embedder, "encode", None)
                 if encode_fn is not None:
