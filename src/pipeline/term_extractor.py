@@ -105,6 +105,20 @@ _BOUNDARY_PARTICLE_RE = re.compile(
     r"([\uac00-\ud7a3]{2,})"
 )
 
+# Stop words for compound noun generation — generic verb-like nouns that
+# create meaningless variants (AB테스트완료, AB테스트요청, AB테스트제거)
+_COMPOUND_STOP = frozenset({
+    # Verb-like nouns (동사성 명사)
+    "완료", "요청", "제거", "실행", "중지", "생성", "수정", "삭제",
+    "추가", "변경", "개선", "적용", "배포", "진행", "검토", "승인",
+    "반려", "취소", "종료", "시작", "등록", "해제", "연동", "전환",
+    "이관", "이전", "복구", "백업", "설치", "제공", "구현", "개발",
+    "테스트", "점검", "확인", "보고", "안내", "공유", "전달",
+    # Generic suffixes
+    "관련", "대상", "목록", "현황", "이력", "결과", "예정",
+    "필요", "가능", "불가", "여부", "문의", "답변",
+})
+
 # Known acronyms to keep (not filtered as noise)
 _KNOWN_ACRONYMS = frozenset({
     "API", "KB", "RAG", "LLM", "OFC", "DW", "FAQ", "GS", "CU",
@@ -520,9 +534,10 @@ class TermExtractor:
             # Use max score (most generic part) — if all parts are generic, compound is too
             min_score = max(buf_scores) if buf_scores else 0.0
 
-            # Emit compound (only if all parts are 2+ chars)
+            # Emit compound (only if all parts are 2+ chars and none is a stopword)
             all_parts_valid = all(len(f) >= 2 for f in buf_forms)
-            if len(buf_forms) > 1 and len(merged) <= _MAX_COMPOUND_CHARS and all_parts_valid:
+            no_stopwords = not any(f in self._STOP_NOUNS or f in _COMPOUND_STOP for f in buf_forms)
+            if len(buf_forms) > 1 and len(merged) <= _MAX_COMPOUND_CHARS and all_parts_valid and no_stopwords:
                 compounds.append((merged, "compound_noun", min_score))
             # Always emit individual meaningful tokens
             for form, t, sc in zip(buf_forms, buf_tags, buf_scores):
