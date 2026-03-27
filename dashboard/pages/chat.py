@@ -122,6 +122,17 @@ with st.sidebar:
     selected_kb_ids: list[str] = list(_direct_kb_ids)
     selected_group_id: str | None = None
 
+    # 검색 그룹 + KB 목록 로드 (must be before name resolution)
+    groups_result = api_client._request("GET", "/api/v1/search-groups")
+    groups_list = []
+    if not api_failed(groups_result):
+        groups_list = groups_result.get("groups", [])
+
+    kbs_result = api_client.get_searchable_kbs()
+    kbs_list = []
+    if not api_failed(kbs_result):
+        kbs_list = kbs_result.get("kbs", kbs_result.get("items", []))
+
     if _direct_kb_ids:
         _dkb_names = []
         for _dkid in _direct_kb_ids:
@@ -129,18 +140,6 @@ with st.sidebar:
             _dkb_names.append(_dm.get("name", _dkid) if _dm else _dkid)
         st.info(f"🔍 {', '.join(_dkb_names)} 에서 검색합니다.  "
                 f"[전체 검색으로 전환하려면 그룹을 선택하세요]")
-
-    # 검색 그룹 로드
-    groups_result = api_client._request("GET", "/api/v1/search-groups")
-    groups_list = []
-    if not api_failed(groups_result):
-        groups_list = groups_result.get("groups", [])
-
-    # KB 목록 로드
-    kbs_result = api_client.get_searchable_kbs()
-    kbs_list = []
-    if not api_failed(kbs_result):
-        kbs_list = kbs_result.get("kbs", kbs_result.get("items", []))
 
     # 선택 모드: 그룹 / 직접 선택
     scope_mode = st.radio(
