@@ -93,8 +93,16 @@ class MultiLayerCache:
             start = time.time()
             entry = await self._l2.get(
                 key, query=query, domain=domain,
-                kb_ids=kb_ids, cache_version=kwargs.get("cache_version", ""),
+                kb_ids=kb_ids,
+                cache_version=kwargs.get("cache_version", ""),
             )
+            # Validate L2 result version if cache_version provided
+            if entry and kwargs.get("cache_version"):
+                resp = entry.response
+                if isinstance(resp, dict):
+                    stored_ver = resp.get("_cache_version", "")
+                    if stored_ver and stored_ver != kwargs["cache_version"]:
+                        entry = None  # Stale version, discard
             l2_latency = (time.time() - start) * 1000
 
             if entry:

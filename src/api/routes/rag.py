@@ -265,9 +265,18 @@ async def _process_files(
             if kb_registry:
                 await kb_registry.update_counts(effective_kb_id, total_docs, total_chunks)
 
-            # Issue 5: Invalidate search cache after ingest
+            # Issue 5: Invalidate search cache after ingest (KB-selective if possible)
+            _multi_cache = _get_state().get("multi_layer_cache")
             _search_cache = _get_state().get("search_cache")
-            if _search_cache:
+            if _multi_cache and hasattr(_multi_cache, "invalidate_by_kb"):
+                try:
+                    await _multi_cache.invalidate_by_kb(effective_kb_id)
+                    logger.info("Multi-layer cache invalidated for kb=%s", effective_kb_id)
+                except Exception:
+                    # Fallback to full clear
+                    if _search_cache:
+                        await _search_cache.clear()
+            elif _search_cache:
                 try:
                     await _search_cache.clear()
                     logger.info("Search cache cleared after ingest for kb=%s", effective_kb_id)

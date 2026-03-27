@@ -452,8 +452,23 @@ class CacheConfig:
     ttl_kb_search: int = 3600    # 1 hour — balanced
     ttl_general: int = 7200      # 2 hours — least critical
 
-    # Cache version — increment on weight/prompt/pipeline changes
-    cache_version: str = "v3_20260327"
+    # Auto-generated — do not set manually
+    cache_version: str = ""
+
+
+def _compute_cache_version(cfg: CacheConfig) -> str:
+    """Generate cache version hash from config values.
+
+    Any change to thresholds or TTLs auto-invalidates all cached results.
+    """
+    import hashlib
+    import json
+    sig = json.dumps({
+        "th": [cfg.threshold_policy, cfg.threshold_code, cfg.threshold_kb, cfg.threshold_general],
+        "ttl": [cfg.ttl_policy, cfg.ttl_code, cfg.ttl_kb_search, cfg.ttl_general],
+        "pipe": "v3",  # Bump manually only for major pipeline changes
+    }, sort_keys=True)
+    return "v3_" + hashlib.sha256(sig.encode()).hexdigest()[:8]
 
 
 # ============================================================================
@@ -503,6 +518,9 @@ class Weights:
         """Initialize all sections with their default values."""
         for name, cls in self._SECTION_CLASSES.items():
             object.__setattr__(self, name, cls())
+        # Auto-compute cache version from config hash
+        cache_cfg: CacheConfig = getattr(self, "cache")
+        object.__setattr__(cache_cfg, "cache_version", _compute_cache_version(cache_cfg))
 
     # ----- Serialization -----
 
