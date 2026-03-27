@@ -380,13 +380,17 @@ async def hub_search(request: HubSearchRequest):
                 async with _hx_kw.AsyncClient(timeout=3.0) as _kw_client:
                     for coll in collections:
                         _coll_name = f"kb_{coll.replace('-', '_')}"
+                        # Try morphemes field first (more precise), fallback to content
                         resp = await _kw_client.post(
                             f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
                             json={
                                 "limit": 5,
                                 "with_payload": True,
                                 "with_vector": False,
-                                "filter": {"must": [{"key": "content", "match": {"text": _kw_primary}}]},
+                                "filter": {"should": [
+                                    {"key": "morphemes", "match": {"text": _kw_primary}},
+                                    {"key": "content", "match": {"text": _kw_primary}},
+                                ]},
                             },
                         )
                         if resp.status_code == 200:
