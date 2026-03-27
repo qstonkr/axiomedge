@@ -339,7 +339,7 @@ async def hub_search(request: HubSearchRequest):
             matched = sum(1 for t in _query_tokens if t in content_lower)
             if matched > 0:
                 ratio = matched / len(_query_tokens)
-                chunk["score"] = chunk.get("score", 0) + 0.15 * ratio  # max +0.15 boost
+                chunk["score"] = chunk.get("score", 0) + 0.3 * ratio  # max +0.3 boost for exact keyword match
         all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     # 4.5. Passage cleaning - normalize text before reranking
