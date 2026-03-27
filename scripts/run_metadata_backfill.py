@@ -4,8 +4,10 @@ No LLM needed — runs locally using keyword matching and rule-based logic.
 Updates Qdrant chunk metadata + creates Neo4j graph edges (OWNS, CATEGORIZED_AS).
 
 Usage:
-    uv run python scripts/run_metadata_backfill.py                    # All KBs
-    uv run python scripts/run_metadata_backfill.py a-ari drp g-espa   # Specific KBs
+    uv run python scripts/run_metadata_backfill.py                         # All KBs (Qdrant only)
+    uv run python scripts/run_metadata_backfill.py a-ari drp g-espa        # Specific KBs
+    uv run python scripts/run_metadata_backfill.py --with-neo4j            # + Neo4j OWNS/CATEGORIZED_AS edges
+    uv run python scripts/run_metadata_backfill.py --force a-ari           # Overwrite existing values
 """
 import sys
 import logging
@@ -228,16 +230,16 @@ def _create_neo4j_edges(kb_id: str, doc_cache: dict[str, dict]):
 
 
 if __name__ == "__main__":
-    flags = {"--force", "--skip-neo4j"}
+    flags = {"--force", "--with-neo4j"}
     force = "--force" in sys.argv
-    skip_neo4j = "--skip-neo4j" in sys.argv
+    with_neo4j = "--with-neo4j" in sys.argv
     targets = [a for a in sys.argv[1:] if a not in flags] or ALL_KBS
 
     for kb_id in targets:
         logger.info(f"\n{'='*60}")
         logger.info(f"[START] {kb_id}")
         logger.info(f"{'='*60}")
-        run_backfill(kb_id, force=force, skip_neo4j=skip_neo4j)
+        run_backfill(kb_id, force=force, skip_neo4j=not with_neo4j)
 
     logger.info(f"\n{'='*60}")
     logger.info("ALL DONE")
