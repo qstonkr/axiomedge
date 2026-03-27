@@ -327,6 +327,48 @@ async def hub_search(request: HubSearchRequest):
         all_chunks.extend(chunks)
         searched_kbs.append(col_name)
 
+    # 4.3. Keyword fallback: if main query keywords are missing from ALL results,
+    # do a targeted Qdrant text filter search to find exact keyword matches
+    _kw_tokens = [t.strip() for t in display_query.lower().split() if len(t.strip()) >= 2]
+    if _kw_tokens and all_chunks:
+        _has_keyword_match = any(
+            any(t in c.get("content", "").lower() for t in _kw_tokens)
+            for c in all_chunks[:20]
+        )
+        if not _has_keyword_match:
+            import httpx as _hx_kw
+            _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+            _kw_primary = _kw_tokens[0]  # Most important keyword
+            try:
+                async with _hx_kw.AsyncClient(timeout=3.0) as _kw_client:
+                    for coll in collections:
+                        _coll_name = f"kb_{coll.replace('-', '_')}"
+                        resp = await _kw_client.post(
+                            f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
+                            json={
+                                "limit": 5,
+                                "with_payload": True,
+                                "with_vector": False,
+                                "filter": {"must": [{"key": "content", "match": {"text": _kw_primary}}]},
+                            },
+                        )
+                        if resp.status_code == 200:
+                            for pt in resp.json().get("result", {}).get("points", []):
+                                pay = pt.get("payload", {})
+                                all_chunks.append({
+                                    "chunk_id": str(pt["id"]),
+                                    "content": pay.get("content", ""),
+                                    "score": 0.5,  # Base score for keyword match
+                                    "kb_id": coll,
+                                    "document_name": pay.get("document_name", ""),
+                                    "source_uri": pay.get("source_uri", ""),
+                                    "metadata": pay,
+                                    "_keyword_fallback": True,
+                                })
+                logger.info("Keyword fallback: injected chunks for '%s'", _kw_primary)
+            except Exception:
+                pass
+
     # 4.4. Smart candidate selection: keyword-match priority + KB diversity
     # Instead of purely score-based cutoff, ensure keyword-matching chunks
     # from ALL KBs are included in the reranking pool.
