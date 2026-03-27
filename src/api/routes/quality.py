@@ -297,6 +297,7 @@ async def calculate_trust_scores(
 
             try:
                 await trust_repo.save({
+                    "id": str(uuid.uuid4()),
                     "entry_id": doc_id,
                     "kb_id": kb_id,
                     "kts_score": round(kts, 3),
