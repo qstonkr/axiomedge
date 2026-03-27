@@ -20,7 +20,7 @@ Enhanced with accuracy improvements:
 - GRAPH-04: Person AUTHORED Document edges
 - GRAPH-06: Document BELONGS_TO Space edges
 
-Core data flow: parse -> quality_check -> chunk -> add_doc_context_prefix -> embed (dense+sparse) -> store_qdrant -> graphrag_extract -> store_graph -> graph_edges.
+Core data flow: parse -> quality_check -> owner_extract -> category_assign -> quality_score -> chunk -> add_doc_context_prefix -> embed (dense+sparse) -> store_qdrant -> graphrag_extract -> store_graph -> graph_edges (CHILD_OF, AUTHORED, BELONGS_TO, REFERENCES, OWNS, CATEGORIZED_AS).
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from .quality_processor import (
     QualityMetrics,
     _calculate_metrics,
     _determine_quality_tier,
+    _normalize_owners,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,119 @@ _DOC_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("meeting_notes", ("회의", "meeting", "미팅")),
     ("changelog", ("변경", "changelog", "릴리스")),
 )
+
+
+# ---------------------------------------------------------------------------
+# Owner extraction (META-06)
+# ---------------------------------------------------------------------------
+
+
+def extract_owner(raw: "RawDocument") -> str:
+    """Extract document owner from metadata (author, creator, last_modifier).
+
+    Returns the first valid Korean/English name, or empty string.
+    """
+    candidates = [
+        raw.author or "",
+        raw.metadata.get("creator", ""),
+        raw.metadata.get("last_modifier", ""),
+    ]
+    normalized = _normalize_owners(candidates)
+    return normalized[0] if normalized else ""
+
+
+# ---------------------------------------------------------------------------
+# L1 category assignment (META-07)
+# ---------------------------------------------------------------------------
+
+# Cached L1 categories — loaded once from DB, falls back to hardcoded
+_L1_CATEGORIES_CACHE: list[dict[str, Any]] | None = None
+
+
+def _get_l1_categories_sync() -> list[dict[str, Any]]:
+    """Get L1 categories (cached). Falls back to hardcoded defaults."""
+    global _L1_CATEGORIES_CACHE
+    if _L1_CATEGORIES_CACHE is not None:
+        return _L1_CATEGORIES_CACHE
+
+    # Hardcoded fallback (matches DB seeded categories)
+    _L1_CATEGORIES_CACHE = [
+        {"name": "IT인프라·운영", "keywords": ["서버", "배포", "장애", "모니터링", "인프라", "K8s", "쿠버네티스", "도커", "네트워크", "방화벽", "SSL", "DNS", "CDN"]},
+        {"name": "시스템·애플리케이션", "keywords": ["시스템", "메뉴", "화면", "API", "POS", "WMS", "ERP", "앱", "UI", "UX", "프론트", "백엔드", "DB", "데이터베이스"]},
+        {"name": "업무프로세스·규정", "keywords": ["프로세스", "절차", "규정", "감사", "인사", "회계", "재무", "결재", "양수도", "폐점", "계약", "정산", "담배권"]},
+        {"name": "사업·전략", "keywords": ["매출", "전략", "KPI", "마케팅", "영업", "홈쇼핑", "경영", "실적", "성과", "분석", "상권"]},
+        {"name": "유통·물류", "keywords": ["OFC", "발주", "배송", "재고", "물류", "점포", "가맹", "상품", "유통", "식품", "경영주", "편의점", "GS25", "진열"]},
+        {"name": "용어·지식정의", "keywords": ["용어", "정의", "약어", "표준", "사전", "데이터 표준"]},
+        {"name": "기타", "keywords": []},
+    ]
+    return _L1_CATEGORIES_CACHE
+
+
+def classify_l1_category(title: str, content: str) -> str:
+    """Assign L1 category based on keyword matching.
+
+    Scores each category by counting keyword hits in title (weight 3x)
+    and content (weight 1x). Returns the highest-scoring category name,
+    or "기타" if no match.
+    """
+    categories = _get_l1_categories_sync()
+    title_lower = title.lower() if title else ""
+    # Use first 2000 chars of content for efficiency
+    content_lower = content[:2000].lower() if content else ""
+
+    best_name = "기타"
+    best_score = 0
+
+    for cat in categories:
+        if not cat["keywords"]:
+            continue
+        score = 0
+        for kw in cat["keywords"]:
+            kw_lower = kw.lower()
+            if kw_lower in title_lower:
+                score += 3  # Title match weighted 3x
+            if kw_lower in content_lower:
+                score += 1
+        if score > best_score:
+            best_score = score
+            best_name = cat["name"]
+
+    return best_name
+
+
+# ---------------------------------------------------------------------------
+# Quality score (numeric, 0-100) (META-08)
+# ---------------------------------------------------------------------------
+
+
+def calculate_quality_score(metrics: "QualityMetrics | None", tier: "QualityTier") -> float:
+    """Calculate numeric quality score (0-100) from quality metrics.
+
+    Scoring:
+    - Base: content_length score (0-40 pts, log scale)
+    - Structure: +15 per structural element (tables, code, headers, images, links)
+    - Tier bonus: GOLD +10, SILVER +5
+    - Capped at 100
+    """
+    import math
+
+    if metrics is None:
+        return 30.0  # Default for unmeasured
+
+    # Base score from content length (log scale, 0-40)
+    length = metrics.content_length if hasattr(metrics, "content_length") else 0
+    base = min(40.0, math.log1p(length) / math.log1p(10000) * 40) if length > 0 else 0
+
+    # Structure bonuses
+    structure = 0.0
+    for attr in ("has_tables", "has_code_blocks", "has_headers", "has_images", "has_links"):
+        if getattr(metrics, attr, False):
+            structure += 10.0
+
+    # Tier bonus
+    tier_bonus = {"GOLD": 10.0, "SILVER": 5.0}.get(tier.value, 0.0)
+
+    return min(100.0, round(base + structure + tier_bonus, 1))
 
 
 def classify_document_type(title: str, content: str) -> str:
@@ -555,6 +669,15 @@ class IngestionPipeline:
             # META-03: Document type classification
             doc_type = classify_document_type(raw.title, raw.content)
 
+            # META-06: Owner extraction
+            owner = extract_owner(raw)
+
+            # META-07: L1 category assignment
+            l1_category = classify_l1_category(raw.title, raw.content)
+
+            # META-08: Quality score (numeric 0-100)
+            quality_score = calculate_quality_score(quality_metrics, quality_tier)
+
             # 2. Enhanced parsing (VEC-02, VEC-03)
             # If parse_result was provided (from JSONL checkpoint), skip re-parsing
             if parse_result is None:
@@ -721,9 +844,12 @@ class IngestionPipeline:
                     "chunk_type": chunk_types[idx],
                     "ingested_at": now_iso,
                     "quality_tier": quality_tier.value,
+                    "quality_score": quality_score,
                     "original_id": point_id_str,
                     "kb_id": collection_name,
                     "doc_type": doc_type,
+                    "owner": owner,
+                    "l1_category": l1_category,
                 })
                 # META-04: heading path
                 if chunk_heading_paths[idx]:
@@ -780,9 +906,12 @@ class IngestionPipeline:
                     "chunk_index": -1,
                     "ingested_at": now_iso,
                     "quality_tier": quality_tier.value,
+                    "quality_score": quality_score,
                     "original_id": f"{collection_name}:{raw.doc_id}:title",
                     "kb_id": collection_name,
                     "doc_type": doc_type,
+                    "owner": owner,
+                    "l1_category": l1_category,
                 })
                 title_metadata.update(content_flags)
                 if raw.updated_at:
@@ -819,8 +948,10 @@ class IngestionPipeline:
                 ),
             )
 
-            # 11. Create graph edges (GRAPH-02, GRAPH-04, GRAPH-06, GRAPH-01)
-            await self._create_graph_edges(raw, collection_name)
+            # 11. Create graph edges (GRAPH-02, GRAPH-04, GRAPH-06, GRAPH-01, GRAPH-07, GRAPH-08)
+            await self._create_graph_edges(
+                raw, collection_name, owner=owner, l1_category=l1_category,
+            )
 
             # 12. Term extraction (optional): extract domain terms from chunks
             term_extraction_stats: dict[str, Any] = {}
@@ -937,7 +1068,10 @@ class IngestionPipeline:
                 "ocr_chunks": ocr_count,
                 "has_title_vector": True,
                 "quality_tier": quality_tier.value,
+                "quality_score": quality_score,
                 "doc_type": doc_type,
+                "owner": owner,
+                "l1_category": l1_category,
                 "has_sparse_vectors": True,
                 "has_document_prefix": True,
                 "has_heading_paths": bool(heading_map),
@@ -969,6 +1103,9 @@ class IngestionPipeline:
         self,
         raw: RawDocument,
         collection_name: str,
+        *,
+        owner: str = "",
+        l1_category: str = "",
     ) -> None:
         """Create structural graph edges for the ingested document.
 
@@ -977,6 +1114,8 @@ class IngestionPipeline:
         - GRAPH-04: Person -[:AUTHORED]-> Document
         - GRAPH-06: Document -[:BELONGS_TO]-> Space
         - GRAPH-01: Document -[:REFERENCES]-> Document (cross-references)
+        - GRAPH-07: Person -[:OWNS]-> Document (owner)
+        - GRAPH-08: Document -[:CATEGORIZED_AS]-> Category (L1 category)
         """
         try:
             # GRAPH-02: Wiki hierarchy (CHILD_OF)
@@ -1023,6 +1162,24 @@ class IngestionPipeline:
                     "ON CREATE SET tgt.title = ref.link_text "
                     "MERGE (src)-[:REFERENCES {link_text: ref.link_text}]->(tgt)",
                     {"src_id": raw.doc_id, "refs": ref_params},
+                )
+
+            # GRAPH-07: Person OWNS Document (owner/담당자)
+            if owner:
+                await self.graph_store.execute_write(
+                    "MERGE (p:Person {name: $owner}) "
+                    "MERGE (d:Document {id: $doc_id}) "
+                    "MERGE (p)-[:OWNS]->(d)",
+                    {"owner": owner, "doc_id": raw.doc_id},
+                )
+
+            # GRAPH-08: Document CATEGORIZED_AS Category (L1)
+            if l1_category and l1_category != "기타":
+                await self.graph_store.execute_write(
+                    "MERGE (c:Category {name: $category}) "
+                    "MERGE (d:Document {id: $doc_id}) "
+                    "MERGE (d)-[:CATEGORIZED_AS]->(c)",
+                    {"category": l1_category, "doc_id": raw.doc_id},
                 )
 
         except Exception as e:
