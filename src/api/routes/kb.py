@@ -228,10 +228,37 @@ async def admin_kb_aggregation():
         except Exception:
             pass
 
+    # Calculate avg quality score from Qdrant metadata
+    avg_quality_score = 0.0
+    quality_sum = 0.0
+    quality_count = 0
+    if collections and store:
+        try:
+            import httpx
+            qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                raw_names = await collections.get_existing_collection_names()
+                for raw_name in raw_names:
+                    resp = await client.post(
+                        f"{qdrant_url}/collections/{raw_name}/points/scroll",
+                        json={"limit": 50, "with_payload": ["quality_score"], "with_vector": False},
+                    )
+                    if resp.status_code == 200:
+                        for p in resp.json().get("result", {}).get("points", []):
+                            qs = p.get("payload", {}).get("quality_score")
+                            if isinstance(qs, (int, float)) and qs > 0:
+                                quality_sum += qs
+                                quality_count += 1
+            if quality_count > 0:
+                avg_quality_score = round(quality_sum / quality_count / 100, 2)
+        except Exception:
+            pass
+
     return {
         "total_kbs": total_kbs,
         "total_documents": total_documents,
         "total_chunks": total_chunks,
+        "avg_quality_score": avg_quality_score,
         "by_tier": {},
         "by_status": {},
     }
