@@ -366,11 +366,19 @@ async def hub_search(request: HubSearchRequest):
     graph_expander = state.get("graph_expander")
     if graph_expander and all_chunks:
         try:
-            expansion = await graph_expander.expand(
-                corrected_query,
-                all_chunks,
-                scope_kb_ids=collections,
-            )
+            # Use enhanced entity expansion if available
+            if hasattr(graph_expander, "expand_with_entities"):
+                expansion = await graph_expander.expand_with_entities(
+                    corrected_query,
+                    all_chunks,
+                    scope_kb_ids=collections,
+                )
+            else:
+                expansion = await graph_expander.expand(
+                    corrected_query,
+                    all_chunks,
+                    scope_kb_ids=collections,
+                )
             if expansion.expanded_source_uris:
                 all_chunks = graph_expander.boost_chunks(
                     all_chunks, expansion.expanded_source_uris

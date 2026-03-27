@@ -45,6 +45,15 @@ class IGraphRepository(Protocol):
         """Return source URIs of related documents."""
         ...
 
+    async def search_entities(
+        self,
+        keywords: list[str],
+        *,
+        max_facts: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Search entities in graph."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,7 +112,7 @@ class GraphSearchExpander:
         *,
         max_hops: int = 2,
         max_expansion: int = 20,
-        graph_boost: float = 0.05,
+        graph_boost: float = 0.08,
     ) -> None:
         self._graph_repo = graph_repo
         self._max_hops = max_hops
@@ -205,24 +214,89 @@ class GraphSearchExpander:
         self,
         chunks: list[dict[str, Any]],
         expanded_uris: set[str],
+        graph_distances: dict[str, int] | None = None,
     ) -> list[dict[str, Any]]:
-        """Apply graph_boost to chunks whose source_uri matches expanded set.
+        """Apply dynamic graph_boost to chunks whose source_uri matches expanded set.
 
-        This should be called BEFORE final sorting/reranking to give
-        graph-related chunks a slight score boost.
+        Boost is distance-based: closer relationships get higher boost.
+        - Distance 1 (direct): graph_boost * 1.0
+        - Distance 2 (2-hop):  graph_boost * 0.6
+        - Distance 3+:         graph_boost * 0.3
         """
         if not expanded_uris:
             return chunks
 
+        distances = graph_distances or {}
         boosted: list[dict[str, Any]] = []
         for chunk in chunks:
             uri = chunk.get("source_uri") or ""
-            if uri in expanded_uris:
+            doc_name = chunk.get("document_name") or ""
+            # Match by URI or document name
+            matched = uri in expanded_uris or doc_name in expanded_uris
+            if matched:
                 chunk = dict(chunk)
-                chunk["score"] = chunk.get("score", 0.0) + self._graph_boost
+                # Dynamic boost based on graph distance
+                dist = distances.get(uri, distances.get(doc_name, 2))
+                if dist <= 1:
+                    boost = self._graph_boost * 2.0  # Direct relation: 2x boost
+                elif dist == 2:
+                    boost = self._graph_boost * 1.0  # 2-hop: normal
+                else:
+                    boost = self._graph_boost * 0.5  # 3+: reduced
+                chunk["score"] = chunk.get("score", 0.0) + boost
                 chunk["graph_boosted"] = True
+                chunk["graph_distance"] = dist
+                # Set traversal axis for reranker
+                chunk.setdefault("metadata", {})
+                chunk["metadata"]["graph_distance"] = dist
             boosted.append(chunk)
         return boosted
+
+    async def expand_with_entities(
+        self,
+        query: str,
+        chunks: list[dict[str, Any]],
+        *,
+        scope_kb_ids: list[str] | None = None,
+    ) -> ExpandedSearchResult:
+        """Enhanced expansion: also search GraphRAG entities and inject related docs.
+
+        In addition to standard find_related_chunks, this:
+        1. Searches __Entity__ nodes (Store, Person, Process) matching query
+        2. Finds documents connected to those entities via source_document
+        3. Returns those document titles as expanded URIs for boosting/injection
+        """
+        # Standard expansion first
+        result = await self.expand(query, chunks, scope_kb_ids=scope_kb_ids)
+
+        # Entity-based expansion
+        try:
+            if hasattr(self._graph_repo, "search_entities"):
+                tokens = _split_compound_words(query)
+                entity_names = [t for t in tokens if len(t) >= 2]
+                if entity_names:
+                    entities = await self._graph_repo.search_entities(
+                        entity_names, max_facts=30,
+                    )
+                    # Extract source documents from entity results
+                    entity_doc_names: set[str] = set()
+                    for e in entities:
+                        # Connected documents
+                        connected = e.get("connected_name", "")
+                        connected_type = e.get("connected_type", "")
+                        if connected_type == "Document" and connected:
+                            entity_doc_names.add(connected)
+                    if entity_doc_names:
+                        result.expanded_source_uris |= entity_doc_names
+                        result.graph_related_count += len(entity_doc_names)
+                        logger.info(
+                            "Entity expansion: %d entity-related documents added",
+                            len(entity_doc_names),
+                        )
+        except Exception as e:
+            logger.debug("Entity expansion failed: %s", e)
+
+        return result
 
 
 class NoOpGraphSearchExpander:

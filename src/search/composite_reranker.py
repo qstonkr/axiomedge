@@ -72,7 +72,7 @@ class CompositeReranker:
         base_weight: float = _w.reranker.base_weight,
         source_weight: float = _w.reranker.source_weight,
         position_weight: float = _w.reranker.position_weight,
-        graph_distance_weight: float = 0.0,
+        graph_distance_weight: float = _w.reranker.graph_distance_weight,
         faq_boost: float = _w.reranker.faq_boost,
         mmr_lambda: float = _w.reranker.mmr_lambda,
         mmr_enabled: bool = True,

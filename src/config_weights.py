@@ -58,6 +58,9 @@ class RerankerWeights:
     source_cross_kb_graph: float = 1.0
     source_faq: float = 1.0
 
+    # Graph distance weight (0.0 = disabled, 0.15 = recommended)
+    graph_distance_weight: float = _env_float("RERANKER_GRAPH_DISTANCE_WEIGHT", 0.15)
+
     # Cross-KB axis boosts
     axis_causal: float = 1.2
     axis_definitional: float = 1.0
