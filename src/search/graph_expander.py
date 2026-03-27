@@ -269,7 +269,7 @@ class GraphSearchExpander:
         # Standard expansion first
         result = await self.expand(query, chunks, scope_kb_ids=scope_kb_ids)
 
-        # Entity-based expansion
+        # Entity-based expansion: find documents via source_document property
         try:
             if hasattr(self._graph_repo, "search_entities"):
                 tokens = _split_compound_words(query)
@@ -278,20 +278,42 @@ class GraphSearchExpander:
                     entities = await self._graph_repo.search_entities(
                         entity_names, max_facts=30,
                     )
-                    # Extract source documents from entity results
                     entity_doc_names: set[str] = set()
                     for e in entities:
-                        # Connected documents
+                        # 1. Connected Document nodes
                         connected = e.get("connected_name", "")
                         connected_type = e.get("connected_type", "")
                         if connected_type == "Document" and connected:
                             entity_doc_names.add(connected)
+
+                    # 2. source_document property on matched entities
+                    # GraphRAG entities store their source doc title as a property
+                    if hasattr(self._graph_repo, "_client"):
+                        try:
+                            import unicodedata
+                            keyword = " ".join(entity_names)
+                            kw_nfc = unicodedata.normalize("NFC", keyword)
+                            kw_nfd = unicodedata.normalize("NFD", keyword)
+                            src_docs = await self._graph_repo._client.execute_query(
+                                "MATCH (n:__Entity__) "
+                                "WHERE (n.id CONTAINS $kw_nfc OR n.id CONTAINS $kw_nfd) "
+                                "AND n.source_document IS NOT NULL "
+                                "RETURN DISTINCT n.source_document AS doc LIMIT 10",
+                                {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd},
+                            )
+                            for row in src_docs:
+                                doc = row.get("doc", "")
+                                if doc:
+                                    entity_doc_names.add(doc)
+                        except Exception:
+                            pass
+
                     if entity_doc_names:
                         result.expanded_source_uris |= entity_doc_names
                         result.graph_related_count += len(entity_doc_names)
                         logger.info(
-                            "Entity expansion: %d entity-related documents added",
-                            len(entity_doc_names),
+                            "Entity expansion: %d documents from %d entities",
+                            len(entity_doc_names), len(entities),
                         )
         except Exception as e:
             logger.debug("Entity expansion failed: %s", e)

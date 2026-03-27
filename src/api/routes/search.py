@@ -382,9 +382,65 @@ async def hub_search(request: HubSearchRequest):
                     timeout=3.0,
                 )
             if expansion.expanded_source_uris:
+                # Boost existing chunks that match graph expansion
                 all_chunks = graph_expander.boost_chunks(
                     all_chunks, expansion.expanded_source_uris
                 )
+
+                # Inject graph-found documents NOT already in results
+                existing_docs = {c.get("document_name", "") for c in all_chunks}
+                import unicodedata as _uc
+                existing_docs_nfc = {_uc.normalize("NFC", d) for d in existing_docs}
+                new_docs = {
+                    d for d in expansion.expanded_source_uris
+                    if _uc.normalize("NFC", d) not in existing_docs_nfc
+                }
+                if new_docs:
+                    import httpx as _hx
+                    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+                    async with _hx.AsyncClient(timeout=3.0) as _qc:
+                        for doc_name in list(new_docs)[:3]:
+                            for coll in collections:
+                                try:
+                                    coll_name = f"kb_{coll.replace('-', '_')}"
+                                    # NFD normalize for Qdrant match
+                                    dn_nfd = _uc.normalize("NFD", doc_name)
+                                    resp = await _qc.post(
+                                        f"{qdrant_url}/collections/{coll_name}/points/scroll",
+                                        json={
+                                            "limit": 2,
+                                            "with_payload": True,
+                                            "with_vector": False,
+                                            "filter": {"must": [{"key": "document_name", "match": {"value": doc_name}}]},
+                                        },
+                                    )
+                                    if resp.status_code != 200:
+                                        # Try NFD
+                                        resp = await _qc.post(
+                                            f"{qdrant_url}/collections/{coll_name}/points/scroll",
+                                            json={
+                                                "limit": 2,
+                                                "with_payload": True,
+                                                "with_vector": False,
+                                                "filter": {"must": [{"key": "document_name", "match": {"value": dn_nfd}}]},
+                                            },
+                                        )
+                                    if resp.status_code == 200:
+                                        points = resp.json().get("result", {}).get("points", [])
+                                        for pt in points:
+                                            pay = pt.get("payload", {})
+                                            all_chunks.append({
+                                                "content": pay.get("content", ""),
+                                                "document_name": pay.get("document_name", ""),
+                                                "source_uri": pay.get("source_uri", ""),
+                                                "metadata": pay,
+                                                "score": 0.35,
+                                                "graph_injected": True,
+                                                "graph_boosted": True,
+                                            })
+                                except Exception:
+                                    pass
+
                 all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
         except asyncio.TimeoutError:
             logger.warning("Graph expansion timed out (3s), skipping")
