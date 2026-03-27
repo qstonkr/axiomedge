@@ -142,9 +142,14 @@ with st.sidebar:
             group_desc = {g["name"]: g.get("description", "") for g in groups_list}
             group_desc["전체"] = "모든 KB에서 검색"
 
+            # Use group selected from main page if available
+            _default_group = st.session_state.get("search_group_name", "전체")
+            _default_idx = group_names.index(_default_group) if _default_group in group_names else 0
+
             selected_name = st.selectbox(
                 "검색 그룹",
                 options=group_names,
+                index=_default_idx,
                 key="search_group_select",
                 help="관리자가 설정한 검색 그룹 또는 전체",
             )

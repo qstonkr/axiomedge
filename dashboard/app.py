@@ -67,6 +67,40 @@ with col2:
         key="main_search",
     )
 
+    # Search group selection
+    groups_result = api_client._request("GET", "/api/v1/search-groups")
+    groups = groups_result.get("groups", []) if not api_failed(groups_result) else []
+
+    if groups:
+        group_options = {g.get("name", ""): g for g in groups}
+        # Find default group
+        default_idx = 0
+        for i, g in enumerate(groups):
+            if g.get("is_default"):
+                default_idx = i
+                break
+
+        gcol1, gcol2 = st.columns([3, 1])
+        with gcol1:
+            selected_group_name = st.selectbox(
+                "검색 그룹",
+                options=list(group_options.keys()),
+                index=default_idx,
+                key="main_search_group",
+                label_visibility="collapsed",
+            )
+        with gcol2:
+            selected_group = group_options.get(selected_group_name, {})
+            kb_count = len(selected_group.get("kb_ids", []))
+            st.caption(f"KB {kb_count}개")
+
+        if selected_group.get("description"):
+            st.caption(f"ℹ️ {selected_group['description']}")
+
+        # Store selected group for chat page
+        st.session_state.search_group_name = selected_group_name
+        st.session_state.search_kb_ids = selected_group.get("kb_ids", [])
+
     btn_col1, btn_col2, btn_col3 = st.columns(3)
 
     with btn_col1:
