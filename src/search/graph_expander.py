@@ -287,26 +287,26 @@ class GraphSearchExpander:
                             entity_doc_names.add(connected)
 
                     # 2. source_document property on matched entities
-                    # GraphRAG entities store their source doc title as a property
+                    # Search each keyword separately (OR logic)
                     if hasattr(self._graph_repo, "_client"):
-                        try:
-                            import unicodedata
-                            keyword = " ".join(entity_names)
-                            kw_nfc = unicodedata.normalize("NFC", keyword)
-                            kw_nfd = unicodedata.normalize("NFD", keyword)
-                            src_docs = await self._graph_repo._client.execute_query(
-                                "MATCH (n:__Entity__) "
-                                "WHERE (n.id CONTAINS $kw_nfc OR n.id CONTAINS $kw_nfd) "
-                                "AND n.source_document IS NOT NULL "
-                                "RETURN DISTINCT n.source_document AS doc LIMIT 10",
-                                {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd},
-                            )
-                            for row in src_docs:
-                                doc = row.get("doc", "")
-                                if doc:
-                                    entity_doc_names.add(doc)
-                        except Exception:
-                            pass
+                        import unicodedata
+                        for kw in entity_names:
+                            try:
+                                kw_nfc = unicodedata.normalize("NFC", kw)
+                                kw_nfd = unicodedata.normalize("NFD", kw)
+                                src_docs = await self._graph_repo._client.execute_query(
+                                    "MATCH (n:__Entity__) "
+                                    "WHERE (n.id CONTAINS $kw_nfc OR n.id CONTAINS $kw_nfd) "
+                                    "AND n.source_document IS NOT NULL "
+                                    "RETURN DISTINCT n.source_document AS doc LIMIT 5",
+                                    {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd},
+                                )
+                                for row in src_docs:
+                                    doc = row.get("doc", "")
+                                    if doc:
+                                        entity_doc_names.add(doc)
+                            except Exception:
+                                pass
 
                     logger.info(
                         "Entity expansion: %d entities found, %d doc names extracted",
