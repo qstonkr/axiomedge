@@ -28,9 +28,14 @@ logger = logging.getLogger(__name__)
 
 
 def run_graphrag(kb_ids: list[str]):
-    """Run parallel GraphRAG extraction."""
+    """Run parallel GraphRAG extraction.
+
+    NOTE: OWNS/CATEGORIZED_AS edges are handled by run_metadata_backfill.py (Batch 1).
+    This only runs LLM-based entity/relationship extraction (Store, Person, Process, etc.)
+    """
     workers = os.getenv("GRAPHRAG_WORKERS", "8")
     logger.info(f"GraphRAG: {kb_ids} with {workers} workers")
+    logger.info("NOTE: OWNS/CATEGORIZED_AS edges are NOT created here (use run_metadata_backfill.py)")
     subprocess.run(
         ["uv", "run", "python", "scripts/run_graphrag_parallel.py", *kb_ids],
         env={

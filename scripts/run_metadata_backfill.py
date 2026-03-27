@@ -69,7 +69,7 @@ def batch_update_payloads(collection: str, updates: list[tuple[str, dict]]):
         )
 
 
-def run_backfill(kb_id: str, *, force: bool = False):
+def run_backfill(kb_id: str, *, force: bool = False, skip_neo4j: bool = False):
     from src.pipeline.ingestion import (
         extract_owner, classify_l1_category, calculate_quality_score,
         _calculate_metrics, _determine_quality_tier,
@@ -170,8 +170,11 @@ def run_backfill(kb_id: str, *, force: bool = False):
         elapsed = time.time() - t0
         logger.info(f"[{kb_id}] Qdrant update done in {elapsed:.1f}s")
 
-    # Create Neo4j graph edges
-    _create_neo4j_edges(kb_id, doc_cache)
+    # Create Neo4j graph edges (skip if --skip-neo4j or already created via ingestion)
+    if not skip_neo4j:
+        _create_neo4j_edges(kb_id, doc_cache)
+    else:
+        logger.info(f"[{kb_id}] Skipping Neo4j edge creation (--skip-neo4j)")
 
     # Report
     logger.info(f"[{kb_id}] DONE: {stats}")
@@ -225,14 +228,16 @@ def _create_neo4j_edges(kb_id: str, doc_cache: dict[str, dict]):
 
 
 if __name__ == "__main__":
+    flags = {"--force", "--skip-neo4j"}
     force = "--force" in sys.argv
-    targets = [a for a in sys.argv[1:] if a != "--force"] or ALL_KBS
+    skip_neo4j = "--skip-neo4j" in sys.argv
+    targets = [a for a in sys.argv[1:] if a not in flags] or ALL_KBS
 
     for kb_id in targets:
         logger.info(f"\n{'='*60}")
         logger.info(f"[START] {kb_id}")
         logger.info(f"{'='*60}")
-        run_backfill(kb_id, force=force)
+        run_backfill(kb_id, force=force, skip_neo4j=skip_neo4j)
 
     logger.info(f"\n{'='*60}")
     logger.info("ALL DONE")
