@@ -327,7 +327,7 @@ class TermExtractor:
     """
 
     # Minimum occurrences to consider a term valid
-    MIN_OCCURRENCES = 2
+    MIN_OCCURRENCES = 3
 
     # Minimum term length (chars)
     MIN_TERM_LENGTH = 2
