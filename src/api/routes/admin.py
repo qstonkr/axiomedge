@@ -6,114 +6,12 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
 
 from src.api.app import _get_state
 from src.config_weights import weights
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
-
-
-# ============================================================================
-# Document Preview - render specific slide/page as PNG
-# ============================================================================
-
-@router.get("/preview")
-async def document_preview(
-    file: str = Query(..., description="File path or name"),
-    page: int = Query(default=1, ge=1, description="Page/slide number (1-based)"),
-):
-    """Render a specific page/slide from a document as PNG image."""
-    import os
-    import glob
-
-    # Search for file in known directories
-    search_dirs = ["/tmp/kb-files"]
-    file_path = None
-
-    for base_dir in search_dirs:
-        # Direct path
-        if os.path.isfile(file):
-            file_path = file
-            break
-        # Search recursively
-        matches = glob.glob(f"{base_dir}/**/*{os.path.basename(file)}*", recursive=True)
-        if matches:
-            file_path = matches[0]
-            break
-
-    if not file_path or not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail=f"File not found: {file}")
-
-    ext = os.path.splitext(file_path)[1].lower()
-
-    # For PPTX/PPT, try to find matching PDF first (faster, no LibreOffice needed)
-    if ext in (".pptx", ".ppt"):
-        pdf_path = os.path.splitext(file_path)[0] + ".pdf"
-        if os.path.isfile(pdf_path):
-            file_path = pdf_path
-            ext = ".pdf"
-
-    try:
-        if ext == ".pdf":
-            return _render_pdf_page(file_path, page)
-        elif ext in (".pptx", ".ppt"):
-            return _render_pptx_slide(file_path, page)
-        else:
-            raise HTTPException(status_code=400, detail=f"Preview not supported for {ext}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Preview failed: {e}")
-
-
-def _render_pdf_page(file_path: str, page: int) -> Response:
-    """Render PDF page as PNG."""
-    import pymupdf
-
-    doc = pymupdf.open(file_path)
-    if page > len(doc):
-        doc.close()
-        raise HTTPException(status_code=404, detail=f"Page {page} not found (total: {len(doc)})")
-
-    pg = doc[page - 1]
-    # Render at 2x zoom for readability
-    mat = pymupdf.Matrix(2.0, 2.0)
-    pix = pg.get_pixmap(matrix=mat)
-    png_bytes = pix.tobytes("png")
-    doc.close()
-
-    return Response(content=png_bytes, media_type="image/png")
-
-
-def _render_pptx_slide(file_path: str, page: int) -> Response:
-    """Render PPTX slide as PNG via PDF conversion (LibreOffice)."""
-    import subprocess
-    import tempfile
-    import shutil
-
-    soffice = shutil.which("soffice")
-    if not soffice:
-        # Fallback: convert PPTX to PDF using pymupdf if possible
-        raise HTTPException(status_code=501, detail="LibreOffice required for PPTX preview")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Convert PPTX → PDF
-        result = subprocess.run(
-            [soffice, "--headless", "--convert-to", "pdf", "--outdir", tmpdir, file_path],
-            capture_output=True, timeout=30,
-        )
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail="PPTX to PDF conversion failed")
-
-        import os
-        pdf_files = [f for f in os.listdir(tmpdir) if f.endswith(".pdf")]
-        if not pdf_files:
-            raise HTTPException(status_code=500, detail="No PDF output from conversion")
-
-        pdf_path = os.path.join(tmpdir, pdf_files[0])
-        return _render_pdf_page(pdf_path, page)
 
 
 # ============================================================================
