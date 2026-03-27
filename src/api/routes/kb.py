@@ -250,7 +250,7 @@ async def admin_kb_aggregation():
                                 quality_sum += qs
                                 quality_count += 1
             if quality_count > 0:
-                avg_quality_score = round(quality_sum / quality_count / 100, 2)
+                avg_quality_score = round(quality_sum / quality_count, 1)
         except Exception:
             pass
 
