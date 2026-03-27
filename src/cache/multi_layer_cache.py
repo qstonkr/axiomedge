@@ -61,6 +61,7 @@ class MultiLayerCache:
         domain: CacheDomain = CacheDomain.GENERAL,
         kb_ids: list[str] | None = None,
         top_k: int = 0,
+        **kwargs: Any,
     ) -> CacheEntry | None:
         """Cache lookup: L1 -> L2 -> miss.
 
@@ -90,7 +91,10 @@ class MultiLayerCache:
         # L2: Semantic match
         if self._l2 is not None:
             start = time.time()
-            entry = await self._l2.get(key, query=query, domain=domain)
+            entry = await self._l2.get(
+                key, query=query, domain=domain,
+                kb_ids=kb_ids, cache_version=kwargs.get("cache_version", ""),
+            )
             l2_latency = (time.time() - start) * 1000
 
             if entry:
@@ -246,10 +250,14 @@ class MultiLayerCache:
 
     @staticmethod
     def _generate_key(query: str, kb_ids: list[str] | None = None, top_k: int = 0) -> str:
-        """Generate cache key from query, kb_ids, and top_k."""
+        """Generate cache key from query, kb_ids (ordered), and top_k.
+
+        KB order is preserved (not sorted) because first KB may have
+        priority in search expansion and reranking.
+        """
         raw = query.lower().strip()
         if kb_ids:
-            raw += "::" + ",".join(sorted(kb_ids))
+            raw += "::" + ",".join(kb_ids)  # Ordered, not sorted
         if top_k:
             raw += f"::top_k={top_k}"
         h = hashlib.sha256(raw.encode()).hexdigest()[:16]

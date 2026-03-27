@@ -92,7 +92,11 @@ class L2SemanticCache(ICacheLayer):
             query_embedding = await self._embedding_provider.embed(query)
             if not query_embedding:
                 return await self._exact_match(key)
-            return await self._semantic_search(query_embedding, threshold)
+            return await self._semantic_search(
+                query_embedding, threshold,
+                kb_ids=kwargs.get("kb_ids"),
+                cache_version=kwargs.get("cache_version", ""),
+            )
         except Exception as e:
             logger.warning("L2 semantic search error, falling back to exact match: %s", e)
             return await self._exact_match(key)
@@ -121,22 +125,27 @@ class L2SemanticCache(ICacheLayer):
             return None
 
     async def _semantic_search(
-        self, query_embedding: list[float], threshold: float
+        self,
+        query_embedding: list[float],
+        threshold: float,
+        kb_ids: list[str] | None = None,
+        cache_version: str = "",
     ) -> CacheEntry | None:
-        """Scan stored entries and find best cosine similarity match."""
+        """Scan stored entries with KB isolation and version check."""
         best_entry: CacheEntry | None = None
         best_sim: float = 0.0
+        kb_set = set(kb_ids) if kb_ids else None
 
         try:
-            # Scan all L2 entries (bounded by max_entries)
             cursor = 0
             scanned = 0
+            max_scan = min(self._max_entries, 5000)  # Cap scan for performance
             while True:
                 cursor, keys = await self._redis.scan(
                     cursor, match=f"{self._prefix}:*", count=200
                 )
                 for redis_key in keys:
-                    if scanned >= self._max_entries:
+                    if scanned >= max_scan:
                         break
                     scanned += 1
                     try:
@@ -144,6 +153,20 @@ class L2SemanticCache(ICacheLayer):
                         if not data:
                             continue
                         stored = json.loads(data)
+
+                        # Issue 4: Version check — skip stale cache
+                        if cache_version:
+                            stored_version = stored.get("response", {}).get("_cache_version", "") \
+                                if isinstance(stored.get("response"), dict) else ""
+                            if stored_version and stored_version != cache_version:
+                                continue
+
+                        # Issue 3: KB isolation — skip cross-KB matches
+                        if kb_set:
+                            stored_kbs = set(stored.get("metadata", {}).get("kb_ids", []))
+                            if stored_kbs and stored_kbs != kb_set:
+                                continue
+
                         emb = stored.get("embedding")
                         if not emb:
                             continue
@@ -161,7 +184,7 @@ class L2SemanticCache(ICacheLayer):
                             )
                     except Exception:
                         continue
-                if cursor == 0 or scanned >= self._max_entries:
+                if cursor == 0 or scanned >= max_scan:
                     break
 
             if best_entry:

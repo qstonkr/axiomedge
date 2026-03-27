@@ -436,16 +436,24 @@ class CacheConfig:
     l1_ttl_seconds: int = 300
     l2_similarity_threshold: float = 0.92
     l2_max_entries: int = 50000
-    l2_ttl_seconds: int = 21600   # 6 hours
+    l2_ttl_seconds: int = 3600   # 1 hour default
     enable_semantic_cache: bool = True
     idempotency_ttl_seconds: int = 60
 
-    # Domain-specific thresholds (used by MultiLayerCache)
-    # policy=1.0 (exact only), code=0.95, kb=0.92, general=0.85
+    # Domain-specific similarity thresholds
     threshold_policy: float = 1.0
     threshold_code: float = 0.95
     threshold_kb: float = 0.92
     threshold_general: float = 0.85
+
+    # Domain-specific TTLs (seconds)
+    ttl_policy: int = 1800       # 30 min — policies must be fresh
+    ttl_code: int = 1800         # 30 min — code changes frequently
+    ttl_kb_search: int = 3600    # 1 hour — balanced
+    ttl_general: int = 7200      # 2 hours — least critical
+
+    # Cache version — increment on weight/prompt/pipeline changes
+    cache_version: str = "v3_20260327"
 
 
 # ============================================================================

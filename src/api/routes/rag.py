@@ -264,6 +264,15 @@ async def _process_files(
             kb_registry = _get_state().get("kb_registry")
             if kb_registry:
                 await kb_registry.update_counts(effective_kb_id, total_docs, total_chunks)
+
+            # Issue 5: Invalidate search cache after ingest
+            _search_cache = _get_state().get("search_cache")
+            if _search_cache:
+                try:
+                    await _search_cache.clear()
+                    logger.info("Search cache cleared after ingest for kb=%s", effective_kb_id)
+                except Exception:
+                    pass
         except Exception as _count_err:
             logger.warning("KB count update failed: %s", _count_err)
 

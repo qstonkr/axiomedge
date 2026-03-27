@@ -102,6 +102,26 @@ async def hub_search(request: HubSearchRequest):
     if not _cache_collections:
         _cache_collections = ["knowledge"]
 
+    # Cache version from config (auto-invalidates on weight/pipeline changes)
+    _expected_cache_version = weights.cache.cache_version
+
+    # Error patterns that should NOT be cached
+    _ERROR_PATTERNS = [
+        "응답 생성 중 오류",
+        "검색 결과의 신뢰도가 낮아",
+        "검색 조건에 맞는 문서를 찾지 못했습니다",
+    ]
+
+    def _is_valid_cache(cached_dict: dict) -> bool:
+        """Check if cached result is valid (correct version, not error)."""
+        ver = cached_dict.get("_cache_version", "")
+        if ver != _expected_cache_version:
+            return False
+        answer = cached_dict.get("answer", "")
+        if answer and any(p in answer for p in _ERROR_PATTERNS):
+            return False
+        return True
+
     # Try MultiLayerCache first
     if multi_cache:
         try:
@@ -109,24 +129,20 @@ async def hub_search(request: HubSearchRequest):
             cache_entry = await multi_cache.get(
                 query, domain=CacheDomain.KB_SEARCH,
                 kb_ids=_cache_collections, top_k=request.top_k,
+                cache_version=_expected_cache_version,
             )
             if cache_entry and cache_entry.response:
                 cached = cache_entry.response
-                if isinstance(cached, dict):
-                    # Skip stale cache (wrong version or no graph boost)
-                    cache_version = cached.get("_cache_version", "")
-                    if cache_version == "v2_graph":
-                        metrics_inc("search_cache_hits")
-                        cached["metadata"] = cached.get("metadata", {})
-                        cached["metadata"]["cache_hit"] = True
-                        cached["metadata"]["cache_layer"] = "multi_layer"
-                        cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
-                        try:
-                            return HubSearchResponse(**cached)
-                        except Exception:
-                            logger.warning("MultiLayerCache deserialization failed, proceeding")
-                    else:
-                        logger.debug("Skipping stale cache (no graph boost)")
+                if isinstance(cached, dict) and _is_valid_cache(cached):
+                    metrics_inc("search_cache_hits")
+                    cached["metadata"] = cached.get("metadata", {})
+                    cached["metadata"]["cache_hit"] = True
+                    cached["metadata"]["cache_layer"] = "multi_layer"
+                    cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
+                    try:
+                        return HubSearchResponse(**cached)
+                    except Exception:
+                        logger.warning("MultiLayerCache deserialization failed, proceeding")
         except Exception as e:
             logger.warning("MultiLayerCache lookup failed: %s", e)
 
@@ -134,17 +150,15 @@ async def hub_search(request: HubSearchRequest):
     if search_cache:
         try:
             cached = await search_cache.get(query, _cache_collections, request.top_k)
-            if cached:
-                cache_version = cached.get("_cache_version", "") if isinstance(cached, dict) else ""
-                if cache_version == "v2_graph":
-                    metrics_inc("search_cache_hits")
-                    cached["metadata"] = cached.get("metadata", {})
-                    cached["metadata"]["cache_hit"] = True
-                    cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
-                    try:
-                        return HubSearchResponse(**cached)
-                    except Exception:
-                        logger.warning("Cache deserialization failed, proceeding without cache")
+            if cached and isinstance(cached, dict) and _is_valid_cache(cached):
+                metrics_inc("search_cache_hits")
+                cached["metadata"] = cached.get("metadata", {})
+                cached["metadata"]["cache_hit"] = True
+                cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
+                try:
+                    return HubSearchResponse(**cached)
+                except Exception:
+                    logger.warning("Cache deserialization failed, proceeding without cache")
         except Exception as e:
             logger.warning("Search cache lookup failed: %s", e)
 
@@ -657,10 +671,13 @@ async def hub_search(request: HubSearchRequest):
     # Store in caches (fire-and-forget)
     _response_dict = response.model_dump()
 
-    # Only cache results that include an answer AND graph-boosted results
-    if response.answer:
-        # Mark cache entry with version for invalidation on code changes
-        _response_dict["_cache_version"] = "v2_graph"
+    # Only cache high-quality results (not errors/fallbacks)
+    _should_cache = (
+        response.answer
+        and not any(p in response.answer for p in _ERROR_PATTERNS)
+    )
+    if _should_cache:
+        _response_dict["_cache_version"] = _expected_cache_version
         if multi_cache:
             try:
                 from src.cache.cache_types import CacheDomain
