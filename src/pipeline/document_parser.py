@@ -32,6 +32,7 @@ class ParseResult:
     ocr_text: str = ""  # text extracted via OCR from images/scanned pages
     images_processed: int = 0
     visual_analyses: list[dict[str, Any]] = field(default_factory=list)
+    file_modified_at: str = ""  # ISO timestamp from file metadata (PDF modDate, PPTX modified)
 
     @property
     def full_text(self) -> str:
@@ -227,6 +228,17 @@ def _parse_pdf(data: bytes, filename: str) -> str:
     return "\n\n".join(texts)
 
 
+def _extract_pdf_date(raw: str) -> str:
+    """Parse PDF date format (D:YYYYMMDDHHmmSS+TZ) to ISO 8601."""
+    if not raw:
+        return ""
+    import re as _re
+    m = _re.match(r"D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})", raw)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}T{m.group(4)}:{m.group(5)}:{m.group(6)}"
+    return ""
+
+
 def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     """Enhanced PDF parsing with table extraction, scanned page detection, and image OCR."""
     import pymupdf
@@ -235,6 +247,11 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
         doc = pymupdf.open(stream=data, filetype="pdf")
     except Exception as e:
         raise ValueError(f"PDF open failed (encrypted or corrupt?): {e}") from e
+
+    # Extract file modification date from PDF metadata
+    file_modified_at = _extract_pdf_date(doc.metadata.get("modDate", "")) or \
+                       _extract_pdf_date(doc.metadata.get("creationDate", ""))
+
     texts = []
     tables: list[list[list[str]]] = []
     scanned_pages: list[int] = []
@@ -398,6 +415,7 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
         ocr_text="\n".join(ocr_texts),
         images_processed=total_images,
         visual_analyses=visual_analyses,
+        file_modified_at=file_modified_at,
     )
 
 
@@ -477,6 +495,16 @@ def _parse_pptx_enhanced(data: bytes, filename: str) -> ParseResult:
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
     prs = Presentation(io.BytesIO(data))
+
+    # Extract file modification date from PPTX core properties
+    file_modified_at = ""
+    try:
+        modified = prs.core_properties.modified
+        if modified:
+            file_modified_at = modified.isoformat()
+    except Exception:
+        pass
+
     texts = []
     tables: list[list[list[str]]] = []
     extracted_images: list[bytes] = []
@@ -533,6 +561,7 @@ def _parse_pptx_enhanced(data: bytes, filename: str) -> ParseResult:
         ocr_text=ocr_text,
         images_processed=len(extracted_images),
         visual_analyses=visual_analyses,
+        file_modified_at=file_modified_at,
     )
 
 

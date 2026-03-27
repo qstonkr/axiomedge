@@ -875,8 +875,11 @@ class IngestionPipeline:
                     chunk_metadata["heading_path"] = chunk_heading_paths[idx]
                 # META-05: content type flags
                 chunk_metadata.update(content_flags)
+                # last_modified: prefer raw.updated_at, then file metadata date
                 if raw.updated_at:
                     chunk_metadata["last_modified"] = raw.updated_at.isoformat()
+                elif parse_result and getattr(parse_result, "file_modified_at", ""):
+                    chunk_metadata["last_modified"] = parse_result.file_modified_at
 
                 # Convert sparse vector from {"indices": [...], "values": [...]}
                 # to dict[int, float] as expected by QdrantStoreOperations
@@ -935,6 +938,8 @@ class IngestionPipeline:
                 title_metadata.update(content_flags)
                 if raw.updated_at:
                     title_metadata["last_modified"] = raw.updated_at.isoformat()
+                elif parse_result and getattr(parse_result, "file_modified_at", ""):
+                    title_metadata["last_modified"] = parse_result.file_modified_at
 
                 items.append({
                     "content": raw.title,
