@@ -149,9 +149,10 @@ if api_ok:
                     st.caption(f"{tier} | {doc_count:,}개 문서")
 
                     kb_id = kb.get("kb_id", kb.get("id", ""))
-                    if st.button("🔍 검색", key=f"kb_search_{i}", use_container_width=True):
+                    if st.button("📂 열기", key=f"kb_open_{i}", use_container_width=True):
                         st.session_state.search_kb_ids = [kb_id]
                         st.session_state.search_group_name = None
+                        st.session_state.pop("_active_group_name", None)
                         st.switch_page("pages/chat.py")
     else:
         st.info("등록된 KB가 없습니다.")
