@@ -274,6 +274,9 @@ async def hub_search(request: HubSearchRequest):
     all_chunks: list[dict[str, Any]] = []
     searched_kbs: list[str] = []
 
+    # Fetch wider pool from Qdrant; trim after keyword boost + reranking
+    _qdrant_top_k = effective_top_k * weights.search.rerank_pool_multiplier
+
     async def _search_collection(collection: str) -> tuple[str, list[dict[str, Any]]]:
         if colbert_enabled and colbert_vectors:
             results = await search_engine.search_with_colbert_rerank(
@@ -281,14 +284,14 @@ async def hub_search(request: HubSearchRequest):
                 dense_vector=dense_vector,
                 sparse_vector=sparse_vector,
                 colbert_vectors=colbert_vectors,
-                top_k=effective_top_k,
+                top_k=_qdrant_top_k,
             )
         else:
             results = await search_engine.search(
                 kb_id=collection,
                 dense_vector=dense_vector,
                 sparse_vector=sparse_vector,
-                top_k=effective_top_k,
+                top_k=_qdrant_top_k,
             )
         chunks = []
         for r in results:
