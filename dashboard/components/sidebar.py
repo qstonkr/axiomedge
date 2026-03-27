@@ -93,11 +93,26 @@ def render_sidebar(show_admin: bool = False, user_role: str | None = None):
             st.toast("모든 캐시가 삭제되었습니다.")
             st.rerun()
 
-        # 모델 정보 표시
+        # 모델 정보 표시 (detect actual backend from env)
         st.markdown("---")
         import os
-        _llm_model = os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
-        _embed_model = os.getenv("OLLAMA_EMBEDDING_MODEL", "bge-m3")
-        _embed_backend = "Ollama" if os.getenv("OLLAMA_BASE_URL") else "ONNX"
-        st.caption(f"LLM: `{_llm_model}`")
+        _use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
+        if _use_sagemaker:
+            _llm_model = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+            _llm_backend = "SageMaker"
+        else:
+            _llm_model = os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
+            _llm_backend = "Ollama"
+
+        # Embedding: check TEI first, then Ollama, then ONNX
+        _tei_url = os.getenv("TEI_EMBEDDING_URL", "")
+        if _tei_url:
+            _embed_backend = "TEI"
+        elif os.getenv("OLLAMA_BASE_URL"):
+            _embed_backend = "Ollama"
+        else:
+            _embed_backend = "ONNX"
+        _embed_model = os.getenv("EMBEDDING_MODEL", "bge-m3")
+
+        st.caption(f"LLM: `{_llm_model}` ({_llm_backend})")
         st.caption(f"Embed: `{_embed_model}` ({_embed_backend})")
