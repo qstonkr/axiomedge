@@ -149,11 +149,9 @@ if api_ok:
                     st.caption(f"{tier} | {doc_count:,}개 문서")
 
                     kb_id = kb.get("kb_id", kb.get("id", ""))
-                    kb_query = st.text_input("검색어", placeholder="검색어 입력...", key=f"kb_input_{i}", label_visibility="collapsed")
                     if st.button("🔍 검색", key=f"kb_search_{i}", use_container_width=True):
-                        st.session_state.pending_query = kb_query or f"{name} 관련 문서"
                         st.session_state.search_kb_ids = [kb_id]
-                        st.session_state.search_group_name = None  # Clear group to use direct KB
+                        st.session_state.search_group_name = None
                         st.switch_page("pages/chat.py")
     else:
         st.info("등록된 KB가 없습니다.")
