@@ -145,6 +145,79 @@ _STOP_TERMS = frozenset({
 # ==========================================================================
 
 
+def _is_noise_term(term: str, tag_type: str) -> bool:
+    """Comprehensive noise filter for extracted terms.
+
+    Consolidates all filtering rules discovered during DB cleanup:
+    - Special chars, pure numbers, code patterns
+    - SQL aliases (A.ACCM), camelCase (errorCode), UPPER_SNAKE (MAX_SIZE)
+    - Short/generic English, pure ASCII compounds
+    """
+    # Length check
+    if len(term) < 2:
+        return True
+    # Single-char Korean noun
+    if len(term) == 1:
+        return True
+    # Repeated characters (손손, ㅋㅋㅋ)
+    if len(set(term)) <= 1:
+        return True
+    # Special char prefix/suffix
+    if term[0] in "#*@\\/$`~^:=+" or term[-1] in "#*@\\/$`~^":
+        return True
+    # Contains dots (SQL alias: A.ACCM, package: org.xxx)
+    if "." in term:
+        return True
+    # Contains slash, comma, underscore (code patterns)
+    if any(c in term for c in "/,_"):
+        return True
+    # Pure numbers or starts with digit (03월, 10시, 0원)
+    if term[0].isdigit():
+        return True
+    stripped = term.strip(".-+%,")
+    if stripped.isdigit():
+        return True
+    # Code/SQL/URL patterns (brackets, quotes, etc.)
+    if any(c in term for c in "{}()[]\"'=<>;|"):
+        return True
+    # Too many special chars (>30% non-alnum, non-Korean)
+    alnum_count = sum(1 for c in term if c.isalnum() or '\uac00' <= c <= '\ud7a3')
+    if len(term) > 3 and alnum_count / len(term) < 0.7:
+        return True
+    # Pure ASCII: various code patterns
+    if term.isascii():
+        # Pure English ≤10 chars (Start, Query, bye) — no Korean mixed
+        if term.isalpha() and len(term) <= 10:
+            return True
+        # camelCase (errorCode, requestId)
+        if term[0].islower() and any(c.isupper() for c in term[1:]):
+            return True
+        # UPPER_SNAKE (MAX_SIZE) — already caught by underscore above
+        # English + numbers only (BCRMA000, batch001)
+        if term.isalnum() and not any('\uac00' <= c <= '\ud7a3' for c in term):
+            return True
+    # Foreign tokens (SL): additional filters
+    if tag_type == "foreign":
+        if len(term) < 3:
+            return True
+        if len(term) <= 4 and term.islower():
+            return True
+        if term.lower() in _ENGLISH_STOP:
+            return True
+        if len(term) <= 3 and term.isupper() and term not in _KNOWN_ACRONYMS:
+            return True
+    # Compound nouns: skip if all-ASCII (code concatenation)
+    if tag_type == "compound_noun" and term.isascii() and term.isalpha():
+        return True
+    # Korean stopwords
+    if term in TermExtractor._STOP_NOUNS:
+        return True
+    # Code artifact
+    if _is_code_artifact(term):
+        return True
+    return False
+
+
 def _is_synonym_noise(term: str) -> bool:
     """Check if a term is OCR/code noise for synonym discovery."""
     if not term:
@@ -462,51 +535,7 @@ class TermExtractor:
 
         # Pass 2: Filter and count
         for term, tag_type in compounds:
-            # Length check
-            if len(term) < self.MIN_TERM_LENGTH:
-                continue
-            # Single-char Korean noun filter
-            if len(term) == 1 and term in self._SKIP_SINGLE_NOUNS:
-                continue
-            # Repeated character filter (손손, ㅋㅋㅋ)
-            if len(set(term)) <= 1:
-                continue
-            # Special char prefix/suffix (e.g. #1, #R느, *평가)
-            if term[0] in "#*@\\/$`~^" or term[-1] in "#*@\\/$`~^":
-                continue
-            # Pure numbers or number-like (#2, 34도, 24년)
-            stripped = term.strip(".-+%,")
-            if stripped.isdigit():
-                continue
-            # Code/SQL/URL patterns
-            if any(c in term for c in "{}()[]\"'=<>;_|"):
-                continue
-            # Too many special chars (>30% non-alphanumeric, non-Korean)
-            alnum_count = sum(1 for c in term if c.isalnum() or '\uac00' <= c <= '\ud7a3')
-            if len(term) > 3 and alnum_count / len(term) < 0.7:
-                continue
-            # Foreign tokens (SL): filter noise
-            if tag_type == "foreign":
-                if len(term) < 3 or "." in term:
-                    continue
-                # Short lowercase fragments (ser, ery, pw, cb, bf)
-                if len(term) <= 4 and term.islower():
-                    continue
-                # Common English words (not domain terms)
-                if term.lower() in _ENGLISH_STOP:
-                    continue
-                # Short uppercase-only fragments (SER, ERY, AXE — likely OCR noise)
-                # Keep known acronyms: ESPA, OFC, GS25, API, KB, etc.
-                if len(term) <= 3 and term.isupper() and term not in _KNOWN_ACRONYMS:
-                    continue
-            # Compound nouns: skip if all-ASCII and looks like code concatenation
-            if tag_type == "compound_noun" and term.isascii() and term.isalpha():
-                continue
-            # Stopword filter
-            if term in self._STOP_NOUNS:
-                continue
-            # Code artifact filter
-            if _is_code_artifact(term):
+            if _is_noise_term(term, tag_type):
                 continue
 
             count_key = term.lower()
