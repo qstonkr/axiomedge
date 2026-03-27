@@ -370,9 +370,13 @@ class Neo4jGraphRepository:
         self, keyword: str, max_facts: int = 20,
     ) -> list[dict[str, Any]]:
         """Fallback CONTAINS search when fulltext query fails."""
+        import unicodedata
+        keyword_nfc = unicodedata.normalize("NFC", keyword)
+        keyword_nfd = unicodedata.normalize("NFD", keyword)
         cypher = """
         MATCH (n)
-        WHERE n.id CONTAINS $keyword OR n.name CONTAINS $keyword
+        WHERE n.id CONTAINS $keyword_nfc OR n.name CONTAINS $keyword_nfc
+           OR n.id CONTAINS $keyword_nfd OR n.name CONTAINS $keyword_nfd
         WITH n, [l IN labels(n) WHERE l <> '__Entity__'][0] AS node_type
         OPTIONAL MATCH (n)-[r]-(connected)
         RETURN node_type,
@@ -386,7 +390,7 @@ class Neo4jGraphRepository:
         """
         try:
             return await self._client.execute_query(
-                cypher, {"keyword": keyword, "max_facts": max_facts},
+                cypher, {"keyword_nfc": keyword_nfc, "keyword_nfd": keyword_nfd, "max_facts": max_facts},
             )
         except Exception as e:
             logger.warning("CONTAINS search failed: %s", e)
@@ -398,28 +402,98 @@ class Neo4jGraphRepository:
         *,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        """Find experts for a topic via OWNS/MANAGES/RESPONSIBLE_FOR/AUTHORED."""
-        cypher = """
-        MATCH (p:Person)-[r:OWNS|MANAGES|RESPONSIBLE_FOR|AUTHORED]->(target)
-        WHERE toLower(COALESCE(target.name, target.id, target.title, ''))
-              CONTAINS toLower($topic)
-        WITH p, type(r) AS rel, count(DISTINCT target) AS doc_count,
-             collect(DISTINCT COALESCE(target.name, target.id, target.title))[..5] AS related
-        OPTIONAL MATCH (p)-[:MEMBER_OF]->(t:Team)
+        """Find experts for a topic.
+
+        Three search paths:
+        1. Person who OWNS/AUTHORED Documents matching the topic
+        2. Person connected to GraphRAG entities matching the topic
+           (Person → MANAGES/OWNS → Store/Process that matches)
+        3. Person whose name appears in documents related to the topic
+        """
+        import unicodedata
+        # macOS HFS+ stores filenames as NFD; normalize search term to match
+        topic_nfc = unicodedata.normalize("NFC", topic)
+        topic_nfd = unicodedata.normalize("NFD", topic)
+
+        results: list[dict[str, Any]] = []
+
+        # Path 1: Direct document ownership (title/id match)
+        # Try both NFC and NFD forms for macOS filename compatibility
+        cypher_docs = """
+        MATCH (p:Person)-[r:OWNS|AUTHORED|MANAGES|RESPONSIBLE_FOR]->(d:Document)
+        WHERE COALESCE(d.title, d.id, '') CONTAINS $topic_nfc
+           OR COALESCE(d.title, d.id, '') CONTAINS $topic_nfd
+        WITH p, count(DISTINCT d) AS doc_count,
+             collect(DISTINCT COALESCE(d.title, d.id))[..5] AS related
         RETURN p.name AS name, p.id AS person_id,
-               doc_count, related,
-               collect(DISTINCT t.name) AS departments,
-               collect(DISTINCT rel) AS relationships
+               doc_count, related, 'document_owner' AS source
         ORDER BY doc_count DESC
         LIMIT $limit
         """
         try:
-            return await self._client.execute_query(
-                cypher, {"topic": topic, "limit": limit}
-            )
-        except Exception as e:
-            logger.warning("Neo4j find_experts failed: %s", e)
-            return []
+            results.extend(await self._client.execute_query(
+                cypher_docs, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
+            ))
+        except Exception:
+            pass
+
+        # Path 2: GraphRAG entity connection
+        cypher_entity = """
+        MATCH (entity:__Entity__)
+        WHERE COALESCE(entity.id, entity.name, '') CONTAINS $topic_nfc
+           OR COALESCE(entity.id, entity.name, '') CONTAINS $topic_nfd
+        WITH entity
+        OPTIONAL MATCH (entity)-[:EXTRACTED_FROM]->(d:Document)<-[:OWNS|AUTHORED]-(p:Person)
+        WHERE p IS NOT NULL
+        WITH p, count(DISTINCT entity) AS entity_count,
+             collect(DISTINCT COALESCE(entity.id, entity.name))[..5] AS related
+        WHERE p IS NOT NULL
+        RETURN p.name AS name, p.id AS person_id,
+               entity_count AS doc_count, related, 'entity_expert' AS source
+        ORDER BY entity_count DESC
+        LIMIT $limit
+        """
+        try:
+            results.extend(await self._client.execute_query(
+                cypher_entity, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
+            ))
+        except Exception:
+            pass
+
+        # Path 3: Person directly connected to matching entity (GraphRAG)
+        cypher_direct = """
+        MATCH (p:Person)-[r]-(entity:__Entity__)
+        WHERE COALESCE(entity.id, entity.name, '') CONTAINS $topic_nfc
+           OR COALESCE(entity.id, entity.name, '') CONTAINS $topic_nfd
+        WITH p, type(r) AS rel, count(DISTINCT entity) AS entity_count,
+             collect(DISTINCT COALESCE(entity.id, entity.name))[..5] AS related
+        RETURN p.name AS name, p.id AS person_id,
+               entity_count AS doc_count, related, 'direct_connection' AS source
+        ORDER BY entity_count DESC
+        LIMIT $limit
+        """
+        try:
+            results.extend(await self._client.execute_query(
+                cypher_direct, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
+            ))
+        except Exception:
+            pass
+
+        # Deduplicate by person name, merge counts
+        merged: dict[str, dict] = {}
+        for r in results:
+            name = r.get("name", "")
+            if not name:
+                continue
+            if name in merged:
+                merged[name]["doc_count"] = merged[name].get("doc_count", 0) + r.get("doc_count", 0)
+                existing_related = merged[name].get("related", [])
+                new_related = r.get("related", [])
+                merged[name]["related"] = list(set(existing_related + new_related))[:10]
+            else:
+                merged[name] = dict(r)
+
+        return sorted(merged.values(), key=lambda x: x.get("doc_count", 0), reverse=True)[:limit]
 
     async def search_related_nodes(
         self,
