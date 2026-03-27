@@ -280,51 +280,72 @@ async def list_evaluation_history(
 
 @router.get("/transparency/stats")
 async def get_transparency_stats():
-    """Get transparency stats from trust_score_repo + provenance_repo."""
+    """Get transparency stats from Qdrant metadata + PostgreSQL."""
+    import httpx
+    from sqlalchemy import text
+
     state = _get_state()
-    trust_repo = state.get("trust_score_repo")
-    prov_repo = state.get("provenance_repo")
+    collections = state.get("qdrant_collections")
+    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
 
     total_documents = 0
-    with_provenance = 0
     with_owner = 0
-    verified = 0
+    with_category = 0
+    with_source = 0
 
-    # Count trust scores as proxy for total docs
-    if trust_repo:
-        try:
-            # Get all entries across KBs (use a high limit)
-            all_scores = await trust_repo.get_by_kb("", min_score=0.0, limit=10000)
-            # The above may return empty for blank kb_id; iterate known KBs
-            # For simplicity, count by confidence tiers
-            if not all_scores:
-                # Try a broader approach via needs_review (gets all KBs)
-                needs_review = await trust_repo.get_needs_review(kb_id=None)
-                total_documents = len(needs_review) if needs_review else 0
-        except Exception as e:
-            logger.warning("Transparency stats query failed: %s", e)
+    # Count from Qdrant (sample per collection)
+    try:
+        if collections:
+            raw_names = await collections.get_existing_collection_names()
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for raw_name in raw_names:
+                    doc_ids_seen: set[str] = set()
+                    resp = await client.post(
+                        f"{qdrant_url}/collections/{raw_name}/points/scroll",
+                        json={"limit": 200, "with_payload": ["doc_id", "owner", "l1_category", "source_uri"], "with_vector": False},
+                    )
+                    if resp.status_code != 200:
+                        continue
+                    for p in resp.json().get("result", {}).get("points", []):
+                        pay = p.get("payload", {})
+                        did = pay.get("doc_id", "")
+                        if did in doc_ids_seen:
+                            continue
+                        doc_ids_seen.add(did)
+                        total_documents += 1
+                        if pay.get("owner"):
+                            with_owner += 1
+                        if pay.get("l1_category") and pay.get("l1_category") != "기타":
+                            with_category += 1
+                        if pay.get("source_uri"):
+                            with_source += 1
+    except Exception as e:
+        logger.warning("Transparency Qdrant stats failed: %s", e)
 
-    if prov_repo:
-        try:
-            # Count provenance records (indicates tracked lineage)
-            prov_count = await prov_repo.count() if hasattr(prov_repo, "count") else 0
-            with_provenance = prov_count
-        except Exception:
-            pass
+    # Document owners from PostgreSQL
+    doc_owner_count = 0
+    try:
+        session_factory = state.get("session_factory")
+        if session_factory:
+            async with session_factory() as session:
+                r = await session.execute(text("SELECT count(*) FROM document_owners"))
+                doc_owner_count = r.scalar() or 0
+    except Exception:
+        pass
 
-    # Calculate transparency score
-    transparency = 0.0
-    if total_documents > 0:
-        transparency = round(
-            (with_provenance + with_owner + verified) / (total_documents * 3) * 100, 1
-        )
+    # Calculate transparency score (0-1)
+    source_coverage = with_source / total_documents if total_documents > 0 else 0
+    avg_sources = 1.0 if with_source > 0 else 0
 
     return {
         "total_documents": total_documents,
-        "with_provenance": with_provenance,
-        "with_owner": with_owner,
-        "verified": verified,
-        "transparency_score": transparency,
+        "total_citations": total_documents,
+        "with_provenance": with_source,
+        "with_owner": max(with_owner, doc_owner_count),
+        "verified": with_category,
+        "transparency_score": round(source_coverage, 2),
+        "source_coverage_rate": round(source_coverage, 2),
+        "avg_sources_per_response": round(avg_sources, 1),
     }
 
 

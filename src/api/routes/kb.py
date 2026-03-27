@@ -395,14 +395,69 @@ async def admin_kb_documents(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
-    """List KB documents."""
-    return {
-        "documents": [],
-        "total": 0,
-        "page": page,
-        "page_size": page_size,
-        "kb_id": kb_id,
-    }
+    """List KB documents from Qdrant (unique doc_ids with metadata)."""
+    import httpx
+
+    state = _get_state()
+    collections = state.get("qdrant_collections")
+    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+
+    if not collections:
+        return {"documents": [], "total": 0, "page": page, "page_size": page_size, "kb_id": kb_id}
+
+    try:
+        collection_name = collections.get_collection_name(kb_id) if collections else f"kb_{kb_id}"
+        docs: dict[str, dict] = {}
+        offset = None
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            while len(docs) < page * page_size + page_size:
+                body: dict[str, Any] = {
+                    "limit": 100,
+                    "with_payload": ["doc_id", "document_name", "source_type", "quality_tier",
+                                     "quality_score", "owner", "l1_category", "ingested_at", "last_modified"],
+                    "with_vector": False,
+                }
+                if offset:
+                    body["offset"] = offset
+                resp = await client.post(f"{qdrant_url}/collections/{collection_name}/points/scroll", json=body)
+                if resp.status_code != 200:
+                    break
+                data = resp.json().get("result", {})
+                points = data.get("points", [])
+                if not points:
+                    break
+                for p in points:
+                    pay = p["payload"]
+                    did = pay.get("doc_id", "")
+                    if did and did not in docs:
+                        docs[did] = {
+                            "doc_id": did,
+                            "title": pay.get("document_name", ""),
+                            "source_type": pay.get("source_type", "file"),
+                            "quality_tier": pay.get("quality_tier", ""),
+                            "quality_score": pay.get("quality_score", 0),
+                            "owner": pay.get("owner", ""),
+                            "l1_category": pay.get("l1_category", ""),
+                            "updated_at": pay.get("last_modified", pay.get("ingested_at", "")),
+                            "status": "active",
+                        }
+                offset = data.get("next_page_offset")
+                if not offset:
+                    break
+
+        all_docs = list(docs.values())
+        start = (page - 1) * page_size
+        return {
+            "documents": all_docs[start:start + page_size],
+            "total": len(all_docs),
+            "page": page,
+            "page_size": page_size,
+            "kb_id": kb_id,
+        }
+    except Exception as e:
+        logger.warning("KB documents fetch failed: %s", e)
+        return {"documents": [], "total": 0, "page": page, "page_size": page_size, "kb_id": kb_id}
 
 
 # ---------------------------------------------------------------------------
@@ -410,12 +465,94 @@ async def admin_kb_documents(
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/categories")
 async def admin_kb_categories(kb_id: str):
-    """Get KB categories."""
-    return {
-        "categories": [],
-        "total": 0,
-        "kb_id": kb_id,
-    }
+    """Get KB category distribution from Qdrant chunk metadata."""
+    import httpx
+    from collections import Counter
+
+    state = _get_state()
+    collections = state.get("qdrant_collections")
+    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+
+    if not collections:
+        return {"categories": [], "total": 0, "kb_id": kb_id}
+
+    try:
+        collection_name = collections.get_collection_name(kb_id) if collections else f"kb_{kb_id}"
+        cat_counter: Counter[str] = Counter()
+        offset = None
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            while True:
+                body: dict[str, Any] = {"limit": 100, "with_payload": ["l1_category"], "with_vector": False}
+                if offset:
+                    body["offset"] = offset
+                resp = await client.post(f"{qdrant_url}/collections/{collection_name}/points/scroll", json=body)
+                if resp.status_code != 200:
+                    break
+                data = resp.json().get("result", {})
+                points = data.get("points", [])
+                if not points:
+                    break
+                for p in points:
+                    cat = p["payload"].get("l1_category", "기타")
+                    cat_counter[cat] += 1
+                offset = data.get("next_page_offset")
+                if not offset:
+                    break
+
+        categories = [
+            {"name": name, "document_count": count}
+            for name, count in cat_counter.most_common()
+        ]
+        return {"categories": categories, "total": len(categories), "kb_id": kb_id}
+    except Exception as e:
+        logger.warning("KB categories fetch failed: %s", e)
+        return {"categories": [], "total": 0, "kb_id": kb_id}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/admin/kb/{kb_id}/trust-scores
+# ---------------------------------------------------------------------------
+@admin_router.get("/{kb_id}/trust-scores")
+async def admin_kb_trust_scores(kb_id: str):
+    """Get KB trust scores from PostgreSQL."""
+    state = _get_state()
+    repo = state.get("trust_score_repo")
+    if not repo:
+        return {"items": [], "total": 0, "kb_id": kb_id}
+    try:
+        items = await repo.get_by_kb(kb_id, limit=500, offset=0)
+        return {"items": items, "total": len(items), "kb_id": kb_id}
+    except Exception as e:
+        logger.warning("Trust scores fetch failed: %s", e)
+        return {"items": [], "total": 0, "kb_id": kb_id}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/admin/kb/{kb_id}/trust-scores/distribution
+# ---------------------------------------------------------------------------
+@admin_router.get("/{kb_id}/trust-scores/distribution")
+async def admin_kb_trust_score_distribution(kb_id: str):
+    """Get KB trust score distribution."""
+    state = _get_state()
+    repo = state.get("trust_score_repo")
+    if not repo:
+        return {"distribution": {}, "avg_score": 0, "kb_id": kb_id}
+    try:
+        items = await repo.get_by_kb(kb_id, limit=10000, offset=0)
+        dist = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "UNCERTAIN": 0}
+        total_score = 0.0
+        for item in items:
+            tier = (item.get("confidence_tier") or "uncertain").upper()
+            if tier not in dist:
+                tier = "UNCERTAIN"
+            dist[tier] += 1
+            total_score += item.get("kts_score", 0)
+        avg = total_score / len(items) if items else 0
+        return {"distribution": dist, "avg_score": round(avg, 3), "total": len(items), "kb_id": kb_id}
+    except Exception as e:
+        logger.warning("Trust score distribution failed: %s", e)
+        return {"distribution": {}, "avg_score": 0, "kb_id": kb_id}
 
 
 # ---------------------------------------------------------------------------
