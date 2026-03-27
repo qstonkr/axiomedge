@@ -111,7 +111,8 @@ with st.sidebar:
     # 검색 범위 선택 (그룹 기반 + 개별 KB 선택)
     # ================================================================
     st.markdown("**🔍 검색 범위**")
-    selected_kb_ids: list[str] = []
+    # Use KB IDs from main page if set (e.g. KB card search)
+    selected_kb_ids: list[str] = st.session_state.pop("search_kb_ids", [])
     selected_group_id: str | None = None
 
     # 검색 그룹 로드
