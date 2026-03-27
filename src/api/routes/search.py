@@ -327,20 +327,46 @@ async def hub_search(request: HubSearchRequest):
         all_chunks.extend(chunks)
         searched_kbs.append(col_name)
 
-    # Sort by score; keep top_k * 3 candidates for reranking, then trim to top_k after
-    all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-    all_chunks = all_chunks[: effective_top_k * weights.search.rerank_pool_multiplier]
-
-    # 4.4. Keyword match boost — ensure chunks with exact query keywords rank higher
+    # 4.4. Smart candidate selection: keyword-match priority + KB diversity
+    # Instead of purely score-based cutoff, ensure keyword-matching chunks
+    # from ALL KBs are included in the reranking pool.
     _query_tokens = [t.strip() for t in display_query.lower().split() if len(t.strip()) >= 2]
-    if _query_tokens:
+    _pool_size = effective_top_k * weights.search.rerank_pool_multiplier
+
+    if _query_tokens and len(collections) > 1:
+        # Separate keyword-matched vs unmatched chunks
+        keyword_chunks: list[dict] = []
+        other_chunks: list[dict] = []
         for chunk in all_chunks:
             content_lower = chunk.get("content", "").lower()
             matched = sum(1 for t in _query_tokens if t in content_lower)
             if matched > 0:
                 ratio = matched / len(_query_tokens)
-                chunk["score"] = chunk.get("score", 0) + 0.3 * ratio  # max +0.3 boost for exact keyword match
+                chunk["score"] = chunk.get("score", 0) + 0.3 * ratio
+                chunk["_keyword_matched"] = True
+                keyword_chunks.append(chunk)
+            else:
+                other_chunks.append(chunk)
+
+        # Keyword chunks first (sorted by score), then fill with other chunks
+        keyword_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+        other_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+        all_chunks = keyword_chunks + other_chunks
+        all_chunks = all_chunks[:_pool_size]
+        logger.info(
+            "Keyword selection: %d keyword-matched + %d other = %d pool",
+            len(keyword_chunks), min(len(other_chunks), _pool_size - len(keyword_chunks)), len(all_chunks),
+        )
+    else:
+        # Single KB or no keywords: standard score-based cutoff with keyword boost
+        for chunk in all_chunks:
+            if _query_tokens:
+                content_lower = chunk.get("content", "").lower()
+                matched = sum(1 for t in _query_tokens if t in content_lower)
+                if matched > 0:
+                    chunk["score"] = chunk.get("score", 0) + 0.3 * (matched / len(_query_tokens))
         all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+        all_chunks = all_chunks[:_pool_size]
 
     # 4.5. Passage cleaning - normalize text before reranking
     all_chunks = clean_chunks(all_chunks)
