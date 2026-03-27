@@ -79,7 +79,11 @@ with tab_overview:
         with col3:
             st.metric("총 청크 수", f"{total_chunks:,}개")
         with col4:
-            st.metric("평균 품질 점수", f"{avg_quality:.0%}" if isinstance(avg_quality, float) else str(avg_quality))
+            st.metric(
+                "평균 품질 점수",
+                f"{avg_quality:.0%}" if isinstance(avg_quality, float) else str(avg_quality),
+                help="콘텐츠 길이(0-60점) + 구조 요소(테이블/코드/헤더 등, 각 +8점) + 품질 등급(GOLD +15, SILVER +10, BRONZE +5)으로 산출. 90+: A등급, 70+: B등급, 50+: C등급",
+            )
 
         st.markdown("---")
 
