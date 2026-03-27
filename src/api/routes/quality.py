@@ -426,32 +426,48 @@ async def get_transparency_stats():
     with_category = 0
     with_source = 0
 
-    # Count from Qdrant (sample per collection)
+    # Count from Qdrant (full scroll per collection)
     try:
         if collections:
             raw_names = await collections.get_existing_collection_names()
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 for raw_name in raw_names:
                     doc_ids_seen: set[str] = set()
-                    resp = await client.post(
-                        f"{qdrant_url}/collections/{raw_name}/points/scroll",
-                        json={"limit": 200, "with_payload": ["doc_id", "owner", "l1_category", "source_uri"], "with_vector": False},
-                    )
-                    if resp.status_code != 200:
-                        continue
-                    for p in resp.json().get("result", {}).get("points", []):
-                        pay = p.get("payload", {})
-                        did = pay.get("doc_id", "")
-                        if did in doc_ids_seen:
-                            continue
-                        doc_ids_seen.add(did)
-                        total_documents += 1
-                        if pay.get("owner"):
-                            with_owner += 1
-                        if pay.get("l1_category") and pay.get("l1_category") != "기타":
-                            with_category += 1
-                        if pay.get("source_uri"):
-                            with_source += 1
+                    offset = None
+                    while True:
+                        body: dict[str, Any] = {
+                            "limit": 100,
+                            "with_payload": ["doc_id", "owner", "l1_category", "source_uri"],
+                            "with_vector": False,
+                        }
+                        if offset:
+                            body["offset"] = offset
+                        resp = await client.post(
+                            f"{qdrant_url}/collections/{raw_name}/points/scroll",
+                            json=body,
+                        )
+                        if resp.status_code != 200:
+                            break
+                        data = resp.json().get("result", {})
+                        points = data.get("points", [])
+                        if not points:
+                            break
+                        for p in points:
+                            pay = p.get("payload", {})
+                            did = pay.get("doc_id", "")
+                            if did in doc_ids_seen:
+                                continue
+                            doc_ids_seen.add(did)
+                            total_documents += 1
+                            if pay.get("owner"):
+                                with_owner += 1
+                            if pay.get("l1_category") and pay.get("l1_category") != "기타":
+                                with_category += 1
+                            if pay.get("source_uri"):
+                                with_source += 1
+                        offset = data.get("next_page_offset")
+                        if not offset:
+                            break
     except Exception as e:
         logger.warning("Transparency Qdrant stats failed: %s", e)
 
