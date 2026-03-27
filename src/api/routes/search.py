@@ -366,25 +366,28 @@ async def hub_search(request: HubSearchRequest):
     graph_expander = state.get("graph_expander")
     if graph_expander and all_chunks:
         try:
-            # Use enhanced entity expansion if available
+            # Graph expansion with timeout (max 3s to avoid blocking search)
             if hasattr(graph_expander, "expand_with_entities"):
-                expansion = await graph_expander.expand_with_entities(
-                    corrected_query,
-                    all_chunks,
-                    scope_kb_ids=collections,
+                expansion = await asyncio.wait_for(
+                    graph_expander.expand_with_entities(
+                        corrected_query, all_chunks, scope_kb_ids=collections,
+                    ),
+                    timeout=3.0,
                 )
             else:
-                expansion = await graph_expander.expand(
-                    corrected_query,
-                    all_chunks,
-                    scope_kb_ids=collections,
+                expansion = await asyncio.wait_for(
+                    graph_expander.expand(
+                        corrected_query, all_chunks, scope_kb_ids=collections,
+                    ),
+                    timeout=3.0,
                 )
             if expansion.expanded_source_uris:
                 all_chunks = graph_expander.boost_chunks(
                     all_chunks, expansion.expanded_source_uris
                 )
-                # Re-sort after boost
                 all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+        except asyncio.TimeoutError:
+            logger.warning("Graph expansion timed out (3s), skipping")
         except Exception as e:
             logger.warning("Graph expansion failed in search route: %s", e)
 
