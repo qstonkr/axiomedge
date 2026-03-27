@@ -111,16 +111,20 @@ with st.sidebar:
     # 검색 범위 선택 (그룹 기반 + 개별 KB 선택)
     # ================================================================
     st.markdown("**🔍 검색 범위**")
-    # Use KB IDs from main page if set (e.g. KB card search)
-    selected_kb_ids: list[str] = st.session_state.pop("search_kb_ids", [])
-    selected_group_id: str | None = None
-
-    # If KB card set specific KBs, clear group to avoid conflict
-    _from_kb_card = bool(selected_kb_ids)
-    if _from_kb_card:
+    # Use KB IDs from main page if set (e.g. KB card "열기")
+    # Persist in _direct_kb_ids so it survives Streamlit reruns
+    if "search_kb_ids" in st.session_state:
+        st.session_state["_direct_kb_ids"] = st.session_state.pop("search_kb_ids")
         st.session_state.pop("_active_group_name", None)
         st.session_state.pop("search_group_name", None)
-        st.info(f"🔍 KB: {', '.join(selected_kb_ids)} 에서 검색합니다.")
+
+    _direct_kb_ids = st.session_state.get("_direct_kb_ids", [])
+    selected_kb_ids: list[str] = list(_direct_kb_ids)
+    selected_group_id: str | None = None
+
+    if _direct_kb_ids:
+        st.info(f"🔍 KB: {', '.join(_direct_kb_ids)} 에서 검색합니다.  "
+                f"[전체 검색으로 전환하려면 그룹을 선택하세요]")
 
     # 검색 그룹 로드
     groups_result = api_client._request("GET", "/api/v1/search-groups")
@@ -143,8 +147,8 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    if scope_mode == "그룹 선택":
-        # 그룹 드롭다운
+    if scope_mode == "그룹 선택" and not _direct_kb_ids:
+        # 그룹 드롭다운 (skip if KB card set direct KBs)
         if groups_list:
             group_names = ["전체"] + [g["name"] for g in groups_list]
             group_desc = {g["name"]: g.get("description", "") for g in groups_list}
@@ -168,6 +172,8 @@ with st.sidebar:
                     selected_group_id = matched[0]["id"]
                     group_kb_ids = matched[0].get("kb_ids", [])
                     selected_kb_ids = group_kb_ids
+                    # Clear direct KB selection when group is chosen
+                    st.session_state.pop("_direct_kb_ids", None)
                     st.session_state["_active_group_name"] = selected_name
                     desc = group_desc.get(selected_name, "")
                     if desc:
