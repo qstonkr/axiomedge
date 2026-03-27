@@ -123,6 +123,17 @@ async def _init_services():
         _state["search_group_repo"] = SearchGroupRepository(session_factory)
         _state["usage_log_repo"] = UsageLogRepository(session_factory)
 
+        # Load L1 categories into ingestion pipeline cache
+        try:
+            cat_repo = _state.get("category_repo")
+            if cat_repo:
+                l1_cats = await cat_repo.get_l1_categories()
+                if l1_cats:
+                    from src.pipeline.ingestion import load_l1_categories_from_db
+                    load_l1_categories_from_db(l1_cats)
+        except Exception as e:
+            logger.warning("L1 category cache load failed (using defaults): %s", e)
+
         # Term extractor for ingestion
         try:
             from src.pipeline.term_extractor import TermExtractor

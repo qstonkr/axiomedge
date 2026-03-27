@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -72,6 +73,9 @@ _DOC_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 def extract_owner(raw: "RawDocument") -> str:
     """Extract document owner from metadata (author, creator, last_modifier).
 
+    Also tries to extract Korean names from the document title
+    (common in ESPA reports like "김재경M_수지우남점").
+
     Returns the first valid Korean/English name, or empty string.
     """
     candidates = [
@@ -79,6 +83,15 @@ def extract_owner(raw: "RawDocument") -> str:
         raw.metadata.get("creator", ""),
         raw.metadata.get("last_modifier", ""),
     ]
+
+    # Try extracting Korean name from title (e.g. "3-3-5_김재경M_수지우남점")
+    if raw.title:
+        name_match = re.search(r"[가-힣]{2,4}M?[_\s]", raw.title)
+        if name_match:
+            name = name_match.group().rstrip("M_ \t")
+            if name:
+                candidates.append(name)
+
     normalized = _normalize_owners(candidates)
     return normalized[0] if normalized else ""
 
@@ -87,27 +100,34 @@ def extract_owner(raw: "RawDocument") -> str:
 # L1 category assignment (META-07)
 # ---------------------------------------------------------------------------
 
-# Cached L1 categories — loaded once from DB, falls back to hardcoded
+# Cached L1 categories — loaded from DB on first access, hardcoded fallback
 _L1_CATEGORIES_CACHE: list[dict[str, Any]] | None = None
+
+# Hardcoded fallback (matches DB seeded categories)
+_L1_CATEGORIES_DEFAULT: list[dict[str, Any]] = [
+    {"name": "IT인프라·운영", "keywords": ["서버", "배포", "장애", "모니터링", "인프라", "K8s", "쿠버네티스", "도커", "네트워크", "방화벽", "SSL", "DNS", "CDN"]},
+    {"name": "시스템·애플리케이션", "keywords": ["시스템", "메뉴", "화면", "API", "POS", "WMS", "ERP", "앱", "UI", "UX", "프론트", "백엔드", "DB", "데이터베이스"]},
+    {"name": "업무프로세스·규정", "keywords": ["프로세스", "절차", "규정", "감사", "인사", "회계", "재무", "결재", "양수도", "폐점", "계약", "정산", "담배권"]},
+    {"name": "사업·전략", "keywords": ["매출", "전략", "KPI", "마케팅", "영업", "홈쇼핑", "실적", "성과", "사업분석", "상권분석", "경영전략"]},
+    {"name": "유통·물류", "keywords": ["OFC", "발주", "배송", "재고", "물류", "점포", "가맹", "상품", "유통", "식품", "경영주", "편의점", "GS25", "진열", "경영", "상권", "ESPA"]},
+    {"name": "용어·지식정의", "keywords": ["용어", "정의", "약어", "표준", "사전", "데이터 표준"]},
+    {"name": "기타", "keywords": []},
+]
+
+
+def load_l1_categories_from_db(categories: list[dict[str, Any]]) -> None:
+    """Load L1 categories from DB into cache. Called during app startup."""
+    global _L1_CATEGORIES_CACHE
+    if categories:
+        _L1_CATEGORIES_CACHE = categories
+        logger.info("L1 categories loaded from DB: %d categories", len(categories))
 
 
 def _get_l1_categories_sync() -> list[dict[str, Any]]:
     """Get L1 categories (cached). Falls back to hardcoded defaults."""
-    global _L1_CATEGORIES_CACHE
     if _L1_CATEGORIES_CACHE is not None:
         return _L1_CATEGORIES_CACHE
-
-    # Hardcoded fallback (matches DB seeded categories)
-    _L1_CATEGORIES_CACHE = [
-        {"name": "IT인프라·운영", "keywords": ["서버", "배포", "장애", "모니터링", "인프라", "K8s", "쿠버네티스", "도커", "네트워크", "방화벽", "SSL", "DNS", "CDN"]},
-        {"name": "시스템·애플리케이션", "keywords": ["시스템", "메뉴", "화면", "API", "POS", "WMS", "ERP", "앱", "UI", "UX", "프론트", "백엔드", "DB", "데이터베이스"]},
-        {"name": "업무프로세스·규정", "keywords": ["프로세스", "절차", "규정", "감사", "인사", "회계", "재무", "결재", "양수도", "폐점", "계약", "정산", "담배권"]},
-        {"name": "사업·전략", "keywords": ["매출", "전략", "KPI", "마케팅", "영업", "홈쇼핑", "경영", "실적", "성과", "분석", "상권"]},
-        {"name": "유통·물류", "keywords": ["OFC", "발주", "배송", "재고", "물류", "점포", "가맹", "상품", "유통", "식품", "경영주", "편의점", "GS25", "진열"]},
-        {"name": "용어·지식정의", "keywords": ["용어", "정의", "약어", "표준", "사전", "데이터 표준"]},
-        {"name": "기타", "keywords": []},
-    ]
-    return _L1_CATEGORIES_CACHE
+    return _L1_CATEGORIES_DEFAULT
 
 
 def classify_l1_category(title: str, content: str) -> str:
@@ -152,11 +172,10 @@ def calculate_quality_score(metrics: "QualityMetrics | None", tier: "QualityTier
 
     Scoring:
     - Base: content_length score (0-40 pts, log scale)
-    - Structure: +15 per structural element (tables, code, headers, images, links)
+    - Structure: +10 per structural element (tables, code, headers, images, links)
     - Tier bonus: GOLD +10, SILVER +5
     - Capped at 100
     """
-    import math
 
     if metrics is None:
         return 30.0  # Default for unmeasured
