@@ -90,13 +90,14 @@ async def graph_search(body: dict[str, Any]):
 # Graph - Experts (POST - dashboard sends POST with body)
 # ============================================================================
 
-@router.post("/graph/experts")
-async def find_experts(body: dict[str, Any]):
+@router.get("/graph/experts")
+async def find_experts(
+    topic: str = Query(default=""),
+    limit: int = Query(default=10, ge=1, le=50),
+):
     """Find experts for a topic."""
     state = _get_state()
     graph = state.get("graph_repo")
-    topic = body.get("topic", "")
-    limit = body.get("limit", 10)
 
     if not graph:
         return {"topic": topic, "experts": []}
@@ -133,6 +134,109 @@ async def graph_expand(body: dict[str, Any]):
     except Exception as e:
         logger.warning("Graph expand failed: %s", e)
         return {"node_id": node_id, "neighbors": [], "edges": [], "error": str(e)}
+
+
+# ============================================================================
+# Graph - Integrity Check
+# ============================================================================
+
+@router.post("/graph/integrity/check")
+async def graph_integrity_check():
+    """Check graph data integrity: orphan nodes, missing relationships, inconsistencies."""
+    state = _get_state()
+    graph = state.get("graph_repo")
+
+    if not graph:
+        return {
+            "total_nodes": 0, "total_edges": 0,
+            "orphan_count": 0, "missing_relationships": 0, "inconsistencies": 0,
+            "details": [],
+        }
+
+    try:
+        client = graph._client
+        issues: list[dict[str, Any]] = []
+
+        # Total counts
+        node_result = await client.execute_query("MATCH (n) RETURN count(n) AS cnt", {})
+        total_nodes = node_result[0]["cnt"] if node_result else 0
+
+        edge_result = await client.execute_query("MATCH ()-[r]->() RETURN count(r) AS cnt", {})
+        total_edges = edge_result[0]["cnt"] if edge_result else 0
+
+        # Orphan nodes (no relationships at all)
+        orphan_result = await client.execute_query(
+            "MATCH (n) WHERE NOT (n)--() RETURN count(n) AS cnt", {}
+        )
+        orphan_count = orphan_result[0]["cnt"] if orphan_result else 0
+
+        if orphan_count > 0:
+            # Get sample orphans
+            orphan_samples = await client.execute_query(
+                "MATCH (n) WHERE NOT (n)--() "
+                "RETURN [l IN labels(n) WHERE l <> '__Entity__'][0] AS type, "
+                "COALESCE(n.name, n.id, n.title) AS name LIMIT 10", {}
+            )
+            for s in orphan_samples:
+                issues.append({
+                    "type": "ORPHAN_NODE",
+                    "severity": "LOW",
+                    "description": f"[{s.get('type', '?')}] {s.get('name', '?')} — 관계 없음",
+                })
+
+        # Documents without category
+        no_cat_result = await client.execute_query(
+            "MATCH (d:Document) WHERE NOT (d)-[:CATEGORIZED_AS]->() "
+            "RETURN count(d) AS cnt", {}
+        )
+        no_cat = no_cat_result[0]["cnt"] if no_cat_result else 0
+
+        if no_cat > 0:
+            issues.append({
+                "type": "MISSING_CATEGORY",
+                "severity": "MEDIUM",
+                "description": f"{no_cat}개 문서에 카테고리 미할당",
+            })
+
+        # Documents without owner
+        no_owner_result = await client.execute_query(
+            "MATCH (d:Document) WHERE NOT (d)<-[:OWNS]-() AND NOT (d)<-[:AUTHORED]-() "
+            "RETURN count(d) AS cnt", {}
+        )
+        no_owner = no_owner_result[0]["cnt"] if no_owner_result else 0
+
+        if no_owner > 0:
+            issues.append({
+                "type": "MISSING_OWNER",
+                "severity": "MEDIUM",
+                "description": f"{no_owner}개 문서에 담당자 미할당",
+            })
+
+        # Dangling references (entities pointing to non-existent targets)
+        dangling_result = await client.execute_query(
+            "MATCH (a)-[r]->(b) WHERE b.id IS NULL AND b.name IS NULL "
+            "RETURN count(r) AS cnt", {}
+        )
+        dangling = dangling_result[0]["cnt"] if dangling_result else 0
+
+        missing_rels = no_cat + no_owner
+        inconsistencies = dangling
+
+        return {
+            "total_nodes": total_nodes,
+            "total_edges": total_edges,
+            "orphan_count": orphan_count,
+            "missing_relationships": missing_rels,
+            "inconsistencies": inconsistencies,
+            "details": issues,
+        }
+    except Exception as e:
+        logger.warning("Graph integrity check failed: %s", e)
+        return {
+            "total_nodes": 0, "total_edges": 0,
+            "orphan_count": 0, "missing_relationships": 0, "inconsistencies": 0,
+            "details": [], "error": str(e),
+        }
 
 
 # ============================================================================

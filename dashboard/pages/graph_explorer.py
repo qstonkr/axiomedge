@@ -203,7 +203,7 @@ with tab_expert:
             with st.spinner("전문가 검색 중..."):
                 result = api_client._request(
                     "GET",
-                    "/api/v1/admin/graph/impact",
+                    "/api/v1/admin/graph/experts",
                     params={"topic": topic_query.strip()},
                 )
 
