@@ -609,7 +609,13 @@ class GraphRAGExtractor:
                 if not _is_safe_cypher_label(node.type):
                     logger.error(f"안전하지 않은 노드 타입 스킵: {node.type}")
                     continue
-                properties = {"id": node.id, **node.properties}
+                properties = {"id": node.id}
+                # Flatten node properties — Neo4j rejects Map/List values
+                for k, v in node.properties.items():
+                    if isinstance(v, (dict, list)):
+                        properties[k] = json.dumps(v, ensure_ascii=False)
+                    elif v is not None:
+                        properties[k] = v
                 if result.source_page_id:
                     properties["source_page_id"] = result.source_page_id
                 if result.source_document:
@@ -767,7 +773,11 @@ class GraphRAGExtractor:
             source_updated=source_updated,
             source_page_id=result.source_page_id,
             source_document=result.source_document,
-            properties=rel.properties,
+            properties={
+                k: (json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v)
+                for k, v in rel.properties.items()
+                if v is not None
+            },
         )
 
     def _archive_relationship(
