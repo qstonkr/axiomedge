@@ -364,6 +364,7 @@ async def hub_search(request: HubSearchRequest):
     # 6. Graph Expansion - enrich results with structurally related content
     #    Must run BEFORE answer generation so expanded chunks are included in the answer.
     graph_expander = state.get("graph_expander")
+    logger.info("Graph expander: %s, chunks: %d", type(graph_expander).__name__ if graph_expander else "None", len(all_chunks))
     if graph_expander and all_chunks:
         try:
             # Graph expansion with timeout (max 3s to avoid blocking search)

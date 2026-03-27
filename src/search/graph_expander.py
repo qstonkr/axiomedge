@@ -308,15 +308,15 @@ class GraphSearchExpander:
                         except Exception:
                             pass
 
+                    logger.info(
+                        "Entity expansion: %d entities found, %d doc names extracted",
+                        len(entities), len(entity_doc_names),
+                    )
                     if entity_doc_names:
                         result.expanded_source_uris |= entity_doc_names
                         result.graph_related_count += len(entity_doc_names)
-                        logger.info(
-                            "Entity expansion: %d documents from %d entities",
-                            len(entity_doc_names), len(entities),
-                        )
         except Exception as e:
-            logger.debug("Entity expansion failed: %s", e)
+            logger.warning("Entity expansion failed: %s", e)
 
         return result
 
