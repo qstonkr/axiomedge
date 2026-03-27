@@ -12,3 +12,17 @@ build/
 docker/paddleocr/wheels/
 /1st_jsonl/
 /2nd_jsonl/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data/logs
+*.log
+*.jsonl.bak
