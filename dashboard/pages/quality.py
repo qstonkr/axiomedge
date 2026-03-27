@@ -37,7 +37,7 @@ with tab_quality:
             st.cache_data.clear()
             st.rerun()
     else:
-        kb_items = kbs_result.get("items", [])
+        kb_items = kbs_result.get("items", kbs_result.get("kbs", []))
         kb_options = {kb.get("name", kb.get("id", "")): kb.get("id", kb.get("kb_id", "")) for kb in kb_items}
 
         if kb_options:
@@ -374,7 +374,7 @@ with tab_kts:
     if api_failed(kbs_result2):
         st.warning("KB 목록 API 데이터를 불러올 수 없습니다.")
     else:
-        kb_items2 = kbs_result2.get("items", [])
+        kb_items2 = kbs_result2.get("items", kbs_result2.get("kbs", []))
         kb_options2 = {kb.get("name", kb.get("id", "")): kb.get("id", kb.get("kb_id", "")) for kb in kb_items2}
 
         if kb_options2:
