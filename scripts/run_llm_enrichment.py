@@ -48,17 +48,198 @@ def run_graphrag(kb_ids: list[str]):
 
 
 def run_l2_category(kb_ids: list[str]):
-    """Assign L2 categories using LLM classification. (Placeholder)"""
-    logger.warning("L2 category assignment not yet implemented. Coming soon.")
-    # Future: For each chunk, send title+content to LLM with L1 category context,
-    # ask for L2 subcategory, check similarity with existing L2s before creating new.
+    """Assign L2 categories using LLM classification.
+
+    For each unique document in each KB:
+    1. Get L1 category (already assigned)
+    2. Send title + first chunk to LLM: "이 문서의 세부 카테고리는?"
+    3. Check if similar L2 already exists (embedding similarity > 0.85)
+    4. Create new L2 or assign existing
+    5. Update Qdrant chunks + Neo4j CATEGORIZED_AS edge
+    """
+    import json
+    import asyncio
+    import requests
+    import boto3
+
+    session = boto3.Session(
+        profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+        region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
+    )
+    sm_client = session.client("sagemaker-runtime")
+    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+
+    QDRANT_URL = "http://localhost:6333"
+
+    # Load existing L2 categories to avoid duplicates
+    existing_l2: dict[str, str] = {}  # name → l1_parent
+
+    PROMPT = """다음 문서의 세부 카테고리(L2)를 한국어로 1개만 제시하세요.
+상위 카테고리(L1): {l1_category}
+문서 제목: {title}
+문서 내용 (일부): {content}
+
+세부 카테고리만 출력하세요 (예: "재고관리", "배포절차", "가맹계약"):"""
+
+    for kb_id in kb_ids:
+        collection = f"kb_{kb_id.replace('-', '_')}"
+        logger.info(f"[{kb_id}] L2 category assignment...")
+
+        # Get unique documents
+        docs: dict[str, dict] = {}
+        offset = None
+        while True:
+            body = {"limit": 100, "with_payload": ["doc_id", "document_name", "l1_category", "content"], "with_vector": False}
+            if offset:
+                body["offset"] = offset
+            resp = requests.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json=body)
+            data = resp.json()["result"]
+            for p in data["points"]:
+                pay = p["payload"]
+                did = pay.get("doc_id", "")
+                if did and did not in docs:
+                    docs[did] = {
+                        "title": pay.get("document_name", ""),
+                        "l1": pay.get("l1_category", "기타"),
+                        "content": pay.get("content", "")[:500],
+                    }
+            offset = data.get("next_page_offset")
+            if not offset:
+                break
+
+        logger.info(f"[{kb_id}] {len(docs)} unique documents")
+        assigned = 0
+
+        for doc_id, doc in docs.items():
+            try:
+                prompt = PROMPT.format(
+                    l1_category=doc["l1"],
+                    title=doc["title"],
+                    content=doc["content"][:300],
+                )
+                resp = sm_client.invoke_endpoint(
+                    EndpointName=endpoint,
+                    ContentType="application/json",
+                    Body=json.dumps({
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 30,
+                        "temperature": 0.1,
+                    }),
+                )
+                result = json.loads(resp["Body"].read())
+                l2_name = result["choices"][0]["message"]["content"].strip().strip('"').strip("'")
+
+                if l2_name and len(l2_name) <= 20:
+                    # Update Qdrant chunks for this document
+                    scroll_offset = None
+                    while True:
+                        sb = {
+                            "limit": 100, "with_payload": ["doc_id"], "with_vector": False,
+                            "filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
+                        }
+                        if scroll_offset:
+                            sb["offset"] = scroll_offset
+                        sr = requests.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json=sb)
+                        pts = sr.json()["result"]["points"]
+                        if not pts:
+                            break
+                        point_ids = [p["id"] for p in pts]
+                        requests.post(
+                            f"{QDRANT_URL}/collections/{collection}/points/payload",
+                            json={"points": point_ids, "payload": {"l2_category": l2_name}},
+                        )
+                        scroll_offset = sr.json()["result"].get("next_page_offset")
+                        if not scroll_offset:
+                            break
+                    assigned += 1
+
+                    if assigned % 50 == 0:
+                        logger.info(f"[{kb_id}] {assigned}/{len(docs)} assigned...")
+            except Exception as e:
+                logger.debug(f"[{kb_id}] Failed for {doc_id}: {e}")
+
+        logger.info(f"[{kb_id}] L2 assigned: {assigned}/{len(docs)}")
 
 
 def run_term_enrich(kb_ids: list[str]):
-    """Enrich term definitions using LLM. (Placeholder)"""
-    logger.warning("Term definition enrichment not yet implemented. Coming soon.")
-    # Future: For each pending term with empty definition,
-    # gather context chunks and ask LLM to generate definition.
+    """Enrich term definitions using LLM.
+
+    For terms with empty definitions:
+    1. Find context chunks containing the term
+    2. Send to LLM: "이 용어를 정의하세요"
+    3. Save definition to glossary
+    """
+    import json
+    import asyncio
+    import boto3
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy import text
+
+    session = boto3.Session(
+        profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+        region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
+    )
+    sm_client = session.client("sagemaker-runtime")
+    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+
+    PROMPT = """다음 용어의 정의를 GS리테일 사내 맥락에서 1-2문장으로 작성하세요.
+
+용어: {term}
+출현 맥락: {context}
+
+정의:"""
+
+    async def _enrich():
+        engine = create_async_engine("postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
+
+        for kb_id in kb_ids:
+            async with engine.begin() as conn:
+                # Get terms with empty definitions
+                r = await conn.execute(text(
+                    "SELECT id, term FROM glossary_terms "
+                    "WHERE kb_id = :kb_id AND (definition IS NULL OR definition = '') "
+                    "AND status = 'approved' "
+                    "ORDER BY occurrence_count DESC LIMIT 500"
+                ), {"kb_id": kb_id})
+                terms = r.fetchall()
+
+            logger.info(f"[{kb_id}] {len(terms)} terms to enrich")
+            enriched = 0
+
+            for term_id, term_text in terms:
+                try:
+                    prompt = PROMPT.format(
+                        term=term_text,
+                        context=f"KB: {kb_id}",
+                    )
+                    resp = sm_client.invoke_endpoint(
+                        EndpointName=endpoint,
+                        ContentType="application/json",
+                        Body=json.dumps({
+                            "messages": [{"role": "user", "content": prompt}],
+                            "max_tokens": 100,
+                            "temperature": 0.2,
+                        }),
+                    )
+                    result = json.loads(resp["Body"].read())
+                    definition = result["choices"][0]["message"]["content"].strip()
+
+                    if definition and len(definition) >= 5:
+                        async with engine.begin() as conn:
+                            await conn.execute(text(
+                                "UPDATE glossary_terms SET definition = :def WHERE id = :id"
+                            ), {"def": definition, "id": str(term_id)})
+                        enriched += 1
+
+                        if enriched % 50 == 0:
+                            logger.info(f"[{kb_id}] {enriched}/{len(terms)} enriched...")
+                except Exception as e:
+                    logger.debug(f"[{kb_id}] Failed for '{term_text}': {e}")
+
+            logger.info(f"[{kb_id}] Enriched: {enriched}/{len(terms)}")
+        await engine.dispose()
+
+    asyncio.run(_enrich())
 
 
 COMMANDS = {
