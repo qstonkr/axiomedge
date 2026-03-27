@@ -270,7 +270,18 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # 메인 영역
 # ---------------------------------------------------------------------------
-st.title("💬 지식 검색")
+# Dynamic title based on search scope
+_scope_name = ""
+_direct = st.session_state.get("_direct_kb_ids", [])
+_group = st.session_state.get("_active_group_name", "")
+if _direct:
+    _scope_name = ", ".join(_direct)
+elif _group:
+    _scope_name = _group
+if _scope_name:
+    st.title(f"💬 {_scope_name} 지식 검색")
+else:
+    st.title("💬 지식 검색")
 mode_label = "EXAONE 3.5" if search_mode == "AI 답변" else "문서 검색"
 st.caption(f"Hub Search API를 통해 지식을 검색하고 {mode_label}가 답변합니다.")
 
