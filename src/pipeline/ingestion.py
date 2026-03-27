@@ -170,27 +170,28 @@ def calculate_quality_score(metrics: "QualityMetrics | None", tier: "QualityTier
     """Calculate numeric quality score (0-100) from quality metrics.
 
     Scoring:
-    - Base: content_length score (0-40 pts, log scale)
-    - Structure: +10 per structural element (tables, code, headers, images, links)
-    - Tier bonus: GOLD +10, SILVER +5
+    - Base: content_length score (0-60 pts, log scale, 2000+ chars → 60)
+    - Structure: +8 per structural element (tables, code, headers, images, links)
+    - Tier bonus: GOLD +15, SILVER +10, BRONZE +5
     - Capped at 100
     """
 
     if metrics is None:
-        return 30.0  # Default for unmeasured
+        return 50.0  # Default for unmeasured
 
-    # Base score from content length (log scale, 0-40)
+    # Base score from content length (log scale, 0-60)
+    # 500 chars → ~40, 1000 → ~48, 2000 → ~55, 5000+ → ~60
     length = metrics.content_length if hasattr(metrics, "content_length") else 0
-    base = min(40.0, math.log1p(length) / math.log1p(10000) * 40) if length > 0 else 0
+    base = min(60.0, math.log1p(length) / math.log1p(5000) * 60) if length > 0 else 0
 
-    # Structure bonuses
+    # Structure bonuses (+8 each, max +40)
     structure = 0.0
     for attr in ("has_tables", "has_code_blocks", "has_headers", "has_images", "has_links"):
         if getattr(metrics, attr, False):
-            structure += 10.0
+            structure += 8.0
 
     # Tier bonus
-    tier_bonus = {"GOLD": 10.0, "SILVER": 5.0}.get(tier.value, 0.0)
+    tier_bonus = {"GOLD": 15.0, "SILVER": 10.0, "BRONZE": 5.0}.get(tier.value, 0.0)
 
     return min(100.0, round(base + structure + tier_bonus, 1))
 
