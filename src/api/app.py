@@ -137,7 +137,10 @@ async def _init_services():
         # Term extractor for ingestion
         try:
             from src.pipeline.term_extractor import TermExtractor
-            _state["term_extractor"] = TermExtractor(glossary_repo=_state.get("glossary_repo"))
+            _state["term_extractor"] = TermExtractor(
+                glossary_repo=_state.get("glossary_repo"),
+                embedder=_state.get("embedder"),
+            )
             logger.info("TermExtractor initialized")
         except Exception as e:
             logger.warning("TermExtractor init failed: %s", e)

@@ -379,15 +379,23 @@ class TermExtractor:
         (MIXED_PATTERN, "mixed"),
     )
 
+    # Dense similarity threshold: pending terms more similar than this
+    # to any approved term are considered duplicates and skipped.
+    DENSE_SIM_THRESHOLD = 0.75
+
     def __init__(
         self,
         glossary_repo: Any | None = None,
         min_occurrences: int | None = None,
+        embedder: Any | None = None,
     ) -> None:
         self._glossary_repo = glossary_repo
         self._min_occurrences = min_occurrences or self.MIN_OCCURRENCES
+        self._embedder = embedder  # For dense similarity check vs approved terms
         self._kiwi = None
         self._kiwi_available: bool | None = None  # None = not checked yet
+        self._approved_vecs_cache: Any | None = None  # numpy array cache
+        self._approved_terms_cache: list[str] | None = None
 
     def _get_kiwi(self):
         """Lazy-load KiwiPy tokenizer."""
@@ -453,9 +461,13 @@ class TermExtractor:
             if count >= self._min_occurrences
         ]
 
-        # Filter out global terms
+        # Filter out global terms (string matching)
         if self._glossary_repo:
             candidates = await self._filter_global_terms(candidates, kb_id)
+
+        # Filter out terms too similar to approved terms (dense embedding)
+        if self._embedder and self._glossary_repo and candidates:
+            candidates = await self._filter_by_dense_similarity(candidates, kb_id)
 
         logger.info(
             "Term extraction (%s): %d candidates from %d chunks (kb_id=%s)",
@@ -962,6 +974,91 @@ class TermExtractor:
             filtered.append(candidate)
 
         return filtered
+
+    async def _filter_by_dense_similarity(
+        self,
+        candidates: list[ExtractedTerm],
+        kb_id: str,
+    ) -> list[ExtractedTerm]:
+        """Remove candidates too similar to approved terms via dense embedding.
+
+        Uses BGE-M3 embeddings to compute cosine similarity between candidate
+        terms and approved (standard) terms. Candidates with similarity >= threshold
+        are considered duplicates of existing standard terms and removed.
+        """
+        import numpy as np
+
+        try:
+            # Load approved terms (cached)
+            if self._approved_vecs_cache is None:
+                list_fn = getattr(self._glossary_repo, "list_by_kb", None)
+                if not list_fn:
+                    return candidates
+                approved_terms_data = await list_fn(
+                    kb_id="all", status="approved", limit=10000, offset=0,
+                )
+                if not approved_terms_data:
+                    return candidates
+                self._approved_terms_cache = [t["term"] for t in approved_terms_data if t.get("term")]
+                if not self._approved_terms_cache:
+                    return candidates
+
+                # Embed approved terms
+                encode_fn = getattr(self._embedder, "encode", None)
+                if not encode_fn:
+                    return candidates
+                approved_vecs = await asyncio.to_thread(
+                    encode_fn, self._approved_terms_cache,
+                )
+                if isinstance(approved_vecs, dict):
+                    approved_vecs = approved_vecs.get("dense", [])
+                self._approved_vecs_cache = np.array(approved_vecs)
+                # Normalize
+                norms = np.linalg.norm(self._approved_vecs_cache, axis=1, keepdims=True)
+                self._approved_vecs_cache = self._approved_vecs_cache / np.maximum(norms, 1e-8)
+                logger.info(
+                    "Dense similarity filter: loaded %d approved term embeddings",
+                    len(self._approved_terms_cache),
+                )
+
+            # Embed candidates
+            candidate_terms = [c.term for c in candidates]
+            encode_fn = getattr(self._embedder, "encode", None)
+            if not encode_fn:
+                return candidates
+            cand_vecs = await asyncio.to_thread(encode_fn, candidate_terms)
+            if isinstance(cand_vecs, dict):
+                cand_vecs = cand_vecs.get("dense", [])
+            cand_vecs = np.array(cand_vecs)
+            norms = np.linalg.norm(cand_vecs, axis=1, keepdims=True)
+            cand_vecs = cand_vecs / np.maximum(norms, 1e-8)
+
+            # Compute max similarity
+            sim_matrix = cand_vecs @ self._approved_vecs_cache.T
+            max_sims = np.max(sim_matrix, axis=1)
+
+            filtered = []
+            removed = 0
+            for i, candidate in enumerate(candidates):
+                if max_sims[i] >= self.DENSE_SIM_THRESHOLD:
+                    removed += 1
+                    logger.debug(
+                        "Dense sim filter: '%s' similar to approved (%.2f)",
+                        candidate.term, max_sims[i],
+                    )
+                else:
+                    filtered.append(candidate)
+
+            if removed > 0:
+                logger.info(
+                    "Dense similarity filter: removed %d/%d terms (threshold=%.0f%%)",
+                    removed, len(candidates), self.DENSE_SIM_THRESHOLD * 100,
+                )
+            return filtered
+
+        except Exception as e:
+            logger.warning("Dense similarity filter failed, skipping: %s", e)
+            return candidates
 
 
 __all__ = [
