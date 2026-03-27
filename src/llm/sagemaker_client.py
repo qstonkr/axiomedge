@@ -66,14 +66,18 @@ class SageMakerLLMClient:
         self._client = None
 
     def _get_client(self):
-        if self._client is None:
-            import boto3
-            session = boto3.Session(
-                profile_name=self._config.profile,
-                region_name=self._config.region,
-            )
-            self._client = session.client("sagemaker-runtime")
-        return self._client
+        # TODO: 임시 — SSO 토큰 갱신 대응. IAM 키 전환 후 캐싱 방식으로 복원
+        # if self._client is None:
+        #     import boto3
+        #     session = boto3.Session(profile_name=self._config.profile, region_name=self._config.region)
+        #     self._client = session.client("sagemaker-runtime")
+        # return self._client
+        import boto3
+        session = boto3.Session(
+            profile_name=self._config.profile,
+            region_name=self._config.region,
+        )
+        return session.client("sagemaker-runtime")
 
     def _invoke_sync(
         self,
