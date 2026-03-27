@@ -48,6 +48,13 @@ async def document_preview(
 
     ext = os.path.splitext(file_path)[1].lower()
 
+    # For PPTX/PPT, try to find matching PDF first (faster, no LibreOffice needed)
+    if ext in (".pptx", ".ppt"):
+        pdf_path = os.path.splitext(file_path)[0] + ".pdf"
+        if os.path.isfile(pdf_path):
+            file_path = pdf_path
+            ext = ".pdf"
+
     try:
         if ext == ".pdf":
             return _render_pdf_page(file_path, page)
