@@ -201,7 +201,10 @@ async def hub_search(request: HubSearchRequest):
         )
 
     # 2b. Query expansion - enrich query with synonyms/related terms
+    # Keep original query for LLM prompt; expanded query only for vector search
     expanded_terms: list[str] = []
+    search_query = corrected_query  # For vector search (may include Lucene syntax)
+    display_query = corrected_query  # For LLM prompt (clean, human-readable)
     query_expander = state.get("query_expander")
     if query_expander:
         try:
@@ -210,7 +213,7 @@ async def hub_search(request: HubSearchRequest):
             expanded_terms = getattr(expansion_result, "expanded_terms", [])
             expanded_q = getattr(expansion_result, "expanded_query", None)
             if expanded_q and expanded_q != corrected_query:
-                corrected_query = expanded_q
+                search_query = expanded_q  # Lucene-expanded for vector search only
         except Exception as e:
             logger.warning("Query expansion failed: %s", e)
 
@@ -222,7 +225,7 @@ async def hub_search(request: HubSearchRequest):
     if classifier:
         try:
             from src.search.query_classifier import QueryClassifier
-            query_classification = classifier.classify(corrected_query)
+            query_classification = classifier.classify(display_query)
             if query_classification.query_type.value == "owner_query":
                 effective_top_k = max(effective_top_k, 10)
             elif query_classification.query_type.value == "concept":
@@ -238,7 +241,7 @@ async def hub_search(request: HubSearchRequest):
     colbert_enabled = weights.hybrid_search.enable_colbert_reranking
     encoded = await asyncio.to_thread(
         lambda: embedder.encode(
-            [corrected_query],
+            [search_query],
             return_dense=True,
             return_sparse=True,
             return_colbert_vecs=colbert_enabled,
@@ -317,7 +320,7 @@ async def hub_search(request: HubSearchRequest):
     # 4.6. Cross-encoder reranking - neural relevance scoring
     try:
         all_chunks = await async_rerank_with_cross_encoder(
-            query=corrected_query,
+            query=search_query,
             chunks=all_chunks,
             top_k=effective_top_k * weights.search.rerank_pool_multiplier,
         )
@@ -341,7 +344,7 @@ async def hub_search(request: HubSearchRequest):
         ]
 
         reranked = composite_reranker.rerank(
-            query=corrected_query,
+            query=search_query,
             chunks=search_chunks,
             top_k=effective_top_k,
         )
@@ -378,14 +381,14 @@ async def hub_search(request: HubSearchRequest):
             if hasattr(graph_expander, "expand_with_entities"):
                 expansion = await asyncio.wait_for(
                     graph_expander.expand_with_entities(
-                        corrected_query, all_chunks, scope_kb_ids=collections,
+                        display_query, all_chunks, scope_kb_ids=collections,
                     ),
                     timeout=5.0,
                 )
             else:
                 expansion = await asyncio.wait_for(
                     graph_expander.expand(
-                        corrected_query, all_chunks, scope_kb_ids=collections,
+                        display_query, all_chunks, scope_kb_ids=collections,
                     ),
                     timeout=5.0,
                 )
@@ -469,7 +472,7 @@ async def hub_search(request: HubSearchRequest):
         try:
             elapsed_so_far = (time.time() - start) * 1000
             crag_evaluation = await crag_evaluator.evaluate(
-                corrected_query, all_chunks, search_time_ms=elapsed_so_far,
+                display_query, all_chunks, search_time_ms=elapsed_so_far,
             )
             logger.info(
                 "CRAG evaluation: action=%s confidence=%.3f level=%s",
@@ -503,10 +506,10 @@ async def hub_search(request: HubSearchRequest):
                 from src.search.tiered_response import RAGContext
 
                 classifier = state.get("query_classifier") or QueryClassifier()
-                classification = classifier.classify(corrected_query)
+                classification = classifier.classify(display_query)
 
                 rag_context = RAGContext(
-                    query=corrected_query,
+                    query=display_query,
                     retrieved_chunks=[c.get("content", "") for c in all_chunks],
                     chunk_sources=[
                         {
@@ -539,14 +542,14 @@ async def hub_search(request: HubSearchRequest):
             # Fallback to AnswerService (pre-initialized in _init_services)
             answer_service = state.get("answer_service")
             if answer_service:
-                result = await answer_service.enrich(corrected_query, all_chunks)
+                result = await answer_service.enrich(display_query, all_chunks)
                 answer = result.answer
                 query_type = result.query_type
                 confidence = result.confidence_indicator
 
     # 9. Answer Guard - replace generic LLM answers with chunk-based fallback
     if answer:
-        answer = _answer_guard.guard(answer, all_chunks, corrected_query)
+        answer = _answer_guard.guard(answer, all_chunks, display_query)
 
     # 9.5 Conflict detection - detect contradictory answers from different KBs
     conflicts: list[dict[str, Any]] = []
@@ -588,7 +591,7 @@ async def hub_search(request: HubSearchRequest):
                 follow_up_prompt = (
                     f"다음 질문과 답변을 바탕으로, 사용자가 추가로 궁금해할 수 있는 후속 질문 3개를 생성하세요.\n"
                     f"각 질문은 한 줄씩, 번호 없이 작성하세요.\n\n"
-                    f"질문: {corrected_query}\n답변: {answer[:500]}\n\n후속 질문:"
+                    f"질문: {display_query}\n답변: {answer[:500]}\n\n후속 질문:"
                 )
                 follow_up_result = await llm.generate(follow_up_prompt, temperature=0.3, max_tokens=200)
                 if follow_up_result:
@@ -609,7 +612,7 @@ async def hub_search(request: HubSearchRequest):
                 usage_type="hub_search",
                 context={
                     "query": query,
-                    "corrected_query": corrected_query,
+                    "display_query": display_query,
                     "total_chunks": len(all_chunks),
                     "search_time_ms": elapsed,
                     "mode": request.mode,
@@ -633,13 +636,13 @@ async def hub_search(request: HubSearchRequest):
         search_time_ms=round(elapsed, 1),
         query_type=query_type,
         confidence=confidence,
-        corrected_query=corrected_query if corrected_query != query else None,
+        display_query=display_query if display_query != query else None,
         expanded_terms=expanded_terms,
         confidence_level=confidence,
         rerank_applied=rerank_applied,
         query_preprocess=preprocess_info,
         metadata={
-            "corrected_query": corrected_query,
+            "display_query": corrected_query,
             "rerank_applied": rerank_applied,
             "search_time_ms": round(elapsed, 1),
             **({"crag_action": crag_evaluation.action.value,

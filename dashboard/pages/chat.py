@@ -401,9 +401,27 @@ def _build_sources_from_chunks(chunks: list[dict]) -> list[dict]:
     - rerank_score / composite_score: composite rerank → rerank_score (우선)
     - is_stale, freshness_warning, days_since_update, updated_at: 최신성 시그널
     """
-    return [
-        {
-            "title": c.get("document_name", c.get("chunk_id", "-")),
+    import re as _re
+    results = []
+    for c in chunks:
+        doc_name = c.get("document_name", c.get("chunk_id", "-"))
+        content = c.get("content", "")
+
+        # Extract slide/page number from content
+        location = ""
+        slide_match = _re.search(r'\[Slide (\d+)', content)
+        page_match = _re.search(r'\[Page (\d+)', content)
+        if slide_match:
+            location = f" (Slide {slide_match.group(1)})"
+        elif page_match:
+            location = f" (Page {page_match.group(1)})"
+        elif c.get("metadata", {}).get("chunk_index") is not None:
+            idx = c["metadata"]["chunk_index"]
+            if idx >= 0:
+                location = f" (§{idx + 1})"
+
+        results.append({
+            "title": f"{doc_name}{location}",
             "url": c.get("source_uri", ""),
             "tier": c.get("tier", c.get("metadata", {}).get("tier", "-")),
             "trust_score": c.get("trust_score", c.get("kts_score", 0)),
@@ -412,9 +430,8 @@ def _build_sources_from_chunks(chunks: list[dict]) -> list[dict]:
             "freshness_warning": c.get("freshness_warning", ""),
             "days_since_update": c.get("days_since_update"),
             "updated_at": c.get("updated_at"),
-        }
-        for c in chunks
-    ]
+        })
+    return results
 
 
 def _render_chunks_as_results(chunks: list[dict]) -> None:
