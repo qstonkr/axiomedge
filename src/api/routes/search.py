@@ -372,15 +372,19 @@ async def hub_search(request: HubSearchRequest):
                     graph_expander.expand_with_entities(
                         corrected_query, all_chunks, scope_kb_ids=collections,
                     ),
-                    timeout=3.0,
+                    timeout=5.0,
                 )
             else:
                 expansion = await asyncio.wait_for(
                     graph_expander.expand(
                         corrected_query, all_chunks, scope_kb_ids=collections,
                     ),
-                    timeout=3.0,
+                    timeout=5.0,
                 )
+            logger.info(
+                "Graph expansion: %d URIs, %d related",
+                len(expansion.expanded_source_uris), expansion.graph_related_count,
+            )
             if expansion.expanded_source_uris:
                 # Boost existing chunks that match graph expansion
                 all_chunks = graph_expander.boost_chunks(
@@ -443,7 +447,7 @@ async def hub_search(request: HubSearchRequest):
 
                 all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
         except asyncio.TimeoutError:
-            logger.warning("Graph expansion timed out (3s), skipping")
+            logger.warning("Graph expansion timed out (5s), skipping")
         except Exception as e:
             logger.warning("Graph expansion failed in search route: %s", e)
 
