@@ -204,11 +204,23 @@ async def get_pipeline_gates_stats():
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/admin/pipeline/gates/blocked
+# ---------------------------------------------------------------------------
+@router.get("/pipeline/gates/blocked")
+async def get_pipeline_gates_blocked():
+    """Get all documents blocked by ingestion gates."""
+    return {
+        "blocked_documents": [],
+        "total": 0,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /api/v1/admin/pipeline/gates/{gate_id}/blocked
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/gates/{gate_id}/blocked")
 async def get_pipeline_gate_blocked(gate_id: str):
-    """Get documents blocked by a gate."""
+    """Get documents blocked by a specific gate."""
     return {
         "gate_id": gate_id,
         "blocked_documents": [],
