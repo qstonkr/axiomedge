@@ -29,14 +29,7 @@ async def document_preview(
     import glob
 
     # Search for file in known directories
-    import os as _os
-    home = _os.path.expanduser("~")
-    search_dirs = [
-        "/tmp/kb-files",
-        f"{home}/Downloads/3. 발표장표(최종) 3",
-        f"{home}/Downloads/a-ari",
-        f"{home}/Downloads",
-    ]
+    search_dirs = ["/tmp/kb-files"]
     file_path = None
 
     for base_dir in search_dirs:
