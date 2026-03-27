@@ -220,8 +220,9 @@ class Neo4jGraphRepository:
 
     # -- Read Methods -----------------------------------------------------
 
-    # Fulltext index name -- must match graph_schema.py apply_schema()
-    _FULLTEXT_INDEX = "entity_name_title"
+    # Fulltext index names
+    _FULLTEXT_INDEX = "entity_name_title"       # Entity nodes (wiki-based)
+    _FULLTEXT_INDEX_GRAPHRAG = "entity_search"  # __Entity__ nodes (GraphRAG-extracted)
 
     async def find_related_chunks(
         self,
@@ -296,35 +297,99 @@ class Neo4jGraphRepository:
         *,
         max_facts: int = 20,
     ) -> list[dict[str, Any]]:
-        """Entity search returning structured facts for LLM prompts."""
+        """Entity search across both wiki and GraphRAG nodes.
+
+        Searches two fulltext indexes:
+        1. entity_name_title: Entity nodes (wiki-based)
+        2. entity_search: __Entity__ nodes (GraphRAG Store/Person/Process etc.)
+        """
         lucene_query = build_lucene_or_query(keywords)
         if not lucene_query:
-            return []
+            # Fallback: CONTAINS search on id field
+            keyword = " ".join(keywords)
+            return await self._search_by_contains(keyword, max_facts)
 
-        cypher = f"""
-        CALL db.index.fulltext.queryNodes('{self._FULLTEXT_INDEX}', $lucene_query)
-        YIELD node, score WHERE score > 0.5
-        WITH node, labels(node)[0] AS node_type
+        results: list[dict[str, Any]] = []
+
+        # Search GraphRAG entities (__Entity__ nodes)
+        graphrag_cypher = f"""
+        CALL db.index.fulltext.queryNodes('{self._FULLTEXT_INDEX_GRAPHRAG}', $lucene_query)
+        YIELD node, score WHERE score > 0.3
+        WITH node, score, [l IN labels(node) WHERE l <> '__Entity__'][0] AS node_type
         OPTIONAL MATCH (node)-[r]-(connected)
-        WHERE type(r) IN $rel_whitelist
-        RETURN node_type, node.name AS name,
-               node.email AS email,
+        WITH node, score, node_type, r, connected
+        RETURN node_type,
+               COALESCE(node.name, node.id) AS name,
+               node.id AS entity_id,
+               score,
                type(r) AS rel_type,
-               labels(connected)[0] AS connected_type,
-               connected.name AS connected_name
+               [l IN labels(connected) WHERE l <> '__Entity__'][0] AS connected_type,
+               COALESCE(connected.name, connected.id) AS connected_name
+        ORDER BY score DESC
         LIMIT $max_facts
         """
         try:
-            return await self._client.execute_query(
-                cypher,
+            results.extend(await self._client.execute_query(
+                graphrag_cypher,
+                {"lucene_query": lucene_query, "max_facts": max_facts},
+            ))
+        except Exception as e:
+            logger.debug("GraphRAG entity search failed: %s", e)
+
+        # Search wiki entities (Entity nodes)
+        wiki_cypher = f"""
+        CALL db.index.fulltext.queryNodes('{self._FULLTEXT_INDEX}', $lucene_query)
+        YIELD node, score WHERE score > 0.5
+        WITH node, score, labels(node)[0] AS node_type
+        OPTIONAL MATCH (node)-[r]-(connected)
+        WHERE type(r) IN $rel_whitelist
+        RETURN node_type, node.name AS name,
+               node.id AS entity_id,
+               score,
+               type(r) AS rel_type,
+               labels(connected)[0] AS connected_type,
+               COALESCE(connected.name, connected.id) AS connected_name
+        ORDER BY score DESC
+        LIMIT $max_facts
+        """
+        try:
+            results.extend(await self._client.execute_query(
+                wiki_cypher,
                 {
                     "lucene_query": lucene_query,
                     "max_facts": max_facts,
                     "rel_whitelist": self._FACT_RELATION_WHITELIST,
                 },
+            ))
+        except Exception as e:
+            logger.debug("Wiki entity search failed: %s", e)
+
+        return results[:max_facts]
+
+    async def _search_by_contains(
+        self, keyword: str, max_facts: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Fallback CONTAINS search when fulltext query fails."""
+        cypher = """
+        MATCH (n)
+        WHERE n.id CONTAINS $keyword OR n.name CONTAINS $keyword
+        WITH n, [l IN labels(n) WHERE l <> '__Entity__'][0] AS node_type
+        OPTIONAL MATCH (n)-[r]-(connected)
+        RETURN node_type,
+               COALESCE(n.name, n.id) AS name,
+               n.id AS entity_id,
+               1.0 AS score,
+               type(r) AS rel_type,
+               [l IN labels(connected) WHERE l <> '__Entity__'][0] AS connected_type,
+               COALESCE(connected.name, connected.id) AS connected_name
+        LIMIT $max_facts
+        """
+        try:
+            return await self._client.execute_query(
+                cypher, {"keyword": keyword, "max_facts": max_facts},
             )
         except Exception as e:
-            logger.warning("Neo4j search_entities failed: %s", e)
+            logger.warning("CONTAINS search failed: %s", e)
             return []
 
     async def find_experts(
@@ -333,13 +398,18 @@ class Neo4jGraphRepository:
         *,
         limit: int = 10,
     ) -> list[dict[str, Any]]:
-        """Find experts for a topic via COVERS relationship."""
+        """Find experts for a topic via OWNS/MANAGES/RESPONSIBLE_FOR/AUTHORED."""
         cypher = """
-        MATCH (tp:Topic {name: $topic})<-[:COVERS]-(d:Document)-[:OWNED_BY]->(p:Person)
-        WITH p, count(DISTINCT d) as doc_count, collect(DISTINCT tp.name) as topics
+        MATCH (p:Person)-[r:OWNS|MANAGES|RESPONSIBLE_FOR|AUTHORED]->(target)
+        WHERE toLower(COALESCE(target.name, target.id, target.title, ''))
+              CONTAINS toLower($topic)
+        WITH p, type(r) AS rel, count(DISTINCT target) AS doc_count,
+             collect(DISTINCT COALESCE(target.name, target.id, target.title))[..5] AS related
         OPTIONAL MATCH (p)-[:MEMBER_OF]->(t:Team)
-        RETURN p.name as name, p.email as email, doc_count,
-               topics, collect(DISTINCT t.name) as departments
+        RETURN p.name AS name, p.id AS person_id,
+               doc_count, related,
+               collect(DISTINCT t.name) AS departments,
+               collect(DISTINCT rel) AS relationships
         ORDER BY doc_count DESC
         LIMIT $limit
         """
