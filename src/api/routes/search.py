@@ -111,17 +111,22 @@ async def hub_search(request: HubSearchRequest):
                 kb_ids=_cache_collections, top_k=request.top_k,
             )
             if cache_entry and cache_entry.response:
-                metrics_inc("search_cache_hits")
                 cached = cache_entry.response
                 if isinstance(cached, dict):
-                    cached["metadata"] = cached.get("metadata", {})
-                    cached["metadata"]["cache_hit"] = True
-                    cached["metadata"]["cache_layer"] = "multi_layer"
-                    cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
-                    try:
-                        return HubSearchResponse(**cached)
-                    except Exception:
-                        logger.warning("MultiLayerCache deserialization failed, proceeding")
+                    # Skip stale cache without graph expansion
+                    has_graph = any(c.get("graph_boosted") for c in cached.get("chunks", []))
+                    if has_graph or not state.get("graph_expander"):
+                        metrics_inc("search_cache_hits")
+                        cached["metadata"] = cached.get("metadata", {})
+                        cached["metadata"]["cache_hit"] = True
+                        cached["metadata"]["cache_layer"] = "multi_layer"
+                        cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
+                        try:
+                            return HubSearchResponse(**cached)
+                        except Exception:
+                            logger.warning("MultiLayerCache deserialization failed, proceeding")
+                    else:
+                        logger.debug("Skipping stale cache (no graph boost)")
         except Exception as e:
             logger.warning("MultiLayerCache lookup failed: %s", e)
 
@@ -130,14 +135,16 @@ async def hub_search(request: HubSearchRequest):
         try:
             cached = await search_cache.get(query, _cache_collections, request.top_k)
             if cached:
-                metrics_inc("search_cache_hits")
-                cached["metadata"] = cached.get("metadata", {})
-                cached["metadata"]["cache_hit"] = True
-                cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
-                try:
-                    return HubSearchResponse(**cached)
-                except Exception:
-                    logger.warning("Cache deserialization failed, proceeding without cache")
+                has_graph = any(c.get("graph_boosted") for c in cached.get("chunks", []))
+                if has_graph or not state.get("graph_expander"):
+                    metrics_inc("search_cache_hits")
+                    cached["metadata"] = cached.get("metadata", {})
+                    cached["metadata"]["cache_hit"] = True
+                    cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
+                    try:
+                        return HubSearchResponse(**cached)
+                    except Exception:
+                        logger.warning("Cache deserialization failed, proceeding without cache")
         except Exception as e:
             logger.warning("Search cache lookup failed: %s", e)
 
