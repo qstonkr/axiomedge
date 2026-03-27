@@ -328,6 +328,17 @@ async def hub_search(request: HubSearchRequest):
     all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
     all_chunks = all_chunks[: effective_top_k * weights.search.rerank_pool_multiplier]
 
+    # 4.4. Keyword match boost — ensure chunks with exact query keywords rank higher
+    _query_tokens = [t.strip() for t in display_query.lower().split() if len(t.strip()) >= 2]
+    if _query_tokens:
+        for chunk in all_chunks:
+            content_lower = chunk.get("content", "").lower()
+            matched = sum(1 for t in _query_tokens if t in content_lower)
+            if matched > 0:
+                ratio = matched / len(_query_tokens)
+                chunk["score"] = chunk.get("score", 0) + 0.15 * ratio  # max +0.15 boost
+        all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+
     # 4.5. Passage cleaning - normalize text before reranking
     all_chunks = clean_chunks(all_chunks)
 
