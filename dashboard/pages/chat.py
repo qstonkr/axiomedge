@@ -275,7 +275,12 @@ _scope_name = ""
 _direct = st.session_state.get("_direct_kb_ids", [])
 _group = st.session_state.get("_active_group_name", "")
 if _direct:
-    _scope_name = ", ".join(_direct)
+    # Resolve KB ID → KB Name
+    _kb_names = []
+    for _kid in _direct:
+        _matched_kb = next((k for k in kbs_list if k.get("kb_id") == _kid or k.get("id") == _kid), None)
+        _kb_names.append(_matched_kb.get("name", _kid) if _matched_kb else _kid)
+    _scope_name = ", ".join(_kb_names)
 elif _group:
     _scope_name = _group
 if _scope_name:
