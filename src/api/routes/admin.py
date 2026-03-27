@@ -52,11 +52,38 @@ async def graph_search(body: dict[str, Any]):
 
     try:
         keywords = [k.strip() for k in query.split() if k.strip()]
-        results = await graph.search_entities(keywords)
-        return {"query": query, "results": results}
+        raw_results = await graph.search_entities(keywords, max_facts=max_nodes)
+
+        # Group flat results into entity-centric format for dashboard
+        entities_map: dict[str, dict[str, Any]] = {}
+        for r in raw_results:
+            name = r.get("name") or r.get("entity_id") or ""
+            if not name:
+                continue
+            node_type = r.get("node_type", "CONCEPT")
+            if name not in entities_map:
+                entities_map[name] = {
+                    "name": name,
+                    "type": node_type,
+                    "entity_id": r.get("entity_id", name),
+                    "score": r.get("score", 0),
+                    "relationships": [],
+                }
+            rel_type = r.get("rel_type")
+            connected = r.get("connected_name")
+            connected_type = r.get("connected_type", "")
+            if rel_type and connected:
+                entities_map[name]["relationships"].append({
+                    "type": rel_type,
+                    "target": connected,
+                    "target_type": connected_type,
+                })
+
+        entities = sorted(entities_map.values(), key=lambda x: x.get("score", 0), reverse=True)
+        return {"query": query, "entities": entities, "total": len(entities)}
     except Exception as e:
         logger.warning("Graph search failed: %s", e)
-        return {"query": query, "nodes": [], "edges": [], "error": str(e)}
+        return {"query": query, "entities": [], "total": 0, "error": str(e)}
 
 
 # ============================================================================
