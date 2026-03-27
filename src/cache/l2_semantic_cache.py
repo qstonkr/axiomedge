@@ -47,7 +47,7 @@ class L2SemanticCache(ICacheLayer):
     """
 
     DEFAULT_MAX_ENTRIES = 50_000
-    DEFAULT_TTL_SECONDS = 21600  # 6 hours
+    DEFAULT_TTL_SECONDS = 3600  # 1 hour (reduced from 6h for fresher results)
 
     def __init__(
         self,

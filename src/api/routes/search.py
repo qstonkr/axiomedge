@@ -113,9 +113,9 @@ async def hub_search(request: HubSearchRequest):
             if cache_entry and cache_entry.response:
                 cached = cache_entry.response
                 if isinstance(cached, dict):
-                    # Skip stale cache without graph expansion
-                    has_graph = any(c.get("graph_boosted") for c in cached.get("chunks", []))
-                    if has_graph or not state.get("graph_expander"):
+                    # Skip stale cache (wrong version or no graph boost)
+                    cache_version = cached.get("_cache_version", "")
+                    if cache_version == "v2_graph":
                         metrics_inc("search_cache_hits")
                         cached["metadata"] = cached.get("metadata", {})
                         cached["metadata"]["cache_hit"] = True
@@ -135,8 +135,8 @@ async def hub_search(request: HubSearchRequest):
         try:
             cached = await search_cache.get(query, _cache_collections, request.top_k)
             if cached:
-                has_graph = any(c.get("graph_boosted") for c in cached.get("chunks", []))
-                if has_graph or not state.get("graph_expander"):
+                cache_version = cached.get("_cache_version", "") if isinstance(cached, dict) else ""
+                if cache_version == "v2_graph":
                     metrics_inc("search_cache_hits")
                     cached["metadata"] = cached.get("metadata", {})
                     cached["metadata"]["cache_hit"] = True
@@ -657,8 +657,10 @@ async def hub_search(request: HubSearchRequest):
     # Store in caches (fire-and-forget)
     _response_dict = response.model_dump()
 
-    # Only cache results that include an answer (avoid serving empty answers from cache)
+    # Only cache results that include an answer AND graph-boosted results
     if response.answer:
+        # Mark cache entry with version for invalidation on code changes
+        _response_dict["_cache_version"] = "v2_graph"
         if multi_cache:
             try:
                 from src.cache.cache_types import CacheDomain
