@@ -105,6 +105,29 @@ _BOUNDARY_PARTICLE_RE = re.compile(
     r"([\uac00-\ud7a3]{2,})"
 )
 
+# Known acronyms to keep (not filtered as noise)
+_KNOWN_ACRONYMS = frozenset({
+    "API", "KB", "RAG", "LLM", "OFC", "DW", "FAQ", "GS", "CU",
+    "POS", "ERP", "CRM", "HR", "IT", "AI", "ML", "DB", "SQL",
+    "VM", "VPN", "SSL", "DNS", "CDN", "AWS", "GCP", "K8S",
+    "CI", "CD", "QA", "UAT", "SLA", "KPI", "ROI", "MOU",
+    "B2B", "B2C", "DM", "PM", "SM", "BI", "ETL", "RPA",
+})
+
+# English stop words for foreign token (SL) filtering
+_ENGLISH_STOP = frozenset({
+    "the", "and", "for", "with", "from", "this", "that", "have", "has",
+    "are", "was", "were", "been", "will", "would", "could", "should",
+    "not", "but", "can", "all", "any", "some", "more", "most", "other",
+    "new", "old", "first", "last", "long", "great", "own", "same",
+    "home", "page", "status", "type", "name", "data", "info", "list",
+    "item", "value", "null", "true", "false", "none", "file", "test",
+    "image", "text", "http", "https", "html", "json", "xml", "css",
+    "div", "span", "class", "style", "width", "height", "color",
+    "size", "title", "date", "time", "user", "admin", "server",
+    "error", "success", "result", "total", "count", "index", "table",
+})
+
 # Default stop terms
 _STOP_TERMS = frozenset({
     "the", "and", "for", "with", "from", "this", "that", "have", "has",
@@ -120,6 +143,24 @@ _STOP_TERMS = frozenset({
 # ==========================================================================
 # Helpers
 # ==========================================================================
+
+
+def _is_synonym_noise(term: str) -> bool:
+    """Check if a term is OCR/code noise for synonym discovery."""
+    if not term:
+        return True
+    # Special char prefix
+    if term[0] in "#*@\\/$`~^|{}<>":
+        return True
+    # Pure numbers
+    if term.strip(".-+%,").isdigit():
+        return True
+    # Low alphanumeric ratio (>3 chars, <60% alnum+Korean)
+    if len(term) > 3:
+        alnum = sum(1 for c in term if c.isalnum() or '\uac00' <= c <= '\ud7a3')
+        if alnum / len(term) < 0.6:
+            return True
+    return False
 
 
 def _is_code_artifact(term: str) -> bool:
@@ -430,6 +471,37 @@ class TermExtractor:
             # Repeated character filter (손손, ㅋㅋㅋ)
             if len(set(term)) <= 1:
                 continue
+            # Special char prefix/suffix (e.g. #1, #R느, *평가)
+            if term[0] in "#*@\\/$`~^" or term[-1] in "#*@\\/$`~^":
+                continue
+            # Pure numbers or number-like (#2, 34도, 24년)
+            stripped = term.strip(".-+%,")
+            if stripped.isdigit():
+                continue
+            # Code/SQL/URL patterns
+            if any(c in term for c in "{}()[]\"'=<>;_|"):
+                continue
+            # Too many special chars (>30% non-alphanumeric, non-Korean)
+            alnum_count = sum(1 for c in term if c.isalnum() or '\uac00' <= c <= '\ud7a3')
+            if len(term) > 3 and alnum_count / len(term) < 0.7:
+                continue
+            # Foreign tokens (SL): filter noise
+            if tag_type == "foreign":
+                if len(term) < 3 or "." in term:
+                    continue
+                # Short lowercase fragments (ser, ery, pw, cb, bf)
+                if len(term) <= 4 and term.islower():
+                    continue
+                # Common English words (not domain terms)
+                if term.lower() in _ENGLISH_STOP:
+                    continue
+                # Short uppercase-only fragments (SER, ERY, AXE — likely OCR noise)
+                # Keep known acronyms: ESPA, OFC, GS25, API, KB, etc.
+                if len(term) <= 3 and term.isupper() and term not in _KNOWN_ACRONYMS:
+                    continue
+            # Compound nouns: skip if all-ASCII and looks like code concatenation
+            if tag_type == "compound_noun" and term.isascii() and term.isalpha():
+                continue
             # Stopword filter
             if term in self._STOP_NOUNS:
                 continue
@@ -655,6 +727,12 @@ class TermExtractor:
                 if len(term_a) < 2 or len(term_b) < 2:
                     continue
                 if _is_code_artifact(term_a) or _is_code_artifact(term_b):
+                    continue
+                # Skip if either side is too long (OCR sentence fragments)
+                if len(term_a) > 30 or len(term_b) > 30:
+                    continue
+                # Skip noisy terms (special char prefix, pure numbers, low alnum ratio)
+                if _is_synonym_noise(term_a) or _is_synonym_noise(term_b):
                     continue
 
                 # Determine which is the base term and which is the synonym.
