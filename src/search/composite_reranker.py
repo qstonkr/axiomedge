@@ -176,7 +176,7 @@ class CompositeReranker:
             top_k: Maximum result size.
             source_weights: Optional source-type weight override.
         """
-        del query
+        # query is now used for keyword match bonus (no longer reserved)
 
         if not chunks:
             return []
