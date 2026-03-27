@@ -265,12 +265,12 @@ async def calculate_trust_scores(
             has_category = 0.8 if pay.get("l1_category") and pay.get("l1_category") != "기타" else 0.3
             has_owner = 0.8 if pay.get("owner") else 0.3
 
-            # Freshness: days since ingestion
+            # Freshness: days since last modified (original doc date, not ingestion date)
             freshness = 0.5
-            ingested = pay.get("ingested_at", "")
-            if ingested:
+            doc_date = pay.get("last_modified", pay.get("ingested_at", ""))
+            if doc_date:
                 try:
-                    ing_dt = dt.fromisoformat(ingested.replace("Z", "+00:00"))
+                    ing_dt = dt.fromisoformat(doc_date.replace("Z", "+00:00"))
                     days = (now - ing_dt).days
                     if days < 30:
                         freshness = 1.0
