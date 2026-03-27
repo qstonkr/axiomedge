@@ -110,22 +110,27 @@ def run_graphrag_parallel(kb_id: str):
     neo4j_lock = threading.Lock()
     stats_lock = threading.Lock()
     stats = {"total": len(chunks), "success": 0, "failed": 0, "nodes": 0, "rels": 0}
+    failed_chunks: list[dict] = []  # Track failed chunks for retry
+    failed_lock = threading.Lock()
+
+    def _process_and_track(chunk, chunk_idx):
+        ok = process_chunk(extractor, chunk, kb_id, neo4j_lock, stats, stats_lock)
+        if not ok:
+            with failed_lock:
+                failed_chunks.append(chunk)
 
     start_time = time.time()
     completed = 0
 
     with ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix="graphrag") as pool:
         futures = {
-            pool.submit(
-                process_chunk, extractor, chunk, kb_id,
-                neo4j_lock, stats, stats_lock,
-            ): i
+            pool.submit(_process_and_track, chunk, i): i
             for i, chunk in enumerate(chunks)
         }
 
         for future in as_completed(futures):
             completed += 1
-            future.result()  # Propagate exceptions if any
+            future.result()
 
             if completed % 50 == 0:
                 elapsed = time.time() - start_time
@@ -137,6 +142,27 @@ def run_graphrag_parallel(kb_id: str):
                         f"— {stats['nodes']} nodes, {stats['rels']} rels "
                         f"— {rate:.1f} chunks/s, ~{remaining/60:.0f}min left"
                     )
+
+    # Retry failed chunks (once)
+    if failed_chunks:
+        logger.info(f"[{kb_id}] Retrying {len(failed_chunks)} failed chunks...")
+        retry_success = 0
+        for chunk in failed_chunks:
+            ok = process_chunk(extractor, chunk, kb_id, neo4j_lock, stats, stats_lock)
+            if ok:
+                retry_success += 1
+                with stats_lock:
+                    stats["failed"] -= 1
+        logger.info(f"[{kb_id}] Retry: {retry_success}/{len(failed_chunks)} recovered")
+
+    # Save remaining failed chunk IDs to file for manual retry
+    still_failed = [c["page_id"] for c in failed_chunks if c.get("page_id")]
+    if still_failed:
+        failed_file = f"/tmp/graphrag_failed_{kb_id}.json"
+        import json as _json
+        with open(failed_file, "w") as f:
+            _json.dump(still_failed, f)
+        logger.warning(f"[{kb_id}] {len(still_failed)} chunks still failed → {failed_file}")
 
     elapsed = time.time() - start_time
     logger.info(
