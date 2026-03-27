@@ -832,6 +832,19 @@ class IngestionPipeline:
                     f"Embedding count mismatch: {len(prefixed_chunks)} chunks but {len(dense_vectors)} vectors"
                 )
 
+            # META-09: KiwiPy morpheme extraction for keyword search accuracy
+            chunk_morphemes: list[str] = []
+            try:
+                from kiwipiepy import Kiwi as _Kiwi
+                _kiwi = _Kiwi()
+                _noun_tags = {"NNG", "NNP", "SL"}
+                for chunk_text in [ct for ct, _, _ in typed_chunks]:
+                    tokens = _kiwi.tokenize(chunk_text[:2000])
+                    morphs = " ".join(t.form for t in tokens if t.tag in _noun_tags and len(t.form) >= 2)
+                    chunk_morphemes.append(morphs)
+            except Exception:
+                chunk_morphemes = [""] * len(typed_chunks)
+
             # META-05: Content type flags from quality metrics
             content_flags: dict[str, bool] = {}
             if quality_metrics:
@@ -869,6 +882,7 @@ class IngestionPipeline:
                     "doc_type": doc_type,
                     "owner": owner,
                     "l1_category": l1_category,
+                    "morphemes": chunk_morphemes[idx] if idx < len(chunk_morphemes) else "",
                 })
                 # META-04: heading path
                 if chunk_heading_paths[idx]:
