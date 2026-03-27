@@ -74,12 +74,13 @@ def run_l2_category(kb_ids: list[str]):
     # Load existing L2 categories to avoid duplicates
     existing_l2: dict[str, str] = {}  # name → l1_parent
 
-    PROMPT = """다음 문서의 세부 카테고리(L2)를 한국어로 1개만 제시하세요.
-상위 카테고리(L1): {l1_category}
-문서 제목: {title}
-문서 내용 (일부): {content}
+    PROMPT = """문서의 세부 카테고리를 2-6자 한국어 명사로 1개만 출력하세요. 설명 없이 단어만.
 
-세부 카테고리만 출력하세요 (예: "재고관리", "배포절차", "가맹계약"):"""
+L1: {l1_category}
+제목: {title}
+내용: {content}
+
+L2:"""
 
     for kb_id in kb_ids:
         collection = f"kb_{kb_id.replace('-', '_')}"
@@ -127,9 +128,16 @@ def run_l2_category(kb_ids: list[str]):
                     }),
                 )
                 result = json.loads(resp["Body"].read())
-                l2_name = result["choices"][0]["message"]["content"].strip().strip('"').strip("'")
+                raw = result["choices"][0]["message"]["content"].strip()
+                # Take first line only, remove quotes/parens/explanation
+                l2_name = raw.split("\n")[0].strip().strip('"').strip("'").strip()
+                # Remove parenthetical explanation
+                if "(" in l2_name:
+                    l2_name = l2_name[:l2_name.index("(")].strip()
+                # Truncate to max 10 chars
+                l2_name = l2_name[:10]
 
-                if l2_name and len(l2_name) <= 20:
+                if l2_name and 2 <= len(l2_name) <= 10:
                     # Update Qdrant chunks for this document
                     scroll_offset = None
                     while True:
@@ -182,19 +190,21 @@ def run_term_enrich(kb_ids: list[str]):
     sm_client = session.client("sagemaker-runtime")
     endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
 
-    PROMPT = """다음 용어의 정의를 GS리테일 사내 맥락에서 1-2문장으로 작성하세요.
+    PROMPT = """다음 용어를 제공된 문맥을 참고하여 1문장으로 정의하세요. 문맥에 없는 내용은 추측하지 마세요.
 
 용어: {term}
-출현 맥락: {context}
+문맥: {context}
 
-정의:"""
+정의 (1문장):"""
+
+    QDRANT_URL = "http://localhost:6333"
 
     async def _enrich():
         engine = create_async_engine("postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
 
         for kb_id in kb_ids:
+            collection = f"kb_{kb_id.replace('-', '_')}"
             async with engine.begin() as conn:
-                # Get terms with empty definitions
                 r = await conn.execute(text(
                     "SELECT id, term FROM glossary_terms "
                     "WHERE kb_id = :kb_id AND (definition IS NULL OR definition = '') "
@@ -208,9 +218,20 @@ def run_term_enrich(kb_ids: list[str]):
 
             for term_id, term_text in terms:
                 try:
+                    # Find context chunks containing this term
+                    import requests as _rq
+                    ctx_resp = _rq.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json={
+                        "limit": 2, "with_payload": ["content"], "with_vector": False,
+                        "filter": {"must": [{"key": "morphemes", "match": {"text": term_text}}]},
+                    })
+                    ctx_chunks = ctx_resp.json().get("result", {}).get("points", [])
+                    context = " ".join(p["payload"].get("content", "")[:200] for p in ctx_chunks)[:400]
+                    if not context:
+                        context = f"KB '{kb_id}'에서 발견된 용어"
+
                     prompt = PROMPT.format(
                         term=term_text,
-                        context=f"KB: {kb_id}",
+                        context=context,
                     )
                     resp = sm_client.invoke_endpoint(
                         EndpointName=endpoint,
@@ -223,6 +244,12 @@ def run_term_enrich(kb_ids: list[str]):
                     )
                     result = json.loads(resp["Body"].read())
                     definition = result["choices"][0]["message"]["content"].strip()
+                    # Take first sentence only
+                    for sep in [".", "다.", "니다."]:
+                        if sep in definition:
+                            definition = definition[:definition.index(sep) + len(sep)]
+                            break
+                    definition = definition[:200]  # Max 200 chars
 
                     if definition and len(definition) >= 5:
                         async with engine.begin() as conn:
