@@ -22,6 +22,36 @@ from src.search.cross_encoder_reranker import async_rerank_with_cross_encoder
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
 
+# ── KiwiPy morpheme-based keyword extraction (singleton) ──
+_kiwi_instance = None
+_NOUN_TAGS = frozenset({"NNG", "NNP", "SL", "SH"})  # 일반명사, 고유명사, 외국어, 한자
+
+def _extract_query_keywords(query: str) -> list[str]:
+    """Extract meaningful keywords from query using KiwiPy morphological analysis.
+
+    Returns stems/lemmas, not raw surface forms.
+    e.g., "폐기 절차에 대하여" → ["폐기", "절차"]
+    """
+    global _kiwi_instance
+    if _kiwi_instance is None:
+        try:
+            from kiwipiepy import Kiwi
+            _kiwi_instance = Kiwi()
+        except ImportError:
+            # Fallback to whitespace split
+            return [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
+
+    try:
+        tokens = _kiwi_instance.tokenize(query)
+        keywords = []
+        for tok in tokens:
+            if tok.tag in _NOUN_TAGS and len(tok.form) >= 2:
+                keywords.append(tok.form)
+        return keywords if keywords else [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
+    except Exception:
+        return [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
+
+
 # Module-level singletons (avoid per-request allocation)
 _answer_guard = AnswerGuard()
 
@@ -232,18 +262,25 @@ async def hub_search(request: HubSearchRequest):
             logger.warning("Query expansion failed: %s", e)
 
     # 2.5 Query type classification — adjust strategy per type
-    # Use local top_k to avoid mutating request model (cache key consistency)
     effective_top_k = request.top_k
     query_classification = None
+    # Dynamic dense/sparse weights based on query type
+    _dense_w = weights.hybrid_search.dense_weight
+    _sparse_w = weights.hybrid_search.sparse_weight
     classifier = state.get("query_classifier")
     if classifier:
         try:
             from src.search.query_classifier import QueryClassifier
             query_classification = classifier.classify(display_query)
-            if query_classification.query_type.value == "owner_query":
+            qtype = query_classification.query_type.value
+            if qtype == "owner_query":
                 effective_top_k = max(effective_top_k, 10)
-            elif query_classification.query_type.value == "concept":
+            elif qtype == "concept":
                 effective_top_k = max(effective_top_k, 8)
+                _dense_w, _sparse_w = 0.45, 0.25  # Concept: dense↑
+            elif qtype in ("procedure", "troubleshoot"):
+                _dense_w, _sparse_w = 0.25, 0.45  # Procedure: sparse↑ (exact keywords matter)
+            # factual/general: keep default balance
         except Exception:
             pass
 
@@ -329,7 +366,7 @@ async def hub_search(request: HubSearchRequest):
 
     # 4.3. Keyword fallback: if main query keywords are missing from ALL results,
     # do a targeted Qdrant text filter search to find exact keyword matches
-    _kw_tokens = [t.strip() for t in display_query.lower().split() if len(t.strip()) >= 2]
+    _kw_tokens = _extract_query_keywords(display_query)
     if _kw_tokens and all_chunks:
         _has_keyword_match = any(
             any(t in c.get("content", "").lower() for t in _kw_tokens)
@@ -372,7 +409,7 @@ async def hub_search(request: HubSearchRequest):
     # 4.4. Smart candidate selection: keyword-match priority + KB diversity
     # Instead of purely score-based cutoff, ensure keyword-matching chunks
     # from ALL KBs are included in the reranking pool.
-    _query_tokens = [t.strip() for t in display_query.lower().split() if len(t.strip()) >= 2]
+    _query_tokens = _extract_query_keywords(display_query)
     _pool_size = effective_top_k * weights.search.rerank_pool_multiplier
 
     if _query_tokens and len(collections) > 1:
