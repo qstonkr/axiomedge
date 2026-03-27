@@ -78,9 +78,9 @@ class RerankerWeights:
 class HybridSearchWeights:
     """Qdrant hybrid search vector weights."""
 
-    dense_weight: float = 0.4
-    sparse_weight: float = 0.3
-    colbert_weight: float = 0.3
+    dense_weight: float = 0.35
+    sparse_weight: float = 0.35
+    colbert_weight: float = 0.30
 
     # Prefetch
     prefetch_multiplier: int = 3

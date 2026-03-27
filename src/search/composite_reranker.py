@@ -248,12 +248,22 @@ class CompositeReranker:
                         axis_boost = self._axis_boosts.get(axis_name, 1.0)
                         graph_distance_bonus = self._graph_distance_weight * graph_score * axis_boost
 
+            # Keyword exact match bonus: boost chunks containing query keywords
+            keyword_bonus = 0.0
+            if query:
+                content_lower = (chunk.content or "").lower()
+                query_tokens = [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
+                if query_tokens:
+                    matched = sum(1 for t in query_tokens if t in content_lower)
+                    keyword_bonus = 0.1 * (matched / len(query_tokens))  # max +0.1
+
             composite_score = (
                 (normalized_model_score * self._model_weight)
                 + (normalized_base_score * self._base_weight)
                 + source_contribution
                 + position_prior
                 + graph_distance_bonus
+                + keyword_bonus
             )
             weighted_chunks.append(
                 (
