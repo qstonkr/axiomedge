@@ -83,8 +83,8 @@ class HybridSearchWeights:
     colbert_weight: float = 0.30
 
     # Prefetch
-    prefetch_multiplier: int = 3
-    prefetch_max: int = 100
+    prefetch_multiplier: int = 5
+    prefetch_max: int = 150
 
     # ColBERT rerank
     enable_colbert_reranking: bool = True
@@ -377,7 +377,7 @@ class SearchDefaults:
     """Default search parameters."""
 
     top_k: int = 5
-    rerank_pool_multiplier: int = 3  # top_k * 3 before reranking
+    rerank_pool_multiplier: int = 5  # top_k * 5 before reranking (wider pool for keyword accuracy)
     max_query_length: int = 2000
 
     # DenseTermIndex
