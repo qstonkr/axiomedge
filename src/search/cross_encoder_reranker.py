@@ -38,7 +38,11 @@ def _load_model_sync():
     global _model, _loading, _load_attempted
     _loading = True
     try:
-        # SSL bypass for corporate proxy
+        # Force offline mode — use cached model, skip HuggingFace version check
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+        # SSL bypass for corporate proxy (fallback if online mode needed)
         import ssl
         ssl._create_default_https_context = ssl._create_unverified_context
         os.environ.setdefault("CURL_CA_BUNDLE", "")

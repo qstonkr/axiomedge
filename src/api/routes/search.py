@@ -382,8 +382,9 @@ async def hub_search(request: HubSearchRequest):
                     timeout=5.0,
                 )
             logger.info(
-                "Graph expansion: %d URIs, %d related",
+                "Graph expansion: %d URIs, %d related, URIs=%s",
                 len(expansion.expanded_source_uris), expansion.graph_related_count,
+                list(expansion.expanded_source_uris)[:5],
             )
             if expansion.expanded_source_uris:
                 # Boost existing chunks that match graph expansion
@@ -399,6 +400,8 @@ async def hub_search(request: HubSearchRequest):
                     d for d in expansion.expanded_source_uris
                     if _uc.normalize("NFC", d) not in existing_docs_nfc
                 }
+                logger.info("Graph injection: existing=%d, new=%d, new_docs=%s",
+                            len(existing_docs), len(new_docs), list(new_docs)[:3])
                 if new_docs:
                     import httpx as _hx
                     qdrant_url = state.get("qdrant_url", "http://localhost:6333")
