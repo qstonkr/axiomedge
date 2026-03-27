@@ -326,7 +326,7 @@ def _render_answer_metadata(meta: dict, msg_id: str) -> None:
                     # Extract base filename from title (remove slide/page suffix)
                     _base_title = _re.sub(r'\s*\((?:Slide|Page|§)\s*\d+\)', '', title).strip()
                     if _base_title and _page_num > 0:
-                        _preview_key = f"preview_{hash(title)}_{_page_num}"
+                        _preview_key = f"preview_{hash(title)}_{_page_num}_{id(src)}"
                         if st.button(f"🔍 Slide {_page_num} 미리보기", key=_preview_key):
                             _api_url = f"http://localhost:8000/api/v1/admin/preview?file={_base_title}&page={_page_num}"
                             try:
