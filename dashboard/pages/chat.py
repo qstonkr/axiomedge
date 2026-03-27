@@ -115,6 +115,13 @@ with st.sidebar:
     selected_kb_ids: list[str] = st.session_state.pop("search_kb_ids", [])
     selected_group_id: str | None = None
 
+    # If KB card set specific KBs, clear group to avoid conflict
+    _from_kb_card = bool(selected_kb_ids)
+    if _from_kb_card:
+        st.session_state.pop("_active_group_name", None)
+        st.session_state.pop("search_group_name", None)
+        st.info(f"🔍 KB: {', '.join(selected_kb_ids)} 에서 검색합니다.")
+
     # 검색 그룹 로드
     groups_result = api_client._request("GET", "/api/v1/search-groups")
     groups_list = []
@@ -609,7 +616,7 @@ def _execute_ai_search(query: str) -> None:
         result = api_client.hub_search_answer(
             query,
             kb_ids=selected_kb_ids or None,
-            group_name=st.session_state.get("_active_group_name"),
+            group_name=st.session_state.get("_active_group_name") if not selected_kb_ids else None,
             mode="agentic",
         )
         duration_ms = round((time.monotonic() - t0) * 1000, 1)
