@@ -84,13 +84,12 @@ def extract_owner(raw: "RawDocument") -> str:
         raw.metadata.get("last_modifier", ""),
     ]
 
-    # Try extracting Korean name from title (e.g. "3-3-5_김재경M_수지우남점")
+    # Try extracting Korean name from ESPA report titles
+    # Pattern: "숫자-숫자-숫자_이름M_점포명" (e.g. "3-3-5_김재경M_수지우남점")
     if raw.title:
-        name_match = re.search(r"[가-힣]{2,4}M?[_\s]", raw.title)
+        name_match = re.search(r"\d[_-]\d[^_]*_([가-힣]{2,4})M?_", raw.title)
         if name_match:
-            name = name_match.group().rstrip("M_ \t")
-            if name:
-                candidates.append(name)
+            candidates.append(name_match.group(1))
 
     normalized = _normalize_owners(candidates)
     return normalized[0] if normalized else ""
