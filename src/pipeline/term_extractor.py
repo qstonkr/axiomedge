@@ -145,13 +145,14 @@ _STOP_TERMS = frozenset({
 # ==========================================================================
 
 
-def _is_noise_term(term: str, tag_type: str) -> bool:
+def _is_noise_term(term: str, tag_type: str, kiwi_score: float = -999.0) -> bool:
     """Comprehensive noise filter for extracted terms.
 
     Consolidates all filtering rules discovered during DB cleanup:
     - Special chars, pure numbers, code patterns
     - SQL aliases (A.ACCM), camelCase (errorCode), UPPER_SNAKE (MAX_SIZE)
     - Short/generic English, pure ASCII compounds
+    - KiwiPy score-based generic word detection (score > -12 = too common)
     """
     # Length check
     if len(term) < 2:
@@ -214,6 +215,17 @@ def _is_noise_term(term: str, tag_type: str) -> bool:
         return True
     # Code artifact
     if _is_code_artifact(term):
+        return True
+    # KiwiPy score-based filter: single Korean nouns that are too generic
+    # score > -12.0 = common words (상품-9.6, 개발-9.7, 업무-9.9)
+    # score < -12.0 = domain terms (정산-13.0, 경영주-14.2, 폐점-14.1)
+    # Only apply to single nouns (not compounds — compound=domain by nature)
+    if (
+        kiwi_score > TermExtractor.KIWI_GENERIC_SCORE_THRESHOLD
+        and kiwi_score != -999.0  # Skip if score not provided
+        and tag_type in ("noun", "compound_noun")  # Single nouns AND compounds
+        and all('\uac00' <= c <= '\ud7a3' for c in term)  # Pure Korean
+    ):
         return True
     return False
 
@@ -331,6 +343,11 @@ class TermExtractor:
 
     # Minimum term length (chars)
     MIN_TERM_LENGTH = 2
+
+    # KiwiPy score threshold: words with score > this are too common/generic
+    # score is log probability — closer to 0 = more common
+    # -12.0 separates generic (상품-9.6, 개발-9.7) from domain (정산-13.0, 경영주-14.2)
+    KIWI_GENERIC_SCORE_THRESHOLD = -12.0
 
     # Noun POS tags to extract from KiwiPy
     _NOUN_TAGS = frozenset({"NNG", "NNP"})  # 일반명사, 고유명사
@@ -478,34 +495,36 @@ class TermExtractor:
         _MAX_COMPOUND_TOKENS = 3
         _MAX_COMPOUND_CHARS = 8
 
-        compounds: list[tuple[str, str]] = []  # (term, tag_type)
+        # (term, tag_type, kiwi_score) — score is min score of parts
+        compounds: list[tuple[str, str, float]] = []
         buf_forms: list[str] = []
         buf_tags: list[str] = []
+        buf_scores: list[float] = []
 
         def _flush():
             if not buf_forms:
                 return
             merged = "".join(buf_forms)
-            has_nnp = any(t == "NNP" for t in buf_tags)
-            has_sl = any(t == self._FOREIGN_TAG for t in buf_tags)
+            # Use max score (most generic part) — if all parts are generic, compound is too
+            min_score = max(buf_scores) if buf_scores else 0.0
 
             # Emit compound (only if all parts are 2+ chars)
             all_parts_valid = all(len(f) >= 2 for f in buf_forms)
             if len(buf_forms) > 1 and len(merged) <= _MAX_COMPOUND_CHARS and all_parts_valid:
-                tag = "compound_noun"
-                compounds.append((merged, tag))
+                compounds.append((merged, "compound_noun", min_score))
             # Always emit individual meaningful tokens
-            for form, t in zip(buf_forms, buf_tags):
+            for form, t, sc in zip(buf_forms, buf_tags, buf_scores):
                 if len(form) < self.MIN_TERM_LENGTH:
                     continue
                 if t == "NNP":
-                    compounds.append((form, "proper_noun"))
+                    compounds.append((form, "proper_noun", sc))
                 elif t == self._FOREIGN_TAG:
-                    compounds.append((form, "foreign"))
+                    compounds.append((form, "foreign", sc))
                 elif t == "NNG":
-                    compounds.append((form, "noun"))
+                    compounds.append((form, "noun", sc))
             buf_forms.clear()
             buf_tags.clear()
+            buf_scores.clear()
 
         for token in tokens:
             tag = token.tag
@@ -515,27 +534,31 @@ class TermExtractor:
                     _flush()
                     buf_forms.append(token.form)
                     buf_tags.append(tag)
+                    buf_scores.append(token.score)
                     _flush()
                 # SL (foreign) only compounds with adjacent SL
                 elif tag == self._FOREIGN_TAG and buf_forms and buf_tags[-1] != self._FOREIGN_TAG:
                     _flush()
                     buf_forms.append(token.form)
                     buf_tags.append(tag)
+                    buf_scores.append(token.score)
                 # Max compound size
                 elif len(buf_forms) >= _MAX_COMPOUND_TOKENS:
                     _flush()
                     buf_forms.append(token.form)
                     buf_tags.append(tag)
+                    buf_scores.append(token.score)
                 else:
                     buf_forms.append(token.form)
                     buf_tags.append(tag)
+                    buf_scores.append(token.score)
             else:
                 _flush()
         _flush()
 
         # Pass 2: Filter and count
-        for term, tag_type in compounds:
-            if _is_noise_term(term, tag_type):
+        for term, tag_type, kiwi_score in compounds:
+            if _is_noise_term(term, tag_type, kiwi_score):
                 continue
 
             count_key = term.lower()
