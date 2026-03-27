@@ -64,33 +64,109 @@ with tab_search:
                 if entities:
                     st.success(f"{len(entities)}개의 관련 엔티티를 찾았습니다.")
 
+                    # ── Graph visualization ──
+                    from streamlit_agraph import agraph, Node, Edge, Config
+
+                    TYPE_COLORS = {
+                        "Store": "#FF6B6B",
+                        "Person": "#4ECDC4",
+                        "Process": "#45B7D1",
+                        "Product": "#96CEB4",
+                        "Team": "#FFEAA7",
+                        "System": "#DDA0DD",
+                        "Location": "#98D8C8",
+                        "Event": "#F7DC6F",
+                        "Policy": "#BB8FCE",
+                        "Term": "#85C1E9",
+                        "Document": "#AEB6BF",
+                        "Category": "#F0B27A",
+                    }
                     TYPE_ICONS = {
-                        "PERSON": "👤",
-                        "DOCUMENT": "📄",
-                        "CONCEPT": "💡",
-                        "SYSTEM": "🖥️",
-                        "TEAM": "👥",
-                        "TOPIC": "🏷️",
+                        "Store": "🏪", "Person": "👤", "Process": "⚙️",
+                        "Product": "📦", "Team": "👥", "System": "🖥️",
+                        "Location": "📍", "Event": "📅", "Policy": "📋",
+                        "Term": "📖", "Document": "📄", "Category": "🏷️",
                     }
 
+                    graph_nodes = []
+                    graph_edges = []
+                    seen_nodes = set()
+
+                    for entity in entities:
+                        name = entity.get("name", "")
+                        e_type = entity.get("type", "CONCEPT")
+                        if name and name not in seen_nodes:
+                            seen_nodes.add(name)
+                            graph_nodes.append(Node(
+                                id=name,
+                                label=name,
+                                size=30,
+                                color=TYPE_COLORS.get(e_type, "#AEB6BF"),
+                                font={"size": 12},
+                            ))
+
+                        for rel in entity.get("relationships", []):
+                            target = rel.get("target", "")
+                            target_type = rel.get("target_type", "")
+                            rel_type = rel.get("type", "")
+                            if target and target not in seen_nodes:
+                                seen_nodes.add(target)
+                                graph_nodes.append(Node(
+                                    id=target,
+                                    label=target,
+                                    size=20,
+                                    color=TYPE_COLORS.get(target_type, "#D5D8DC"),
+                                    font={"size": 10},
+                                ))
+                            if name and target:
+                                graph_edges.append(Edge(
+                                    source=name,
+                                    target=target,
+                                    label=rel_type,
+                                    color="#888888",
+                                    font={"size": 8, "color": "#666666"},
+                                ))
+
+                    if graph_nodes:
+                        config = Config(
+                            width="100%",
+                            height=500,
+                            directed=True,
+                            physics=True,
+                            hierarchical=False,
+                            nodeHighlightBehavior=True,
+                            highlightColor="#F7DC6F",
+                            collapsible=False,
+                        )
+                        agraph(nodes=graph_nodes, edges=graph_edges, config=config)
+
+                        # Legend
+                        legend_cols = st.columns(6)
+                        for i, (t, color) in enumerate(list(TYPE_COLORS.items())[:6]):
+                            icon = TYPE_ICONS.get(t, "📌")
+                            with legend_cols[i]:
+                                st.markdown(f"<span style='color:{color}'>●</span> {icon} {t}", unsafe_allow_html=True)
+
+                    # ── List view ──
+                    st.markdown("---")
+                    st.subheader("상세 목록")
                     for idx, entity in enumerate(entities):
                         name = entity.get("name", entity.get("label", "-"))
-                        e_type = entity.get("type", entity.get("entity_type", "CONCEPT")).upper()
+                        e_type = entity.get("type", "CONCEPT")
                         icon = TYPE_ICONS.get(e_type, "📌")
-                        relationships = entity.get("relationships", entity.get("edges", []))
+                        relationships = entity.get("relationships", [])
 
                         with st.expander(
                             f"{icon} {name} ({e_type}) — 관계 {len(relationships)}건",
-                            expanded=(idx < 3),
+                            expanded=(idx < 2),
                         ):
-                            if entity.get("description"):
-                                st.markdown(entity["description"])
-
                             if relationships:
                                 for rel in relationships:
-                                    rel_type = rel.get("type", rel.get("relation", "-"))
-                                    target = rel.get("target", rel.get("target_name", "-"))
-                                    st.markdown(f"- **{rel_type}** → {target}")
+                                    rel_type = rel.get("type", "-")
+                                    target = rel.get("target", "-")
+                                    target_type = rel.get("target_type", "")
+                                    t_icon = TYPE_ICONS.get(target_type, "")
+                                    st.markdown(f"- **{rel_type}** → {t_icon} {target}")
                             else:
                                 st.caption("관계 정보가 없습니다.")
                 else:

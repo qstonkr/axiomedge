@@ -1671,6 +1671,7 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "streamlit" },
+    { name = "streamlit-agraph" },
     { name = "torch" },
     { name = "transformers" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1720,6 +1721,7 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=3.0.0,<5.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "streamlit", specifier = ">=1.40.0" },
+    { name = "streamlit-agraph", specifier = ">=0.0.45" },
     { name = "torch", specifier = ">=2.0.0" },
     { name = "transformers", specifier = ">=4.48.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
@@ -3227,6 +3229,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyparsing"
+version = "3.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", hash = "sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc", size = 6851574, upload-time = "2026-01-21T03:57:59.36Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
+]
+
+[[package]]
 name = "pypdfium2"
 version = "5.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3517,6 +3528,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a1/d1/5ab148e03f7e6ec8cd220ccf7af74d3aaa4de26dd96df58936beb7cba820/rapidfuzz-3.14.3-cp314-cp314t-win32.whl", hash = "sha256:7ccbf68100c170e9a0581accbe9291850936711548c6688ce3bfb897b8c589ad", size = 1793465, upload-time = "2025-11-01T11:54:35.331Z" },
     { url = "https://files.pythonhosted.org/packages/cd/97/433b2d98e97abd9fff1c470a109b311669f44cdec8d0d5aa250aceaed1fb/rapidfuzz-3.14.3-cp314-cp314t-win_amd64.whl", hash = "sha256:9ec02e62ae765a318d6de38df609c57fc6dacc65c0ed1fd489036834fd8a620c", size = 1623491, upload-time = "2025-11-01T11:54:38.085Z" },
     { url = "https://files.pythonhosted.org/packages/e2/f6/e2176eb94f94892441bce3ddc514c179facb65db245e7ce3356965595b19/rapidfuzz-3.14.3-cp314-cp314t-win_arm64.whl", hash = "sha256:e805e52322ae29aa945baf7168b6c898120fbc16d2b8f940b658a5e9e3999253", size = 851487, upload-time = "2025-11-01T11:54:40.176Z" },
+]
+
+[[package]]
+name = "rdflib"
+version = "7.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/98/f5/18bb77b7af9526add0c727a3b2048959847dc5fb030913e2918bf384fec3/rdflib-7.6.0.tar.gz", hash = "sha256:6c831288d5e4a5a7ece85d0ccde9877d512a3d0f02d7c06455d00d6d0ea379df", size = 4943826, upload-time = "2026-02-13T07:15:55.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/c2/6604a71269e0c1bd75656d5a001432d16f2cc5b8c057140ec797155c295e/rdflib-7.6.0-py3-none-any.whl", hash = "sha256:30c0a3ebf4c0e09215f066be7246794b6492e054e782d7ac2a34c9f70a15e0dd", size = 615416, upload-time = "2026-02-13T07:15:46.487Z" },
 ]
 
 [[package]]
@@ -4138,6 +4161,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/92/8e/f2b8b4fa8ba65aae251170c54f8ce198fb588fc348301c2b624f8c63efac/streamlit-1.55.0.tar.gz", hash = "sha256:015e512bbd02d000f4047e51118dc086b70e7d9c46b4a11a33c2509731379626", size = 8612008, upload-time = "2026-03-03T22:26:02.149Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/e6/412c1e1f200ca8c32ecf10201839183e261ad61ced3ede34a66f6d4be3cf/streamlit-1.55.0-py3-none-any.whl", hash = "sha256:1e4a16449c6131696180f4ddb40ea8c51834e89c2a43e1b0362bc9b1cfd9b415", size = 9075714, upload-time = "2026-03-03T22:25:59.126Z" },
+]
+
+[[package]]
+name = "streamlit-agraph"
+version = "0.0.45"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "networkx" },
+    { name = "rdflib" },
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/63/00a16b1500cde32d43177bba1c16d12369ed7d1c8b45ab8162f6552d8519/streamlit-agraph-0.0.45.tar.gz", hash = "sha256:b2b7cf1ad0a40dc906de50792b27f2878b0e186603cb3bc958ed78ca7e469cdd", size = 1299483, upload-time = "2023-01-28T10:26:00.46Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b9/80/8a666e700332a9fe19e458678c95fab4d78340251d2f12da7d2ad915458a/streamlit_agraph-0.0.45-py3-none-any.whl", hash = "sha256:38e7271ffd76a6769968c2e9dfc16cbac7621d62be15af98b62598e1446bee2f", size = 1312064, upload-time = "2023-01-28T10:25:58.043Z" },
 ]
 
 [[package]]
