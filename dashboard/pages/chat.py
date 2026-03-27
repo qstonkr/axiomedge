@@ -123,7 +123,11 @@ with st.sidebar:
     selected_group_id: str | None = None
 
     if _direct_kb_ids:
-        st.info(f"🔍 KB: {', '.join(_direct_kb_ids)} 에서 검색합니다.  "
+        _dkb_names = []
+        for _dkid in _direct_kb_ids:
+            _dm = next((k for k in kbs_list if k.get("kb_id") == _dkid or k.get("id") == _dkid), None)
+            _dkb_names.append(_dm.get("name", _dkid) if _dm else _dkid)
+        st.info(f"🔍 {', '.join(_dkb_names)} 에서 검색합니다.  "
                 f"[전체 검색으로 전환하려면 그룹을 선택하세요]")
 
     # 검색 그룹 로드
@@ -178,7 +182,11 @@ with st.sidebar:
                     desc = group_desc.get(selected_name, "")
                     if desc:
                         st.caption(f"📋 {desc}")
-                    st.caption(f"KB {len(group_kb_ids)}개: {', '.join(group_kb_ids)}")
+                    _gkb_names = []
+                    for _gkid in group_kb_ids:
+                        _gm = next((k for k in kbs_list if k.get("kb_id") == _gkid or k.get("id") == _gkid), None)
+                        _gkb_names.append(_gm.get("name", _gkid) if _gm else _gkid)
+                    st.caption(f"KB {len(group_kb_ids)}개: {', '.join(_gkb_names)}")
             else:
                 st.session_state["_active_group_name"] = None
             # "전체" 선택 시 selected_kb_ids는 빈 리스트 (= 전체 검색)
