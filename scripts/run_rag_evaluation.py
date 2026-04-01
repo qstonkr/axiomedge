@@ -28,22 +28,20 @@ logger = logging.getLogger(__name__)
 SEARCH_URL = "http://localhost:8000/api/v1/search/hub"
 ALL_KBS = ["a-ari", "drp", "g-espa", "partnertalk", "hax", "itops_general"]
 
-JUDGE_PROMPT = """다음 질문에 대해 기대 답변과 실제 답변을 비교하여 3가지 점수를 0.0~1.0으로 평가하세요.
+JUDGE_PROMPT = """당신은 RAG 평가 봇입니다. 반드시 JSON만 출력하세요. 설명, 마크다운, 줄바꿈 없이 한 줄 JSON만 출력합니다.
 
 질문: {question}
 기대 답변: {expected}
 실제 답변: {actual}
 
-평가 기준:
-- faithfulness: 실제 답변이 검색된 문서에 근거하는가 (허구/추측 없는가)
-- relevancy: 실제 답변이 질문에 적절히 답하는가
-- completeness: 기대 답변의 핵심 정보가 실제 답변에 포함되는가
+각 항목을 0.0~1.0으로 평가:
+faithfulness=실제답변이 근거있는가, relevancy=질문에 답하는가, completeness=핵심정보 포함하는가
 
-JSON만 출력:
-{{"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}}"""
+출력: {{"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}}"""
 
 
 def get_sm_client():
+    """Fresh boto3 session each call to handle SSO token refresh."""
     session = boto3.Session(
         profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
@@ -59,7 +57,7 @@ def search_and_answer(question: str, kb_ids: list[str]) -> dict:
             "top_k": 5,
             "kb_ids": kb_ids,
             "include_answer": True,
-        }, timeout=60)
+        }, timeout=120)
         if resp.status_code == 200:
             return resp.json()
     except Exception as e:
@@ -67,33 +65,53 @@ def search_and_answer(question: str, kb_ids: list[str]) -> dict:
     return {"answer": None, "chunks": []}
 
 
-def judge_answer(sm_client, question: str, expected: str, actual: str) -> dict:
-    """LLM judge: compare expected vs actual answer."""
+_sm_client = None
+
+def _get_or_refresh_sm_client(force_refresh: bool = False):
+    """Reuse SM client, refresh on auth failure."""
+    global _sm_client
+    if _sm_client is None or force_refresh:
+        _sm_client = get_sm_client()
+    return _sm_client
+
+
+def judge_answer(question: str, expected: str, actual: str, retry: int = 2) -> dict | None:
+    """LLM judge: compare expected vs actual answer. Returns None only on SSO expiry."""
     endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
     prompt = JUDGE_PROMPT.format(question=question, expected=expected, actual=actual or "(답변 없음)")
 
-    try:
-        resp = sm_client.invoke_endpoint(
-            EndpointName=endpoint,
-            ContentType="application/json",
-            Body=json.dumps({
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 100,
-                "temperature": 0.1,
-            }),
-        )
-        raw = json.loads(resp["Body"].read())["choices"][0]["message"]["content"].strip()
-        start = raw.find("{")
-        end = raw.rfind("}") + 1
-        if start >= 0 and end > start:
-            scores = json.loads(raw[start:end])
-            return {
-                "faithfulness": min(1.0, max(0.0, float(scores.get("faithfulness", 0)))),
-                "relevancy": min(1.0, max(0.0, float(scores.get("relevancy", 0)))),
-                "completeness": min(1.0, max(0.0, float(scores.get("completeness", 0)))),
-            }
-    except Exception as e:
-        logger.warning(f"Judge failed: {e}")
+    for attempt in range(retry + 1):
+        try:
+            sm_client = _get_or_refresh_sm_client(force_refresh=(attempt > 0))
+            resp = sm_client.invoke_endpoint(
+                EndpointName=endpoint,
+                ContentType="application/json",
+                Body=json.dumps({
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 100,
+                    "temperature": 0.1,
+                }),
+            )
+            raw = json.loads(resp["Body"].read())["choices"][0]["message"]["content"].strip()
+            start = raw.find("{")
+            end = raw.rfind("}") + 1
+            if start >= 0 and end > start:
+                scores = json.loads(raw[start:end])
+                return {
+                    "faithfulness": min(1.0, max(0.0, float(scores.get("faithfulness", 0)))),
+                    "relevancy": min(1.0, max(0.0, float(scores.get("relevancy", 0)))),
+                    "completeness": min(1.0, max(0.0, float(scores.get("completeness", 0)))),
+                }
+            else:
+                logger.warning(f"Judge non-JSON (attempt {attempt+1}): {raw[:80]}")
+                continue  # Retry
+        except Exception as e:
+            logger.warning(f"Judge failed (attempt {attempt+1}): {e}")
+            if "AccessDeniedException" in str(e):
+                logger.error("SSO token expired. Run: aws sso login --profile jeongbeomkim")
+                return None
+    # All retries exhausted — return zero scores (don't skip, count as failure)
+    logger.warning(f"Judge exhausted retries for: {question[:50]}")
     return {"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}
 
 
@@ -172,9 +190,9 @@ def run_evaluation(kb_ids: list[str]):
         logger.error("No golden set found. Run generate_golden_set.py first.")
         return
 
-    sm_client = get_sm_client()
     results: list[dict] = []
     scores_sum = {"faithfulness": 0, "relevancy": 0, "completeness": 0}
+    skipped = 0
 
     for i, gs in enumerate(golden_set):
         t0 = time.time()
@@ -182,7 +200,18 @@ def run_evaluation(kb_ids: list[str]):
         search_time = (time.time() - t0) * 1000
         actual_answer = search_result.get("answer") or ""
 
-        scores = judge_answer(sm_client, gs["question"], gs["expected"], actual_answer)
+        # Skip if search completely failed (no answer at all)
+        if not actual_answer:
+            skipped += 1
+            logger.debug(f"Skipped (no answer): {gs['question'][:50]}")
+            # Still judge with empty answer to measure search coverage
+
+        scores = judge_answer(gs["question"], gs["expected"], actual_answer)
+        if scores is None:
+            # Unrecoverable (e.g. SSO expired) — skip this question
+            skipped += 1
+            logger.warning(f"Skipped (judge failed): {gs['question'][:50]}")
+            continue
 
         results.append({
             "kb_id": gs["kb_id"],
@@ -200,9 +229,9 @@ def run_evaluation(kb_ids: list[str]):
             scores_sum[k] += scores[k]
 
         if (i + 1) % 10 == 0:
-            n = i + 1
+            n = len(results) or 1
             logger.info(
-                f"Progress: {n}/{len(golden_set)} | "
+                f"Progress: {i+1}/{len(golden_set)} (scored: {n}, skipped: {skipped}) | "
                 f"F={scores_sum['faithfulness']/n:.3f} "
                 f"R={scores_sum['relevancy']/n:.3f} "
                 f"C={scores_sum['completeness']/n:.3f}"

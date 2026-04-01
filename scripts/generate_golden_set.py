@@ -100,12 +100,27 @@ def generate_qa_from_chunk(sm_client, chunk: dict) -> list[dict]:
         )
         raw = json.loads(resp["Body"].read())["choices"][0]["message"]["content"].strip()
 
-        # Parse JSON from response
-        # Find JSON array in response
+        # Parse JSON from response — handle trailing commas, broken JSON
+        import re
         start = raw.find("[")
         end = raw.rfind("]") + 1
         if start >= 0 and end > start:
-            qa_list = json.loads(raw[start:end])
+            json_str = raw[start:end]
+            # Fix trailing commas before ] or }
+            json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+            # Fix unescaped newlines inside JSON strings
+            json_str = re.sub(r'(?<=": ")(.*?)(?=")', lambda m: m.group(0).replace('\n', '\\n'), json_str, flags=re.DOTALL)
+            try:
+                qa_list = json.loads(json_str)
+            except json.JSONDecodeError:
+                # Last resort: extract individual objects
+                qa_list = []
+                for m in re.finditer(r'\{[^{}]+\}', json_str):
+                    try:
+                        obj_str = re.sub(r',\s*}', '}', m.group())
+                        qa_list.append(json.loads(obj_str))
+                    except json.JSONDecodeError:
+                        continue
             return [
                 {
                     "question": qa.get("question", ""),
@@ -145,11 +160,11 @@ async def save_golden_set(kb_id: str, qa_pairs: list[dict]):
             )
         """))
 
-    # Insert Q&A pairs
+    # Insert Q&A pairs (each in its own transaction to avoid cascade failures)
     saved = 0
-    async with engine.begin() as conn:
-        for qa in qa_pairs:
-            try:
+    for qa in qa_pairs:
+        try:
+            async with engine.begin() as conn:
                 await conn.execute(text("""
                     INSERT INTO rag_golden_set (id, kb_id, question, expected_answer, source_document, source_slide)
                     VALUES (:id, :kb_id, :question, :answer, :doc, :slide)
@@ -157,14 +172,14 @@ async def save_golden_set(kb_id: str, qa_pairs: list[dict]):
                 """), {
                     "id": str(uuid.uuid4()),
                     "kb_id": kb_id,
-                    "question": qa["question"],
-                    "answer": qa["answer"],
-                    "doc": qa.get("source_document", ""),
-                    "slide": qa.get("source_slide", ""),
+                    "question": qa["question"][:500],
+                    "answer": qa["answer"][:2000],
+                    "doc": qa.get("source_document", "")[:500],
+                    "slide": qa.get("source_slide", "")[:100],
                 })
-                saved += 1
-            except Exception:
-                pass
+            saved += 1
+        except Exception as e:
+            logger.warning(f"Save failed for '{qa['question'][:50]}': {e}")
 
     await engine.dispose()
     return saved

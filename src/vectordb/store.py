@@ -421,6 +421,33 @@ class QdrantStoreOperations:
             )
             return 0
 
+    async def facet_l1_categories(self, kb_id: str) -> dict[str, int]:
+        """Return {l1_category: chunk_count} via Qdrant facet API."""
+        client = await self._provider.ensure_client()
+        collection_name = await self._collection_mgr.resolve_read_collection_name(kb_id)
+
+        try:
+            facet_result = await asyncio.wait_for(
+                client.facet(
+                    collection_name=collection_name,
+                    key="l1_category",
+                    limit=100,
+                    exact=False,
+                    timeout=_w.timeouts.qdrant_count,
+                ),
+                timeout=_w.timeouts.qdrant_scroll,
+            )
+            return {
+                str(hit.value): hit.count
+                for hit in getattr(facet_result, "hits", []) or []
+                if getattr(hit, "value", None)
+            }
+        except Exception as e:
+            logger.debug(
+                "Facet l1_category unavailable for kb_id=%s: %s", kb_id, e,
+            )
+            return {}
+
     # ==================== Source URI listing ====================
 
     async def list_distinct_source_uris(self, kb_id: str, limit: int = 200_000) -> list[str]:

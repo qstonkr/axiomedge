@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -368,17 +369,60 @@ async def list_l1_categories():
 # ---------------------------------------------------------------------------
 @router.get("/categories/stats")
 async def get_l1_stats():
-    """Get L1 category stats."""
+    """Get L1 category stats aggregated from Qdrant facet API."""
     state = _get_state()
-    repo = state.get("category_repo")
-    if repo:
-        try:
-            categories = await repo.get_all_categories()
-            return {
-                "categories": categories,
-                "total_documents": 0,
-                "uncategorized": 0,
-            }
-        except Exception as e:
-            logger.warning("Category stats query failed: %s", e)
-    return {"categories": [], "total_documents": 0, "uncategorized": 0}
+    store = state.get("qdrant_store")
+    collections = state.get("qdrant_collections")
+
+    if not store or not collections:
+        return {"l1_counts": {}, "total_docs": 0, "etc_count": 0, "etc_ratio": 0.0,
+                "kb_breakdown": []}
+
+    try:
+        # Discover all KB collections
+        raw_names = await collections.get_existing_collection_names()
+        prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
+        kb_ids = []
+        for name in raw_names:
+            if name.endswith("__live"):
+                kb_id = name[len(prefix):-len("__live")] if name.startswith(prefix) else name
+            elif name.startswith(prefix):
+                kb_id = name[len(prefix):]
+            else:
+                continue
+            kb_ids.append(kb_id)
+        # Deduplicate (live alias + base collection may resolve to same kb_id)
+        kb_ids = sorted(set(kb_ids))
+
+        # Aggregate l1_category facets across all KBs
+        l1_totals: dict[str, int] = {}
+        kb_breakdown: list[list] = []
+
+        results = await asyncio.gather(
+            *(store.facet_l1_categories(kb_id) for kb_id in kb_ids),
+            return_exceptions=True,
+        )
+
+        for kb_id, result in zip(kb_ids, results):
+            if isinstance(result, Exception):
+                logger.debug("L1 facet failed for %s: %s", kb_id, result)
+                continue
+            for cat, count in result.items():
+                l1_totals[cat] = l1_totals.get(cat, 0) + count
+                kb_breakdown.append([kb_id, cat, count])
+
+        total_docs = sum(l1_totals.values())
+        etc_count = l1_totals.get("기타", 0)
+        etc_ratio = etc_count / total_docs if total_docs > 0 else 0.0
+
+        return {
+            "l1_counts": l1_totals,
+            "total_docs": total_docs,
+            "etc_count": etc_count,
+            "etc_ratio": etc_ratio,
+            "kb_breakdown": kb_breakdown,
+        }
+    except Exception as e:
+        logger.warning("L1 stats aggregation failed: %s", e)
+        return {"l1_counts": {}, "total_docs": 0, "etc_count": 0, "etc_ratio": 0.0,
+                "kb_breakdown": []}
