@@ -207,15 +207,44 @@ async def async_main(kb_ids: list[str]):
             logger.error("No golden set found. Run generate_golden_set.py first.")
             return
 
+        # Skip already-evaluated questions for this eval_id (resume support)
+        from sqlalchemy import text as _text
+        evaluated_ids: set[str] = set()
+        try:
+            async with engine.begin() as conn:
+                rows = await conn.execute(_text(
+                    "SELECT CAST(golden_set_id AS TEXT) FROM rag_eval_results WHERE eval_id = :eid"
+                ), {"eid": eval_id})
+                evaluated_ids = {r[0] for r in rows.fetchall() if r[0]}
+        except Exception:
+            pass  # Table may not exist yet
+        if evaluated_ids:
+            before = len(golden_set)
+            golden_set = [g for g in golden_set if g["id"] not in evaluated_ids]
+            logger.info(f"Resuming: skipped {before - len(golden_set)} already-evaluated, {len(golden_set)} remaining")
+
         results: list[dict] = []
         scores_sum = {"faithfulness": 0, "relevancy": 0, "completeness": 0}
         skipped = 0
+        batch_to_save: list[dict] = []
 
         for i, gs in enumerate(golden_set):
-            t0 = time.time()
-            search_result = search_and_answer(gs["question"], [gs["kb_id"]])
-            search_time = (time.time() - t0) * 1000
-            actual_answer = search_result.get("answer") or ""
+            # Search with retry on timeout
+            actual_answer = ""
+            search_time = 0.0
+            for attempt in range(2):
+                try:
+                    t0 = time.time()
+                    search_result = search_and_answer(gs["question"], [gs["kb_id"]])
+                    search_time = (time.time() - t0) * 1000
+                    actual_answer = search_result.get("answer") or ""
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        logger.warning(f"Search retry for: {gs['question'][:40]}... ({e})")
+                        time.sleep(3)
+                    else:
+                        logger.warning(f"Search failed after retry: {gs['question'][:40]}")
 
             if not actual_answer:
                 skipped += 1
@@ -227,7 +256,7 @@ async def async_main(kb_ids: list[str]):
                 logger.warning(f"Skipped (judge failed): {gs['question'][:50]}")
                 continue
 
-            results.append({
+            result = {
                 "kb_id": gs["kb_id"],
                 "golden_set_id": gs["id"],
                 "question": gs["question"],
@@ -237,10 +266,17 @@ async def async_main(kb_ids: list[str]):
                 "relevancy": scores["relevancy"],
                 "completeness": scores["completeness"],
                 "search_time_ms": search_time,
-            })
+            }
+            results.append(result)
+            batch_to_save.append(result)
 
             for k in scores_sum:
                 scores_sum[k] += scores[k]
+
+            # Save every 10 results (crash-safe incremental save)
+            if len(batch_to_save) >= 10:
+                await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", batch_to_save)
+                batch_to_save = []
 
             if (i + 1) % 10 == 0:
                 n = len(results) or 1
@@ -250,6 +286,10 @@ async def async_main(kb_ids: list[str]):
                     f"R={scores_sum['relevancy']/n:.3f} "
                     f"C={scores_sum['completeness']/n:.3f}"
                 )
+
+        # Save remaining batch
+        if batch_to_save:
+            await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", batch_to_save)
 
         # Final metrics
         n = len(results)
@@ -271,27 +311,6 @@ async def async_main(kb_ids: list[str]):
         logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
         logger.info(f"  Questions:     {metrics['total_questions']}")
         logger.info(f"{'='*60}")
-
-        # Save to DB
-        try:
-            await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", results)
-            logger.info(f"Results saved to rag_eval_results (eval_id={eval_id})")
-        except Exception as e:
-            logger.error(f"FAILED to save results to DB: {e}")
-            fallback = f"eval_results_{eval_id}.json"
-            with open(fallback, "w") as f:
-                json.dump({"eval_id": eval_id, "metrics": metrics, "results": results}, f, ensure_ascii=False)
-            logger.error(f"Results dumped to {fallback}")
-
-        # Also update the eval history API
-        try:
-            requests.post("http://localhost:8000/api/v1/admin/eval/trigger", json={
-                "kb_id": ",".join(kb_ids) if kb_ids else "all",
-                "eval_type": "golden_set",
-                "metrics": metrics,
-            })
-        except Exception:
-            pass
     finally:
         await engine.dispose()
 
