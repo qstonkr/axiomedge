@@ -12,7 +12,6 @@ import os
 import time
 from collections import defaultdict
 from threading import Lock
-from typing import Callable
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse

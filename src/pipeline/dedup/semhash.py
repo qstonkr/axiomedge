@@ -39,7 +39,10 @@ class IEmbeddingProvider(Protocol):
 class NoOpEmbeddingProvider:
     """No-op embedding provider that returns zero vectors."""
 
-    def __init__(self, dimension: int = 1024) -> None:
+    def __init__(self, dimension: int | None = None) -> None:
+        if dimension is None:
+            from src.config_weights import weights
+            dimension = weights.embedding.dimension
         self._dimension = dimension
 
     async def embed(self, text: str) -> list[float]:

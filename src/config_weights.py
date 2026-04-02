@@ -10,9 +10,9 @@ Usage:
 
 from __future__ import annotations
 
-import copy
 import os
-from dataclasses import dataclass, field, fields, asdict
+from dataclasses import dataclass, fields, asdict
+from typing import Any
 
 
 def _env_float(key: str, default: float) -> float:
@@ -103,6 +103,10 @@ class SimilarityThresholds:
     # L3 decision zones
     auto_match: float = 0.85
     review: float = 0.50
+
+    # Fallback zone thresholds (when cross-encoder unavailable)
+    fallback_auto_match: float = 0.90
+    fallback_review: float = 0.60
 
     # L2 RRF fusion weights
     rrf_edit_weight: float = 0.25

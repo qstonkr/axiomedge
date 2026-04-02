@@ -29,16 +29,15 @@ import asyncio
 import logging
 import math
 import re
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from src.config_weights import weights
 from ..domain.models import IngestionResult, RawDocument
 from .chunker import Chunker, ChunkStrategy
-from .document_parser import parse_bytes, parse_bytes_enhanced, ParseResult, _table_to_markdown
+from .document_parser import parse_bytes_enhanced, ParseResult, _table_to_markdown
 from .graphrag_extractor import GraphRAGExtractor
-from .qdrant_utils import str_to_uuid, truncate_content, MAX_PAYLOAD_CONTENT_LENGTH
+from .qdrant_utils import str_to_uuid, truncate_content
 from .quality_processor import (
     QualityTier,
     QualityMetrics,
@@ -311,7 +310,9 @@ class IGraphStore(Protocol):
 class NoOpEmbedder:
     """Returns zero vectors. Replace with a real embedder for production."""
 
-    def __init__(self, dimension: int = 1024) -> None:
+    def __init__(self, dimension: int | None = None) -> None:
+        if dimension is None:
+            dimension = weights.embedding.dimension
         self._dimension = dimension
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
@@ -607,10 +608,6 @@ class IngestionPipeline:
                         "Ingestion gate blocked doc_id=%s: action=%s, failed=%d",
                         raw.doc_id, gate_result.action.value, gate_result.failed_count,
                     )
-                    failed_checks = [
-                        c.to_dict() for c in gate_result.checks
-                        if c.verdict.value == "fail"
-                    ]
                     return IngestionResult.failure_result(
                         reason=f"Ingestion gate: {gate_result.action.value} ({gate_result.failed_count} check(s) failed)",
                         stage="ingestion_gate",
@@ -964,15 +961,6 @@ class IngestionPipeline:
                 })
 
             # 9 & 10. Store in vector DB + graph DB in parallel
-            graph_chunks = [
-                {
-                    "chunk_index": idx,
-                    "content": chunk_text,
-                    "char_count": len(chunk_text),
-                    "chunk_type": chunk_types[idx] if idx < len(chunk_types) else "body",
-                }
-                for idx, chunk_text in enumerate(chunk_result.chunks)
-            ]
             await asyncio.gather(
                 self.vector_store.upsert_batch(
                     collection_name,

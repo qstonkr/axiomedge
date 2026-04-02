@@ -12,7 +12,6 @@ KB를 그룹으로 묶어 스코프 검색을 지원.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field

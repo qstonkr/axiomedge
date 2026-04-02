@@ -15,7 +15,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

@@ -12,18 +12,15 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.database.models import KBSearchGroupModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class SearchGroupRepository:
+class SearchGroupRepository(BaseRepository):
     """KB Search Group repository."""
-
-    def __init__(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
-        self._session_maker = session_maker
 
     async def create(
         self,

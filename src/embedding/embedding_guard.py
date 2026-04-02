@@ -9,18 +9,31 @@ Simplified: no StatsD metrics emission.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 from dataclasses import dataclass
 from enum import Enum
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
-# Constants (BGE-M3 / 1024d)
-EXPECTED_DIMENSION = 1024
+# Constants (BGE-M3) — SSOT: config_weights.EmbeddingConfig.dimension
+EXPECTED_DIMENSION: int = _w.embedding.dimension
 MAGNITUDE_MIN = 0.1
 MAGNITUDE_MAX = 50.0
 ZERO_EPSILON = 1e-8
+
+
+def sparse_token_hash(token: str) -> int:
+    """Deterministic token hash for sparse vector indices.
+
+    Uses MD5 for cross-process stability (Python hash() is randomized).
+    Returns value in range [1, 99999] — Qdrant requires indices > 0.
+    """
+    h = int(hashlib.md5(token.encode()).hexdigest(), 16) % 100000
+    return h if h > 0 else 1
 
 
 class VectorVerdict(Enum):

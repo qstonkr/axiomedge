@@ -20,7 +20,7 @@ import src.auth.models  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DATABASE_URL = "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db"
+from src.config import DEFAULT_DATABASE_URL  # noqa: E402 — SSOT for DB URL
 
 
 async def init_database(database_url: str | None = None) -> None:

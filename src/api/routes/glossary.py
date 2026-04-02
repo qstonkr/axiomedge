@@ -8,7 +8,6 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
 
 from src.api.app import _get_state
 from src.nlp.morpheme_analyzer import get_analyzer

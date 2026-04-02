@@ -109,7 +109,7 @@ async def get_feedback_stats():
             negative = await repo.count(feedback_type="downvote")
             neutral = max(0, total - positive - negative)
             by_type = {"upvote": positive, "downvote": negative, "other": neutral}
-            return {"total": total, "positive": positive, "negative": negative, "neutral": neutral, "by_type": by_type}
+            return {"total": total, "pending": pending, "positive": positive, "negative": negative, "neutral": neutral, "by_type": by_type}
         except Exception as e:
             logger.warning("Feedback stats query failed: %s", e)
     return {"total": 0, "positive": 0, "negative": 0, "neutral": 0, "by_type": {}}

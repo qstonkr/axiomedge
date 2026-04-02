@@ -12,26 +12,20 @@ import uuid
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.database.models import (
     DocumentErrorReportModel,
     DocumentOwnerModel,
     TopicOwnerModel,
 )
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class DocumentOwnerRepository:
+class DocumentOwnerRepository(BaseRepository):
     """PostgreSQL document owner repository."""
-
-    def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     async def save(self, data: dict[str, Any]) -> None:
         async with await self._get_session() as session:
@@ -54,7 +48,7 @@ class DocumentOwnerRepository:
                     session.add(model)
 
                 await session.commit()
-            except SQLAlchemyError as e:
+            except SQLAlchemyError:
                 await session.rollback()
                 raise
 
@@ -120,14 +114,8 @@ class DocumentOwnerRepository:
         }
 
 
-class TopicOwnerRepository:
+class TopicOwnerRepository(BaseRepository):
     """PostgreSQL topic owner repository."""
-
-    def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     async def save(self, data: dict[str, Any]) -> None:
         async with await self._get_session() as session:
@@ -204,14 +192,8 @@ class TopicOwnerRepository:
         }
 
 
-class ErrorReportRepository:
+class ErrorReportRepository(BaseRepository):
     """PostgreSQL error report repository."""
-
-    def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     async def save(self, data: dict[str, Any]) -> None:
         async with await self._get_session() as session:

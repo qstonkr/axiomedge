@@ -8,15 +8,14 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from collections.abc import AsyncIterator
 from typing import Any
 
 from sqlalchemy import and_, delete, func, or_, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.database.models import GlossaryTermModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +24,12 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-class GlossaryRepository:
+class GlossaryRepository(BaseRepository):
     """Async SQLAlchemy glossary repository."""
 
     def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
+        super().__init__(session_maker)
         self._search_available = True
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     def _scope_filter(self, kb_id: str):
         if kb_id and kb_id.lower() != "all":
@@ -92,8 +88,6 @@ class GlossaryRepository:
             return 0
 
         now = _utc_now()
-        valid_keys = {c.key for c in GlossaryTermModel.__table__.columns}
-
         columns = [
             "id", "kb_id", "term", "term_ko", "definition",
             "synonyms", "abbreviations", "related_terms", "source_kb_ids",
@@ -135,7 +129,8 @@ class GlossaryRepository:
         if bind:
             pg_url = str(bind.url).replace("postgresql+asyncpg://", "postgresql://")
         else:
-            db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
+            from src.database.init_db import DEFAULT_DATABASE_URL
+            db_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
             pg_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
 
         try:
@@ -293,7 +288,7 @@ class GlossaryRepository:
                 result = await session.execute(stmt)
                 await session.commit()
                 return result.rowcount
-            except SQLAlchemyError as e:
+            except SQLAlchemyError:
                 await session.rollback()
                 raise
 

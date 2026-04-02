@@ -21,12 +21,16 @@ from .provider_factory import create_embedding_provider
 from .embedding_guard import (
     validate_vector,
     safe_embedding_or_zero,
+    sparse_token_hash,
     VectorVerdict,
     VectorCheckResult,
     EXPECTED_DIMENSION,
 )
+from .types import EmbeddingProvider
 
 __all__ = [
+    # Protocol
+    "EmbeddingProvider",
     # Providers
     "OnnxBgeEmbeddingProvider",
     "OllamaEmbeddingProvider",
@@ -42,4 +46,5 @@ __all__ = [
     "VectorVerdict",
     "VectorCheckResult",
     "EXPECTED_DIMENSION",
+    "sparse_token_hash",
 ]

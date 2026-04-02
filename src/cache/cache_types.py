@@ -29,13 +29,18 @@ class CacheDomain(str, Enum):
     GENERAL = "general"        # 0.85
 
 
-# Domain-specific similarity thresholds (SSOT)
-DOMAIN_THRESHOLDS: dict[CacheDomain, float] = {
-    CacheDomain.POLICY: 1.0,
-    CacheDomain.CODE: 0.95,
-    CacheDomain.KB_SEARCH: 0.92,
-    CacheDomain.GENERAL: 0.85,
-}
+# Domain-specific similarity thresholds — SSOT: config_weights.CacheConfig
+def _build_domain_thresholds() -> dict[CacheDomain, float]:
+    from src.config_weights import weights as _w
+    c = _w.cache
+    return {
+        CacheDomain.POLICY: c.threshold_policy,
+        CacheDomain.CODE: c.threshold_code,
+        CacheDomain.KB_SEARCH: c.threshold_kb,
+        CacheDomain.GENERAL: c.threshold_general,
+    }
+
+DOMAIN_THRESHOLDS: dict[CacheDomain, float] = _build_domain_thresholds()
 
 
 @dataclass

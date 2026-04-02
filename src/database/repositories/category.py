@@ -11,18 +11,19 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from src.database.models import KnowledgeCategoryModel, RegistryBase
+from src.database.models import KnowledgeCategoryModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class CategoryRepository:
+class CategoryRepository(BaseRepository):
     """PostgreSQL repository for knowledge categories."""
 
     def __init__(self, session_factory: async_sessionmaker) -> None:
-        self._session_factory = session_factory
+        super().__init__(session_factory)
         self._l1_cache: list[dict[str, Any]] | None = None
 
     async def get_l1_categories(self, *, use_cache: bool = True) -> list[dict[str, Any]]:
@@ -30,7 +31,7 @@ class CategoryRepository:
             return self._l1_cache
 
         try:
-            async with self._session_factory() as session:
+            async with self._session_maker() as session:
                 result = await session.execute(
                     select(KnowledgeCategoryModel)
                     .where(KnowledgeCategoryModel.level == 1, KnowledgeCategoryModel.is_active.is_(True))
@@ -58,7 +59,7 @@ class CategoryRepository:
 
     async def get_all_categories(self) -> list[dict[str, Any]]:
         try:
-            async with self._session_factory() as session:
+            async with self._session_maker() as session:
                 result = await session.execute(
                     select(KnowledgeCategoryModel)
                     .where(KnowledgeCategoryModel.is_active.is_(True))
@@ -85,7 +86,7 @@ class CategoryRepository:
 
     async def create_category(self, data: dict[str, Any]) -> dict[str, Any] | None:
         try:
-            async with self._session_factory() as session:
+            async with self._session_maker() as session:
                 orm = KnowledgeCategoryModel(**data)
                 session.add(orm)
                 await session.commit()
@@ -98,7 +99,7 @@ class CategoryRepository:
 
     async def update_category(self, category_id: UUID, data: dict[str, Any]) -> bool:
         try:
-            async with self._session_factory() as session:
+            async with self._session_maker() as session:
                 from sqlalchemy import func as sa_func
                 data["updated_at"] = sa_func.now()
                 await session.execute(

@@ -358,14 +358,19 @@ async def upload_and_ingest(
             # Fallback: create via REST API if SDK version mismatch
             logger.warning("ensure_collection via SDK failed: %s, trying REST", _coll_err)
             import httpx as _httpx
+            from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
+            from src.config_weights import weights as _cw
+            _embed_dim = _cw.embedding.dimension
             qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
             coll_name = collections.get_collection_name(effective_kb_id)
             async with _httpx.AsyncClient() as _client:
                 resp = await _client.put(
                     f"{qdrant_url}/collections/{coll_name}",
                     json={
-                        "vectors": {"bge_dense": {"size": 1024, "distance": "Cosine"}},
-                        "sparse_vectors": {"bge_sparse": {}},
+                        "vectors": {
+                            _dense_name: {"size": _embed_dim, "distance": "Cosine"},
+                        },
+                        "sparse_vectors": {_sparse_name: {}},
                     },
                     timeout=30,
                 )

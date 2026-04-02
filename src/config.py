@@ -11,6 +11,12 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Model name defaults — SSOT for all fallback references
+DEFAULT_LLM_MODEL = "exaone3.5:7.8b"
+DEFAULT_EMBEDDING_MODEL = "bge-m3:latest"
+
+DEFAULT_DATABASE_URL = "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db"
+
 DEFAULT_RUNTIME_BASE_DIR = os.getenv(
     "KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR", "/tmp/knowledge-local"
 )
@@ -20,7 +26,7 @@ class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="")
 
     database_url: str = Field(
-        default="postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db",
+        default=DEFAULT_DATABASE_URL,
         alias="DATABASE_URL",
     )
     pool_size: int = Field(default=5)
@@ -34,7 +40,9 @@ class QdrantSettings(BaseSettings):
     url: str = Field(default="http://localhost:6333")
     collection_name: str = Field(default="knowledge")
     entity_collection_name: str = Field(default="knowledge_entities")
+    # NOTE: Keep in sync with config_weights.EmbeddingConfig.dimension (BGE-M3 fixed)
     dense_dimension: int = Field(default=1024)
+    # NOTE: Keep in sync with vectordb.client.DEFAULT_DENSE/SPARSE_VECTOR_NAME
     dense_vector_name: str = Field(default="bge_dense")
     sparse_vector_name: str = Field(default="bge_sparse")
     timeout: int = Field(default=30)
@@ -55,8 +63,8 @@ class OllamaSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OLLAMA_")
 
     base_url: str = Field(default="http://localhost:11434")
-    model: str = Field(default="exaone3.5:7.8b")
-    embedding_model: str = Field(default="bge-m3:latest")
+    model: str = Field(default=DEFAULT_LLM_MODEL)
+    embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL)
     timeout: int = Field(default=60, ge=10, le=300)
     context_length: int = Field(default=32768, ge=1024, le=32768)
     max_content_length: int = Field(default=4000, ge=100, le=32000)

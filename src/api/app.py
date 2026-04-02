@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.state import AppState
+
 load_dotenv()
 
 
@@ -47,136 +49,132 @@ logging.root.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Shared state for lazy-initialized singletons
-_state: dict = {}
+_state = AppState()
 
 
-def _get_state():
+def _get_state() -> AppState:
     return _state
 
 
-async def _init_services():
-    """Initialize all services on startup."""
-    from src.config import get_settings
+async def _init_database(state: AppState, settings) -> None:
+    """Initialize PostgreSQL + all repositories + domain services."""
+    from src.database.session import create_async_session_factory
+    from src.database.init_db import init_database
+    import asyncio as _asyncio
 
-    settings = get_settings()
+    db_url = settings.database.database_url
+    for _attempt in range(3):
+        try:
+            await init_database(db_url)
+            break
+        except Exception as _db_err:
+            if _attempt < 2:
+                logger.warning("DB init attempt %d failed, retrying in 2s: %s", _attempt + 1, _db_err)
+                await _asyncio.sleep(2)
+            else:
+                raise
 
-    # PostgreSQL database
+    session_factory = create_async_session_factory(
+        db_url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        echo=settings.database.echo,
+    )
+    state["db_session_factory"] = session_factory
+
+    # Initialize repositories
+    from src.database.repositories.kb_registry import KBRegistryRepository
+    from src.database.repositories.glossary import GlossaryRepository
+    from src.database.repositories.ownership import (
+        DocumentOwnerRepository,
+        TopicOwnerRepository,
+        ErrorReportRepository,
+    )
+    from src.database.repositories.feedback import FeedbackRepository
+    from src.database.repositories.ingestion_run import IngestionRunRepository
+    from src.database.repositories.trust_score import TrustScoreRepository
+    from src.database.repositories.lifecycle import DocumentLifecycleRepository
+    from src.database.repositories.data_source import DataSourceRepository
+    from src.database.repositories.traceability import ProvenanceRepository
+    from src.database.repositories.category import CategoryRepository
+    from src.database.repositories.search_group import SearchGroupRepository
+    from src.database.repositories.usage_log import UsageLogRepository
+
+    # KB Registry uses its own engine (manages RegistryBase tables)
+    kb_registry = KBRegistryRepository(db_url)
+    await kb_registry.initialize()
+    state["kb_registry"] = kb_registry
+
+    state["glossary_repo"] = GlossaryRepository(session_factory)
+    state["doc_owner_repo"] = DocumentOwnerRepository(session_factory)
+    state["topic_owner_repo"] = TopicOwnerRepository(session_factory)
+    state["error_report_repo"] = ErrorReportRepository(session_factory)
+    state["feedback_repo"] = FeedbackRepository(session_factory)
+    state["ingestion_run_repo"] = IngestionRunRepository(session_factory)
+    state["trust_score_repo"] = TrustScoreRepository(session_factory)
+    state["lifecycle_repo"] = DocumentLifecycleRepository(session_factory)
+    state["data_source_repo"] = DataSourceRepository(session_factory)
+    state["provenance_repo"] = ProvenanceRepository(session_factory)
+    state["category_repo"] = CategoryRepository(session_factory)
+    state["search_group_repo"] = SearchGroupRepository(session_factory)
+    state["usage_log_repo"] = UsageLogRepository(session_factory)
+
+    # Load L1 categories into ingestion pipeline cache
     try:
-        from src.database.session import create_async_session_factory
-        from src.database.init_db import init_database
-        import asyncio as _asyncio
-
-        db_url = settings.database.database_url
-        for _attempt in range(3):
-            try:
-                await init_database(db_url)
-                break
-            except Exception as _db_err:
-                if _attempt < 2:
-                    logger.warning("DB init attempt %d failed, retrying in 2s: %s", _attempt + 1, _db_err)
-                    await _asyncio.sleep(2)
-                else:
-                    raise
-
-        session_factory = create_async_session_factory(
-            db_url,
-            pool_size=settings.database.pool_size,
-            max_overflow=settings.database.max_overflow,
-            echo=settings.database.echo,
-        )
-        _state["db_session_factory"] = session_factory
-
-        # Initialize repositories
-        from src.database.repositories.kb_registry import KBRegistryRepository
-        from src.database.repositories.glossary import GlossaryRepository
-        from src.database.repositories.ownership import (
-            DocumentOwnerRepository,
-            TopicOwnerRepository,
-            ErrorReportRepository,
-        )
-        from src.database.repositories.feedback import FeedbackRepository
-        from src.database.repositories.ingestion_run import IngestionRunRepository
-        from src.database.repositories.trust_score import TrustScoreRepository
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
-        from src.database.repositories.data_source import DataSourceRepository
-        from src.database.repositories.traceability import ProvenanceRepository
-        from src.database.repositories.category import CategoryRepository
-        from src.database.repositories.search_group import SearchGroupRepository
-        from src.database.repositories.usage_log import UsageLogRepository
-
-        # KB Registry uses its own engine (manages RegistryBase tables)
-        kb_registry = KBRegistryRepository(db_url)
-        await kb_registry.initialize()
-        _state["kb_registry"] = kb_registry
-
-        _state["glossary_repo"] = GlossaryRepository(session_factory)
-        _state["doc_owner_repo"] = DocumentOwnerRepository(session_factory)
-        _state["topic_owner_repo"] = TopicOwnerRepository(session_factory)
-        _state["error_report_repo"] = ErrorReportRepository(session_factory)
-        _state["feedback_repo"] = FeedbackRepository(session_factory)
-        _state["ingestion_run_repo"] = IngestionRunRepository(session_factory)
-        _state["trust_score_repo"] = TrustScoreRepository(session_factory)
-        _state["lifecycle_repo"] = DocumentLifecycleRepository(session_factory)
-        _state["data_source_repo"] = DataSourceRepository(session_factory)
-        _state["provenance_repo"] = ProvenanceRepository(session_factory)
-        _state["category_repo"] = CategoryRepository(session_factory)
-        _state["search_group_repo"] = SearchGroupRepository(session_factory)
-        _state["usage_log_repo"] = UsageLogRepository(session_factory)
-
-        # Load L1 categories into ingestion pipeline cache
-        try:
-            cat_repo = _state.get("category_repo")
-            if cat_repo:
-                l1_cats = await cat_repo.get_l1_categories()
-                if l1_cats:
-                    from src.pipeline.ingestion import load_l1_categories_from_db
-                    load_l1_categories_from_db(l1_cats)
-        except Exception as e:
-            logger.warning("L1 category cache load failed (using defaults): %s", e)
-
-        # Term extractor for ingestion
-        try:
-            from src.pipeline.term_extractor import TermExtractor
-            _state["term_extractor"] = TermExtractor(
-                glossary_repo=_state.get("glossary_repo"),
-                embedder=_state.get("embedder"),
-            )
-            logger.info("TermExtractor initialized")
-        except Exception as e:
-            logger.warning("TermExtractor init failed: %s", e)
-
-        # Trust Score Service
-        try:
-            from src.search.trust_score_service import TrustScoreService
-            _state["trust_score_service"] = TrustScoreService(
-                trust_score_repo=_state["trust_score_repo"],
-                feedback_repo=_state.get("feedback_repo"),
-            )
-            logger.info("TrustScoreService initialized")
-        except Exception as e:
-            logger.warning("TrustScoreService init failed: %s", e)
-
-        # Lifecycle State Machine
-        try:
-            from src.domain.lifecycle import LifecycleStateMachine
-            _state["lifecycle_service"] = LifecycleStateMachine(
-                lifecycle_repo=_state["lifecycle_repo"],
-            )
-            logger.info("LifecycleStateMachine initialized")
-        except Exception as e:
-            logger.warning("LifecycleStateMachine init failed: %s", e)
-
-        # Freshness Predictor
-        try:
-            from src.search.freshness_predictor import FreshnessPredictor
-            _state["freshness_predictor"] = FreshnessPredictor()
-            logger.info("FreshnessPredictor initialized")
-        except Exception as e:
-            logger.warning("FreshnessPredictor init failed: %s", e)
-
-        logger.info("PostgreSQL database initialized: %s", db_url.split("@")[-1] if "@" in db_url else db_url)
+        cat_repo = state.get("category_repo")
+        if cat_repo:
+            l1_cats = await cat_repo.get_l1_categories()
+            if l1_cats:
+                from src.pipeline.ingestion import load_l1_categories_from_db
+                load_l1_categories_from_db(l1_cats)
     except Exception as e:
-        logger.warning("PostgreSQL init failed (repositories will use stubs): %s", e)
+        logger.warning("L1 category cache load failed (using defaults): %s", e)
+
+    # Term extractor for ingestion
+    try:
+        from src.pipeline.term_extractor import TermExtractor
+        state["term_extractor"] = TermExtractor(
+            glossary_repo=state.get("glossary_repo"),
+            embedder=state.get("embedder"),
+        )
+        logger.info("TermExtractor initialized")
+    except Exception as e:
+        logger.warning("TermExtractor init failed: %s", e)
+
+    # Trust Score Service
+    try:
+        from src.search.trust_score_service import TrustScoreService
+        state["trust_score_service"] = TrustScoreService(
+            trust_score_repo=state.get("trust_score_repo"),
+            feedback_repo=state.get("feedback_repo"),
+        )
+        logger.info("TrustScoreService initialized")
+    except Exception as e:
+        logger.warning("TrustScoreService init failed: %s", e)
+
+    # Lifecycle State Machine
+    try:
+        from src.domain.lifecycle import LifecycleStateMachine
+        state["lifecycle_service"] = LifecycleStateMachine(
+            lifecycle_repo=state.get("lifecycle_repo"),
+        )
+        logger.info("LifecycleStateMachine initialized")
+    except Exception as e:
+        logger.warning("LifecycleStateMachine init failed: %s", e)
+
+    # Freshness Predictor
+    try:
+        from src.search.freshness_predictor import FreshnessPredictor
+        state["freshness_predictor"] = FreshnessPredictor()
+        logger.info("FreshnessPredictor initialized")
+    except Exception as e:
+        logger.warning("FreshnessPredictor init failed: %s", e)
+
+    logger.info("PostgreSQL database initialized: %s", db_url.split("@")[-1] if "@" in db_url else db_url)
+
+
+async def _init_cache(state: AppState) -> None:
+    """Initialize Redis caches + multi-layer cache."""
 
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
@@ -184,8 +182,8 @@ async def _init_services():
         from src.cache.redis_cache import SearchCache
         from src.cache.dedup_cache import DedupCache
 
-        _state["search_cache"] = SearchCache(redis_url=redis_url)
-        _state["dedup_cache"] = DedupCache(redis_url=redis_url)
+        state["search_cache"] = SearchCache(redis_url=redis_url)
+        state["dedup_cache"] = DedupCache(redis_url=redis_url)
         logger.info("Redis cache initialized: %s", redis_url)
     except Exception as e:
         logger.warning("Redis cache init failed (search/dedup cache disabled): %s", e)
@@ -220,7 +218,7 @@ async def _init_services():
             l2_cache=l2,
             embedding_provider=None,  # Will be set after embedder init
         )
-        _state["multi_layer_cache"] = multi_cache
+        state["multi_layer_cache"] = multi_cache
 
         # Idempotency cache
         _idemp_redis = None
@@ -232,7 +230,7 @@ async def _init_services():
             )
         except Exception:
             pass
-        _state["idempotency_cache"] = IdempotencyCache(
+        state["idempotency_cache"] = IdempotencyCache(
             redis_client=_idemp_redis,
             ttl_seconds=cache_cfg.idempotency_ttl_seconds,
         )
@@ -245,7 +243,9 @@ async def _init_services():
     except Exception as e:
         logger.warning("MultiLayerCache init failed: %s", e)
 
-    # 4-Stage Dedup Pipeline
+
+async def _init_dedup(state: AppState) -> None:
+    """Initialize 4-stage dedup pipeline."""
     try:
         from src.pipeline.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
         from src.pipeline.dedup.bloom_filter import BloomFilter
@@ -279,7 +279,7 @@ async def _init_services():
             semantic_duplicate_threshold=dedup_cfg.semantic_duplicate_threshold,
             stage3_skip_threshold=dedup_cfg.stage3_skip_threshold,
         )
-        _state["dedup_pipeline"] = dedup_pipeline
+        state["dedup_pipeline"] = dedup_pipeline
 
         # Result tracker (requires Redis)
         redis_client = None
@@ -289,8 +289,8 @@ async def _init_services():
             redis_client = aioredis.from_url(_redis_url, decode_responses=True)
         except Exception:
             pass
-        _state["dedup_result_tracker"] = DedupResultTracker(redis_client=redis_client)
-        _state["redis_dedup_index"] = RedisDedupIndex(redis_client=redis_client)
+        state["dedup_result_tracker"] = DedupResultTracker(redis_client=redis_client)
+        state["redis_dedup_index"] = RedisDedupIndex(redis_client=redis_client)
 
         logger.info(
             "DedupPipeline initialized (near=%.2f, semantic=%.2f, skip=%.2f, stage4=%s)",
@@ -302,83 +302,91 @@ async def _init_services():
     except Exception as e:
         logger.warning("DedupPipeline init failed (using simple dedup cache): %s", e)
 
-    # Qdrant client
+
+async def _init_vectordb(state: AppState, settings) -> None:
+    """Initialize Qdrant client, collections, search engine, and store."""
     try:
         from src.vectordb.client import QdrantConfig, QdrantClientProvider
 
         config = QdrantConfig.from_env()
         provider = QdrantClientProvider(config)
         await provider.ensure_client()
-        _state["qdrant_provider"] = provider
+        state["qdrant_provider"] = provider
 
         from src.vectordb.collections import QdrantCollectionManager
         from src.vectordb.search import QdrantSearchEngine
         from src.vectordb.store import QdrantStoreOperations
 
         cm = QdrantCollectionManager(provider)
-        _state["qdrant_collections"] = cm
-        _state["qdrant_search"] = QdrantSearchEngine(provider, cm)
-        _state["qdrant_store"] = QdrantStoreOperations(provider, cm)
+        state["qdrant_collections"] = cm
+        state["qdrant_search"] = QdrantSearchEngine(provider, cm)
+        state["qdrant_store"] = QdrantStoreOperations(provider, cm)
         logger.info("Qdrant initialized: %s", settings.qdrant.url)
     except Exception as e:
         logger.warning("Qdrant init failed: %s", e)
 
-    # Neo4j client
-    if settings.neo4j.enabled:
+
+async def _init_graph(state: AppState, settings) -> None:
+    """Initialize Neo4j client, graph repo, expander, integrity checker, multi-hop."""
+    if not settings.neo4j.enabled:
+        return
+
+    try:
+        from src.graph.client import Neo4jClient
+
+        neo4j = Neo4jClient(
+            uri=settings.neo4j.uri,
+            user=settings.neo4j.user,
+            password=settings.neo4j.password,
+            database=settings.neo4j.database,
+        )
+        await neo4j.connect()
+        state["neo4j"] = neo4j
+
+        from src.graph.repository import Neo4jGraphRepository
+
+        state["graph_repo"] = Neo4jGraphRepository(neo4j)
+
+        from src.search.graph_expander import GraphSearchExpander
+        state["graph_expander"] = GraphSearchExpander(graph_repo=state["graph_repo"])
+
+        # Ensure graph indexes (idempotent)
         try:
-            from src.graph.client import Neo4jClient
-
-            neo4j = Neo4jClient(
-                uri=settings.neo4j.uri,
-                user=settings.neo4j.user,
-                password=settings.neo4j.password,
-                database=settings.neo4j.database,
+            from src.graph.indexer import ensure_indexes
+            index_result = await ensure_indexes(neo4j)
+            logger.info(
+                "Graph indexes ensured: %d constraints, %d indexes, %d fulltext",
+                index_result.get("constraints_created", 0),
+                index_result.get("indexes_created", 0),
+                index_result.get("fulltext_indexes_created", 0),
             )
-            await neo4j.connect()
-            _state["neo4j"] = neo4j
+        except Exception as _idx_err:
+            logger.warning("Graph index creation failed (non-fatal): %s", _idx_err)
 
-            from src.graph.repository import Neo4jGraphRepository
+        # Initialize graph integrity checker and multi-hop searcher
+        try:
+            from src.graph.integrity import GraphIntegrityChecker
+            from src.graph.multi_hop_searcher import MultiHopSearcher
 
-            _state["graph_repo"] = Neo4jGraphRepository(neo4j)
+            state["graph_integrity"] = GraphIntegrityChecker(
+                neo4j_client=neo4j,
+                graph_repository=state["graph_repo"],
+            )
+            state["multi_hop_searcher"] = MultiHopSearcher(
+                neo4j_client=neo4j,
+                graph_repository=state["graph_repo"],
+            )
+            logger.info("Graph integrity checker and multi-hop searcher initialized")
+        except Exception as _graph_err:
+            logger.warning("Graph advanced services init failed: %s", _graph_err)
 
-            from src.search.graph_expander import GraphSearchExpander
-            _state["graph_expander"] = GraphSearchExpander(graph_repo=_state["graph_repo"])
+        logger.info("Neo4j initialized: %s", settings.neo4j.uri)
+    except Exception as e:
+        logger.warning("Neo4j init failed: %s", e)
 
-            # Ensure graph indexes (idempotent)
-            try:
-                from src.graph.indexer import ensure_indexes
-                index_result = await ensure_indexes(neo4j)
-                logger.info(
-                    "Graph indexes ensured: %d constraints, %d indexes, %d fulltext",
-                    index_result.get("constraints_created", 0),
-                    index_result.get("indexes_created", 0),
-                    index_result.get("fulltext_indexes_created", 0),
-                )
-            except Exception as _idx_err:
-                logger.warning("Graph index creation failed (non-fatal): %s", _idx_err)
 
-            # Initialize graph integrity checker and multi-hop searcher
-            try:
-                from src.graph.integrity import GraphIntegrityChecker
-                from src.graph.multi_hop_searcher import MultiHopSearcher
-
-                _state["graph_integrity"] = GraphIntegrityChecker(
-                    neo4j_client=neo4j,
-                    graph_repository=_state["graph_repo"],
-                )
-                _state["multi_hop_searcher"] = MultiHopSearcher(
-                    neo4j_client=neo4j,
-                    graph_repository=_state["graph_repo"],
-                )
-                logger.info("Graph integrity checker and multi-hop searcher initialized")
-            except Exception as _graph_err:
-                logger.warning("Graph advanced services init failed: %s", _graph_err)
-
-            logger.info("Neo4j initialized: %s", settings.neo4j.uri)
-        except Exception as e:
-            logger.warning("Neo4j init failed: %s", e)
-
-    # Embedding provider: prefer TEI (fastest) > Ollama (GPU) > ONNX (CPU)
+async def _init_embedding(state: AppState, settings) -> None:
+    """Initialize embedding provider: TEI > Ollama > ONNX fallback, wire to cache."""
     embedder = None
 
     # 1st: HuggingFace TEI (dedicated embedding server, fastest)
@@ -425,10 +433,10 @@ async def _init_services():
             logger.warning("ONNX embedding init failed: %s", e)
 
     if embedder:
-        _state["embedder"] = embedder
+        state["embedder"] = embedder
 
         # Wire embedder into MultiLayerCache for L2 semantic matching
-        multi_cache = _state.get("multi_layer_cache")
+        multi_cache = state.get("multi_layer_cache")
         if multi_cache is not None:
             multi_cache._embedding_provider = embedder
             if multi_cache._l2 is not None and hasattr(multi_cache._l2, "_embedding_provider"):
@@ -437,13 +445,15 @@ async def _init_services():
     else:
         logger.error("No embedding provider available. Search will not work.")
 
-    # LLM client — USE_SAGEMAKER_LLM=true switches to SageMaker
+
+async def _init_llm(state: AppState, settings) -> None:
+    """Initialize LLM client (Ollama or SageMaker) + GraphRAG extractor."""
     try:
         use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
         if use_sagemaker:
             from src.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
             llm = SageMakerLLMClient(config=SageMakerConfig())
-            _state["llm"] = llm
+            state["llm"] = llm
             logger.info("SageMaker LLM initialized: %s", SageMakerConfig().endpoint_name)
         else:
             from src.llm.ollama_client import OllamaClient, OllamaConfig
@@ -453,25 +463,28 @@ async def _init_services():
                 context_length=settings.ollama.context_length,
             )
             llm = OllamaClient(config=llm_config)
-            _state["llm"] = llm
+            state["llm"] = llm
             logger.info("Ollama LLM initialized: %s (%s)", settings.ollama.base_url, settings.ollama.model)
     except Exception as e:
         logger.warning("LLM init failed: %s", e)
 
     # GraphRAG extractor
-    if _state.get("llm") and _state.get("neo4j"):
+    if state.get("llm") and state.get("neo4j"):
         try:
             from src.pipeline.graphrag_extractor import GraphRAGExtractor
-            _state["graphrag_extractor"] = GraphRAGExtractor()
+            state["graphrag_extractor"] = GraphRAGExtractor()
             logger.info("GraphRAGExtractor initialized")
         except Exception as e:
             logger.warning("GraphRAGExtractor init failed: %s", e)
 
+
+async def _init_search_services(state: AppState) -> None:
+    """Initialize all search services + RAG pipeline."""
     # QueryPreprocessor
     try:
         from src.search.query_preprocessor import QueryPreprocessor
 
-        _state["query_preprocessor"] = QueryPreprocessor()
+        state["query_preprocessor"] = QueryPreprocessor()
         logger.info("QueryPreprocessor initialized")
     except Exception as e:
         logger.warning("QueryPreprocessor init failed: %s", e)
@@ -480,7 +493,7 @@ async def _init_services():
     try:
         from src.search.composite_reranker import CompositeReranker
 
-        _state["composite_reranker"] = CompositeReranker()
+        state["composite_reranker"] = CompositeReranker()
         logger.info("CompositeReranker initialized")
     except Exception as e:
         logger.warning("CompositeReranker init failed: %s", e)
@@ -497,29 +510,29 @@ async def _init_services():
     try:
         from src.search.query_classifier import QueryClassifier
 
-        _state["query_classifier"] = QueryClassifier()
+        state["query_classifier"] = QueryClassifier()
         logger.info("QueryClassifier initialized")
     except Exception as e:
         logger.warning("QueryClassifier init failed: %s", e)
 
     # TieredResponseGenerator
-    if _state.get("llm"):
+    if state.get("llm"):
         try:
             from src.search.tiered_response import TieredResponseGenerator
 
-            _state["tiered_response_generator"] = TieredResponseGenerator(
-                llm_client=_state["llm"],
+            state["tiered_response_generator"] = TieredResponseGenerator(
+                llm_client=state["llm"],
             )
             logger.info("TieredResponseGenerator initialized")
         except Exception as e:
             logger.warning("TieredResponseGenerator init failed: %s", e)
 
     # AnswerService (singleton - avoid per-request lazy init race)
-    if _state.get("llm"):
+    if state.get("llm"):
         try:
             from src.search.answer_service import AnswerService
 
-            _state["answer_service"] = AnswerService(llm_client=_state["llm"])
+            state["answer_service"] = AnswerService(llm_client=state["llm"])
             logger.info("AnswerService initialized")
         except Exception as e:
             logger.warning("AnswerService init failed: %s", e)
@@ -528,7 +541,7 @@ async def _init_services():
     try:
         from src.search.crag_evaluator import CRAGRetrievalEvaluator
 
-        _state["crag_evaluator"] = CRAGRetrievalEvaluator()
+        state["crag_evaluator"] = CRAGRetrievalEvaluator()
         logger.info("CRAGRetrievalEvaluator initialized")
     except Exception as e:
         logger.warning("CRAGRetrievalEvaluator init failed: %s", e)
@@ -536,7 +549,7 @@ async def _init_services():
     # QueryExpansionService
     try:
         from src.search.query_expansion import QueryExpansionService
-        _state["query_expander"] = QueryExpansionService(glossary_repository=_state.get("glossary_repo"))
+        state["query_expander"] = QueryExpansionService(glossary_repository=state.get("glossary_repo"))
         logger.info("QueryExpansionService initialized")
     except Exception as e:
         logger.warning("QueryExpansionService init failed: %s", e)
@@ -544,20 +557,22 @@ async def _init_services():
     # RAG pipeline
     from src.search.rag_pipeline import KnowledgeRAGPipeline
 
-    _state["rag_pipeline"] = KnowledgeRAGPipeline(
-        search_engine=_state.get("qdrant_search"),
-        llm_client=_state.get("llm"),
-        graph_client=_state.get("neo4j"),
-        embedder=_state.get("embedder"),
-        query_preprocessor=_state.get("query_preprocessor"),
-        query_expander=_state.get("query_expander"),
+    state["rag_pipeline"] = KnowledgeRAGPipeline(
+        search_engine=state.get("qdrant_search"),
+        llm_client=state.get("llm"),
+        graph_client=state.get("neo4j"),
+        embedder=state.get("embedder"),
+        query_preprocessor=state.get("query_preprocessor"),
+        query_expander=state.get("query_expander"),
     )
 
-    missing = [k for k in ["qdrant_search", "embedder", "llm"] if k not in _state]
+    missing = [k for k in ["qdrant_search", "embedder", "llm"] if k not in state]
     if missing:
         logger.warning("RAG pipeline initialized without: %s", missing)
 
-    # Auth provider + RBAC/ABAC engines
+
+async def _init_auth(state: AppState, settings) -> None:
+    """Initialize auth provider + RBAC/ABAC engines."""
     try:
         import json as _json
         from src.auth.providers import create_auth_provider
@@ -586,14 +601,14 @@ async def _init_services():
                 api_keys = {}
             provider_kwargs = {"api_keys": api_keys}
 
-        _state["auth_provider"] = create_auth_provider(auth_settings.provider, **provider_kwargs)
-        _state["rbac_engine"] = RBACEngine()
-        _state["abac_engine"] = ABACEngine(policies=DEFAULT_ABAC_POLICIES)
+        state["auth_provider"] = create_auth_provider(auth_settings.provider, **provider_kwargs)
+        state["rbac_engine"] = RBACEngine()
+        state["abac_engine"] = ABACEngine(policies=DEFAULT_ABAC_POLICIES)
 
         # Auth service (DB operations)
         db_url = settings.database.database_url
         auth_service = AuthService(database_url=db_url)
-        _state["auth_service"] = auth_service
+        state["auth_service"] = auth_service
 
         # Seed default roles & permissions
         try:
@@ -604,6 +619,26 @@ async def _init_services():
         logger.info("Auth initialized: provider=%s, enabled=%s", auth_settings.provider, auth_settings.enabled)
     except Exception as e:
         logger.warning("Auth init failed (running without auth): %s", e)
+
+
+async def _init_services():
+    """Orchestrate all service initialization in dependency order."""
+    from src.config import get_settings
+    settings = get_settings()
+
+    try:
+        await _init_database(_state, settings)
+    except Exception as e:
+        logger.warning("PostgreSQL init failed (repositories will use stubs): %s", e)
+
+    await _init_cache(_state)
+    await _init_dedup(_state)
+    await _init_vectordb(_state, settings)
+    await _init_graph(_state, settings)
+    await _init_embedding(_state, settings)
+    await _init_llm(_state, settings)
+    await _init_search_services(_state)
+    await _init_auth(_state, settings)
 
 
 async def _shutdown_services():

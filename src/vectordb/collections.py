@@ -184,6 +184,7 @@ class QdrantCollectionManager:
         for field_name in (
             "source_uri", "kb_id", "source_type",
             "document_name", "store_name", "author_name",
+            "l1_category", "chunk_type", "doc_type",
         ):
             try:
                 await client.create_payload_index(

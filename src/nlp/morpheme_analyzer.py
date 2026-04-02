@@ -19,7 +19,7 @@ Extracted from: oreo-ecosystem (domain/knowledge/utils/korean_morpheme_analyzer.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -322,7 +322,6 @@ class KoreanMorphemeAnalyzer:
 
     def _strip_particles_regex(self, word: str) -> str:
         """정규식 기반 조사 분리 (폴백)"""
-        import re
 
         # 긴 조사부터 매칭 (라고, 이라고, 에서 등)
         long_particles = [

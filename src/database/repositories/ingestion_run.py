@@ -12,21 +12,15 @@ from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.database.models import IngestionRunModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class IngestionRunRepository:
+class IngestionRunRepository(BaseRepository):
     """PostgreSQL ingestion run repository."""
-
-    def __init__(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
-        self._session_maker = session_maker
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     async def create(self, data: dict[str, Any]) -> None:
         async with await self._get_session() as session:

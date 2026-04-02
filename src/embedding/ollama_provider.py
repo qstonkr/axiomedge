@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["OllamaEmbeddingProvider"]
@@ -38,7 +40,7 @@ class OllamaEmbeddingProvider:
     """
 
     backend = "ollama"
-    DIMENSION = 1024
+    DIMENSION: int = _w.embedding.dimension
 
     def __init__(
         self,
@@ -108,14 +110,13 @@ class OllamaEmbeddingProvider:
         # Synthesize sparse vectors (TF-based, same approach as ONNX provider)
         sparse_vecs = []
         if return_sparse:
-            import hashlib as _hl
+            from src.embedding.embedding_guard import sparse_token_hash
             for text in texts:
                 tokens = text.split()
                 sparse: dict[int, float] = {}
                 for token in tokens:
-                    h = int(_hl.md5(token.encode()).hexdigest(), 16) % 100000
-                    if h > 0:
-                        sparse[h] = sparse.get(h, 0.0) + 1.0
+                    h = sparse_token_hash(token)
+                    sparse[h] = sparse.get(h, 0.0) + 1.0
                 if sparse:
                     max_w = max(sparse.values())
                     sparse = {k: v / max_w for k, v in sparse.items()}

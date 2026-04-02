@@ -56,7 +56,7 @@ class OnnxBgeEmbeddingProvider:
     """
 
     backend = "onnx"
-    DIMENSION = 1024
+    DIMENSION: int = weights.embedding.dimension
 
     def __init__(
         self,
@@ -411,6 +411,10 @@ class OnnxBgeEmbeddingProvider:
             return [[] for _ in range(len(attention_mask))]
 
         return results
+
+    def close(self) -> None:
+        """Release ONNX session resources."""
+        self._session = None
 
     @staticmethod
     def _mean_pool_numpy(token_embeddings: Any, attention_mask: Any) -> Any:

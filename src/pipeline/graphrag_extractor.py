@@ -245,6 +245,7 @@ class ExtractionResult:
     source_document: str | None = None
     source_page_id: str | None = None
     source_updated_at: str | None = None  # ISO 형식 (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+    kb_id: str | None = None
     raw_response: str | None = None
 
     @property
@@ -400,7 +401,8 @@ class GraphRAGExtractor:
         neo4j_driver: Any | None = None,
     ) -> None:
         self.ollama_base_url = ollama_base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.ollama_model = ollama_model or os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
+        from src.config import DEFAULT_LLM_MODEL
+        self.ollama_model = ollama_model or os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
         self.neo4j_uri = neo4j_uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.neo4j_user = neo4j_user or os.getenv("NEO4J_USER", "neo4j")
         self.neo4j_password = neo4j_password or os.getenv("NEO4J_PASSWORD", "password")
@@ -486,6 +488,7 @@ class GraphRAGExtractor:
         result.source_document = source_title
         result.source_page_id = source_page_id
         result.source_updated_at = source_updated_at
+        result.kb_id = kb_id
         result.raw_response = raw_content
 
         logger.info(f"추출 완료: {result.node_count} nodes, {result.relationship_count} relationships")
@@ -606,14 +609,25 @@ class GraphRAGExtractor:
             "relationships_skipped": 0,
         }
 
+        # 관계에서 참조하는 노드 id 집합 — 관계 없는 노드는 저장 skip
+        referenced_ids = set()
+        for rel in result.relationships:
+            referenced_ids.add(rel.source)
+            referenced_ids.add(rel.target)
+
         with driver.session() as session:
             # 노드 생성/업데이트 (batched by type for efficiency)
             nodes_by_type: dict[str, list[dict]] = {}
+            skipped_orphan = 0
             for node in result.nodes:
                 if not _is_safe_cypher_label(node.type):
                     logger.error(f"안전하지 않은 노드 타입 스킵: {node.type}")
                     continue
-                properties = {"id": node.id}
+                # 관계에서 참조되지 않는 노드는 저장하지 않음 (고아노드 방지)
+                if node.id not in referenced_ids:
+                    skipped_orphan += 1
+                    continue
+                properties = {"id": node.id, "name": node.id}
                 # Flatten node properties — Neo4j rejects Map/List values
                 for k, v in node.properties.items():
                     if isinstance(v, (dict, list)):
@@ -624,7 +638,11 @@ class GraphRAGExtractor:
                     properties["source_page_id"] = result.source_page_id
                 if result.source_document:
                     properties["source_document"] = result.source_document
+                if result.kb_id:
+                    properties["kb_id"] = result.kb_id
                 nodes_by_type.setdefault(node.type, []).append(properties)
+            if skipped_orphan:
+                logger.info(f"고아노드 방지: 관계 없는 노드 {skipped_orphan}개 skip")
 
             for node_type, node_params in nodes_by_type.items():
                 try:
@@ -650,6 +668,9 @@ class GraphRAGExtractor:
                 except Exception as e:
                     logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
 
+            # 노드 id → type 매핑 (관계 MATCH에서 타입 레이블 사용)
+            node_type_map: dict[str, str] = {n.id: n.type for n in result.nodes}
+
             # 관계 생성 (이력 보존 + 최신성 기반)
             # Simple relationships (non-history) are batched; history-aware ones use individual queries
             for rel in result.relationships:
@@ -660,7 +681,8 @@ class GraphRAGExtractor:
                         continue
 
                     rel_stats = self._save_relationship_with_history(
-                        session, rel, result, source_updated, now
+                        session, rel, result, source_updated, now,
+                        node_type_map=node_type_map,
                     )
                     stats["relationships_created"] += rel_stats.get("created", 0)
                     stats["relationships_updated"] += rel_stats.get("updated", 0)
@@ -679,6 +701,7 @@ class GraphRAGExtractor:
         result: ExtractionResult,
         source_updated: str,
         now: str,
+        node_type_map: dict[str, str] | None = None,
     ) -> dict[str, int]:
         """관계 저장 (이력 보존 + 최신성 기반 업데이트)
 
@@ -692,16 +715,30 @@ class GraphRAGExtractor:
         """
         stats = {"created": 0, "updated": 0, "archived": 0, "skipped": 0}
 
+        # 노드 타입 레이블 (있으면 MATCH 정확도 향상, 없으면 fallback)
+        src_label = ""
+        tgt_label = ""
+        if node_type_map:
+            src_type = node_type_map.get(rel.source)
+            tgt_type = node_type_map.get(rel.target)
+            if src_type and _is_safe_cypher_label(src_type):
+                src_label = f":{src_type}"
+            if tgt_type and _is_safe_cypher_label(tgt_type):
+                tgt_label = f":{tgt_type}"
+
         # 1. 동일 source + type의 기존 관계 조회
         check_query = f"""
-            MATCH (a {{id: $source}})-[r:{rel.type}]->(b)
+            MATCH (a{src_label} {{id: $source}})-[r:{rel.type}]->(b)
             RETURN b.id AS target, r.updated_at AS updated_at, r.source_page_id AS source_page_id
         """
         existing = list(session.run(check_query, source=rel.source))
 
         if not existing:
             # 기존 관계 없음 -> 새로 생성
-            self._create_relationship(session, rel, result, source_updated, now)
+            self._create_relationship(
+                session, rel, result, source_updated, now,
+                src_label=src_label, tgt_label=tgt_label,
+            )
             stats["created"] += 1
         else:
             # 기존 관계 있음
@@ -713,7 +750,7 @@ class GraphRAGExtractor:
                 if existing_target == rel.target:
                     # 동일 target -> 타임스탬프만 업데이트
                     update_query = f"""
-                        MATCH (a {{id: $source}})-[r:{rel.type}]->(b {{id: $target}})
+                        MATCH (a{src_label} {{id: $source}})-[r:{rel.type}]->(b{tgt_label} {{id: $target}})
                         SET r.updated_at = $now,
                             r.source_page_id = $source_page_id,
                             r.source_document = $source_document
@@ -735,7 +772,10 @@ class GraphRAGExtractor:
                         self._archive_relationship(session, rel.source, rel.type, existing_target, now)
                         stats["archived"] += 1
                         if not new_rel_created:
-                            self._create_relationship(session, rel, result, source_updated, now)
+                            self._create_relationship(
+                                session, rel, result, source_updated, now,
+                                src_label=src_label, tgt_label=tgt_label,
+                            )
                             stats["created"] += 1
                             new_rel_created = True
                     else:
@@ -755,11 +795,13 @@ class GraphRAGExtractor:
         result: ExtractionResult,
         source_updated: str,
         now: str,
+        src_label: str = "",
+        tgt_label: str = "",
     ) -> None:
         """새 관계 생성"""
         query = f"""
-            MATCH (a {{id: $source}})
-            MATCH (b {{id: $target}})
+            MATCH (a{src_label} {{id: $source}})
+            MATCH (b{tgt_label} {{id: $target}})
             CREATE (a)-[r:{rel.type}]->(b)
             SET r.created_at = $now,
                 r.updated_at = $now,

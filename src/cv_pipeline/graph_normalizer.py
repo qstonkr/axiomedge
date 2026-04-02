@@ -271,7 +271,8 @@ class GraphNormalizer:
         import httpx
 
         base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip()
-        model = os.getenv("KNOWLEDGE_VISION_MODEL", "exaone3.5:7.8b")
+        from src.config import DEFAULT_LLM_MODEL
+        model = os.getenv("KNOWLEDGE_VISION_MODEL", DEFAULT_LLM_MODEL)
 
         async with httpx.AsyncClient(timeout=_w.llm.graph_normalizer_timeout) as client:
             resp = await client.post(

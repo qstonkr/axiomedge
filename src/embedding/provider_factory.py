@@ -13,6 +13,10 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.embedding.types import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,7 @@ logger = logging.getLogger(__name__)
 def create_embedding_provider(
     provider_type: str | None = None,
     **kwargs,
-):
+) -> EmbeddingProvider:
     """Create an embedding provider by type.
 
     Args:
@@ -48,7 +52,7 @@ def create_embedding_provider(
         raise ValueError(f"Unknown embedding provider type: {provider_type}")
 
 
-def _auto_detect(**kwargs):
+def _auto_detect(**kwargs) -> EmbeddingProvider:
     """Auto-detect best available provider: TEI > Ollama > ONNX."""
     # 1. TEI
     tei_url = kwargs.get("tei_url") or os.getenv("BGE_TEI_URL")
@@ -88,7 +92,7 @@ def _auto_detect(**kwargs):
     )
 
 
-def _create_tei(**kwargs):
+def _create_tei(**kwargs) -> EmbeddingProvider:
     from src.embedding.tei_provider import TEIEmbeddingProvider
 
     base_url = kwargs.get("base_url") or os.getenv("BGE_TEI_URL", "http://localhost:8080")
@@ -96,16 +100,17 @@ def _create_tei(**kwargs):
     return TEIEmbeddingProvider(base_url=base_url, timeout=timeout)
 
 
-def _create_ollama(**kwargs):
+def _create_ollama(**kwargs) -> EmbeddingProvider:
     from src.embedding.ollama_provider import OllamaEmbeddingProvider
 
     base_url = kwargs.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = kwargs.get("model", "bge-m3:latest")
+    from src.config import DEFAULT_EMBEDDING_MODEL
+    model = kwargs.get("model", DEFAULT_EMBEDDING_MODEL)
     timeout = kwargs.get("timeout", 60.0)
     return OllamaEmbeddingProvider(base_url=base_url, model=model, timeout=timeout)
 
 
-def _create_onnx(**kwargs):
+def _create_onnx(**kwargs) -> EmbeddingProvider:
     from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
     model_path = kwargs.get("model_path") or os.getenv("KNOWLEDGE_BGE_ONNX_MODEL_PATH", "")

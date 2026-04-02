@@ -16,6 +16,8 @@ from typing import Any
 
 import httpx
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["TEIEmbeddingProvider"]
@@ -32,7 +34,7 @@ class TEIEmbeddingProvider:
     """
 
     backend = "tei"
-    DIMENSION = 1024
+    DIMENSION: int = _w.embedding.dimension
 
     def __init__(self, base_url: str | None = None, timeout: float = 60.0):
         self._base_url = (
@@ -79,14 +81,13 @@ class TEIEmbeddingProvider:
         # Synthesize TF-based sparse (same as ONNX/Ollama providers)
         sparse_vecs = []
         if return_sparse:
+            from src.embedding.embedding_guard import sparse_token_hash
             for text in texts:
                 tokens = text.split()
                 sparse: dict[int, float] = {}
                 for token in tokens:
-                    h = hash(token) % 100000
-                    # Intentionally exclude 0: sparse indices must be > 0 for Qdrant
-                    if h > 0:
-                        sparse[h] = sparse.get(h, 0.0) + 1.0
+                    h = sparse_token_hash(token)
+                    sparse[h] = sparse.get(h, 0.0) + 1.0
                 if sparse:
                     max_w = max(sparse.values())
                     sparse = {k: v / max_w for k, v in sparse.items()}

@@ -1,5 +1,5 @@
 from .query_classifier import QueryClassifier, QueryType, ClassificationResult
-from .rag_pipeline import KnowledgeRAGPipeline, RAGRequest, RAGResponse
+from .rag_pipeline import KnowledgeRAGPipeline, QueryIntent, RAGRequest, RAGResponse
 from .answer_service import AnswerService, AnswerResult
 from .query_preprocessor import (
     QueryPreprocessor,
@@ -62,6 +62,7 @@ __all__ = [
     "QueryType",
     "ClassificationResult",
     "KnowledgeRAGPipeline",
+    "QueryIntent",
     "RAGRequest",
     "RAGResponse",
     "AnswerService",

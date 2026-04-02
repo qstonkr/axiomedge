@@ -12,9 +12,9 @@ from typing import Any
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.database.models import DataSourceModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +32,8 @@ def _safe_json_loads(text: str | None, default: Any = None) -> Any:
         return default if default is not None else {}
 
 
-class DataSourceRepository:
+class DataSourceRepository(BaseRepository):
     """Async PostgreSQL repository for data source registry."""
-
-    def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     async def register(self, data: dict[str, Any]) -> dict[str, Any]:
         async with await self._get_session() as session:

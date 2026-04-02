@@ -213,12 +213,11 @@ class DedupPipeline:
     - Content conflict: REVIEW (owner notification)
     """
 
-    # SSOT: Similarity thresholds
-    NEAR_DUPLICATE_THRESHOLD = 0.80  # Jaccard
-    SEMANTIC_DUPLICATE_THRESHOLD = 0.90  # Cosine
-    # Stage 2 -> Stage 3 skip threshold
-    # Jaccard < 0.85 -> low probability of semantic duplicate -> skip Stage 3 (50ms savings)
-    STAGE3_SKIP_THRESHOLD = 0.85  # Jaccard
+    # Thresholds — SSOT: config_weights.DedupConfig
+    # Class-level defaults kept as import-free fallback only; runtime uses config_weights.
+    _FALLBACK_NEAR = 0.80
+    _FALLBACK_SEMANTIC = 0.90
+    _FALLBACK_SKIP = 0.85
 
     def __init__(
         self,
@@ -247,20 +246,20 @@ class DedupPipeline:
             semantic_duplicate_threshold: Cosine threshold override
             stage3_skip_threshold: Stage 3 skip Jaccard threshold override
         """
-        # Thresholds: constructor > config_weights > class default
+        # Thresholds: constructor > config_weights > class fallback
         try:
             from src.config_weights import weights
-            dedup_cfg = getattr(weights, "dedup", None)
-            if dedup_cfg:
-                self._near_threshold = near_duplicate_threshold if near_duplicate_threshold is not None else getattr(dedup_cfg, "near_duplicate_threshold", self.NEAR_DUPLICATE_THRESHOLD)
-                self._semantic_threshold = semantic_duplicate_threshold if semantic_duplicate_threshold is not None else getattr(dedup_cfg, "semantic_duplicate_threshold", self.SEMANTIC_DUPLICATE_THRESHOLD)
-                self._skip_threshold = stage3_skip_threshold if stage3_skip_threshold is not None else getattr(dedup_cfg, "stage3_skip_threshold", self.STAGE3_SKIP_THRESHOLD)
-            else:
-                raise AttributeError("no dedup config")
+            dedup_cfg = weights.dedup
+            _cfg_near = dedup_cfg.near_duplicate_threshold
+            _cfg_semantic = dedup_cfg.semantic_duplicate_threshold
+            _cfg_skip = dedup_cfg.stage3_skip_threshold
         except (ImportError, AttributeError):
-            self._near_threshold = near_duplicate_threshold if near_duplicate_threshold is not None else self.NEAR_DUPLICATE_THRESHOLD
-            self._semantic_threshold = semantic_duplicate_threshold if semantic_duplicate_threshold is not None else self.SEMANTIC_DUPLICATE_THRESHOLD
-            self._skip_threshold = stage3_skip_threshold if stage3_skip_threshold is not None else self.STAGE3_SKIP_THRESHOLD
+            _cfg_near = self._FALLBACK_NEAR
+            _cfg_semantic = self._FALLBACK_SEMANTIC
+            _cfg_skip = self._FALLBACK_SKIP
+        self._near_threshold = near_duplicate_threshold if near_duplicate_threshold is not None else _cfg_near
+        self._semantic_threshold = semantic_duplicate_threshold if semantic_duplicate_threshold is not None else _cfg_semantic
+        self._skip_threshold = stage3_skip_threshold if stage3_skip_threshold is not None else _cfg_skip
 
         self._bloom = bloom_filter or BloomFilter()
         self._lsh = lsh_bloom or LSHBloom()

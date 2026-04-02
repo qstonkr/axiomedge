@@ -6,10 +6,12 @@ Generates answers based on query type with citations and transparency.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from src.config_weights import weights as _w
 from .query_classifier import QueryClassifier, QueryType
+from .tiered_response import TieredResponseGenerator as _TRG
 
 logger = logging.getLogger(__name__)
 
@@ -45,47 +47,10 @@ class AnswerResult:
     citation_entries: list[dict[str, Any]] | None = None
 
 
-# Prompt templates for tiered response
-FACTUAL_PROMPT = """당신은 사내 지식 검색 어시스턴트입니다.
-다음 질문에 대해 제공된 문서를 기반으로 답변하세요.
-
-질문: {query}
-
-참고 문서:
-{context}
-
-핵심 원칙:
-- 수치 충실도: 문서의 수치는 반드시 그대로 인용하세요
-- 약어/고유명사: 문서에 정의되지 않은 약어의 뜻을 추측하지 마세요
-- 문서에 없는 수치, 비율, 금액, 날짜를 절대 생성하지 마세요
-- 각 사실에 출처 번호 [1], [2] 등으로 표시하세요
-- 문서에 없는 내용을 지어내지 마세요
-"""
-
-ANALYTICAL_PROMPT = """다음 질문에 대해 제공된 문서를 분석하여 답변하세요.
-
-질문: {query}
-
-참고 문서:
-{context}
-
-답변 형식:
-- [문서 기반] 태그로 문서에서 직접 인용한 내용 표시
-- [분석] 태그로 추론한 내용 표시
-- 각 내용에 출처 번호 표시
-"""
-
-ADVISORY_PROMPT = """다음 질문에 대해 조언을 제공하세요.
-
-질문: {query}
-
-참고 문서:
-{context}
-
-답변 형식:
-- [문서 기반] 문서 참고 내용
-- [권장 사항] 일반적인 조언
-"""
+# Prompt templates — SSOT: tiered_response.TieredResponseGenerator
+FACTUAL_PROMPT = _TRG.FACTUAL_PROMPT
+ANALYTICAL_PROMPT = _TRG.ANALYTICAL_PROMPT
+ADVISORY_PROMPT = _TRG.ADVISORY_PROMPT
 
 
 class AnswerService:
@@ -151,7 +116,10 @@ class AnswerService:
             QueryType.ADVISORY: ADVISORY_PROMPT,
         }
         prompt_template = prompt_map.get(resolved_type, FACTUAL_PROMPT)
-        prompt = prompt_template.format(query=query, context=context)
+        prompt = prompt_template.format(
+            query=query, context=context,
+            glossary_section="", graph_facts_section="",
+        )
 
         # Generate answer
         if self._llm:
@@ -163,11 +131,11 @@ class AnswerService:
         else:
             answer = f"관련 문서 {len(chunks)}건이 검색되었습니다.\n\n" + context
 
-        # Determine confidence
+        # Determine confidence — SSOT: config_weights.ConfidenceConfig
         top_score = max((c.get("score", 0) for c in chunks), default=0)
-        if top_score >= 0.85:
+        if top_score >= _w.confidence.high:
             confidence = "높음"
-        elif top_score >= 0.7:
+        elif top_score >= _w.confidence.medium:
             confidence = "보통"
         else:
             confidence = "낮음"

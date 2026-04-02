@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -541,7 +540,12 @@ class EnhancedSimilarityMatcher:
                 _w.similarity.rrf_dense_weight,
             ]  # edit, sparse, dense
         else:
-            channel_weights = [0.50, 0.50]  # edit, sparse only
+            # Normalize edit+sparse weights to sum=1.0 when dense unavailable
+            _sum = _w.similarity.rrf_edit_weight + _w.similarity.rrf_sparse_weight
+            channel_weights = [
+                _w.similarity.rrf_edit_weight / _sum if _sum > 0 else 0.5,
+                _w.similarity.rrf_sparse_weight / _sum if _sum > 0 else 0.5,
+            ]
 
         channels = [edit_results, sparse_results]
         if has_dense:
@@ -765,10 +769,10 @@ class EnhancedSimilarityMatcher:
         )
         max_channel_score = max(ch_scores.values()) if ch_scores else 0.0
 
-        # Cross-Encoder 없이는 보수적 판정
-        if max_channel_score >= 0.9:
+        # Cross-Encoder 없이는 보수적 판정 — SSOT: config_weights.SimilarityThresholds
+        if max_channel_score >= _w.similarity.fallback_auto_match:
             zone = "AUTO_MATCH"
-        elif max_channel_score >= 0.6:
+        elif max_channel_score >= _w.similarity.fallback_review:
             zone = "REVIEW"
         else:
             zone = "NEW_TERM"

@@ -21,12 +21,14 @@ from src.config_weights import weights
 logger = logging.getLogger(__name__)
 
 
-class QueryType(StrEnum):
+class QueryIntent(StrEnum):
+    """Domain intent classification (distinct from query_classifier.QueryType)."""
     OWNER_QUERY = "owner_query"
     PROCEDURE = "procedure"
     TROUBLESHOOT = "troubleshoot"
     CONCEPT = "concept"
     GENERAL = "general"
+
 
 
 @dataclass
@@ -44,7 +46,7 @@ class RAGResponse:
     query: str
     answer: str
     sources: list[dict] = field(default_factory=list)
-    query_type: QueryType = QueryType.GENERAL
+    query_type: QueryIntent = QueryIntent.GENERAL
     confidence: float = 0.0
     metadata: dict = field(default_factory=dict)
 
@@ -119,7 +121,7 @@ class KnowledgeRAGPipeline:
         query_type = self._classify_query(preprocessed_query)
 
         # Owner queries: graph DB direct (no hallucination)
-        if query_type == QueryType.OWNER_QUERY and self._graph:
+        if query_type == QueryIntent.OWNER_QUERY and self._graph:
             return await self._handle_owner_query(request, preprocessed_query)
 
         # Vector search
@@ -234,7 +236,7 @@ class KnowledgeRAGPipeline:
 
         query_type = self._classify_query(preprocessed_query)
 
-        if query_type == QueryType.OWNER_QUERY and self._graph:
+        if query_type == QueryIntent.OWNER_QUERY and self._graph:
             response = await self._handle_owner_query(request, preprocessed_query)
             yield response.answer
             return
@@ -296,18 +298,18 @@ class KnowledgeRAGPipeline:
             response = await self.process(request)
             yield response.answer
 
-    def _classify_query(self, query: str) -> QueryType:
+    def _classify_query(self, query: str) -> QueryIntent:
         query_lower = query.lower()
         for pattern in self.OWNER_PATTERNS:
             if pattern in query_lower:
-                return QueryType.OWNER_QUERY
+                return QueryIntent.OWNER_QUERY
         if any(k in query_lower for k in ["절차", "방법", "순서", "가이드", "매뉴얼"]):
-            return QueryType.PROCEDURE
+            return QueryIntent.PROCEDURE
         if any(k in query_lower for k in ["에러", "오류", "문제", "안됨", "실패"]):
-            return QueryType.TROUBLESHOOT
+            return QueryIntent.TROUBLESHOOT
         if any(k in query_lower for k in ["뭐", "무엇", "개념", "정의", "설명"]):
-            return QueryType.CONCEPT
-        return QueryType.GENERAL
+            return QueryIntent.CONCEPT
+        return QueryIntent.GENERAL
 
     async def _handle_owner_query(self, request: RAGRequest, query: str) -> RAGResponse:
         """Handle owner queries via graph DB (hallucination-free)."""
@@ -337,7 +339,7 @@ class KnowledgeRAGPipeline:
         return RAGResponse(
             query=request.query,
             answer=answer,
-            query_type=QueryType.OWNER_QUERY,
+            query_type=QueryIntent.OWNER_QUERY,
             confidence=1.0 if "담당자 정보:" in answer else 0.0,
         )
 
@@ -347,10 +349,11 @@ class KnowledgeRAGPipeline:
             return 0.0
         scores = [r.get("score", 0) for r in results]
         top = max(scores) if scores else 0
-        if top >= 0.85:
+        # SSOT: config_weights.ConfidenceConfig
+        if top >= weights.confidence.high:
             return 0.9
-        elif top >= 0.7:
+        elif top >= weights.confidence.medium:
             return 0.7
-        elif top >= 0.5:
+        elif top >= weights.confidence.low:
             return 0.5
         return 0.3

@@ -16,10 +16,8 @@ Simplified from oreo-ecosystem L2 (no GPTCache dependency).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import time
 from typing import Any
 
 import redis.asyncio as aioredis

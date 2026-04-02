@@ -44,7 +44,7 @@ async def graph_search(body: dict[str, Any]):
     state = _get_state()
     graph = state.get("graph_repo")
     query = body.get("query", "")
-    max_hops = body.get("max_hops", 2)
+    _max_hops = body.get("max_hops", 2)  # TODO: pass to graph query when multi-hop is implemented
     max_nodes = body.get("max_nodes", 50)
 
     if not graph:

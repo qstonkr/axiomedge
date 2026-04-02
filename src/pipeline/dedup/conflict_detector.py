@@ -176,10 +176,12 @@ class OllamaLLMClient(ILLMClient):
     def __init__(
         self,
         base_url: str = "http://localhost:11434",
-        model: str = "exaone3.5:7.8b",
+        model: str | None = None,
     ):
+        import os as _os
+        from src.config import DEFAULT_LLM_MODEL
         self._base_url = base_url.rstrip("/")
-        self._model = model
+        self._model = model or _os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
 
     async def complete(
         self, prompt: str, model: str = "", temperature: float = 0.0
@@ -221,7 +223,7 @@ class ConflictDetector:
     - Processing time: ~100ms
     """
 
-    DEFAULT_MODEL = "exaone3.5:7.8b"
+    DEFAULT_MODEL = None  # Resolved at runtime from src.config.DEFAULT_LLM_MODEL
     LLM_TIMEOUT_SECONDS = 60
 
     ANALYSIS_PROMPT = """You are an expert document analyst. Analyze two documents for potential content conflicts.
@@ -272,8 +274,9 @@ Focus on information that could cause confusion or errors if both documents are 
             model: Analysis model (default: exaone3.5:7.8b)
             max_content_length: Max content length (token savings)
         """
+        from src.config import DEFAULT_LLM_MODEL
         self._llm_client = llm_client or NoOpLLMClient()
-        self._model = model or self.DEFAULT_MODEL
+        self._model = model or DEFAULT_LLM_MODEL
         self._max_content_length = max_content_length
 
     async def analyze(

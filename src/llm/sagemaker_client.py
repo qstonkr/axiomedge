@@ -17,27 +17,15 @@ import asyncio
 import json
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 from src.config_weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
+from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 
 logger = logging.getLogger(__name__)
-
-# Reuse token estimation patterns from ollama_client
-_LATIN_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
-_CJK_TOKEN_RE = re.compile(r"[\uAC00-\uD7A3]")
-_PUNCT_TOKEN_RE = re.compile(r"[^\sA-Za-z0-9\uAC00-\uD7A3]")
-
-
-def _sanitize_text(text: str, max_length: int = weights.llm.max_query_length) -> str:
-    if not text:
-        return ""
-    sanitized = text.strip()
-    return sanitized[:max_length] if len(sanitized) > max_length else sanitized
 
 
 @dataclass
@@ -116,16 +104,7 @@ class SageMakerLLMClient:
 
     @staticmethod
     def _estimate_token_count(value: str) -> int:
-        if not value:
-            return 0
-        normalized = value.strip()
-        if not normalized:
-            return 0
-        latin = len(_LATIN_TOKEN_RE.findall(normalized))
-        cjk = len(_CJK_TOKEN_RE.findall(normalized))
-        punct = len(_PUNCT_TOKEN_RE.findall(normalized))
-        estimated = latin + cjk + punct
-        return max(1, estimated) if estimated else max(1, len(normalized) // 4)
+        return _estimate_token_count_fn(value)
 
     # ── OllamaClient-compatible interface ──
 

@@ -24,11 +24,9 @@ from .cache_types import (
     CacheDomain,
     CacheEntry,
     CacheMetrics,
-    DOMAIN_THRESHOLDS,
     ICacheLayer,
 )
 from .l1_memory_cache import L1InMemoryCache
-from .l2_semantic_cache import L2SemanticCache
 
 logger = logging.getLogger(__name__)
 

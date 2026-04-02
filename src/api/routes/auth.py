@@ -32,7 +32,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.auth.dependencies import get_current_user, require_role, require_permission
+from src.auth.dependencies import get_current_user, require_permission
 from src.auth.providers import AuthUser
 
 logger = logging.getLogger(__name__)
@@ -340,7 +340,6 @@ async def get_my_activities(
 
     # Filter by date range if provided
     if date_from or date_to:
-        from datetime import datetime
 
         filtered = []
         for act in activities:
@@ -488,7 +487,7 @@ async def delete_abac_policy(
     """Delete an ABAC policy."""
     from src.auth.models import ABACPolicyModel
     from src.api.app import _get_state
-    from sqlalchemy import select, delete
+    from sqlalchemy import delete
 
     auth_service = _get_state().get("auth_service")
     if not auth_service:
@@ -530,12 +529,12 @@ async def get_system_auth_stats(
     async with auth_service._session() as session:
         total_users = (await session.execute(select(func.count(UserModel.id)))).scalar() or 0
         active_users = (await session.execute(
-            select(func.count(UserModel.id)).where(UserModel.is_active == True)
+            select(func.count(UserModel.id)).where(UserModel.is_active.is_(True))
         )).scalar() or 0
         total_role_assignments = (await session.execute(select(func.count(UserRoleModel.id)))).scalar() or 0
         total_kb_permissions = (await session.execute(select(func.count(KBUserPermissionModel.id)))).scalar() or 0
         active_policies = (await session.execute(
-            select(func.count(ABACPolicyModel.id)).where(ABACPolicyModel.is_active == True)
+            select(func.count(ABACPolicyModel.id)).where(ABACPolicyModel.is_active.is_(True))
         )).scalar() or 0
 
         # Activity stats

@@ -11,20 +11,17 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.database.models import UsageLogModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class UsageLogRepository:
+class UsageLogRepository(BaseRepository):
     """PostgreSQL usage log repository."""
-
-    def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
 
     async def log_search(
         self,

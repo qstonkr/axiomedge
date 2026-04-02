@@ -26,7 +26,6 @@ Gates implemented (simplified for local):
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 import time

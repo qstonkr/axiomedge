@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,8 +46,6 @@ class ParseResult:
             parts.append(f"\n[Table]\n{_table_to_markdown(table)}")
         return "\n".join(p for p in parts if p.strip())
 
-
-from src.config_weights import weights as _w
 
 MAX_FILE_SIZE = _w.pipeline.max_file_size_mb * 1024 * 1024  # default 200MB
 

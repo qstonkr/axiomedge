@@ -19,7 +19,6 @@ Extracted from oreo-ecosystem crag_retrieval_evaluator.py.
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -28,7 +27,6 @@ from typing import Any
 
 from .confidence_thresholds import (
     KnowledgeConfidenceThresholds,
-    clamp_unit_interval,
     read_env_unit_interval,
 )
 

@@ -22,11 +22,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
+_kts = _w.trust_score
 
 # ---------------------------------------------------------------------------
-# Constants (SSOT from oreo-ecosystem entity)
+# Constants
 # ---------------------------------------------------------------------------
 
 # Source credibility mapping
@@ -48,20 +51,15 @@ FRESHNESS_HALF_LIFE: dict[str, int] = {
     "general": 180,
 }
 
-# KTS weight constants
+# KTS weight constants — SSOT: config_weights.TrustScoreWeights
 KTS_WEIGHTS = {
-    "source_credibility": 0.20,
-    "freshness": 0.20,
-    "user_validation": 0.25,
-    "usage": 0.10,
-    "hallucination": 0.15,
-    "consistency": 0.10,
+    "source_credibility": _kts.source_credibility_weight,
+    "freshness": _kts.freshness_weight,
+    "user_validation": _kts.user_validation_weight,
+    "usage": _kts.usage_weight,
+    "hallucination": _kts.hallucination_weight,
+    "consistency": _kts.consistency_weight,
 }
-
-# Confidence tier boundaries
-_TIER_HIGH = 85
-_TIER_MEDIUM = 70
-_TIER_LOW = 50
 
 
 def _utc_now() -> datetime:
@@ -69,11 +67,11 @@ def _utc_now() -> datetime:
 
 
 def _tier_from_score(score: float) -> str:
-    if score >= _TIER_HIGH:
+    if score >= _kts.tier_high:
         return "high"
-    if score >= _TIER_MEDIUM:
+    if score >= _kts.tier_medium:
         return "medium"
-    if score >= _TIER_LOW:
+    if score >= _kts.tier_low:
         return "low"
     return "uncertain"
 

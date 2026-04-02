@@ -11,21 +11,16 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import DocumentLifecycleModel, LifecycleTransitionModel
+from src.database.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class DocumentLifecycleRepository:
+class DocumentLifecycleRepository(BaseRepository):
     """PostgreSQL document lifecycle repository."""
-
-    def __init__(self, session_maker: async_sessionmaker) -> None:
-        self._session_maker = session_maker
-
-    async def _get_session(self) -> AsyncSession:
-        return self._session_maker()
 
     async def save(self, data: dict[str, Any]) -> None:
         transitions = data.pop("transitions", [])
@@ -66,7 +61,7 @@ class DocumentLifecycleRepository:
                         session.add(t_model)
 
                 await session.commit()
-            except SQLAlchemyError as e:
+            except SQLAlchemyError:
                 await session.rollback()
                 raise
 

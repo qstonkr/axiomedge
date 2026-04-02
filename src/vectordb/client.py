@@ -84,7 +84,7 @@ class QdrantConfig:
     api_key: str | None = None
     grpc_port: int = 6334
     prefer_grpc: bool = True
-    dense_dimension: int = 1024
+    dense_dimension: int = _w.embedding.dimension
     dense_vector_name: str = DEFAULT_DENSE_VECTOR_NAME
     sparse_vector_name: str = DEFAULT_SPARSE_VECTOR_NAME
     collection_prefix: str = "kb"
@@ -118,7 +118,7 @@ class QdrantConfig:
             api_key=os.getenv("QDRANT_API_KEY"),
             grpc_port=int(os.getenv("QDRANT_GRPC_PORT", "6334")),
             prefer_grpc=os.getenv("QDRANT_PREFER_GRPC", "true").lower() == "true",
-            dense_dimension=int(os.getenv("QDRANT_DENSE_DIMENSION", "1024")),
+            dense_dimension=int(os.getenv("QDRANT_DENSE_DIMENSION", str(_w.embedding.dimension))),
             dense_vector_name=os.getenv("QDRANT_DENSE_VECTOR_NAME", DEFAULT_DENSE_VECTOR_NAME),
             sparse_vector_name=os.getenv("QDRANT_SPARSE_VECTOR_NAME", DEFAULT_SPARSE_VECTOR_NAME),
             collection_prefix=os.getenv("QDRANT_COLLECTION_PREFIX", "kb"),

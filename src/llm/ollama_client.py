@@ -18,32 +18,18 @@ import asyncio
 import json
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
 import httpx
 
+from src.config import DEFAULT_LLM_MODEL
 from src.config_weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
+from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 
 logger = logging.getLogger(__name__)
-
-# Pre-compiled regex patterns for token estimation
-_LATIN_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
-_CJK_TOKEN_RE = re.compile(r"[\uAC00-\uD7A3]")
-_PUNCT_TOKEN_RE = re.compile(r"[^\sA-Za-z0-9\uAC00-\uD7A3]")
-
-
-def _sanitize_text(text: str, max_length: int = weights.llm.max_query_length) -> str:
-    """Simple input sanitization with length truncation."""
-    if not text:
-        return ""
-    sanitized = text.strip()
-    if len(sanitized) > max_length:
-        sanitized = sanitized[:max_length]
-    return sanitized
 
 
 @dataclass
@@ -57,7 +43,7 @@ class OllamaConfig:
         default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     )
     model: str = field(
-        default_factory=lambda: os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
+        default_factory=lambda: os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
     )
     timeout: float = field(default_factory=lambda: weights.timeouts.ollama_llm)
     max_tokens: int = field(default_factory=lambda: weights.llm.max_tokens)
@@ -101,22 +87,7 @@ class OllamaClient:
 
     @staticmethod
     def _estimate_token_count(value: str) -> int:
-        """Rudimentary token counter to avoid dependency on tokenizer libraries."""
-        if not value:
-            return 0
-        normalized = value.strip()
-        if not normalized:
-            return 0
-
-        latin_tokens = len(_LATIN_TOKEN_RE.findall(normalized))
-        cjk_tokens = len(_CJK_TOKEN_RE.findall(normalized))
-        punctuation_tokens = len(_PUNCT_TOKEN_RE.findall(normalized))
-
-        estimated = latin_tokens + cjk_tokens + punctuation_tokens
-        if estimated == 0:
-            estimated = max(1, len(normalized) // 4)
-
-        return max(1, estimated)
+        return _estimate_token_count_fn(value)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:

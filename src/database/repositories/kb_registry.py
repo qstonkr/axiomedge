@@ -7,11 +7,10 @@ Extracted from oreo-ecosystem PostgreSQLKBRegistry.
 from __future__ import annotations
 
 import logging
-import uuid as uuidlib
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

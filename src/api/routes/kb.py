@@ -585,37 +585,6 @@ async def admin_kb_coverage_gaps(kb_id: str):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/v1/admin/kb/{kb_id}/trust-scores
-# ---------------------------------------------------------------------------
-@admin_router.get("/{kb_id}/trust-scores")
-async def admin_kb_trust_scores(kb_id: str):
-    """Get KB trust scores."""
-    state = _get_state()
-    repo = state.get("trust_score_repo")
-    if repo:
-        try:
-            scores = await repo.get_by_kb(kb_id, limit=100)
-            avg = sum(s["kts_score"] for s in scores) / len(scores) if scores else 0.0
-            return {"kb_id": kb_id, "average_trust": round(avg, 3), "scores": scores}
-        except Exception as e:
-            logger.warning("Trust score repo query failed: %s", e)
-    return {"kb_id": kb_id, "average_trust": 0.0, "scores": []}
-
-
-# ---------------------------------------------------------------------------
-# GET /api/v1/admin/kb/{kb_id}/trust-scores/distribution
-# ---------------------------------------------------------------------------
-@admin_router.get("/{kb_id}/trust-scores/distribution")
-async def admin_kb_trust_score_distribution(kb_id: str):
-    """Get KB trust score distribution."""
-    return {
-        "kb_id": kb_id,
-        "distribution": [],
-        "buckets": [],
-    }
-
-
-# ---------------------------------------------------------------------------
 # GET /api/v1/admin/kb/{kb_id}/impact
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/impact")
