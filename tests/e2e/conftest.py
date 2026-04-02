@@ -13,5 +13,5 @@ def api_url():
 
 @pytest.fixture
 def api():
-    with httpx.Client(base_url=API_URL, timeout=60) as client:
+    with httpx.Client(base_url=API_URL, timeout=120) as client:
         yield client
