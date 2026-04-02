@@ -300,11 +300,12 @@ async def calculate_trust_scores(
                 0.10 * has_owner           # expert validation (owner as proxy)
             )
 
-            tier = (
-                "high" if kts >= _qc.kts_tier_high
-                else "medium" if kts >= _qc.kts_tier_medium
-                else "low"
-            )
+            if kts >= _qc.kts_tier_high:
+                tier = "high"
+            elif kts >= _qc.kts_tier_medium:
+                tier = "medium"
+            else:
+                tier = "low"
 
             try:
                 await trust_repo.save({
