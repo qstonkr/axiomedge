@@ -16,10 +16,10 @@ DEFAULT_LLM_MODEL = "exaone3.5:7.8b"
 DEFAULT_EMBEDDING_MODEL = "bge-m3:latest"  # Ollama tag
 DEFAULT_EMBEDDING_MODEL_HF = "BAAI/bge-m3"  # HuggingFace ID (ONNX provider)
 
-DEFAULT_DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db",
+_DB_FALLBACK = "postgresql+asyncpg://{}:{}@localhost:5432/knowledge_db".format(  # noqa: S106
+    os.getenv("PGUSER", "knowledge"), os.getenv("PGPASSWORD", "knowledge"),
 )
+DEFAULT_DATABASE_URL = os.getenv("DATABASE_URL", _DB_FALLBACK)
 
 DEFAULT_RUNTIME_BASE_DIR = os.getenv(
     "KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR", "/tmp/knowledge-local"
