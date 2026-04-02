@@ -60,6 +60,8 @@ class RerankerWeights:
 
     # Graph distance weight (0.0 = disabled, 0.15 = recommended)
     graph_distance_weight: float = _env_float("RERANKER_GRAPH_DISTANCE_WEIGHT", 0.15)
+    graph_distance_decay: float = 0.3  # Decay factor: 1/(1 + (d-1)*decay)
+    graph_hop3_multiplier: float = 0.5  # Boost multiplier for 3+ hops
 
     # Cross-KB axis boosts
     axis_causal: float = 1.2
@@ -418,6 +420,16 @@ class SearchDefaults:
     rerank_pool_multiplier: int = 5  # top_k * 5 before reranking (wider pool for keyword accuracy)
     max_query_length: int = 2000
 
+    # Keyword boost multiplier for keyword-matched chunks
+    keyword_boost_weight: float = 0.3
+
+    # CRAG confidence gating: skip answer generation below this
+    crag_block_threshold: float = 0.3
+
+    # Display confidence tier labels
+    confidence_display_high: float = 0.8
+    confidence_display_medium: float = 0.5
+
     # DenseTermIndex
     term_search_top_k: int = 50
     term_build_batch_size: int = 500
@@ -460,6 +472,24 @@ class TrustScoreWeights:
 
     # Verification threshold (documents below this KTS need review)
     verification_threshold: float = 50.0
+
+    # Source credibility scores by type
+    cred_git_docs: float = 0.95
+    cred_confluence_personal: float = 0.75
+    cred_teams_chat: float = 0.50
+    cred_user_unverified: float = 0.30
+    cred_user_verified: float = 0.80
+    cred_auto_extracted: float = 0.20
+
+    # Freshness decay
+    freshness_decay_start_ratio: float = 0.5
+    freshness_stale_threshold: float = 0.3
+
+    # Usage sub-weights
+    usage_weight_views: float = 0.2
+    usage_weight_citations: float = 0.3
+    usage_weight_ctr: float = 0.3
+    usage_weight_bookmarks: float = 0.2
 
 
 # ============================================================================

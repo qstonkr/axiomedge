@@ -427,7 +427,7 @@ async def hub_search(request: HubSearchRequest):
             matched = sum(1 for t in _query_tokens if t in content_lower)
             if matched > 0:
                 ratio = matched / len(_query_tokens)
-                chunk["score"] = chunk.get("score", 0) + 0.3 * ratio
+                chunk["score"] = chunk.get("score", 0) + weights.search.keyword_boost_weight * ratio
                 chunk["_keyword_matched"] = True
                 keyword_chunks.append(chunk)
             else:
@@ -631,7 +631,7 @@ async def hub_search(request: HubSearchRequest):
     if crag_evaluation and crag_evaluation.action == RetrievalAction.INCORRECT:
         answer = crag_evaluation.recommendation
         confidence = crag_evaluation.confidence_level.value
-    elif crag_evaluation and crag_evaluation.confidence_score < 0.3:
+    elif crag_evaluation and crag_evaluation.confidence_score < weights.search.crag_block_threshold:
         answer = "검색 결과의 신뢰도가 낮아 정확한 답변을 제공하기 어렵습니다. 질문을 더 구체적으로 해주세요."
         confidence = "낮음"
     elif request.include_answer and all_chunks:
@@ -669,8 +669,8 @@ async def hub_search(request: HubSearchRequest):
                 answer = tiered_result.content
                 query_type = tiered_result.query_type.value
                 confidence = (
-                    "높음" if tiered_result.confidence >= 0.8
-                    else "보통" if tiered_result.confidence >= 0.5
+                    "높음" if tiered_result.confidence >= weights.search.confidence_display_high
+                    else "보통" if tiered_result.confidence >= weights.search.confidence_display_medium
                     else "낮음"
                 )
             except Exception as e:

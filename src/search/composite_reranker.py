@@ -242,8 +242,8 @@ class CompositeReranker:
                     except (TypeError, ValueError):
                         distance = 0
                     if distance > 0:
-                        # Closer = higher score: 1/(1 + (d-1)*0.3)
-                        graph_score = 1.0 / (1 + (distance - 1) * 0.3)
+                        # Closer = higher score: 1/(1 + (d-1)*decay)
+                        graph_score = 1.0 / (1 + (distance - 1) * _w.reranker.graph_distance_decay)
                         axis_name = str((chunk.metadata or {}).get("traversal_axis", ""))
                         axis_boost = self._axis_boosts.get(axis_name, 1.0)
                         graph_distance_bonus = self._graph_distance_weight * graph_score * axis_boost

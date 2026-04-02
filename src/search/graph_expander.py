@@ -20,6 +20,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
 # Korean compound-word split: English/digits + Hangul boundary
@@ -242,7 +244,7 @@ class GraphSearchExpander:
                 elif dist == 2:
                     boost = self._graph_boost * 1.0  # 2-hop: normal
                 else:
-                    boost = self._graph_boost * 0.5  # 3+: reduced
+                    boost = self._graph_boost * _w.reranker.graph_hop3_multiplier  # 3+: reduced
                 chunk["score"] = chunk.get("score", 0.0) + boost
                 chunk["graph_boosted"] = True
                 chunk["graph_distance"] = dist

@@ -35,12 +35,12 @@ _kts = _w.trust_score
 # Source credibility mapping
 SOURCE_CREDIBILITY: dict[str, float] = {
     "confluence_official": 1.0,
-    "git_docs": 0.95,
-    "confluence_personal": 0.75,
-    "teams_chat": 0.50,
-    "user_contribution_unverified": 0.30,
-    "user_contribution_verified": 0.80,
-    "auto_extracted": 0.20,
+    "git_docs": _kts.cred_git_docs,
+    "confluence_personal": _kts.cred_confluence_personal,
+    "teams_chat": _kts.cred_teams_chat,
+    "user_contribution_unverified": _kts.cred_user_unverified,
+    "user_contribution_verified": _kts.cred_user_verified,
+    "auto_extracted": _kts.cred_auto_extracted,
 }
 
 # Freshness half-life in days (exponential decay)
@@ -94,10 +94,10 @@ class TrustScoreCalculator:
     _DEFAULT_HALF_LIFE_DAYS: int = 180
     _FRESHNESS_MIN_SCORE: float = 0.1
 
-    _USAGE_WEIGHT_VIEWS: float = 0.2
-    _USAGE_WEIGHT_CITATIONS: float = 0.3
-    _USAGE_WEIGHT_CTR: float = 0.3
-    _USAGE_WEIGHT_BOOKMARKS: float = 0.2
+    _USAGE_WEIGHT_VIEWS: float = _kts.usage_weight_views
+    _USAGE_WEIGHT_CITATIONS: float = _kts.usage_weight_citations
+    _USAGE_WEIGHT_CTR: float = _kts.usage_weight_ctr
+    _USAGE_WEIGHT_BOOKMARKS: float = _kts.usage_weight_bookmarks
 
     def compute_source_credibility(self, source_type: str) -> float:
         return SOURCE_CREDIBILITY.get(source_type, 0.0)

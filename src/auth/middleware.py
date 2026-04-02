@@ -73,8 +73,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return
 
         try:
-            from src.api.app import _get_state
-            auth_service = _get_state().get("auth_service")
+            state = getattr(request.app.state, "_app_state", None)
+            auth_service = state.get("auth_service") if state else None
             if auth_service:
                 await auth_service.log_activity(
                     user_id=user.sub,

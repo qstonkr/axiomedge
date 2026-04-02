@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import ClassVar
 
+from src.config_weights import weights as _w
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +40,7 @@ DOC_TYPE_LIFESPAN: dict[str, int] = {
     "meeting_note": 30,
 }
 
-_DECAY_START_RATIO = 0.5
+_DECAY_START_RATIO = _w.trust_score.freshness_decay_start_ratio
 
 
 @dataclass(frozen=True)
@@ -67,7 +69,7 @@ class FreshnessPredictor:
     - Day 180: score = 0.0
     """
 
-    STALE_SCORE_THRESHOLD: ClassVar[float] = 0.3
+    STALE_SCORE_THRESHOLD: ClassVar[float] = _w.trust_score.freshness_stale_threshold
 
     def __init__(
         self,
