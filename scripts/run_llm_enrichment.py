@@ -58,7 +58,6 @@ def run_l2_category(kb_ids: list[str]):
     5. Update Qdrant chunks + Neo4j CATEGORIZED_AS edge
     """
     import json
-    import asyncio
     import requests
     import boto3
 
@@ -70,9 +69,6 @@ def run_l2_category(kb_ids: list[str]):
     endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
 
     QDRANT_URL = "http://localhost:6333"
-
-    # Load existing L2 categories to avoid duplicates
-    existing_l2: dict[str, str] = {}  # name → l1_parent
 
     PROMPT = """문서의 세부 카테고리를 2-6자 한국어 명사로 1개만 출력하세요. 설명 없이 단어만.
 
@@ -180,7 +176,7 @@ def run_term_enrich(kb_ids: list[str]):
     import json
     import asyncio
     import boto3
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text
 
     session = boto3.Session(
@@ -200,7 +196,8 @@ def run_term_enrich(kb_ids: list[str]):
     QDRANT_URL = "http://localhost:6333"
 
     async def _enrich():
-        engine = create_async_engine("postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
+        from src.config import DEFAULT_DATABASE_URL
+        engine = create_async_engine(DEFAULT_DATABASE_URL)
 
         for kb_id in kb_ids:
             collection = f"kb_{kb_id.replace('-', '_')}"
@@ -266,7 +263,10 @@ def run_term_enrich(kb_ids: list[str]):
             logger.info(f"[{kb_id}] Enriched: {enriched}/{len(terms)}")
         await engine.dispose()
 
-    asyncio.run(_enrich())
+    try:
+        asyncio.run(_enrich())
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
 
 
 COMMANDS = {

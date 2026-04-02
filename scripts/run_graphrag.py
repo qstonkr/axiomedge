@@ -76,7 +76,10 @@ def run_graphrag(kb_id: str):
             logger.error(f"[{kb_id}] Chunk {i+1} failed: {e}")
 
     logger.info(f"[{kb_id}] DONE: {stats}")
-    extractor.close()
+    try:
+        extractor.close()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

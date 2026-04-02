@@ -14,7 +14,6 @@ import logging
 import os
 import uuid
 import asyncio
-from datetime import datetime, timezone
 
 import boto3
 import requests
@@ -141,7 +140,8 @@ async def save_golden_set(kb_id: str, qa_pairs: list[dict]):
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text
 
-    engine = create_async_engine("postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
+    from src.config import DEFAULT_DATABASE_URL
+    engine = create_async_engine(DEFAULT_DATABASE_URL)
 
     # Create table if not exists
     async with engine.begin() as conn:

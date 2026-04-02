@@ -51,26 +51,6 @@ def update_point_payload(collection: str, point_id: str, payload: dict):
     )
 
 
-def batch_update_payloads(collection: str, updates: list[tuple[str, dict]]):
-    """Batch update payloads using set_payload with point selector."""
-    # Qdrant supports batch payload update via filter, but for mixed payloads
-    # we group by identical payload values for efficiency
-    from collections import defaultdict
-    groups: dict[str, list[str]] = defaultdict(list)
-
-    for point_id, payload in updates:
-        key = str(sorted(payload.items()))
-        groups[key].append(point_id)
-
-    for _, point_ids in groups.items():
-        # Get the payload from the first item in this group
-        payload = dict(next(p for pid, p in updates if pid == point_ids[0]))
-        requests.post(
-            f"{QDRANT_URL}/collections/{collection}/points/payload",
-            json={"points": point_ids, "payload": payload},
-        )
-
-
 def run_backfill(kb_id: str, *, force: bool = False, skip_neo4j: bool = False):
     from src.pipeline.ingestion import (
         extract_owner, classify_l1_category, calculate_quality_score,

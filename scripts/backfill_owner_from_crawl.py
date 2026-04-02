@@ -9,6 +9,7 @@ Usage:
 import json
 import logging
 import re
+from pathlib import Path
 
 import requests
 
@@ -16,7 +17,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 QDRANT_URL = "http://localhost:6333"
-CRAWL_DIR = "1st_jsonl"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CRAWL_DIR = str(_PROJECT_ROOT / "1st_jsonl")
 
 # Owner normalization (from quality_processor.py)
 SKIP_PATTERNS = [

@@ -52,6 +52,20 @@ def get_sm_client():
     return session.client("sagemaker-runtime")
 
 
+def _get_auth_headers() -> dict[str, str]:
+    """Build auth headers if AUTH_ENABLED. Returns empty dict if auth off."""
+    if os.getenv("AUTH_ENABLED", "false").lower() != "true":
+        return {}
+    token = os.getenv("EVAL_API_TOKEN", "")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    api_key = os.getenv("EVAL_API_KEY", "")
+    if api_key:
+        return {"X-API-Key": api_key}
+    logger.warning("AUTH_ENABLED=true but no EVAL_API_TOKEN or EVAL_API_KEY set")
+    return {}
+
+
 def search_and_answer(question: str, kb_ids: list[str]) -> dict:
     """Call Hub Search API to get answer."""
     try:
@@ -60,9 +74,11 @@ def search_and_answer(question: str, kb_ids: list[str]) -> dict:
             "top_k": 5,
             "kb_ids": kb_ids,
             "include_answer": True,
-        }, timeout=120)
+        }, headers=_get_auth_headers(), timeout=120)
         if resp.status_code == 200:
             return resp.json()
+        if resp.status_code == 401:
+            logger.error("Auth failed (401). Set EVAL_API_TOKEN or EVAL_API_KEY env var.")
     except Exception as e:
         logger.warning(f"Search failed: {e}")
     return {"answer": None, "chunks": []}
