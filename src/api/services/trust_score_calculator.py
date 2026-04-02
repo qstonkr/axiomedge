@@ -136,4 +136,5 @@ async def calculate_kb_trust_scores(
         }
     except Exception as e:
         logger.error("Trust score calculation failed: %s", e)
-        return {"success": False, "error": str(e)}
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Trust score calculation failed: {e}")
