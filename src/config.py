@@ -110,7 +110,15 @@ class AuthSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AUTH_")
 
     enabled: bool = Field(default=False)
-    provider: str = Field(default="local")  # local | keycloak | azure_ad
+    provider: str = Field(default="local")  # local | keycloak | azure_ad | internal
+
+    # Internal JWT (for AUTH_PROVIDER=internal)
+    jwt_secret: str = Field(default="")  # Required for internal provider
+    jwt_algorithm: str = Field(default="HS256")
+    jwt_access_expire_minutes: int = Field(default=60)
+    jwt_refresh_expire_hours: int = Field(default=8)
+    jwt_issuer: str = Field(default="oreo-internal-api")
+    cookie_secure: bool = Field(default=False)  # True in production (HTTPS)
 
     # Keycloak
     keycloak_url: str = Field(default="")

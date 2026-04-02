@@ -18,6 +18,10 @@ from src.auth.providers import AuthUser
 logger = logging.getLogger(__name__)
 
 
+# Valid bcrypt hash for constant-time comparison when user not found (timing side-channel防止)
+_DUMMY_BCRYPT_HASH = "$2b$12$LJ3m4ys3Lg7VGgHepMzL2OGOCISCgrMJwBdJmkGBo7MBJe.ys/Cfi"
+
+
 class AuthService:
     """Auth service for user, role, and permission management."""
 
@@ -175,6 +179,7 @@ class AuthService:
                 user.organization_id = organization_id
             if is_active is not None:
                 user.is_active = is_active
+                user.status = "active" if is_active else "inactive"
 
             await session.commit()
             return {"id": user.id, "email": user.email, "updated": True}
@@ -243,6 +248,112 @@ class AuthService:
                 }
                 for u in result.scalars().all()
             ]
+
+    # =========================================================================
+    # Internal Auth (email/password)
+    # =========================================================================
+
+    async def authenticate(self, email: str, password: str) -> dict | None:
+        """Verify email/password. Returns user dict or None."""
+        from src.auth.models import UserModel
+        from src.auth.password import verify_password
+
+        async with self._session() as session:
+            result = await session.execute(
+                select(UserModel).where(
+                    UserModel.email == email,
+                    UserModel.provider == "internal",
+                    UserModel.is_active.is_(True),
+                    UserModel.status == "active",
+                )
+            )
+            user = result.scalar_one_or_none()
+            if not user or not user.password_hash:
+                verify_password(password, _DUMMY_BCRYPT_HASH)  # Constant-time
+                return None
+            if not verify_password(password, user.password_hash):
+                return None
+
+            user.last_login_at = datetime.now(timezone.utc)
+            await session.commit()
+
+            return {
+                "id": user.id,
+                "email": user.email,
+                "display_name": user.display_name,
+                "department": user.department,
+                "organization_id": user.organization_id,
+            }
+
+    async def create_user_with_password(
+        self,
+        email: str,
+        password: str,
+        display_name: str,
+        department: str | None = None,
+        organization_id: str | None = None,
+        role: str = "viewer",
+    ) -> dict:
+        """Create a user with email/password (internal provider)."""
+        from src.auth.models import UserModel
+        from src.auth.password import hash_password
+
+        async with self._session() as session:
+            result = await session.execute(
+                select(UserModel).where(UserModel.email == email)
+            )
+            if result.scalar_one_or_none():
+                raise ValueError(f"User with email '{email}' already exists")
+
+            user_id = str(uuid.uuid4())
+            user = UserModel(
+                id=user_id,
+                external_id=f"internal:{email}",
+                provider="internal",
+                email=email,
+                display_name=display_name,
+                password_hash=hash_password(password),
+                status="active",
+                is_active=True,
+                department=department,
+                organization_id=organization_id,
+            )
+            session.add(user)
+            await session.flush()
+            await self._assign_default_role(session, user_id, [role])
+            await session.commit()
+
+            return {
+                "id": user_id,
+                "email": email,
+                "display_name": display_name,
+                "role": role,
+            }
+
+    async def change_password(
+        self, user_id: str, old_password: str, new_password: str
+    ) -> bool:
+        """Change password for internal user. Verifies old password first."""
+        from src.auth.models import UserModel
+        from src.auth.password import verify_password, hash_password
+
+        async with self._session() as session:
+            result = await session.execute(
+                select(UserModel).where(
+                    UserModel.id == user_id,
+                    UserModel.provider == "internal",
+                    UserModel.is_active.is_(True),
+                    UserModel.status == "active",
+                )
+            )
+            user = result.scalar_one_or_none()
+            if not user or not user.password_hash:
+                return False
+            if not verify_password(old_password, user.password_hash):
+                return False
+            user.password_hash = hash_password(new_password)
+            await session.commit()
+            return True
 
     # =========================================================================
     # Role Management
@@ -633,3 +744,40 @@ class AuthService:
 
             await session.commit()
             logger.info("Default roles and permissions seeded")
+
+        # Seed default admin user for internal provider
+        await self._seed_internal_admin()
+
+    async def _seed_internal_admin(self) -> None:
+        """Create default admin user if AUTH_PROVIDER=internal and password is set."""
+        import os
+        if os.getenv("AUTH_PROVIDER", "local") != "internal":
+            return
+
+        initial_pw = os.getenv("AUTH_ADMIN_INITIAL_PASSWORD", "")
+        if not initial_pw:
+            logger.info("AUTH_ADMIN_INITIAL_PASSWORD not set — skipping admin seed")
+            return
+
+        from src.auth.models import UserModel
+
+        async with self._session() as session:
+            result = await session.execute(
+                select(UserModel).where(
+                    UserModel.provider == "internal",
+                    UserModel.email == "admin@knowledge.local",
+                )
+            )
+            if result.scalar_one_or_none():
+                return  # Already exists
+
+        try:
+            await self.create_user_with_password(
+                email="admin@knowledge.local",
+                password=initial_pw,
+                display_name="Admin",
+                role="admin",
+            )
+            logger.info("Default internal admin user created (admin@knowledge.local)")
+        except ValueError:
+            pass  # Already exists (race condition guard)

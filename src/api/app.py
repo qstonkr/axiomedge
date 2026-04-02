@@ -594,6 +594,25 @@ async def _init_auth(state: AppState, settings) -> None:
                 "tenant_id": auth_settings.azure_ad_tenant_id,
                 "client_id": auth_settings.azure_ad_client_id,
             }
+        elif auth_settings.provider == "internal":
+            from src.auth.jwt_service import JWTService
+            from src.auth.token_store import TokenStore
+
+            if not auth_settings.jwt_secret:
+                raise ValueError(
+                    "AUTH_JWT_SECRET is required when AUTH_PROVIDER=internal. "
+                    "Generate one with: openssl rand -hex 32"
+                )
+
+            jwt_svc = JWTService(
+                secret_key=auth_settings.jwt_secret,
+                algorithm=auth_settings.jwt_algorithm,
+                access_token_expire_minutes=auth_settings.jwt_access_expire_minutes,
+                refresh_token_expire_hours=auth_settings.jwt_refresh_expire_hours,
+                issuer=auth_settings.jwt_issuer,
+            )
+            state["jwt_service"] = jwt_svc
+            provider_kwargs = {"jwt_service": jwt_svc}
         else:
             try:
                 api_keys = _json.loads(auth_settings.local_api_keys)
@@ -609,6 +628,10 @@ async def _init_auth(state: AppState, settings) -> None:
         db_url = settings.database.database_url
         auth_service = AuthService(database_url=db_url)
         state["auth_service"] = auth_service
+
+        # Token store for internal auth (uses auth_service's DB)
+        if auth_settings.provider == "internal":
+            state["token_store"] = TokenStore(auth_service._session_factory)
 
         # Seed default roles & permissions
         try:

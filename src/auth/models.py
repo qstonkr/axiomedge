@@ -37,11 +37,15 @@ class UserModel(KnowledgeBase):
 
     id = Column(String(36), primary_key=True)
     external_id = Column(String(255), nullable=True, unique=True)  # IdP subject ID
-    provider = Column(String(20), nullable=False, default="local")  # keycloak | azure_ad | local
+    provider = Column(String(20), nullable=False, default="local")  # keycloak | azure_ad | local | internal
     email = Column(String(255), nullable=False, unique=True)
     display_name = Column(String(255), nullable=False)
+    password_hash = Column(String(128), nullable=True)  # bcrypt, nullable for IdP users
+    status = Column(String(20), nullable=False, default="active")  # active | inactive | locked
     department = Column(String(255), nullable=True)
     organization_id = Column(String(100), nullable=True)
+    hr_org_code = Column(String(50), nullable=True)  # oreo-ecosystem 호환
+    hr_dept_code = Column(String(50), nullable=True)  # oreo-ecosystem 호환
     avatar_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     last_login_at = Column(DateTime(timezone=True), nullable=True)
@@ -61,6 +65,36 @@ class UserModel(KnowledgeBase):
         Index("idx_auth_user_provider", "provider"),
         Index("idx_auth_user_org", "organization_id"),
         Index("idx_auth_user_external", "external_id"),
+    )
+
+
+# =============================================================================
+# Refresh Tokens (session tracking + token rotation)
+# =============================================================================
+
+
+class RefreshTokenModel(KnowledgeBase):
+    """Refresh token store for internal auth. Tracks token families for rotation."""
+
+    __tablename__ = "auth_refresh_tokens"
+
+    id = Column(String(36), primary_key=True)  # jti
+    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False)
+    family_id = Column(String(36), nullable=False)  # Token family for rotation detection
+    rotation_count = Column(Integer, nullable=False, default=0)
+    token_hash = Column(String(128), nullable=False)  # SHA256(refresh_token)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("idx_refresh_token_user", "user_id"),
+        Index("idx_refresh_token_family", "family_id"),
+        Index("idx_refresh_token_expires", "expires_at"),
     )
 
 

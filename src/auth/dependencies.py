@@ -53,7 +53,7 @@ async def get_current_user(request: Request) -> AuthUser:
     if not AUTH_ENABLED:
         return _ANONYMOUS_USER
 
-    # Extract token
+    # Extract token from header or cookie
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
@@ -61,6 +61,10 @@ async def get_current_user(request: Request) -> AuthUser:
         token = auth_header[7:]
     else:
         token = request.headers.get("X-API-Key", "")
+
+    # Fall back to HttpOnly cookie
+    if not token:
+        token = request.cookies.get("access_token", "")
 
     if not token:
         raise HTTPException(status_code=401, detail="Missing authentication token")
@@ -76,13 +80,15 @@ async def get_current_user(request: Request) -> AuthUser:
     try:
         user = await auth_provider.verify_token(token)
 
-        # Sync user to local DB (fire-and-forget)
-        auth_service = state.get("auth_service")
-        if auth_service:
-            try:
-                await auth_service.sync_user_from_idp(user)
-            except Exception as e:
-                logger.debug("User sync failed (non-blocking): %s", e)
+        # Sync user to local DB (fire-and-forget) — skip for internal provider
+        # (internal users already exist in DB; sync would create orphan records)
+        if user.provider != "internal":
+            auth_service = state.get("auth_service")
+            if auth_service:
+                try:
+                    await auth_service.sync_user_from_idp(user)
+                except Exception as e:
+                    logger.debug("User sync failed (non-blocking): %s", e)
 
         return user
 

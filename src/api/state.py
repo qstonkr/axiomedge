@@ -84,6 +84,8 @@ class AppState:
     rbac_engine: Any = None
     abac_engine: Any = None
     auth_service: Any = None
+    jwt_service: Any = None
+    token_store: Any = None
 
     # Internal
     _shutting_down: bool = False

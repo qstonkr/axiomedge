@@ -244,6 +244,43 @@ class AzureADAuthProvider(AuthProviderBase):
 
 
 # =============================================================================
+# Internal Auth Provider (email/password login with JWT)
+# =============================================================================
+
+
+class InternalAuthProvider(AuthProviderBase):
+    """Internal email/password auth provider with JWT tokens.
+
+    Used when AUTH_PROVIDER="internal". Verifies JWT access tokens
+    issued by the internal login endpoint.
+    """
+
+    def __init__(self, jwt_service: Any):
+        from src.auth.jwt_service import JWTService
+
+        self._jwt_service: JWTService = jwt_service
+
+    @property
+    def provider_name(self) -> str:
+        return "internal"
+
+    async def get_jwks_uri(self) -> str | None:
+        return None  # HS256, no JWKS
+
+    async def verify_token(self, token: str) -> AuthUser:
+        """Verify a JWT access token and return AuthUser."""
+        claims = self._jwt_service.verify_access_token(token)
+        return AuthUser(
+            sub=claims["sub"],
+            email=claims.get("email", ""),
+            display_name=claims.get("display_name", claims.get("email", "")),
+            provider="internal",
+            roles=claims.get("roles", []),
+            raw_claims=claims,
+        )
+
+
+# =============================================================================
 # Provider Factory
 # =============================================================================
 
@@ -255,13 +292,18 @@ def create_auth_provider(
     """Create auth provider from config.
 
     Args:
-        provider: "local" | "keycloak" | "azure_ad"
+        provider: "local" | "keycloak" | "azure_ad" | "internal"
         **kwargs: Provider-specific configuration
 
     Returns:
         Configured AuthProviderBase instance.
     """
-    if provider == "keycloak":
+    if provider == "internal":
+        jwt_service = kwargs.get("jwt_service")
+        if not jwt_service:
+            raise ValueError("jwt_service required for internal provider")
+        return InternalAuthProvider(jwt_service=jwt_service)
+    elif provider == "keycloak":
         return KeycloakAuthProvider(
             server_url=kwargs["server_url"],
             realm=kwargs["realm"],

@@ -1,26 +1,39 @@
 """Auth & Permission Management API Routes.
 
 Endpoints:
+    Login/Session:
+    - POST /auth/login                 - Email/password login (public)
+    - POST /auth/refresh               - Refresh access token (public)
+    - POST /auth/logout                - Logout (clear tokens)
+    - POST /auth/register              - Create user with password (admin)
+    - POST /auth/change-password       - Change own password
+
+    User Info:
     - GET  /auth/me                    - Current user info
     - GET  /auth/users                 - List users (admin)
     - GET  /auth/users/{user_id}       - Get user details (admin)
 
+    Roles:
     - GET  /auth/roles                 - List all roles
     - POST /auth/users/{user_id}/roles - Assign role
     - DELETE /auth/users/{user_id}/roles/{role_name} - Revoke role
 
+    KB Permissions:
     - GET  /auth/kb/{kb_id}/permissions     - List KB permissions
     - POST /auth/kb/{kb_id}/permissions     - Set KB permission
     - DELETE /auth/kb/{kb_id}/permissions/{user_id} - Remove KB permission
 
+    Activity:
     - GET  /auth/my-activities              - My activity log
     - GET  /auth/my-activities/summary      - My activity summary
 
-    - GET  /auth/abac/policies              - List ABAC policies (admin)
-    - POST /auth/abac/policies              - Create ABAC policy (admin)
-    - PUT  /auth/abac/policies/{policy_id}  - Update ABAC policy (admin)
-    - DELETE /auth/abac/policies/{policy_id} - Delete ABAC policy (admin)
+    ABAC (admin):
+    - GET  /auth/abac/policies              - List ABAC policies
+    - POST /auth/abac/policies              - Create ABAC policy
+    - PUT  /auth/abac/policies/{policy_id}  - Update ABAC policy
+    - DELETE /auth/abac/policies/{policy_id} - Delete ABAC policy
 
+    System:
     - GET  /auth/system/stats               - System auth stats (admin)
 """
 
@@ -30,7 +43,8 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel
 
 from src.auth.dependencies import get_current_user, require_permission
 from src.auth.providers import AuthUser
@@ -43,6 +57,294 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Auth & Permissions"])
 def _get_auth_service():
     from src.api.app import _get_state
     return _get_state().get("auth_service")
+
+
+def _get_state():
+    from src.api.app import _get_state
+    return _get_state()
+
+
+def _is_cookie_secure() -> bool:
+    """Determine cookie Secure flag from config (handles reverse proxy correctly)."""
+    import os
+    return os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+
+
+# =============================================================================
+# Request/Response Models
+# =============================================================================
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+    department: str | None = None
+    organization_id: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+# =============================================================================
+# Login / Logout / Refresh
+# =============================================================================
+
+
+@router.post("/login")
+async def login(body: LoginRequest, request: Request, response: Response):
+    """Authenticate with email/password, return JWT tokens in HttpOnly cookies."""
+    auth_service = _get_auth_service()
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not initialized")
+
+    user = await auth_service.authenticate(body.email, body.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    state = _get_state()
+    jwt_service = state.get("jwt_service")
+    token_store = state.get("token_store")
+    rbac = state.get("rbac_engine")
+
+    if not jwt_service:
+        raise HTTPException(status_code=503, detail="JWT service not initialized (AUTH_PROVIDER=internal required)")
+
+    roles_list = await auth_service.get_user_roles(user["id"])
+    role_names = [r["role"] for r in roles_list]
+    permissions = sorted(rbac.get_effective_permissions(roles_list)) if rbac else []
+
+    token_pair = jwt_service.create_token_pair(
+        user_id=user["id"],
+        email=user["email"],
+        roles=role_names,
+        permissions=permissions,
+        display_name=user.get("display_name", ""),
+    )
+
+    # Store refresh token in DB
+    if token_store:
+        refresh_claims = jwt_service.decode_refresh_token(token_pair.refresh_token)
+        await token_store.store_refresh_token(
+            jti=refresh_claims["jti"],
+            user_id=user["id"],
+            family_id=refresh_claims["family_id"],
+            rotation_count=0,
+            token_raw=token_pair.refresh_token,
+            expires_at=token_pair.refresh_expires_at,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent", "")[:500],
+        )
+
+    # Set HttpOnly cookies
+    is_secure = _is_cookie_secure()
+    response.set_cookie(
+        key="access_token",
+        value=token_pair.access_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=jwt_service.access_expire_seconds,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=token_pair.refresh_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=jwt_service.refresh_expire_seconds,
+        path="/api/v1/auth/refresh",
+    )
+
+    return {
+        "success": True,
+        "user": user,
+        "roles": role_names,
+        "token_type": "Bearer",
+        "expires_in": jwt_service.access_expire_seconds,
+    }
+
+
+@router.post("/refresh")
+async def refresh_token(request: Request, response: Response):
+    """Refresh access token using refresh token from cookie or body."""
+    state = _get_state()
+    jwt_service = state.get("jwt_service")
+    token_store = state.get("token_store")
+    auth_service = state.get("auth_service")
+    rbac = state.get("rbac_engine")
+
+    if not jwt_service:
+        raise HTTPException(status_code=503, detail="JWT service not initialized")
+
+    # Get refresh token from cookie or body
+    refresh_token_raw = request.cookies.get("refresh_token", "")
+    if not refresh_token_raw:
+        try:
+            body = await request.json()
+            refresh_token_raw = body.get("refresh_token", "")
+        except Exception:
+            pass
+
+    if not refresh_token_raw:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    from src.auth.providers import AuthenticationError
+    try:
+        claims = jwt_service.decode_refresh_token(refresh_token_raw)
+    except AuthenticationError as e:
+        raise HTTPException(status_code=401, detail=e.detail)
+
+    # Validate in DB and rotate (required for security)
+    if not token_store:
+        raise HTTPException(status_code=503, detail="Token store not initialized")
+    token_meta = await token_store.validate_and_rotate(
+        jti=claims["jti"], token_raw=refresh_token_raw
+    )
+    if not token_meta:
+        await token_store.revoke_family(claims["family_id"])
+        raise HTTPException(status_code=401, detail="Refresh token revoked")
+
+    # Get fresh user roles/permissions
+    user_id = claims["sub"]
+    roles_list = await auth_service.get_user_roles(user_id) if auth_service else []
+    role_names = [r["role"] for r in roles_list]
+    permissions = sorted(rbac.get_effective_permissions(roles_list)) if rbac else []
+
+    user_info = await auth_service.get_user(user_id) if auth_service else {}
+    email = user_info.get("email", "") if user_info else ""
+    display_name = user_info.get("display_name", "") if user_info else ""
+
+    new_pair = jwt_service.create_token_pair(
+        user_id=user_id,
+        email=email,
+        roles=role_names,
+        permissions=permissions,
+        family_id=claims["family_id"],
+        rotation_count=claims.get("rotation_count", 0) + 1,
+        display_name=display_name,
+    )
+
+    # Store new refresh token
+    if token_store:
+        new_refresh_claims = jwt_service.decode_refresh_token(new_pair.refresh_token)
+        await token_store.store_refresh_token(
+            jti=new_refresh_claims["jti"],
+            user_id=user_id,
+            family_id=claims["family_id"],
+            rotation_count=claims.get("rotation_count", 0) + 1,
+            token_raw=new_pair.refresh_token,
+            expires_at=new_pair.refresh_expires_at,
+        )
+
+    is_secure = _is_cookie_secure()
+    response.set_cookie(
+        key="access_token",
+        value=new_pair.access_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=jwt_service.access_expire_seconds,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=new_pair.refresh_token,
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+        max_age=jwt_service.refresh_expire_seconds,
+        path="/api/v1/auth/refresh",
+    )
+
+    return {
+        "success": True,
+        "token_type": "Bearer",
+        "expires_in": jwt_service.access_expire_seconds,
+    }
+
+
+@router.post("/logout")
+async def logout(request: Request, response: Response):
+    """Revoke tokens and clear cookies."""
+    state = _get_state()
+    jwt_service = state.get("jwt_service")
+    token_store = state.get("token_store")
+
+    refresh_token_raw = request.cookies.get("refresh_token", "")
+    if refresh_token_raw and jwt_service and token_store:
+        try:
+            claims = jwt_service.decode_refresh_token(refresh_token_raw)
+            await token_store.revoke_family(claims["family_id"])
+        except Exception:
+            pass  # Token may already be expired/invalid
+
+    is_secure = _is_cookie_secure()
+    response.delete_cookie("access_token", path="/", secure=is_secure, samesite="lax")
+    response.delete_cookie("refresh_token", path="/api/v1/auth/refresh", secure=is_secure, samesite="lax")
+
+    return {"success": True}
+
+
+@router.post("/register")
+async def register(
+    body: RegisterRequest,
+    _user: AuthUser = Depends(require_permission("admin", "users")),
+):
+    """Register a new internal user (admin only)."""
+    auth_service = _get_auth_service()
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not initialized")
+
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    try:
+        result = await auth_service.create_user_with_password(
+            email=body.email,
+            password=body.password,
+            display_name=body.display_name,
+            department=body.department,
+            organization_id=body.organization_id,
+        )
+        return {"success": True, **result}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    user: AuthUser = Depends(get_current_user),
+):
+    """Change current user's password. Revokes all existing sessions."""
+    auth_service = _get_auth_service()
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not initialized")
+
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    success = await auth_service.change_password(
+        user_id=user.sub, old_password=body.old_password, new_password=body.new_password
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid current password")
+
+    # Revoke all existing sessions
+    token_store = _get_state().get("token_store")
+    if token_store:
+        await token_store.revoke_all_user_tokens(user.sub)
+
+    return {"success": True, "message": "Password changed. Please login again."}
 
 
 # =============================================================================
@@ -95,9 +397,17 @@ async def list_users(
     return {"users": users, "total": len(users)}
 
 
+class CreateUserRequest(BaseModel):
+    email: str
+    display_name: str
+    department: str | None = None
+    organization_id: str | None = None
+    role: str = "viewer"
+
+
 @router.post("/users")
 async def create_user(
-    body: dict[str, Any],
+    body: CreateUserRequest,
     _user: AuthUser = Depends(require_permission("admin", "users")),
 ):
     """Create a new local user."""
@@ -105,28 +415,30 @@ async def create_user(
     if not auth_service:
         raise HTTPException(status_code=503, detail="Auth service not initialized")
 
-    email = body.get("email")
-    display_name = body.get("display_name")
-    if not email or not display_name:
-        raise HTTPException(status_code=400, detail="'email' and 'display_name' are required")
-
     try:
         result = await auth_service.create_user(
-            email=email,
-            display_name=display_name,
-            department=body.get("department"),
-            organization_id=body.get("organization_id"),
-            role=body.get("role", "viewer"),
+            email=body.email,
+            display_name=body.display_name,
+            department=body.department,
+            organization_id=body.organization_id,
+            role=body.role,
         )
         return {"success": True, **result}
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
 
+class UpdateUserRequest(BaseModel):
+    display_name: str | None = None
+    department: str | None = None
+    organization_id: str | None = None
+    is_active: bool | None = None
+
+
 @router.put("/users/{user_id}")
 async def update_user(
     user_id: str,
-    body: dict[str, Any],
+    body: UpdateUserRequest,
     _user: AuthUser = Depends(require_permission("admin", "users")),
 ):
     """Update user details."""
@@ -136,10 +448,10 @@ async def update_user(
 
     result = await auth_service.update_user(
         user_id=user_id,
-        display_name=body.get("display_name"),
-        department=body.get("department"),
-        organization_id=body.get("organization_id"),
-        is_active=body.get("is_active"),
+        display_name=body.display_name,
+        department=body.department,
+        organization_id=body.organization_id,
+        is_active=body.is_active,
     )
     if not result:
         raise HTTPException(status_code=404, detail="User not found")
