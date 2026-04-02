@@ -10,10 +10,13 @@ from typing import Any
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from src.api.app import _get_state
+from src.config_weights import weights as _w
 from src.nlp.morpheme_analyzer import get_analyzer
 from src.nlp.term_normalizer import TermNormalizer
 
 logger = logging.getLogger(__name__)
+
+_EXACT_MATCH_THRESHOLD = _w.similarity.exact_match_threshold
 router = APIRouter(prefix="/api/v1/admin/glossary", tags=["Glossary"])
 
 
@@ -230,7 +233,7 @@ async def get_similarity_distribution():
             rf_result = process.extractOne(query, comparison_names, scorer=fuzz.WRatio)
             if rf_result:
                 score = rf_result[1] / 100.0
-                if score >= 0.999 and rf_result[0].lower() == query.lower():
+                if score >= _EXACT_MATCH_THRESHOLD and rf_result[0].lower() == query.lower():
                     results = process.extract(query, comparison_names, scorer=fuzz.WRatio, limit=2)
                     if len(results) > 1:
                         score = results[1][1] / 100.0
@@ -260,7 +263,7 @@ async def get_similarity_distribution():
                 if def_result:
                     def_score = def_result[1] / 100.0
                     # Exclude exact self-definition
-                    if def_score >= 0.999:
+                    if def_score >= _EXACT_MATCH_THRESHOLD:
                         def_results = process.extract(query_def, comp_def_texts, scorer=fuzz.WRatio, limit=2)
                         if len(def_results) > 1:
                             def_score = def_results[1][1] / 100.0

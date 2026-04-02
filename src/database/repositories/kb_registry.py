@@ -58,6 +58,8 @@ class KBRegistryRepository:
         if database_url.startswith("postgresql://"):
             database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         self.database_url = database_url
+        self._pool_size = pool_size
+        self._max_overflow = max_overflow
         self.echo = echo
         self._engine = None
         self._session_maker: async_sessionmaker | None = None
@@ -67,8 +69,8 @@ class KBRegistryRepository:
         self._engine = create_async_engine(
             self.database_url,
             echo=self.echo,
-            pool_size=10,
-            max_overflow=5,
+            pool_size=self._pool_size,
+            max_overflow=self._max_overflow,
             pool_pre_ping=True,
         )
 

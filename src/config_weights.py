@@ -91,6 +91,12 @@ class HybridSearchWeights:
     colbert_rerank_candidate_multiplier: int = 3
     colbert_max_tokens: int = 128
 
+    # Query type-specific weight overrides (dense, sparse)
+    concept_dense_weight: float = 0.45
+    concept_sparse_weight: float = 0.25
+    procedure_dense_weight: float = 0.25
+    procedure_sparse_weight: float = 0.45
+
 
 # ============================================================================
 # Enhanced Similarity Matcher (3-Layer)
@@ -123,6 +129,9 @@ class SimilarityThresholds:
     ngram_size: int = 3
     min_shared_ngrams: int = 1
     max_candidates: int = 500
+
+    # Exact-match self-exclusion threshold (glossary duplicate detection)
+    exact_match_threshold: float = 0.999
 
     # Term-level matching defaults (term_similarity_matcher, enhanced_similarity_matcher)
     jaccard_threshold: float = 0.7
@@ -229,6 +238,17 @@ class QualityConfig:
     # Freshness boundaries (days)
     fresh_max_days: int = 90
     stale_max_days: int = 365
+
+    # KTS (Knowledge Trust Score) route calculation
+    kts_has_metadata_high: float = 0.8   # category/owner present
+    kts_has_metadata_low: float = 0.3    # category/owner missing
+    kts_freshness_default: float = 0.5
+    kts_freshness_30d: float = 1.0
+    kts_freshness_90d: float = 0.8
+    kts_freshness_180d: float = 0.5
+    kts_freshness_old: float = 0.3
+    kts_tier_high: float = 0.7
+    kts_tier_medium: float = 0.4
 
 
 # ============================================================================

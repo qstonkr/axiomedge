@@ -277,9 +277,11 @@ async def hub_search(request: HubSearchRequest):
                 effective_top_k = max(effective_top_k, 10)
             elif qtype == "concept":
                 effective_top_k = max(effective_top_k, 8)
-                _dense_w, _sparse_w = 0.45, 0.25  # Concept: dense↑
+                _dense_w = weights.hybrid_search.concept_dense_weight
+                _sparse_w = weights.hybrid_search.concept_sparse_weight
             elif qtype in ("procedure", "troubleshoot"):
-                _dense_w, _sparse_w = 0.25, 0.45  # Procedure: sparse↑ (exact keywords matter)
+                _dense_w = weights.hybrid_search.procedure_dense_weight
+                _sparse_w = weights.hybrid_search.procedure_sparse_weight
             # factual/general: keep default balance
         except Exception:
             pass

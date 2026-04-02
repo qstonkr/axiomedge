@@ -259,27 +259,34 @@ async def calculate_trust_scores(
                     break
 
         # Calculate and save trust scores
+        from src.config_weights import weights as _w
+        _qc = _w.quality
+
         for doc_id, pay in docs.items():
             quality = pay.get("quality_score", 50) / 100
             has_source = 1.0 if pay.get("source_uri") else 0.0
-            has_category = 0.8 if pay.get("l1_category") and pay.get("l1_category") != "기타" else 0.3
-            has_owner = 0.8 if pay.get("owner") else 0.3
+            has_category = (
+                _qc.kts_has_metadata_high
+                if pay.get("l1_category") and pay.get("l1_category") != "기타"
+                else _qc.kts_has_metadata_low
+            )
+            has_owner = _qc.kts_has_metadata_high if pay.get("owner") else _qc.kts_has_metadata_low
 
             # Freshness: days since last modified (original doc date, not ingestion date)
-            freshness = 0.5
+            freshness = _qc.kts_freshness_default
             doc_date = pay.get("last_modified", pay.get("ingested_at", ""))
             if doc_date:
                 try:
                     ing_dt = dt.fromisoformat(doc_date.replace("Z", "+00:00"))
                     days = (now - ing_dt).days
                     if days < 30:
-                        freshness = 1.0
+                        freshness = _qc.kts_freshness_30d
                     elif days < 90:
-                        freshness = 0.8
+                        freshness = _qc.kts_freshness_90d
                     elif days < 180:
-                        freshness = 0.5
+                        freshness = _qc.kts_freshness_180d
                     else:
-                        freshness = 0.3
+                        freshness = _qc.kts_freshness_old
                 except (ValueError, TypeError):
                     pass
 
@@ -293,7 +300,11 @@ async def calculate_trust_scores(
                 0.10 * has_owner           # expert validation (owner as proxy)
             )
 
-            tier = "high" if kts >= 0.7 else "medium" if kts >= 0.4 else "low"
+            tier = (
+                "high" if kts >= _qc.kts_tier_high
+                else "medium" if kts >= _qc.kts_tier_medium
+                else "low"
+            )
 
             try:
                 await trust_repo.save({
