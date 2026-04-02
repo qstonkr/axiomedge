@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
+
+
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 from src.graph.integrity import (
     GraphIntegrityChecker,
@@ -81,11 +91,10 @@ class TestIntegrityReportStructure:
         assert d["node_id"] == "n-42"
         assert d["details"]["target_id"] == "n-999"
 
-    @pytest.mark.asyncio
-    async def test_no_client_returns_error(self):
+    def test_no_client_returns_error(self):
         """Checker without a client should return error report."""
         checker = GraphIntegrityChecker(neo4j_client=None, graph_repository=None)
-        report = await checker.check_integrity()
+        report = _run(checker.check_integrity())
         assert report.status == "error"
         assert report.total_issues == 1
         assert report.issues[0].issue_type == "no_client"

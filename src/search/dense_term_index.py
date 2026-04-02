@@ -80,10 +80,10 @@ class DenseTermIndex:
                     all_vecs.extend(vecs)
                 else:
                     # 빈 벡터로 패딩
-                    all_vecs.extend([[0.0] * 1024 for _ in batch])
+                    all_vecs.extend([[0.0] * _w.embedding.dimension for _ in batch])
             except Exception as e:
                 logger.warning("Dense embedding batch %d failed: %s", i, e)
-                all_vecs.extend([[0.0] * 1024 for _ in batch])
+                all_vecs.extend([[0.0] * _w.embedding.dimension for _ in batch])
 
         if len(all_vecs) != len(texts):
             logger.error(
@@ -174,7 +174,7 @@ class DenseTermIndex:
                 )
                 all_vecs.extend(output.get("dense_vecs", []))
             except Exception:
-                all_vecs.extend([[0.0] * 1024 for _ in batch])
+                all_vecs.extend([[0.0] * _w.embedding.dimension for _ in batch])
 
         q_matrix = np.array(all_vecs, dtype=np.float32)
         norms = np.linalg.norm(q_matrix, axis=1, keepdims=True)

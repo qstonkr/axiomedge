@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
+
+from src.config_weights import weights as _w
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -63,8 +65,8 @@ NORMALIZATION_RULES: dict[str, str] = {
     "aws": "Amazon Web Services",
 }
 
-# Embedding similarity threshold
-EMBEDDING_THRESHOLD = 0.85
+# Embedding similarity threshold (SSOT: config_weights.ConfidenceConfig)
+EMBEDDING_THRESHOLD = _w.confidence.entity_embedding_threshold
 
 
 class EntityResolver:
@@ -208,7 +210,7 @@ class EntityResolver:
                                     original_name=name,
                                     entity_type=EntityType.TOPIC,
                                     resolution_stage=ResolutionStage.GLOSSARY,
-                                    confidence=0.95,
+                                    confidence=_w.confidence.glossary_match_confidence,
                                     source_id=str(term_id) if term_id else None,
                                     matched_term=str(term_name),
                                 )
@@ -270,7 +272,7 @@ class EntityResolver:
                 original_name=name,
                 entity_type=entity_type,
                 resolution_stage=ResolutionStage.RULE_BASED,
-                confidence=0.9,
+                confidence=_w.confidence.rule_based_confidence,
                 matched_term=NORMALIZATION_RULES[lower],
             )
 

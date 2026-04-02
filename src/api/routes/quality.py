@@ -763,10 +763,12 @@ async def get_embedding_stats():
     """Get embedding stats."""
     state = _get_state()
     embedder = state.get("embedder")
+    from src.config_weights import weights as _w
+
     return {
         "model": "bge-m3-onnx" if embedder else "not_initialized",
         "ready": bool(embedder),
-        "dimension": 1024,
+        "dimension": _w.embedding.dimension,
     }
 
 

@@ -42,7 +42,7 @@ class KnowledgeConfidenceThresholds:
 
     # Query classifier confidence routing thresholds.
     QUERY_PATTERN_MATCH_MIN = _w.confidence.retrieval_correct
-    QUERY_LLM_FALLBACK_MIN = 0.30
+    QUERY_LLM_FALLBACK_MIN = _w.confidence.query_llm_fallback_min
 
     # Claim-to-evidence semantic match threshold.
     EVIDENCE_MATCH_MIN = _w.confidence.crag_correct
@@ -54,7 +54,7 @@ class KnowledgeConfidenceThresholds:
     ADVISORY_RESPONSE_MIN = _w.confidence.advisory_min
     COMPARATIVE_RESPONSE_MIN = _w.confidence.medium
     MULTI_HOP_RESPONSE_MIN = _w.confidence.multi_hop_min
-    UNKNOWN_RESPONSE_MIN = 0.80
+    UNKNOWN_RESPONSE_MIN = _w.confidence.unknown_response_min
 
     # Default threshold for proactive quality alerting.
     QUALITY_ALERT_MIN = _w.confidence.medium

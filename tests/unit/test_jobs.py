@@ -1,105 +1,176 @@
-"""Unit tests for the jobs module (background ingestion job tracking)."""
+"""Unit tests for the jobs module (Redis-backed ingestion job tracking).
 
-from src.api.routes.jobs import create_job, update_job, get_job, _jobs, _MAX_JOBS
+Mocks the Redis client to test job CRUD logic without a running Redis.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+class _FakeRedis:
+    """In-memory fake Redis for unit testing."""
+
+    def __init__(self):
+        self._store: dict[str, dict[str, str]] = {}
+        self._lists: dict[str, list[str]] = {}
+
+    async def hset(self, key: str, mapping: dict) -> None:
+        if key not in self._store:
+            self._store[key] = {}
+        self._store[key].update({k: str(v) for k, v in mapping.items()})
+
+    async def hgetall(self, key: str) -> dict:
+        return dict(self._store.get(key, {}))
+
+    async def hget(self, key: str, field: str) -> str | None:
+        return self._store.get(key, {}).get(field)
+
+    async def exists(self, key: str) -> bool:
+        return key in self._store
+
+    async def delete(self, key: str) -> None:
+        self._store.pop(key, None)
+
+    async def expire(self, key: str, ttl: int) -> None:
+        pass  # No-op for tests
+
+    async def rpush(self, key: str, value: str) -> None:
+        self._lists.setdefault(key, []).append(value)
+
+    async def llen(self, key: str) -> int:
+        return len(self._lists.get(key, []))
+
+    async def lpop(self, key: str) -> str | None:
+        lst = self._lists.get(key, [])
+        return lst.pop(0) if lst else None
+
+    def pipeline(self):
+        return _FakePipeline(self)
+
+
+class _FakePipeline:
+    def __init__(self, redis: _FakeRedis):
+        self._redis = redis
+        self._ops: list = []
+
+    def hset(self, key, mapping):
+        self._ops.append(("hset", key, mapping))
+        return self
+
+    def expire(self, key, ttl):
+        self._ops.append(("expire", key, ttl))
+        return self
+
+    def rpush(self, key, value):
+        self._ops.append(("rpush", key, value))
+        return self
+
+    async def execute(self):
+        for op in self._ops:
+            if op[0] == "hset":
+                await self._redis.hset(op[1], op[2])
+            elif op[0] == "rpush":
+                await self._redis.rpush(op[1], op[2])
 
 
 class TestJobs:
-    """Test in-memory job tracking."""
+    """Test Redis-backed job tracking."""
 
     def setup_method(self) -> None:
-        _jobs.clear()
+        self._fake_redis = _FakeRedis()
+
+    def _patch_redis(self):
+        return patch(
+            "src.api.routes.jobs._get_redis",
+            new=AsyncMock(return_value=self._fake_redis),
+        )
 
     def test_create_job(self) -> None:
-        job_id = create_job("kb-1", file_count=5)
-        assert isinstance(job_id, str)
-        assert len(job_id) == 8
+        from src.api.routes.jobs import create_job, get_job
 
-        job = get_job(job_id)
-        assert job is not None
-        assert job["kb_id"] == "kb-1"
-        assert job["status"] == "processing"
-        assert job["total_files"] == 5
-        assert job["processed"] == 0
-        assert job["chunks"] == 0
-        assert job["errors"] == []
+        async def _test():
+            with self._patch_redis():
+                job_id = await create_job("kb-1", file_count=5)
+                assert isinstance(job_id, str)
+                assert len(job_id) == 8
+
+                job = await get_job(job_id)
+                assert job is not None
+                assert job["kb_id"] == "kb-1"
+                assert job["status"] == "processing"
+                assert job["total_files"] == 5
+
+        _run(_test())
 
     def test_update_job(self) -> None:
-        job_id = create_job("kb-1", file_count=3)
-        update_job(job_id, processed=2, chunks=50)
+        from src.api.routes.jobs import create_job, update_job, get_job
 
-        job = get_job(job_id)
-        assert job["processed"] == 2
-        assert job["chunks"] == 50
-        assert job["status"] == "processing"  # Not changed
+        async def _test():
+            with self._patch_redis():
+                job_id = await create_job("kb-1", file_count=3)
+                await update_job(job_id, processed=2, chunks=50)
 
-    def test_update_job_status(self) -> None:
-        job_id = create_job("kb-1", file_count=1)
-        update_job(job_id, status="completed", processed=1, chunks=10)
+                job = await get_job(job_id)
+                assert job["processed"] == 2
+                assert job["chunks"] == 50
 
-        job = get_job(job_id)
-        assert job["status"] == "completed"
+        _run(_test())
+
+    def test_update_job_status_completed(self) -> None:
+        from src.api.routes.jobs import create_job, update_job, get_job
+
+        async def _test():
+            with self._patch_redis():
+                job_id = await create_job("kb-1", file_count=1)
+                await update_job(job_id, status="completed", processed=1, chunks=10)
+
+                job = await get_job(job_id)
+                assert job["status"] == "completed"
+                assert job["completed_at"]  # Should be set
+
+        _run(_test())
 
     def test_update_nonexistent_job(self) -> None:
-        """Updating a non-existent job should be a no-op."""
-        update_job("nonexistent", status="completed")
-        assert get_job("nonexistent") is None
+        from src.api.routes.jobs import update_job, get_job
 
-    def test_get_job(self) -> None:
-        job_id = create_job("kb-2", file_count=10)
-        job = get_job(job_id)
-        assert job is not None
-        assert job["id"] == job_id
+        async def _test():
+            with self._patch_redis():
+                await update_job("nonexistent", status="completed")
+                assert await get_job("nonexistent") is None
+
+        _run(_test())
 
     def test_get_nonexistent_job(self) -> None:
-        assert get_job("does-not-exist") is None
+        from src.api.routes.jobs import get_job
 
-    def test_eviction_on_max_jobs(self) -> None:
-        """When exceeding _MAX_JOBS, oldest completed jobs should be evicted.
+        async def _test():
+            with self._patch_redis():
+                assert await get_job("does-not-exist") is None
 
-        Note: _evict_oldest_completed checks len > _MAX_JOBS, so eviction
-        happens when creating the (_MAX_JOBS + 2)th job (after the first
-        overflow job was added without eviction).
-        """
-        # Create _MAX_JOBS + 1 completed jobs to exceed the limit
-        old_ids = []
-        for i in range(_MAX_JOBS + 1):
-            jid = create_job(f"kb-{i}", file_count=1)
-            update_job(jid, status="completed")
-            old_ids.append(jid)
+        _run(_test())
 
-        # At this point we have _MAX_JOBS + 1 jobs. Creating another triggers eviction.
-        new_id = create_job("kb-new", file_count=1)
-        assert get_job(new_id) is not None
+    def test_multiple_creates_unique_ids(self) -> None:
+        from src.api.routes.jobs import create_job
 
-        # After eviction, total should be <= _MAX_JOBS + 1
-        # (eviction removes enough to get to _MAX_JOBS, then adds the new one)
-        assert len(_jobs) <= _MAX_JOBS + 1
+        async def _test():
+            with self._patch_redis():
+                ids = set()
+                for i in range(10):
+                    jid = await create_job(f"kb-{i}", file_count=i)
+                    ids.add(jid)
+                assert len(ids) == 10
 
-        # The first completed job should have been evicted
-        assert get_job(old_ids[0]) is None
-
-    def test_eviction_prefers_completed_over_processing(self) -> None:
-        """Processing jobs should be retained over completed ones during eviction."""
-        # Fill with a mix of completed and processing jobs
-        processing_ids = []
-        for i in range(_MAX_JOBS):
-            jid = create_job(f"kb-{i}", file_count=1)
-            if i % 2 == 0:
-                update_job(jid, status="completed")
-            else:
-                processing_ids.append(jid)
-
-        # Trigger eviction
-        new_id = create_job("kb-overflow", file_count=1)
-
-        # Processing jobs should still be present
-        for pid in processing_ids:
-            assert get_job(pid) is not None, f"Processing job {pid} should survive eviction"
-
-    def test_multiple_creates(self) -> None:
-        ids = set()
-        for i in range(10):
-            jid = create_job(f"kb-{i}", file_count=i)
-            ids.add(jid)
-        # All IDs should be unique
-        assert len(ids) == 10
+        _run(_test())

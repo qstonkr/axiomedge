@@ -45,11 +45,13 @@ class OllamaEmbeddingProvider:
     def __init__(
         self,
         base_url: str | None = None,
-        model: str = "bge-m3:latest",
+        model: str = "",
         timeout: float = 300.0,
     ):
+        from src.config import DEFAULT_EMBEDDING_MODEL
+
         self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
-        self._model = model
+        self._model = model or DEFAULT_EMBEDDING_MODEL
         self._timeout = timeout
         self._client: httpx.Client | None = None
 

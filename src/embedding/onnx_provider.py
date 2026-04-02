@@ -60,14 +60,16 @@ class OnnxBgeEmbeddingProvider:
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-m3",
+        model_name: str = "",
         model_path: str | None = None,
         use_fp16: bool = True,
         use_sparse: bool = True,
         max_length: int = weights.embedding.onnx_max_length,
         onnx_file_name: str = os.getenv("KNOWLEDGE_BGE_ONNX_FILE_NAME", "model.onnx"),
     ):
-        self._model_name = model_name
+        from src.config import DEFAULT_EMBEDDING_MODEL_HF
+
+        self._model_name = model_name or DEFAULT_EMBEDDING_MODEL_HF
         self._model_path = (model_path or "").strip()
         self._use_fp16 = use_fp16
         self._use_sparse = use_sparse

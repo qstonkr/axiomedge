@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
+
+
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 from src.domain.lifecycle import (
     ALLOWED_TRANSITIONS,
@@ -45,42 +54,40 @@ def sm() -> LifecycleStateMachine:
 
 class TestLifecycleStateMachine:
 
-    @pytest.mark.asyncio
-    async def test_valid_transition_draft_to_published(self, sm: LifecycleStateMachine):
+    def test_valid_transition_draft_to_published(self, sm: LifecycleStateMachine) -> None:
         """draft -> published should succeed."""
-        lifecycle = await sm.get_or_create("doc-1", "kb-1")
-        assert lifecycle["status"] == "draft"
+        def _test():
+            lifecycle = _run(sm.get_or_create("doc-1", "kb-1"))
+            assert lifecycle["status"] == "draft"
 
-        result = await sm.transition("doc-1", "kb-1", "draft", "published", "user-a")
-        assert result["status"] == "published"
-        assert result["previous_status"] == "draft"
-        assert result["status_changed_by"] == "user-a"
-        assert result["auto_archive_at"] is not None  # published -> auto-archive scheduled
+            result = _run(sm.transition("doc-1", "kb-1", "draft", "published", "user-a"))
+            assert result["status"] == "published"
+            assert result["previous_status"] == "draft"
+            assert result["status_changed_by"] == "user-a"
+            assert result["auto_archive_at"] is not None
+        _test()
 
-    @pytest.mark.asyncio
-    async def test_invalid_transition_draft_to_deleted(self, sm: LifecycleStateMachine):
+    def test_invalid_transition_draft_to_deleted(self, sm: LifecycleStateMachine) -> None:
         """draft -> deleted should succeed (it IS allowed per ALLOWED_TRANSITIONS)."""
-        await sm.get_or_create("doc-2", "kb-1")
-        result = await sm.transition("doc-2", "kb-1", "draft", "deleted", "user-b")
+        _run(sm.get_or_create("doc-2", "kb-1"))
+        result = _run(sm.transition("doc-2", "kb-1", "draft", "deleted", "user-b"))
         assert result["status"] == "deleted"
         assert result["deletion_scheduled_at"] is not None
 
-    @pytest.mark.asyncio
-    async def test_invalid_transition_draft_to_archived(self, sm: LifecycleStateMachine):
+    def test_invalid_transition_draft_to_archived(self, sm: LifecycleStateMachine) -> None:
         """draft -> archived should fail (not in allowed transitions)."""
-        await sm.get_or_create("doc-3", "kb-1")
+        _run(sm.get_or_create("doc-3", "kb-1"))
         with pytest.raises(TransitionError, match="Cannot transition"):
-            await sm.transition("doc-3", "kb-1", "draft", "archived", "user-c")
+            _run(sm.transition("doc-3", "kb-1", "draft", "archived", "user-c"))
 
-    @pytest.mark.asyncio
-    async def test_transition_history_recorded(self, sm: LifecycleStateMachine):
+    def test_transition_history_recorded(self, sm: LifecycleStateMachine) -> None:
         """Each transition should be recorded in the transitions list."""
-        await sm.get_or_create("doc-4", "kb-1")
+        _run(sm.get_or_create("doc-4", "kb-1"))
 
-        await sm.transition("doc-4", "kb-1", "draft", "published", "user-a", reason="Ready")
-        result = await sm.transition(
+        _run(sm.transition("doc-4", "kb-1", "draft", "published", "user-a", reason="Ready"))
+        result = _run(sm.transition(
             "doc-4", "kb-1", "published", "under_review", "user-b", reason="Needs review"
-        )
+        ))
 
         transitions = result["transitions"]
         assert len(transitions) == 2

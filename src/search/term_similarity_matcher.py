@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from src.config_weights import weights as _w
 from src.nlp.term_normalizer import TermNormalizer
 from src.nlp.lexical_scorer import LexicalScorer
 
@@ -116,15 +117,15 @@ class TermSimilarityMatcher:
     """
 
     # n-gram 역색인에서 후보로 선정할 최소 공유 n-gram 수
-    _MIN_SHARED_NGRAMS = 1
+    _MIN_SHARED_NGRAMS = _w.similarity.min_shared_ngrams
     # n-gram 역색인에서 가져올 최대 후보 수
-    _MAX_CANDIDATES = 500
+    _MAX_CANDIDATES = _w.similarity.max_candidates
 
     def __init__(
         self,
-        jaccard_threshold: float = 0.7,
-        levenshtein_threshold: float = 0.8,
-        token_overlap_threshold: float = 0.7,
+        jaccard_threshold: float = _w.similarity.jaccard_threshold,
+        levenshtein_threshold: float = _w.similarity.levenshtein_threshold,
+        token_overlap_threshold: float = _w.similarity.token_overlap_threshold,
     ) -> None:
         self._jaccard_threshold = jaccard_threshold
         self._levenshtein_threshold = levenshtein_threshold

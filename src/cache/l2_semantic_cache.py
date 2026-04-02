@@ -22,6 +22,8 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
+from src.config_weights import weights as _w
+
 from .cache_types import (
     CacheDomain,
     CacheEntry,
@@ -51,7 +53,7 @@ class L2SemanticCache(ICacheLayer):
         self,
         redis_url: str = "redis://localhost:6379",
         embedding_provider: Any | None = None,
-        similarity_threshold: float = 0.92,
+        similarity_threshold: float = _w.cache.l2_similarity_threshold,
         max_entries: int = DEFAULT_MAX_ENTRIES,
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
         prefix: str = "knowledge:l2cache",

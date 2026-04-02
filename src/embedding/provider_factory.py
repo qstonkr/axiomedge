@@ -114,5 +114,7 @@ def _create_onnx(**kwargs) -> EmbeddingProvider:
     from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
     model_path = kwargs.get("model_path") or os.getenv("KNOWLEDGE_BGE_ONNX_MODEL_PATH", "")
-    model_name = kwargs.get("model_name", "BAAI/bge-m3")
+    from src.config import DEFAULT_EMBEDDING_MODEL_HF
+
+    model_name = kwargs.get("model_name", DEFAULT_EMBEDDING_MODEL_HF)
     return OnnxBgeEmbeddingProvider(model_name=model_name, model_path=model_path)

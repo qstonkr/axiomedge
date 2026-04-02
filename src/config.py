@@ -13,7 +13,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Model name defaults — SSOT for all fallback references
 DEFAULT_LLM_MODEL = "exaone3.5:7.8b"
-DEFAULT_EMBEDDING_MODEL = "bge-m3:latest"
+DEFAULT_EMBEDDING_MODEL = "bge-m3:latest"  # Ollama tag
+DEFAULT_EMBEDDING_MODEL_HF = "BAAI/bge-m3"  # HuggingFace ID (ONNX provider)
 
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db"
 

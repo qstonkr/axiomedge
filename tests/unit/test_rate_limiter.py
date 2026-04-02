@@ -1,6 +1,6 @@
 """Unit tests for the RateLimiterMiddleware."""
 
-import time
+import asyncio
 
 import pytest
 from starlette.applications import Starlette
@@ -9,6 +9,14 @@ from starlette.routing import Route
 from httpx import ASGITransport, AsyncClient
 
 from src.api.middleware.rate_limiter import RateLimiterMiddleware
+
+
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _make_app(max_requests: int = 5, window_seconds: int = 60) -> Starlette:
@@ -31,80 +39,78 @@ def _make_app(max_requests: int = 5, window_seconds: int = 60) -> Starlette:
     return middleware  # type: ignore[return-value]
 
 
-@pytest.fixture
-async def rate_client():
-    app = _make_app(max_requests=3, window_seconds=60)
+async def _make_client(max_requests: int = 3, window_seconds: int = 60):
+    app = _make_app(max_requests=max_requests, window_seconds=window_seconds)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
+    return AsyncClient(transport=transport, base_url="http://test")
 
 
 class TestRateLimiter:
     """Test rate limiting behavior."""
 
-    async def test_allows_requests_under_limit(self, rate_client: AsyncClient) -> None:
-        for _ in range(3):
-            resp = await rate_client.get("/api/test")
-            assert resp.status_code == 200
+    def test_allows_requests_under_limit(self) -> None:
+        async def _test():
+            ac = await _make_client()
+            async with ac:
+                for _ in range(3):
+                    resp = await ac.get("/api/test")
+                    assert resp.status_code == 200
+        _run(_test())
 
-    async def test_blocks_requests_over_limit(self, rate_client: AsyncClient) -> None:
-        # Exhaust the limit
-        for _ in range(3):
-            resp = await rate_client.get("/api/test")
-            assert resp.status_code == 200
+    def test_blocks_requests_over_limit(self) -> None:
+        async def _test():
+            ac = await _make_client()
+            async with ac:
+                for _ in range(3):
+                    resp = await ac.get("/api/test")
+                    assert resp.status_code == 200
+                resp = await ac.get("/api/test")
+                assert resp.status_code == 429
+                assert "Too Many Requests" in resp.json()["detail"]
+                assert "Retry-After" in resp.headers
+        _run(_test())
 
-        # Next request should be blocked
-        resp = await rate_client.get("/api/test")
-        assert resp.status_code == 429
-        assert "Too Many Requests" in resp.json()["detail"]
-        assert "Retry-After" in resp.headers
-
-    async def test_health_path_exempt(self, rate_client: AsyncClient) -> None:
+    def test_health_path_exempt(self) -> None:
         """Health endpoint should never be rate limited."""
-        # Exhaust limit on regular path
-        for _ in range(3):
-            await rate_client.get("/api/test")
+        async def _test():
+            ac = await _make_client()
+            async with ac:
+                for _ in range(3):
+                    await ac.get("/api/test")
+                resp = await ac.get("/api/test")
+                assert resp.status_code == 429
+                resp = await ac.get("/health")
+                assert resp.status_code == 200
+        _run(_test())
 
-        # Regular path blocked
-        resp = await rate_client.get("/api/test")
-        assert resp.status_code == 429
+    def test_ready_path_exempt(self) -> None:
+        async def _test():
+            async def ready(request):
+                return PlainTextResponse("ready")
 
-        # Health path still works
-        resp = await rate_client.get("/health")
-        assert resp.status_code == 200
+            inner_app = Starlette(routes=[
+                Route("/ready", ready),
+                Route("/test", lambda r: PlainTextResponse("OK")),
+            ])
+            middleware = RateLimiterMiddleware(inner_app)
+            middleware.max_requests = 1
+            middleware.window_seconds = 60
 
-    async def test_ready_path_exempt(self) -> None:
-        app = _make_app(max_requests=1, window_seconds=60)
+            transport = ASGITransport(app=middleware)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                await ac.get("/test")
+                resp = await ac.get("/test")
+                assert resp.status_code == 429
+                resp = await ac.get("/ready")
+                assert resp.status_code == 200
+        _run(_test())
 
-        async def ready(request):
-            return PlainTextResponse("ready")
-
-        # Add /ready route to the inner app
-        inner_app = Starlette(routes=[
-            Route("/ready", ready),
-            Route("/test", lambda r: PlainTextResponse("OK")),
-        ])
-        middleware = RateLimiterMiddleware(inner_app)
-        middleware.max_requests = 1
-        middleware.window_seconds = 60
-
-        transport = ASGITransport(app=middleware)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            # Exhaust limit
-            await ac.get("/test")
-            resp = await ac.get("/test")
-            assert resp.status_code == 429
-
-            # /ready exempt
-            resp = await ac.get("/ready")
-            assert resp.status_code == 200
-
-    async def test_different_clients_tracked_separately(self) -> None:
+    def test_different_clients_tracked_separately(self) -> None:
         """Different client IPs should have separate rate limits."""
-        app = _make_app(max_requests=1, window_seconds=60)
-        # Note: in ASGI test transport, all requests come from the same client
-        # so this is a basic structural test
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as ac:
-            resp = await ac.get("/")
-            assert resp.status_code == 200
+        async def _test():
+            app = _make_app(max_requests=1, window_seconds=60)
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
+                resp = await ac.get("/")
+                assert resp.status_code == 200
+        _run(_test())

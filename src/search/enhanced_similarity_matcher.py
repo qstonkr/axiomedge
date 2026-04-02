@@ -128,8 +128,8 @@ class EnhancedSimilarityMatcher:
 
     def __init__(
         self,
-        jaccard_threshold: float = 0.7,
-        levenshtein_threshold: float = 0.8,
+        jaccard_threshold: float = _w.similarity.jaccard_threshold,
+        levenshtein_threshold: float = _w.similarity.levenshtein_threshold,
         config: EnhancedMatcherConfig | None = None,
     ) -> None:
         self._jaccard_threshold = jaccard_threshold

@@ -124,6 +124,11 @@ class SimilarityThresholds:
     min_shared_ngrams: int = 1
     max_candidates: int = 500
 
+    # Term-level matching defaults (term_similarity_matcher, enhanced_similarity_matcher)
+    jaccard_threshold: float = 0.7
+    levenshtein_threshold: float = 0.8
+    token_overlap_threshold: float = 0.7
+
     # Graceful degradation
     full_pipeline_max_terms: int = 3000
     reduced_ce_max_terms: int = 10000
@@ -167,6 +172,15 @@ class ConfidenceConfig:
     analytical_min: float = 0.70
     advisory_min: float = 0.50
     multi_hop_min: float = 0.75
+
+    # Entity resolution (graph/entity_resolver.py)
+    entity_embedding_threshold: float = 0.85
+    glossary_match_confidence: float = 0.95
+    rule_based_confidence: float = 0.90
+
+    # Unknown response minimum (search/confidence_thresholds.py)
+    unknown_response_min: float = 0.80
+    query_llm_fallback_min: float = 0.30
 
     # Quality gate
     quality_gate_faithfulness: float = 0.70
