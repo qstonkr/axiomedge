@@ -310,8 +310,8 @@ class TestProviderFactory:
 # =============================================================================
 
 
-class TestAuthServiceInternal:
-    """Test AuthService internal auth methods with mocked DB."""
+class TestAuthenticator:
+    """Test Authenticator (email/password auth) with mocked DB."""
 
     @pytest.fixture
     def mock_session(self):
@@ -322,17 +322,16 @@ class TestAuthServiceInternal:
         return session
 
     @pytest.fixture
-    def auth_service(self, mock_session):
-        """Create AuthService with mocked session factory."""
-        from src.auth.service import AuthService
+    def authenticator(self, mock_session):
+        """Create Authenticator with mocked session factory."""
+        from src.auth.authenticator import Authenticator
+        from src.auth.user_crud import UserCRUD
 
-        service = AuthService.__new__(AuthService)
-        service._engine = MagicMock()
-        service._session_factory = MagicMock(return_value=mock_session)
-        service._session = MagicMock(return_value=mock_session)
-        return service
+        session_factory = MagicMock(return_value=mock_session)
+        user_crud = UserCRUD(session_factory)
+        return Authenticator(session_factory, user_crud)
 
-    def test_authenticate_success(self, auth_service, mock_session) -> None:
+    def test_authenticate_success(self, authenticator, mock_session) -> None:
         """Successful authentication returns user dict."""
         from src.auth.models import UserModel
         from src.auth.password import hash_password
@@ -350,12 +349,12 @@ class TestAuthServiceInternal:
         mock_session.execute = AsyncMock(return_value=result_mock)
         mock_session.commit = AsyncMock()
 
-        result = _run(auth_service.authenticate("test@test.com", "correct-password"))
+        result = _run(authenticator.authenticate("test@test.com", "correct-password"))
         assert result is not None
         assert result["id"] == "user-123"
         assert result["email"] == "test@test.com"
 
-    def test_authenticate_wrong_password(self, auth_service, mock_session) -> None:
+    def test_authenticate_wrong_password(self, authenticator, mock_session) -> None:
         """Wrong password returns None."""
         from src.auth.models import UserModel
         from src.auth.password import hash_password
@@ -367,14 +366,14 @@ class TestAuthServiceInternal:
         result_mock.scalar_one_or_none.return_value = mock_user
         mock_session.execute = AsyncMock(return_value=result_mock)
 
-        result = _run(auth_service.authenticate("test@test.com", "wrong-password"))
+        result = _run(authenticator.authenticate("test@test.com", "wrong-password"))
         assert result is None
 
-    def test_authenticate_user_not_found(self, auth_service, mock_session) -> None:
+    def test_authenticate_user_not_found(self, authenticator, mock_session) -> None:
         """Non-existent user returns None (with constant-time comparison)."""
         result_mock = MagicMock()
         result_mock.scalar_one_or_none.return_value = None
         mock_session.execute = AsyncMock(return_value=result_mock)
 
-        result = _run(auth_service.authenticate("nonexistent@test.com", "any-password"))
+        result = _run(authenticator.authenticate("nonexistent@test.com", "any-password"))
         assert result is None
