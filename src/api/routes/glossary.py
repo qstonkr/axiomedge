@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import unicodedata
 import uuid
 from typing import Any
 
@@ -11,8 +10,6 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from src.api.app import _get_state
 from src.config_weights import weights as _w
-from src.nlp.morpheme_analyzer import get_analyzer
-from src.nlp.term_normalizer import TermNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -571,42 +568,14 @@ async def import_glossary_csv(
     term_type: str = Query(default="term"),
     kb_id: str = Query(default="global-standard"),
 ):
-    """Import glossary terms from one or multiple CSV files.
-
-    Supports Korean column headers (표준분류, 논리명, 물리명, etc.) and
-    auto-detects term_type from 구성정보 (composition_info) column.
-    Uses batch inserts for performance on large files (75K+ rows).
-    """
-    import csv
-    import io
+    """Import glossary terms from one or multiple CSV files."""
+    from src.api.services.glossary_import_service import import_csv
 
     state = _get_state()
     repo = state.get("glossary_repo")
     if not repo:
         return {"success": False, "imported": 0, "skipped": 0, "errors": ["No DB connection"]}
 
-    # Korean column name mapping (P1-5) — extended for actual CSV format
-    _KO_COLUMN_MAP = {
-        "물리명": "term",
-        "논리명": "term_ko",
-        "정의": "definition",
-        "동의어": "synonyms",
-        "약어": "abbreviations",
-        "물리의미": "physical_meaning",
-        "구성정보": "composition_info",
-        "도메인명": "domain_name",
-        "표준분류": "source",
-        "데이터타입": "data_type",
-        "데이터길이": "data_length",
-        "데이터소수점": "data_decimal",
-    }
-
-    BATCH_SIZE = 500
-
-    morpheme_analyzer = get_analyzer()
-    term_normalizer = TermNormalizer()
-
-    # 단일 + 멀티 파일 통합
     upload_files: list[UploadFile] = []
     if file is not None:
         upload_files.append(file)
@@ -616,166 +585,9 @@ async def import_glossary_csv(
     if not upload_files:
         return {"success": False, "imported": 0, "skipped": 0, "errors": ["No files provided"]}
 
-    total_imported = 0
-    total_skipped = 0
-    all_errors: list[str] = []
-    word_count = 0
-    term_count = 0
+    result = await import_csv(repo, upload_files, encoding=encoding, kb_id=kb_id)
 
-    for uf in upload_files:
-        fname = uf.filename or "unknown.csv"
-        try:
-            content = await uf.read()
-            text = content.decode(encoding)
-            reader = csv.DictReader(io.StringIO(text))
-
-            # P1-5: Validate CSV column headers
-            if reader.fieldnames and "term" not in reader.fieldnames:
-                # Check alternative Korean column names
-                has_korean_col = any(k in (reader.fieldnames or []) for k in _KO_COLUMN_MAP)
-                if not has_korean_col:
-                    all_errors.append(
-                        f"{fname}: 필수 컬럼 'term' 또는 '물리명'이 없습니다. "
-                        f"발견된 컬럼: {reader.fieldnames}"
-                    )
-                    continue
-
-            batch: list[dict[str, Any]] = []
-
-            for row_num, row in enumerate(reader, start=2):
-                # P1-5: Apply Korean column mapping
-                mapped_row: dict[str, Any] = {}
-                for k, v in row.items():
-                    if k is None:
-                        continue
-                    mapped_key = _KO_COLUMN_MAP.get(k, k)
-                    mapped_row[mapped_key] = v
-                row = mapped_row
-
-                term = row.get("term", "").strip()
-                if not term:
-                    total_skipped += 1
-                    continue
-
-                # P0-3: Unicode NFC normalization
-                term = unicodedata.normalize("NFC", term)
-
-                # P1-6: Strip Korean particles
-                term = morpheme_analyzer.strip_particles(term)
-
-                try:
-                    synonyms_raw = row.get("synonyms", "") or ""
-                    abbreviations_raw = row.get("abbreviations", "") or ""
-                    synonyms = [s.strip() for s in synonyms_raw.split(",") if s.strip()]
-                    abbreviations = [a.strip() for a in abbreviations_raw.split(",") if a.strip()]
-
-                    # Auto-enrich from physical_meaning (물리의미)
-                    # e.g., SCOR→Score, CNT→Count — 영문 풀네임을 유의어로
-                    physical_meaning = (row.get("physical_meaning", "") or "").strip()
-                    if physical_meaning:
-                        # 물리의미가 영문이면 synonym으로 추가
-                        pm_lower = physical_meaning.lower()
-                        existing_lower = {s.lower() for s in synonyms}
-                        if pm_lower not in existing_lower and pm_lower != term.lower():
-                            synonyms.append(physical_meaning)
-
-                    # Auto-enrich: 물리명(term)이 영문 약어이면 abbreviations에
-                    # 논리명(term_ko)이 한국어이면 term↔term_ko 양방향 매핑
-                    term_ko = (row.get("term_ko", "") or "").strip()
-                    if term_ko and term_ko.lower() != term.lower():
-                        # 논리명이 있고 물리명과 다르면 → 서로 유의어
-                        if term_ko.lower() not in {s.lower() for s in synonyms}:
-                            synonyms.append(term_ko)
-
-                    # P2-7: Auto-detect abbreviations
-                    if term_normalizer.is_likely_abbreviation(term) and not abbreviations:
-                        abbreviations = [term]
-
-                    status = row.get("status", "pending")
-                    scope = row.get("scope", "global")
-
-                    # P0-2: Global terms are pre-approved
-                    if scope == "global":
-                        status = "approved"
-
-                    # Auto-detect term_type from composition_info
-                    composition = row.get("composition_info", "").strip()
-                    has_composition_col = "composition_info" in row or "구성정보" in row
-
-                    if composition:
-                        # 구성정보 있으면: 단어 수로 판별
-                        words_in_comp = composition.split()
-                        if len(words_in_comp) <= 1:
-                            auto_term_type = "word"
-                        else:
-                            auto_term_type = "term"
-                    elif not has_composition_col:
-                        # 구성정보 컬럼 자체가 없는 CSV (단어사전 CSV)
-                        # → 물리명이 언더스코어 없는 짧은 영문 = word
-                        if "_" not in term and len(term) <= 10:
-                            auto_term_type = "word"
-                        else:
-                            auto_term_type = "term"
-                    else:
-                        # 구성정보 컬럼은 있지만 값이 비어있음
-                        auto_term_type = "word"
-
-                    # CSV term_type column overrides auto-detection
-                    final_term_type = row.get("term_type", auto_term_type)
-
-                    if final_term_type == "word":
-                        word_count += 1
-                    else:
-                        term_count += 1
-
-                    # Build source value: use 표준분류 if available, else csv_import
-                    source_val = row.get("source", "").strip() or "csv_import"
-
-                    # Use 표준분류 as kb_id to preserve all records per standard
-                    # e.g., "HBU_전사표준", "GS리테일 전사표준" → separate kb_id
-                    effective_kb_id = source_val if source_val != "csv_import" else row.get("kb_id", kb_id)
-
-                    term_data: dict[str, Any] = {
-                        "id": str(uuid.uuid4()),
-                        "kb_id": effective_kb_id,
-                        "term": term,
-                        "term_ko": row.get("term_ko", "") or "",
-                        "definition": row.get("definition", "") or "",
-                        "synonyms": synonyms,
-                        "abbreviations": abbreviations,
-                        "source": source_val,
-                        "status": status,
-                        "term_type": final_term_type,
-                        "scope": scope,
-                        "physical_meaning": row.get("physical_meaning", "") or "",
-                        "composition_info": row.get("composition_info", "") or "",
-                        "domain_name": row.get("domain_name", "") or "",
-                    }
-                    batch.append(term_data)
-
-                    if len(batch) >= BATCH_SIZE:
-                        try:
-                            inserted = await repo.save_batch(batch)
-                            total_imported += inserted
-                        except Exception as e:
-                            all_errors.append(f"{fname} batch ending row {row_num}: {e}")
-                        batch = []
-
-                except Exception as e:
-                    all_errors.append(f"{fname} Row {row_num}: {e}")
-
-            # Flush remaining batch
-            if batch:
-                try:
-                    inserted = await repo.save_batch(batch)
-                    total_imported += inserted
-                except Exception as e:
-                    all_errors.append(f"{fname} final batch: {e}")
-
-        except Exception as e:
-            all_errors.append(f"{fname}: {e}")
-
-    # P2-8: Cache invalidation after glossary import
+    # Cache invalidation after glossary import
     search_cache = state.get("search_cache")
     if search_cache:
         try:
@@ -783,15 +595,7 @@ async def import_glossary_csv(
         except Exception as e:
             logger.warning("Failed to clear search cache after glossary import: %s", e)
 
-    return {
-        "success": total_imported > 0,
-        "imported": total_imported,
-        "skipped": total_skipped,
-        "files_processed": len(upload_files),
-        "auto_detected_words": word_count,
-        "auto_detected_terms": term_count,
-        "errors": all_errors[:20],
-    }
+    return result
 
 
 # ---------------------------------------------------------------------------
