@@ -27,8 +27,7 @@ async def init_database(database_url: str | None = None) -> None:
     """Create all tables in the database.
 
     Args:
-        database_url: Database URL. Defaults to DATABASE_URL env var
-                      or postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
+        database_url: Database URL. Defaults to DATABASE_URL env var.
     """
     url = database_url or os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
     url = to_async_database_url(url)
