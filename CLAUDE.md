@@ -61,25 +61,72 @@ Dashboard ────┼──▶ FastAPI API (:8000)
 
 ### Service Initialization
 
-Services are singleton-initialized during FastAPI lifespan in `src/api/app.py`:
-- `_init_services()` creates all service instances and stores them in the `_state` dict
-- Routes access services via `state = _get_state(); state.get("service_name")`
+Services are singleton-initialized during FastAPI lifespan in `src/api/app.py`. The init is split into 9 category-based functions orchestrated by `_init_services()`:
+
+```
+_init_services()
+  ├── _init_database(state, settings)   # PostgreSQL + 13 repositories + domain services
+  ├── _init_cache(state)                # Redis + multi-layer cache + idempotency
+  ├── _init_dedup(state)                # 4-stage dedup pipeline
+  ├── _init_vectordb(state, settings)   # Qdrant client/collections/search/store
+  ├── _init_graph(state, settings)      # Neo4j + graph repo/expander/integrity
+  ├── _init_embedding(state, settings)  # TEI > Ollama > ONNX fallback
+  ├── _init_llm(state, settings)        # Ollama or SageMaker + GraphRAG
+  ├── _init_search_services(state)      # Query preprocessor, reranker, RAG pipeline
+  └── _init_auth(state, settings)       # Auth provider + RBAC/ABAC
+```
+
+- **AppState** (`src/api/state.py`): Typed dataclass replacing untyped dict. Supports both attribute access (`state.embedder`) and dict-style (`state["embedder"]`, `state.get("key")`) for backward compatibility.
+- Routes access services via `state = _get_state(); state.embedder` or `state.get("embedder")`
 - No global service imports (avoids circular imports)
+
+### Protocols & Abstractions
+
+| Protocol | File | Implementations |
+|---|---|---|
+| `EmbeddingProvider` | `src/embedding/types.py` | OllamaEmbeddingProvider, TEIEmbeddingProvider, OnnxBgeEmbeddingProvider |
+| `LLMClient` | `src/llm/types.py` | OllamaClient, SageMakerLLMClient |
+| `GraphRepository` | `src/graph/types.py` | Neo4jGraphRepository, NoOpNeo4jGraphRepository |
+| `ICacheLayer` | `src/cache/cache_types.py` | L1InMemoryCache, L2SemanticCache |
+| `BaseRepository` | `src/database/repositories/base.py` | All 13 domain repositories (except KBRegistryRepository) |
+
+All Protocols are `runtime_checkable` and use structural typing — implementations satisfy them without explicit inheritance.
+
+### SSOT (Single Source of Truth) Rules
+
+Constants and thresholds are centralized. **Do not hardcode values** — always reference the SSOT:
+
+| Value | SSOT Location | Usage |
+|---|---|---|
+| Embedding dimension (1024) | `config_weights.EmbeddingConfig.dimension` | All providers, vectordb, guard |
+| LLM model name | `config.DEFAULT_LLM_MODEL` | ollama_client, conflict_detector, graphrag |
+| Embedding model name | `config.DEFAULT_EMBEDDING_MODEL` | ollama_provider, provider_factory |
+| Database URL | `config.DEFAULT_DATABASE_URL` | DatabaseSettings, init_db |
+| Confidence thresholds | `config_weights.ConfidenceConfig` | answer_service, rag_pipeline |
+| Trust score weights | `config_weights.TrustScoreWeights` | trust_score_service |
+| Cache domain thresholds | `config_weights.CacheConfig` | cache_types.DOMAIN_THRESHOLDS |
+| Dedup thresholds | `config_weights.DedupConfig` | dedup_pipeline |
+| Similarity fallback | `config_weights.SimilarityThresholds` | enhanced_similarity_matcher |
+| Prompt templates | `src/search/tiered_response.py` | answer_service imports from here |
+| Sparse token hash | `src/embedding/embedding_guard.sparse_token_hash()` | ollama_provider, tei_provider |
 
 ### Key Module Responsibilities
 
 | Module | Role |
 |---|---|
-| `src/api/routes/` | FastAPI routers, registered in `src/api/app.py` via `include_router()` |
+| `src/api/app.py` | FastAPI app + 9 init functions |
+| `src/api/state.py` | Typed AppState (dict-compatible) |
+| `src/api/routes/` | FastAPI routers, registered via `include_router()` |
 | `src/pipeline/` | Ingestion: parse → chunk → embed → dedup (4-stage) → store to Qdrant/Neo4j |
 | `src/search/` | RAG: query classify → preprocess → expand → hybrid search → rerank → LLM generate → answer guard |
 | `src/vectordb/` | Qdrant operations (hybrid search: dense + sparse + ColBERT via RRF) |
 | `src/graph/` | Neo4j operations (entity resolution, multi-hop search) |
-| `src/embedding/` | BGE-M3 providers with fallback: TEI → Ollama → ONNX |
-| `src/database/` | SQLAlchemy async ORM models + repository pattern |
+| `src/embedding/` | BGE-M3 providers with fallback: TEI → Ollama → ONNX. Protocol in `types.py` |
+| `src/llm/` | LLM clients (Ollama/SageMaker). Shared utils in `utils.py`, Protocol in `types.py` |
+| `src/database/` | SQLAlchemy async ORM models + repository pattern. Base class in `repositories/base.py` |
 | `src/auth/` | Auth providers (Local/Keycloak/AzureAD), RBAC + ABAC engines |
-| `src/cache/` | Multi-layer: L1 in-memory + L2 Redis semantic cache |
-| `src/config.py` | Pydantic Settings (env-driven, prefixed) |
+| `src/cache/` | Multi-layer: L1 in-memory + L2 Redis semantic cache. ICacheLayer ABC |
+| `src/config.py` | Pydantic Settings (env-driven) + SSOT constants (DEFAULT_LLM_MODEL, etc.) |
 | `src/config_weights.py` | Frozen dataclasses for all tunable thresholds/weights (env-overridable) |
 
 ### Search Pipeline Detail
@@ -128,7 +175,11 @@ Key PaddleOCR settings:
 ## Code Conventions
 
 - **Async everywhere**: routes, repositories, and service methods are `async def`. CPU-bound work (embedding) uses `asyncio.to_thread()`
-- **Ruff**: target `py312`, line-length 100
+- **Ruff**: target `py312`, line-length 100. Run `uvx ruff check src/` — must be clean
 - **Config**: all env vars via Pydantic Settings (see `.env.example`). Weights/thresholds in `src/config_weights.py` with `_env_float()`/`_env_int()` helpers
-- **Repository pattern**: each domain entity has a repository class in `src/database/repositories/`
+- **SSOT**: never hardcode dimensions, model names, thresholds, or DB URLs. Import from `config.py` or `config_weights.py` (see SSOT table above)
+- **Protocols**: new providers/clients must satisfy existing Protocols (`EmbeddingProvider`, `LLMClient`, `GraphRepository`). Check with `isinstance(inst, Protocol)`
+- **Repository pattern**: inherit from `BaseRepository` in `src/database/repositories/base.py`. KBRegistryRepository is the only exception (manages own engine)
 - **Route pattern**: create router in `src/api/routes/`, register in `src/api/app.py`
+- **Service init**: add new services to the appropriate `_init_*()` function in `app.py` and add the field to `AppState` in `src/api/state.py`
+- **Tests**: unit tests in `tests/unit/` (no services needed), integration in `tests/integration/` (needs API), e2e in `tests/e2e/` (needs all services)
