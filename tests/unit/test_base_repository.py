@@ -16,6 +16,6 @@ class TestBaseRepository:
         mock_maker = MagicMock(return_value=mock_session)
         repo = BaseRepository(session_maker=mock_maker)
         import asyncio
-        session = asyncio.get_event_loop().run_until_complete(repo._get_session())
+        session = asyncio.run(repo._get_session())
         mock_maker.assert_called_once()
         assert session is mock_session

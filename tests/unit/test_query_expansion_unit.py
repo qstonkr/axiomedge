@@ -76,7 +76,7 @@ class TestNoOpGlossaryRepository:
 
     def test_search_returns_empty(self) -> None:
         repo = NoOpGlossaryRepository()
-        result = asyncio.get_event_loop().run_until_complete(repo.search("kb", "term"))
+        result = asyncio.run(repo.search("kb", "term"))
         assert result == []
 
 
@@ -114,7 +114,7 @@ class TestQueryExpansionServiceNoGlossary:
         )
 
     def test_expand_returns_original_terms(self) -> None:
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.svc.expand_query("test-kb", "VPN 접속")
         )
         assert result.original_query == "VPN 접속"
@@ -123,7 +123,7 @@ class TestQueryExpansionServiceNoGlossary:
         assert "접속" in result.expanded_query
 
     def test_expand_empty_query(self) -> None:
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             self.svc.expand_query("kb", "")
         )
         assert result.expanded_query == ""
@@ -134,7 +134,7 @@ class TestSearchQueryExpander:
 
     def test_no_expansion_service_compound_split(self) -> None:
         expander = SearchQueryExpander(query_expansion_service=None)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             expander.expand_query("K8S담당자")
         )
         # Should compound-split at English/Hangul boundary
@@ -142,7 +142,7 @@ class TestSearchQueryExpander:
 
     def test_no_expansion_no_split_needed(self) -> None:
         expander = SearchQueryExpander(query_expansion_service=None)
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             expander.expand_query("순수 한글 질의")
         )
         # Pure Hangul with spaces: compound split produces same tokens
@@ -151,7 +151,7 @@ class TestSearchQueryExpander:
 
     def test_expand_with_metadata(self) -> None:
         expander = SearchQueryExpander(query_expansion_service=None)
-        decision = asyncio.get_event_loop().run_until_complete(
+        decision = asyncio.run(
             expander.expand_query_with_metadata("POS장애처리")
         )
         assert isinstance(decision, QueryExpansionDecision)
