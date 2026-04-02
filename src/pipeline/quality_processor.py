@@ -294,7 +294,7 @@ def _calculate_metrics(content: str) -> QualityMetrics:
         content_length=len(content),
         has_tables=bool(re.search(r"\|.*\|.*\|", content)),
         has_code_blocks=bool(re.search(r"```|<code>", content)),
-        has_headers=bool(re.search(r"^#{1,6}\s|<h[1-6]>", content, re.MULTILINE)),
+        has_headers=bool(re.search(r"(^#{1,6}\s)|(<h[1-6]>)", content, re.MULTILINE)),
         has_images=bool(re.search(r"!\[.*\]\(.*\)|<img", content)),
         has_links=bool(re.search(r"\[.*\]\(.*\)|<a\s+href", content)),
         word_count=len(content.split()),

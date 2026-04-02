@@ -52,10 +52,16 @@ class PaddleOCRProvider(OCRProvider):
 
         if isinstance(image, bytes):
             # PaddleOCR APIs are most stable with file paths; keep this predictable.
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as f:
-                f.write(image)
-                f.flush()
+            import asyncio
+            f = await asyncio.to_thread(tempfile.NamedTemporaryFile, suffix=".png", delete=False)
+            try:
+                await asyncio.to_thread(f.write, image)
+                await asyncio.to_thread(f.flush)
                 return await self._ocr_path(ocr_engine, f.name)
+            finally:
+                await asyncio.to_thread(f.close)
+                import os
+                os.unlink(f.name)
 
         return await self._ocr_path(ocr_engine, image)
 

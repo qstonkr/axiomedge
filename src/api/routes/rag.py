@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -121,8 +122,8 @@ async def _stage1_parse_to_jsonl(
 
             try:
                 # Compute content hash for dedup / doc_id
-                with open(tmp_path, "rb") as f:
-                    content_hash = hashlib.sha256(f.read()).hexdigest()[:16]
+                content_bytes = await asyncio.to_thread(Path(tmp_path).read_bytes)
+                content_hash = hashlib.sha256(content_bytes).hexdigest()[:16]
 
                 # Skip if already parsed (resume after crash)
                 if content_hash in already_parsed:
@@ -520,7 +521,10 @@ async def reingest_from_jsonl(
 
     def _safe_finalize_callback(t: asyncio.Task) -> None:
         try:
-            asyncio.ensure_future(_finalize(t))
+            finalize_task = asyncio.ensure_future(_finalize(t))
+            bg_tasks: set = state.setdefault("_background_tasks", set())
+            bg_tasks.add(finalize_task)
+            finalize_task.add_done_callback(bg_tasks.discard)
         except RuntimeError:
             logger.warning("Event loop closed, finalize skipped for job %s", job_id)
 

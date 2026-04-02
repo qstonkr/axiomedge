@@ -168,12 +168,15 @@ async def upload_file(
     if not store or not embedder:
         raise HTTPException(status_code=503, detail="Ingestion services not initialized")
 
-    # Save uploaded file to temp
+    # Save uploaded file to temp (use asyncio.to_thread for sync I/O)
     suffix = os.path.splitext(file.filename or "")[1]
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
+    content = await file.read()
+    tmp = await asyncio.to_thread(tempfile.NamedTemporaryFile, delete=False, suffix=suffix)
+    try:
+        await asyncio.to_thread(tmp.write, content)
         tmp_path = tmp.name
+    finally:
+        await asyncio.to_thread(tmp.close)
 
     try:
         from src.domain.models import RawDocument
