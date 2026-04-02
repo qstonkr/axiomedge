@@ -29,3 +29,5 @@ scripts/notion_*
 # Data/logs
 *.log
 *.jsonl.bak
+.coverage
+coverage.xml
