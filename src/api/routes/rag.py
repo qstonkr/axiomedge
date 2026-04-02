@@ -330,7 +330,7 @@ async def upload_and_ingest(
     embedder = state.get("embedder")
 
     if not store or not embedder:
-        return {"success": False, "error": "Ingestion services not initialized"}
+        raise HTTPException(status_code=503, detail="Ingestion services not initialized")
 
     # Determine effective kb_id
     effective_kb_id = kb_id or kb_name or "knowledge"
@@ -346,7 +346,7 @@ async def upload_and_ingest(
             upload_files.append(files)
 
     if not upload_files:
-        return {"success": False, "error": "No files provided"}
+        raise HTTPException(status_code=400, detail="No files provided")
 
     from src.pipeline.ingestion import IngestionPipeline
 

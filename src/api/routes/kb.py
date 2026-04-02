@@ -278,7 +278,7 @@ async def clear_search_cache():
             deleted = await search_cache.clear()
         except Exception as e:
             logger.warning("Search cache clear failed: %s", e)
-            return {"success": False, "message": f"Cache clear error: {e}", "deleted": 0}
+            raise HTTPException(status_code=500, detail=f"Cache clear error: {e}")
     return {"success": True, "message": "Search cache cleared", "deleted": deleted}
 
 

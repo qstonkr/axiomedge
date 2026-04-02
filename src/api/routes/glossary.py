@@ -574,7 +574,7 @@ async def import_glossary_csv(
     state = _get_state()
     repo = state.get("glossary_repo")
     if not repo:
-        return {"success": False, "imported": 0, "skipped": 0, "errors": ["No DB connection"]}
+        raise HTTPException(status_code=503, detail="Glossary repository not initialized")
 
     upload_files: list[UploadFile] = []
     if file is not None:
@@ -583,7 +583,7 @@ async def import_glossary_csv(
         upload_files.extend(files)
 
     if not upload_files:
-        return {"success": False, "imported": 0, "skipped": 0, "errors": ["No files provided"]}
+        raise HTTPException(status_code=400, detail="No files provided")
 
     result = await import_csv(repo, upload_files, encoding=encoding, kb_id=kb_id)
 

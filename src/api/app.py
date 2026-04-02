@@ -14,8 +14,14 @@ from datetime import datetime, timezone
 from typing import AsyncIterator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+from src.api.errors import (
+    ErrorResponse as _ErrorResponse,
+    http_exception_handler as _http_exc_handler,
+    unhandled_exception_handler as _unhandled_exc_handler,
+)
 
 from src.api.state import AppState
 
@@ -761,10 +767,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Knowledge Local",
-    description="Standalone Knowledge Management System",
+    description="Standalone Knowledge Management System with RAG capabilities. "
+    "Provides document ingestion, hybrid vector+graph search, and LLM-powered answers.",
     version="0.1.0",
     lifespan=lifespan,
+    openapi_tags=[
+        {"name": "Search", "description": "Hub Search — unified knowledge search with RAG pipeline"},
+        {"name": "Knowledge", "description": "Knowledge base management — CRUD, ingestion, stats"},
+        {"name": "Auth & Permissions", "description": "Authentication, user management, RBAC/ABAC, activity logs"},
+        {"name": "Glossary", "description": "Domain glossary management — terms, synonyms, CSV import"},
+        {"name": "Quality & Trust", "description": "KTS trust scores, evaluation, provenance, lineage"},
+        {"name": "Feedback", "description": "User feedback and voting on knowledge entries"},
+        {"name": "Ownership", "description": "Document/topic ownership and error reporting"},
+        {"name": "Data Sources", "description": "External data source management"},
+        {"name": "Search Groups", "description": "KB search group scoping"},
+        {"name": "Jobs", "description": "Background ingestion job tracking"},
+        {"name": "RAG", "description": "Direct RAG operations — file upload, JSONL reingest"},
+        {"name": "Admin", "description": "Administrative operations — KB config, graph queries"},
+    ],
+    responses={
+        400: {"description": "Bad Request", "model": _ErrorResponse},
+        401: {"description": "Unauthorized"},
+        403: {"description": "Forbidden"},
+        404: {"description": "Not Found", "model": _ErrorResponse},
+        500: {"description": "Internal Server Error", "model": _ErrorResponse},
+        503: {"description": "Service Unavailable", "model": _ErrorResponse},
+    },
 )
+
+# Global exception handlers — normalize all errors to standard JSON format
+app.add_exception_handler(HTTPException, _http_exc_handler)
+app.add_exception_handler(Exception, _unhandled_exc_handler)
 
 cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(

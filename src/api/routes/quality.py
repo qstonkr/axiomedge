@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from src.api.app import _get_state
 
@@ -175,23 +175,25 @@ async def resolve_dedup_conflict(body: dict[str, Any]):
     resolved_by = body.get("resolved_by", "admin")
 
     if not conflict_id or not resolution:
-        return {"success": False, "message": "conflict_id and resolution are required"}
+        raise HTTPException(status_code=400, detail="conflict_id and resolution are required")
 
-    if tracker is not None:
-        try:
-            success = await tracker.resolve_conflict(
-                conflict_id=conflict_id,
-                resolution=resolution,
-                resolved_by=resolved_by,
-            )
-            if success:
-                return {"success": True, "message": f"Conflict {conflict_id} resolved"}
-            return {"success": False, "message": f"Conflict {conflict_id} not found"}
-        except Exception as e:
-            logger.warning("Failed to resolve dedup conflict: %s", e)
-            return {"success": False, "message": str(e)}
+    if tracker is None:
+        raise HTTPException(status_code=503, detail="Dedup tracker not initialized")
 
-    return {"success": False, "message": "Dedup tracker not initialized"}
+    try:
+        success = await tracker.resolve_conflict(
+            conflict_id=conflict_id,
+            resolution=resolution,
+            resolved_by=resolved_by,
+        )
+        if success:
+            return {"success": True, "message": f"Conflict {conflict_id} resolved"}
+        raise HTTPException(status_code=404, detail=f"Conflict {conflict_id} not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Failed to resolve dedup conflict: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================
@@ -211,7 +213,7 @@ async def calculate_trust_scores(
     qdrant_url = state.get("qdrant_url", "http://localhost:6333")
 
     if not trust_repo or not collections:
-        return {"error": "Trust score repo or Qdrant not available"}
+        raise HTTPException(status_code=503, detail="Trust score repo or Qdrant not available")
 
     collection_name = collections.get_collection_name(kb_id) if collections else f"kb_{kb_id}"
 
@@ -586,16 +588,16 @@ async def rollback_document_version(doc_id: str, body: dict[str, Any]):
                     "status": result.get("status"),
                 }
             else:
-                return {
-                    "success": False,
-                    "doc_id": doc_id,
-                    "message": "No previous version to rollback to",
-                }
+                raise HTTPException(
+                    status_code=404, detail="No previous version to rollback to"
+                )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.warning("Document rollback failed: %s", e)
-            return {"success": False, "doc_id": doc_id, "message": str(e)}
+            raise HTTPException(status_code=500, detail=str(e))
 
-    return {"success": False, "doc_id": doc_id, "message": "Lifecycle service not available"}
+    raise HTTPException(status_code=503, detail="Lifecycle service not available")
 
 
 @router.post("/documents/{doc_id}/approve")
@@ -606,20 +608,20 @@ async def approve_document_version(doc_id: str, body: dict[str, Any]):
     actor = body.get("actor", "system")
 
     lifecycle_svc = state.get("lifecycle_service")
-    if lifecycle_svc:
-        try:
-            result = await lifecycle_svc.publish(doc_id, kb_id, actor)
-            return {
-                "success": True,
-                "doc_id": doc_id,
-                "status": result.get("status"),
-                "message": "Approved and published",
-            }
-        except Exception as e:
-            logger.warning("Document approve failed: %s", e)
-            return {"success": False, "doc_id": doc_id, "message": str(e)}
+    if not lifecycle_svc:
+        raise HTTPException(status_code=503, detail="Lifecycle service not available")
 
-    return {"success": False, "doc_id": doc_id, "message": "Lifecycle service not available"}
+    try:
+        result = await lifecycle_svc.publish(doc_id, kb_id, actor)
+        return {
+            "success": True,
+            "doc_id": doc_id,
+            "status": result.get("status"),
+            "message": "Approved and published",
+        }
+    except Exception as e:
+        logger.warning("Document approve failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================
@@ -781,7 +783,7 @@ async def update_golden_set_item(item_id: str, body: dict[str, Any]):
     allowed = {"status", "question", "expected_answer"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
-        return {"error": "No valid fields to update"}
+        raise HTTPException(status_code=400, detail="No valid fields to update")
 
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = item_id
