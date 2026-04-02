@@ -25,8 +25,10 @@ _DUMMY_BCRYPT_HASH = "$2b$12$LJ3m4ys3Lg7VGgHepMzL2OGOCISCgrMJwBdJmkGBo7MBJe.ys/C
 class AuthService:
     """Auth service for user, role, and permission management."""
 
-    def __init__(self, database_url: str):
-        self._engine = create_async_engine(database_url, pool_size=3, max_overflow=5)
+    def __init__(self, database_url: str, pool_size: int = 5, max_overflow: int = 10):
+        self._engine = create_async_engine(
+            database_url, pool_size=pool_size, max_overflow=max_overflow
+        )
         self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
 
     async def close(self) -> None:

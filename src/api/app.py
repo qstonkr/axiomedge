@@ -626,7 +626,11 @@ async def _init_auth(state: AppState, settings) -> None:
 
         # Auth service (DB operations)
         db_url = settings.database.database_url
-        auth_service = AuthService(database_url=db_url)
+        auth_service = AuthService(
+            database_url=db_url,
+            pool_size=settings.database.pool_size,
+            max_overflow=settings.database.max_overflow,
+        )
         state["auth_service"] = auth_service
 
         # Token store for internal auth (uses auth_service's DB)

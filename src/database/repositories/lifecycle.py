@@ -86,6 +86,7 @@ class DocumentLifecycleRepository(BaseRepository):
                 select(DocumentLifecycleModel)
                 .where(DocumentLifecycleModel.kb_id == kb_id)
                 .order_by(DocumentLifecycleModel.created_at.desc())
+                .limit(1000)
             )
             result = await session.execute(stmt)
             models = result.scalars().all()
@@ -98,7 +99,7 @@ class DocumentLifecycleRepository(BaseRepository):
                 results.append(d)
             return results
 
-    async def list_by_status(self, kb_id: str, status: str) -> list[dict[str, Any]]:
+    async def list_by_status(self, kb_id: str, status: str, limit: int = 1000) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             stmt = (
                 select(DocumentLifecycleModel)
@@ -107,6 +108,7 @@ class DocumentLifecycleRepository(BaseRepository):
                     DocumentLifecycleModel.status == status,
                 )
                 .order_by(DocumentLifecycleModel.created_at.desc())
+                .limit(limit)
             )
             result = await session.execute(stmt)
             models = result.scalars().all()

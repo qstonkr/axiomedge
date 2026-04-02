@@ -56,6 +56,7 @@ class FeedbackRepository(BaseRepository):
                     KnowledgeFeedbackModel.kb_id == kb_id,
                 )
                 .order_by(KnowledgeFeedbackModel.created_at.desc())
+                .limit(500)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
@@ -71,14 +72,16 @@ class FeedbackRepository(BaseRepository):
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def get_pending_reviews(self, kb_id: str | None = None) -> list[dict[str, Any]]:
+    async def get_pending_reviews(
+        self, kb_id: str | None = None, limit: int = 500,
+    ) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             stmt = select(KnowledgeFeedbackModel).where(
                 KnowledgeFeedbackModel.status == "pending",
             )
             if kb_id:
                 stmt = stmt.where(KnowledgeFeedbackModel.kb_id == kb_id)
-            stmt = stmt.order_by(KnowledgeFeedbackModel.created_at.asc())
+            stmt = stmt.order_by(KnowledgeFeedbackModel.created_at.asc()).limit(limit)
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 

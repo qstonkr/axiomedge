@@ -15,6 +15,7 @@ Simplified: 2 layers (no L3 distributed), no Datadog metrics.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -52,6 +53,8 @@ class MultiLayerCache:
         self._l2 = l2_cache
         self._embedding_provider = embedding_provider
         self._metrics = CacheMetrics() if enable_metrics else None
+        self._compute_locks: dict[str, asyncio.Lock] = {}
+        self._locks_lock = asyncio.Lock()  # Protects _compute_locks dict itself
 
     async def get(
         self,
@@ -241,17 +244,42 @@ class MultiLayerCache:
         kb_ids: list[str] | None = None,
         top_k: int = 0,
     ) -> tuple[Any, bool]:
-        """Cache lookup or compute on miss.
+        """Cache lookup or compute on miss (stampede-safe).
+
+        Uses per-key locking to prevent multiple concurrent compute_fn
+        calls for the same cache key (cache stampede).
 
         Returns:
             (response, cache_hit).
         """
+        # Fast path: check cache without lock
         entry = await self.get(query, domain=domain, kb_ids=kb_ids, top_k=top_k)
         if entry:
             return entry.response, True
 
-        response = await compute_fn()
-        await self.set(query, response, domain=domain, metadata=metadata, kb_ids=kb_ids, top_k=top_k)
+        # Slow path: acquire per-key lock to prevent stampede
+        cache_key = self._generate_key(query, kb_ids, top_k)
+        async with self._locks_lock:
+            if cache_key not in self._compute_locks:
+                self._compute_locks[cache_key] = asyncio.Lock()
+            lock = self._compute_locks[cache_key]
+
+        async with lock:
+            # Double-check after acquiring lock (another task may have filled cache)
+            entry = await self.get(query, domain=domain, kb_ids=kb_ids, top_k=top_k)
+            if entry:
+                return entry.response, True
+
+            response = await compute_fn()
+            await self.set(
+                query, response, domain=domain, metadata=metadata,
+                kb_ids=kb_ids, top_k=top_k,
+            )
+
+        # Cleanup lock to prevent memory leak (best-effort)
+        async with self._locks_lock:
+            self._compute_locks.pop(cache_key, None)
+
         return response, False
 
     @staticmethod

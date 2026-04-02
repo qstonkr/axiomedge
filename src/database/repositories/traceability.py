@@ -103,17 +103,21 @@ class ProvenanceRepository(BaseRepository):
     async def get_by_source(self, source_type: str, source_id: str) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             result = await session.execute(
-                select(ProvenanceModel).where(
+                select(ProvenanceModel)
+                .where(
                     ProvenanceModel.source_type == source_type,
                     ProvenanceModel.source_id == source_id,
                 )
+                .limit(1000)
             )
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def get_by_run_id(self, ingestion_run_id: str) -> list[dict[str, Any]]:
+    async def get_by_run_id(self, ingestion_run_id: str, limit: int = 1000) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             result = await session.execute(
-                select(ProvenanceModel).where(ProvenanceModel.ingestion_run_id == ingestion_run_id)
+                select(ProvenanceModel)
+                .where(ProvenanceModel.ingestion_run_id == ingestion_run_id)
+                .limit(limit)
             )
             return [self._to_dict(m) for m in result.scalars().all()]
 

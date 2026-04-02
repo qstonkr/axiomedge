@@ -36,6 +36,7 @@ class CategoryRepository(BaseRepository):
                     select(KnowledgeCategoryModel)
                     .where(KnowledgeCategoryModel.level == 1, KnowledgeCategoryModel.is_active.is_(True))
                     .order_by(KnowledgeCategoryModel.sort_order)
+                    .limit(500)
                 )
                 rows = result.scalars().all()
                 categories = [
@@ -64,6 +65,7 @@ class CategoryRepository(BaseRepository):
                     select(KnowledgeCategoryModel)
                     .where(KnowledgeCategoryModel.is_active.is_(True))
                     .order_by(KnowledgeCategoryModel.level, KnowledgeCategoryModel.sort_order)
+                    .limit(500)
                 )
                 rows = result.scalars().all()
                 return [

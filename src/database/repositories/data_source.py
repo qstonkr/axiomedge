@@ -77,7 +77,7 @@ class DataSourceRepository(BaseRepository):
                 stmt = stmt.where(DataSourceModel.source_type == source_type)
             if status:
                 stmt = stmt.where(DataSourceModel.status == status)
-            stmt = stmt.order_by(DataSourceModel.created_at.desc())
+            stmt = stmt.order_by(DataSourceModel.created_at.desc()).limit(1000)
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 

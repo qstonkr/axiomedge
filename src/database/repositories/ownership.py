@@ -62,22 +62,24 @@ class DocumentOwnerRepository(BaseRepository):
             model = result.scalar_one_or_none()
             return self._to_dict(model) if model else None
 
-    async def get_by_owner(self, owner_user_id: str) -> list[dict[str, Any]]:
+    async def get_by_owner(self, owner_user_id: str, limit: int = 1000) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             stmt = (
                 select(DocumentOwnerModel)
                 .where(DocumentOwnerModel.owner_user_id == owner_user_id)
                 .order_by(DocumentOwnerModel.created_at.desc())
+                .limit(limit)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def get_by_kb(self, kb_id: str) -> list[dict[str, Any]]:
+    async def get_by_kb(self, kb_id: str, limit: int = 1000) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             stmt = (
                 select(DocumentOwnerModel)
                 .where(DocumentOwnerModel.kb_id == kb_id)
                 .order_by(DocumentOwnerModel.document_id)
+                .limit(limit)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
@@ -150,12 +152,13 @@ class TopicOwnerRepository(BaseRepository):
                 await session.rollback()
                 raise
 
-    async def get_by_kb(self, kb_id: str) -> list[dict[str, Any]]:
+    async def get_by_kb(self, kb_id: str, limit: int = 1000) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             stmt = (
                 select(TopicOwnerModel)
                 .where(TopicOwnerModel.kb_id == kb_id)
                 .order_by(TopicOwnerModel.topic_name)
+                .limit(limit)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
@@ -233,11 +236,14 @@ class ErrorReportRepository(BaseRepository):
                     DocumentErrorReportModel.kb_id == kb_id,
                 )
                 .order_by(DocumentErrorReportModel.created_at.desc())
+                .limit(500)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def get_open_reports(self, kb_id: str | None = None) -> list[dict[str, Any]]:
+    async def get_open_reports(
+        self, kb_id: str | None = None, limit: int = 1000,
+    ) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             open_statuses = ["pending", "in_progress", "escalated"]
             stmt = select(DocumentErrorReportModel).where(
@@ -245,7 +251,7 @@ class ErrorReportRepository(BaseRepository):
             )
             if kb_id:
                 stmt = stmt.where(DocumentErrorReportModel.kb_id == kb_id)
-            stmt = stmt.order_by(DocumentErrorReportModel.created_at.desc())
+            stmt = stmt.order_by(DocumentErrorReportModel.created_at.desc()).limit(limit)
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 

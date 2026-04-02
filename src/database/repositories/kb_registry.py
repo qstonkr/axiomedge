@@ -51,8 +51,8 @@ class KBRegistryRepository:
     def __init__(
         self,
         database_url: str,
-        pool_size: int = 10,
-        max_overflow: int = 5,
+        pool_size: int = 5,
+        max_overflow: int = 10,
         echo: bool = False,
     ) -> None:
         if database_url.startswith("postgresql://"):
@@ -199,6 +199,7 @@ class KBRegistryRepository:
                     select(KBConfigModel)
                     .where(KBConfigModel.tier == tier)
                     .order_by(KBConfigModel.name)
+                    .limit(500)
                 )
                 result = await session.execute(stmt)
                 models = result.scalars().all()
@@ -206,7 +207,7 @@ class KBRegistryRepository:
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def list_by_status(self, status: str) -> list[dict[str, Any]]:
+    async def list_by_status(self, status: str, limit: int = 500) -> list[dict[str, Any]]:
         """List KB by status."""
         async with await self._get_session() as session:
             try:
@@ -214,6 +215,7 @@ class KBRegistryRepository:
                     select(KBConfigModel)
                     .where(KBConfigModel.status == status)
                     .order_by(KBConfigModel.name)
+                    .limit(limit)
                 )
                 result = await session.execute(stmt)
                 models = result.scalars().all()

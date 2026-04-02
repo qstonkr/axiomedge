@@ -78,7 +78,9 @@ class TrustScoreRepository(BaseRepository):
             except SQLAlchemyError:
                 raise
 
-    async def get_stale_entries(self, kb_id: str, max_freshness: float = 0.3) -> list[dict[str, Any]]:
+    async def get_stale_entries(
+        self, kb_id: str, max_freshness: float = 0.3, limit: int = 1000,
+    ) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             stmt = (
                 select(TrustScoreModel)
@@ -87,11 +89,14 @@ class TrustScoreRepository(BaseRepository):
                     TrustScoreModel.freshness_score <= max_freshness,
                 )
                 .order_by(TrustScoreModel.freshness_score.asc())
+                .limit(limit)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def get_needs_review(self, kb_id: str | None = None) -> list[dict[str, Any]]:
+    async def get_needs_review(
+        self, kb_id: str | None = None, limit: int = 1000,
+    ) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
             conditions = [
                 or_(
@@ -106,6 +111,7 @@ class TrustScoreRepository(BaseRepository):
                 select(TrustScoreModel)
                 .where(*conditions)
                 .order_by(TrustScoreModel.kts_score.asc())
+                .limit(limit)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]

@@ -72,11 +72,15 @@ class SearchGroupRepository(BaseRepository):
             model = result.scalar_one_or_none()
             return self._to_dict(model) if model else None
 
-    async def list_all(self) -> list[dict[str, Any]]:
+    async def list_all(self, limit: int = 500) -> list[dict[str, Any]]:
         async with self._session_maker() as session:
-            stmt = select(KBSearchGroupModel).order_by(
-                KBSearchGroupModel.is_default.desc(),
-                KBSearchGroupModel.name,
+            stmt = (
+                select(KBSearchGroupModel)
+                .order_by(
+                    KBSearchGroupModel.is_default.desc(),
+                    KBSearchGroupModel.name,
+                )
+                .limit(limit)
             )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
