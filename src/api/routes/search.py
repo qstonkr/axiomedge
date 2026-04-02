@@ -713,7 +713,7 @@ async def hub_search(request: HubSearchRequest):
                     words_b = set(texts_b.split())
                     if words_a and words_b:
                         overlap = len(words_a & words_b) / min(len(words_a), len(words_b))
-                        if overlap < 0.1:  # Very low overlap = potential conflict
+                        if overlap < weights.search.conflict_overlap_threshold:
                             conflicts.append({
                                 "kb_a": kb_a,
                                 "kb_b": kb_b,

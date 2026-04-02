@@ -784,7 +784,7 @@ class EnhancedSimilarityMatcher:
             std_ko = getattr(pc.term, 'term_ko', '') or ""
             if std_ko and pending_text:
                 ratio = min(len(std_ko), len(pending_text)) / max(len(std_ko), len(pending_text))
-                if ratio < 0.5:
+                if ratio < _w.similarity.rapidfuzz_length_ratio_min:
                     zone = "REVIEW"
 
         return MatchDecision(

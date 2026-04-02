@@ -430,6 +430,9 @@ class SearchDefaults:
     confidence_display_high: float = 0.8
     confidence_display_medium: float = 0.5
 
+    # Conflict detection: minimum word overlap ratio between KBs
+    conflict_overlap_threshold: float = 0.1
+
     # DenseTermIndex
     term_search_top_k: int = 50
     term_build_batch_size: int = 500

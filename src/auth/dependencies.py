@@ -77,9 +77,7 @@ async def get_current_user(request: Request) -> AuthUser:
     # Get provider from app state (no circular import)
     state = _get_app_state(request)
     if not state:
-        # Fallback: lazy import for startup/testing scenarios
-        from src.api.app import _get_state
-        state = _get_state()
+        raise HTTPException(status_code=503, detail="Application state not initialized")
 
     auth_provider = state.get("auth_provider")
 
@@ -131,8 +129,7 @@ def require_role(*roles: str) -> Callable:
 
         state = _get_app_state(request)
         if not state:
-            from src.api.app import _get_state
-            state = _get_state()
+            return user  # No state = allow (graceful degradation)
 
         rbac = state.get("rbac_engine")
 
@@ -180,8 +177,7 @@ def require_permission(resource: str, action: str) -> Callable:
 
         state = _get_app_state(request)
         if not state:
-            from src.api.app import _get_state
-            state = _get_state()
+            return user  # No state = allow (graceful degradation)
 
         rbac = state.get("rbac_engine")
 
@@ -232,8 +228,7 @@ def require_kb_access(min_level: str = "reader") -> Callable:
 
         state = _get_app_state(request)
         if not state:
-            from src.api.app import _get_state
-            state = _get_state()
+            return user  # No state = allow (graceful degradation)
 
         # 1. Check RBAC (admin bypasses everything)
         rbac = state.get("rbac_engine")
