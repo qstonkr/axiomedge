@@ -165,7 +165,7 @@ async def get_dedup_conflicts(
     }
 
 
-@router.post("/dedup/resolve")
+@router.post("/dedup/resolve", responses={400: {"description": "Missing required fields"}, 503: {"description": "Dedup tracker not initialized"}, 404: {"description": "Conflict not found"}, 500: {"description": "Failed to resolve conflict"}})
 async def resolve_dedup_conflict(body: dict[str, Any]):
     """Resolve a dedup conflict."""
     state = _get_state()
@@ -200,7 +200,7 @@ async def resolve_dedup_conflict(body: dict[str, Any]):
 # Trust Score Calculation
 # ============================================================================
 
-@router.post("/trust-scores/calculate")
+@router.post("/trust-scores/calculate", responses={503: {"description": "Trust score repo or Qdrant not available"}})
 async def calculate_trust_scores(
     kb_id: str = Query(...),
 ):
@@ -562,7 +562,7 @@ async def submit_verification_vote(doc_id: str, body: dict[str, Any]):
 # Version Management
 # ============================================================================
 
-@router.post("/documents/{doc_id}/rollback")
+@router.post("/documents/{doc_id}/rollback", responses={404: {"description": "No previous version to rollback to"}, 500: {"description": "Rollback failed"}, 503: {"description": "Lifecycle service not available"}})
 async def rollback_document_version(doc_id: str, body: dict[str, Any]):
     """Rollback document to previous version via lifecycle transition."""
     state = _get_state()
@@ -600,7 +600,7 @@ async def rollback_document_version(doc_id: str, body: dict[str, Any]):
     raise HTTPException(status_code=503, detail="Lifecycle service not available")
 
 
-@router.post("/documents/{doc_id}/approve")
+@router.post("/documents/{doc_id}/approve", responses={503: {"description": "Lifecycle service not available"}, 500: {"description": "Approve failed"}})
 async def approve_document_version(doc_id: str, body: dict[str, Any]):
     """Approve document: lifecycle transition to 'published'."""
     state = _get_state()
@@ -774,7 +774,7 @@ async def list_golden_set(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-@router.patch("/golden-set/{item_id}")
+@router.patch("/golden-set/{item_id}", responses={400: {"description": "No valid fields to update"}})
 async def update_golden_set_item(item_id: str, body: dict[str, Any]):
     """Update golden set item (status, question, expected_answer)."""
     from sqlalchemy.ext.asyncio import create_async_engine

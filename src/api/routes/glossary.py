@@ -562,7 +562,7 @@ async def promote_glossary_term_to_global(term_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/import-csv
 # ---------------------------------------------------------------------------
-@router.post("/import-csv")
+@router.post("/import-csv", responses={503: {"description": "Glossary repository not initialized"}, 400: {"description": "No files provided"}})
 async def import_glossary_csv(
     file: UploadFile | None = File(default=None),
     files: list[UploadFile] | None = File(default=None),

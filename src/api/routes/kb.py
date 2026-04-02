@@ -267,7 +267,7 @@ async def admin_kb_aggregation():
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/kb/search-cache/clear
 # ---------------------------------------------------------------------------
-@admin_router.post("/search-cache/clear")
+@admin_router.post("/search-cache/clear", responses={500: {"description": "Cache clear error"}})
 async def clear_search_cache():
     """Clear search cache (Redis-backed)."""
     state = _get_state()

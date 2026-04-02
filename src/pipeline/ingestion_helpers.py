@@ -136,7 +136,7 @@ def calculate_quality_score(metrics: QualityMetrics | None, tier: QualityTier) -
     return min(100.0, round(base + structure + tier_bonus, 1))
 
 
-def classify_document_type(title: str, content: str) -> str:
+def classify_document_type(title: str, _content: str) -> str:
     """Rule-based document type classifier."""
     title_lower = title.lower()
     for doc_type, keywords in _DOC_TYPE_KEYWORDS:

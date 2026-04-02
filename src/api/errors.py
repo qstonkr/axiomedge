@@ -69,7 +69,7 @@ def bad_request(detail: str) -> HTTPException:
 # ---------------------------------------------------------------------------
 
 
-async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
     """Normalize all HTTPException responses to standard format."""
     detail = exc.detail
 
@@ -88,7 +88,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
-async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
     """Catch-all for unhandled exceptions — return 500 with safe message."""
     logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(

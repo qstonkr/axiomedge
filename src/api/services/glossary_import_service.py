@@ -150,16 +150,10 @@ async def _flush_batch(
         return 0
 
 
-def _build_term_data(
-    row: dict[str, Any], term: str, kb_id: str, term_normalizer: TermNormalizer,
-) -> dict[str, Any]:
-    """Build a glossary term dict from a parsed CSV row."""
-    synonyms_raw = row.get("synonyms", "") or ""
-    abbreviations_raw = row.get("abbreviations", "") or ""
-    synonyms = [s.strip() for s in synonyms_raw.split(",") if s.strip()]
-    abbreviations = [a.strip() for a in abbreviations_raw.split(",") if a.strip()]
-
-    # Auto-enrich from physical_meaning
+def _enrich_synonyms(
+    row: dict[str, Any], term: str, synonyms: list[str],
+) -> list[str]:
+    """Auto-enrich synonyms from physical_meaning and term_ko."""
     physical_meaning = (row.get("physical_meaning", "") or "").strip()
     if physical_meaning:
         pm_lower = physical_meaning.lower()
@@ -167,21 +161,16 @@ def _build_term_data(
         if pm_lower not in existing_lower and pm_lower != term.lower():
             synonyms.append(physical_meaning)
 
-    # Auto-enrich: term_ko ↔ term bidirectional
     term_ko = (row.get("term_ko", "") or "").strip()
     if term_ko and term_ko.lower() != term.lower():
         if term_ko.lower() not in {s.lower() for s in synonyms}:
             synonyms.append(term_ko)
 
-    if term_normalizer.is_likely_abbreviation(term) and not abbreviations:
-        abbreviations = [term]
+    return synonyms
 
-    status = row.get("status", "pending")
-    scope = row.get("scope", "global")
-    if scope == "global":
-        status = "approved"
 
-    # Auto-detect term_type from composition_info
+def _detect_term_type(row: dict[str, Any], term: str) -> str:
+    """Auto-detect term_type from composition_info column."""
     composition = row.get("composition_info", "").strip()
     has_composition_col = "composition_info" in row or "구성정보" in row
 
@@ -192,7 +181,29 @@ def _build_term_data(
     else:
         auto_term_type = "word"
 
-    final_term_type = row.get("term_type", auto_term_type)
+    return row.get("term_type", auto_term_type)
+
+
+def _build_term_data(
+    row: dict[str, Any], term: str, kb_id: str, term_normalizer: TermNormalizer,
+) -> dict[str, Any]:
+    """Build a glossary term dict from a parsed CSV row."""
+    synonyms_raw = row.get("synonyms", "") or ""
+    abbreviations_raw = row.get("abbreviations", "") or ""
+    synonyms = [s.strip() for s in synonyms_raw.split(",") if s.strip()]
+    abbreviations = [a.strip() for a in abbreviations_raw.split(",") if a.strip()]
+
+    synonyms = _enrich_synonyms(row, term, synonyms)
+
+    if term_normalizer.is_likely_abbreviation(term) and not abbreviations:
+        abbreviations = [term]
+
+    status = row.get("status", "pending")
+    scope = row.get("scope", "global")
+    if scope == "global":
+        status = "approved"
+
+    final_term_type = _detect_term_type(row, term)
 
     source_val = row.get("source", "").strip() or "csv_import"
     effective_kb_id = source_val if source_val != "csv_import" else row.get("kb_id", kb_id)

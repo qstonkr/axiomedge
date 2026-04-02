@@ -309,7 +309,7 @@ async def _process_files(
 # ---------------------------------------------------------------------------
 # POST /api/v1/knowledge/file-upload-ingest
 # ---------------------------------------------------------------------------
-@knowledge_router.post("/file-upload-ingest")
+@knowledge_router.post("/file-upload-ingest", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "No files provided"}})
 async def upload_and_ingest(
     file: UploadFile | None = File(default=None),
     files: list[UploadFile] | None = File(default=None),

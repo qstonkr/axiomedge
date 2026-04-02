@@ -5,6 +5,7 @@ Used by IngestionPipeline for dependency injection of embedder, vector store, an
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Protocol
 
@@ -95,6 +96,7 @@ class NoOpEmbedder:
         self._dimension = dimension
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        await asyncio.sleep(0)
         return [[0.0] * self._dimension for _ in texts]
 
 
@@ -102,6 +104,7 @@ class NoOpSparseEmbedder:
     """Returns empty sparse vectors. Replace with BM25/SPLADE for production."""
 
     async def embed_sparse(self, texts: list[str]) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return [{"indices": [], "values": []} for _ in texts]
 
 
@@ -109,6 +112,7 @@ class NoOpVectorStore:
     """Drops all upserts. Replace with a Qdrant adapter for production."""
 
     async def upsert_batch(self, kb_id: str, items: list[dict[str, Any]]) -> None:
+        await asyncio.sleep(0)
         logger.debug("NoOpVectorStore: skipping %d items for %s", len(items), kb_id)
 
 
@@ -116,7 +120,9 @@ class NoOpGraphStore:
     """Drops all graph operations. Replace with a Neo4j adapter for production."""
 
     async def upsert_document(self, doc_id: str, **kwargs: Any) -> None:
+        await asyncio.sleep(0)
         logger.debug("NoOpGraphStore: skipping doc %s", doc_id)
 
-    async def execute_write(self, query: str, parameters: dict[str, Any]) -> None:
+    async def execute_write(self, query: str, _parameters: dict[str, Any]) -> None:
+        await asyncio.sleep(0)
         logger.debug("NoOpGraphStore: skipping write query")
