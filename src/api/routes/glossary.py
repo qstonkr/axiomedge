@@ -13,6 +13,8 @@ from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
+_NO_DB = HTTPException(status_code=503, detail="No DB connection")
+
 _EXACT_MATCH_THRESHOLD = _w.similarity.exact_match_threshold
 router = APIRouter(prefix="/api/v1/admin/glossary", tags=["Glossary"])
 
@@ -684,7 +686,7 @@ async def list_synonyms(term_id: str):
         except Exception as e:
             logger.warning("Glossary repo list-synonyms failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to list synonyms: {e}")
-    raise HTTPException(status_code=503, detail="No DB connection")
+    raise _NO_DB
 
 
 # ---------------------------------------------------------------------------
@@ -717,7 +719,7 @@ async def remove_synonym(term_id: str, synonym: str):
         except Exception as e:
             logger.warning("Glossary repo remove-synonym failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to remove synonym: {e}")
-    raise HTTPException(status_code=503, detail="No DB connection")
+    raise _NO_DB
 
 
 # (discovered-synonyms GET moved above /{term_id} to avoid path capture)
@@ -736,7 +738,7 @@ async def approve_discovered_synonyms(body: dict[str, Any]):
     state = _get_state()
     repo = state.get("glossary_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="No DB connection")
+        raise _NO_DB
 
     synonym_ids = body.get("synonym_ids", [])
     if not synonym_ids:
@@ -788,7 +790,7 @@ async def reject_discovered_synonyms(body: dict[str, Any]):
     state = _get_state()
     repo = state.get("glossary_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="No DB connection")
+        raise _NO_DB
 
     synonym_ids = body.get("synonym_ids", [])
     if not synonym_ids:

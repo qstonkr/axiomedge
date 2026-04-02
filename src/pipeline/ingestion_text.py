@@ -42,6 +42,19 @@ def clean_text_for_embedding(text: str) -> str:
     return text.strip()
 
 
+def _trim_incomplete_tail(text: str) -> str:
+    """Trim incomplete sentence fragment from the end of text."""
+    _SENTENCE_ENDINGS = (".", "다.", "요.", "!", "?", "。")
+    last_15 = text[-15:]
+    if any(last_15.endswith(p) for p in _SENTENCE_ENDINGS):
+        return text
+    for sep in _SENTENCE_ENDINGS:
+        pos = text.rfind(sep)
+        if pos > len(text) - 100 and pos > 0:
+            return text[: pos + 1]
+    return text
+
+
 def clean_passage(text: str) -> str:
     """Clean a single passage: dedup sentences, remove incomplete fragments."""
     if not text:
@@ -54,16 +67,9 @@ def clean_passage(text: str) -> str:
         if key and key not in seen:
             seen.add(key)
             cleaned.append(line)
-    result = "\n".join(cleaned)
-    result = result.rstrip()
+    result = "\n".join(cleaned).rstrip()
     if len(result) > 15:
-        last_15 = result[-15:]
-        if not any(last_15.endswith(p) for p in (".", "다.", "요.", "!", "?", "。")):
-            for sep in (".", "다.", "요.", "!", "?", "。"):
-                pos = result.rfind(sep)
-                if pos > len(result) - 100 and pos > 0:
-                    result = result[: pos + 1]
-                    break
+        result = _trim_incomplete_tail(result)
     return result
 
 

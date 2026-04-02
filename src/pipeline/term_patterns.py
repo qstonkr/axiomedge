@@ -113,48 +113,62 @@ STOP_TERMS = frozenset({
 # ==========================================================================
 
 
-def is_noise_term(
-    term: str, tag_type: str, kiwi_score: float = -999.0,
-    stop_nouns: frozenset | None = None,
-    kiwi_threshold: float = -12.0,
-) -> bool:
-    """Comprehensive noise filter for extracted terms."""
-    if len(term) < 2:
-        return True
-    if len(set(term)) <= 1:
+def _is_structural_noise(term: str) -> bool:
+    """Check for length, charset, and punctuation noise."""
+    if len(term) < 2 or len(set(term)) <= 1:
         return True
     if term[0] in "#*@\\/$`~^:=+" or term[-1] in "#*@\\/$`~^":
         return True
-    if "." in term:
+    if "." in term or any(c in term for c in "/,_"):
         return True
-    if any(c in term for c in "/,_"):
-        return True
-    if term[0].isdigit():
-        return True
-    stripped = term.strip(".-+%,")
-    if stripped.isdigit():
+    if term[0].isdigit() or term.strip(".-+%,").isdigit():
         return True
     if any(c in term for c in "{}()[]\"'=<>;|"):
         return True
     alnum_count = sum(1 for c in term if c.isalnum() or "\uac00" <= c <= "\ud7a3")
     if len(term) > 3 and alnum_count / len(term) < 0.7:
         return True
-    if term.isascii():
-        if term.isalpha() and len(term) <= 10:
-            return True
-        if term[0].islower() and any(c.isupper() for c in term[1:]):
-            return True
-        if term.isalnum() and not any("\uac00" <= c <= "\ud7a3" for c in term):
-            return True
-    if tag_type == "foreign":
-        if len(term) < 3:
-            return True
-        if len(term) <= 4 and term.islower():
-            return True
-        if term.lower() in ENGLISH_STOP:
-            return True
-        if len(term) <= 3 and term.isupper() and term not in KNOWN_ACRONYMS:
-            return True
+    return False
+
+
+def _is_ascii_noise(term: str) -> bool:
+    """Check ASCII-specific noise patterns."""
+    if not term.isascii():
+        return False
+    if term.isalpha() and len(term) <= 10:
+        return True
+    if term[0].islower() and any(c.isupper() for c in term[1:]):
+        return True
+    if term.isalnum() and not any("\uac00" <= c <= "\ud7a3" for c in term):
+        return True
+    return False
+
+
+def _is_foreign_noise(term: str) -> bool:
+    """Check foreign-tagged term noise."""
+    if len(term) < 3:
+        return True
+    if len(term) <= 4 and term.islower():
+        return True
+    if term.lower() in ENGLISH_STOP:
+        return True
+    if len(term) <= 3 and term.isupper() and term not in KNOWN_ACRONYMS:
+        return True
+    return False
+
+
+def is_noise_term(
+    term: str, tag_type: str, kiwi_score: float = -999.0,
+    stop_nouns: frozenset | None = None,
+    kiwi_threshold: float = -12.0,
+) -> bool:
+    """Comprehensive noise filter for extracted terms."""
+    if _is_structural_noise(term):
+        return True
+    if _is_ascii_noise(term):
+        return True
+    if tag_type == "foreign" and _is_foreign_noise(term):
+        return True
     if tag_type == "compound_noun" and term.isascii() and term.isalpha():
         return True
     if stop_nouns and term in stop_nouns:
@@ -195,22 +209,24 @@ def is_code_artifact(term: str) -> bool:
     return bool(_CODE_NOISE_RE.search(term))
 
 
+def _try_strip_particle(term: str, particles: tuple[str, ...]) -> str | None:
+    """Try stripping one particle from the end. Returns stripped term or None."""
+    for p in particles:
+        if term.endswith(p) and len(term) > len(p) + 2:
+            return term[: -len(p)]
+    return None
+
+
 def strip_korean_particles(term: str) -> str:
     """Strip Korean particles (조사) from mixed Korean-English terms."""
     changed = True
     while changed:
-        changed = False
-        for p in _KOREAN_PARTICLES_LONG:
-            if term.endswith(p) and len(term) > len(p) + 2:
-                term = term[: -len(p)]
-                changed = True
-                break
-        if not changed:
-            for p in _KOREAN_PARTICLES_SHORT:
-                if term.endswith(p) and len(term) > len(p) + 2:
-                    term = term[: -len(p)]
-                    changed = True
-                    break
+        result = _try_strip_particle(term, _KOREAN_PARTICLES_LONG)
+        if result is None:
+            result = _try_strip_particle(term, _KOREAN_PARTICLES_SHORT)
+        changed = result is not None
+        if changed:
+            term = result  # type: ignore[assignment]
 
     m = _BOUNDARY_PARTICLE_RE.match(term)
     if m:

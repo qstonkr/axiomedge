@@ -45,9 +45,6 @@ async def import_csv(
 
     Returns dict with success, imported, skipped, errors, etc.
     """
-    morpheme_analyzer = get_analyzer()
-    term_normalizer = TermNormalizer()
-
     total_imported = 0
     total_skipped = 0
     all_errors: list[str] = []
@@ -55,68 +52,12 @@ async def import_csv(
     term_count = 0
 
     for uf in upload_files:
-        fname = uf.filename or "unknown.csv"
-        try:
-            content = await uf.read()
-            text = content.decode(encoding)
-            reader = csv.DictReader(io.StringIO(text))
-
-            if reader.fieldnames and "term" not in reader.fieldnames:
-                has_korean_col = any(k in (reader.fieldnames or []) for k in _KO_COLUMN_MAP)
-                if not has_korean_col:
-                    all_errors.append(
-                        f"{fname}: 필수 컬럼 'term' 또는 '물리명'이 없습니다. "
-                        f"발견된 컬럼: {reader.fieldnames}"
-                    )
-                    continue
-
-            batch: list[dict[str, Any]] = []
-
-            for row_num, row in enumerate(reader, start=2):
-                mapped_row: dict[str, Any] = {}
-                for k, v in row.items():
-                    if k is None:
-                        continue
-                    mapped_row[_KO_COLUMN_MAP.get(k, k)] = v
-                row = mapped_row
-
-                term = row.get("term", "").strip()
-                if not term:
-                    total_skipped += 1
-                    continue
-
-                term = unicodedata.normalize("NFC", term)
-                term = morpheme_analyzer.strip_particles(term)
-
-                try:
-                    term_data = _build_term_data(row, term, kb_id, term_normalizer)
-                    if term_data["term_type"] == "word":
-                        word_count += 1
-                    else:
-                        term_count += 1
-
-                    batch.append(term_data)
-
-                    if len(batch) >= BATCH_SIZE:
-                        try:
-                            inserted = await repo.save_batch(batch)
-                            total_imported += inserted
-                        except Exception as e:
-                            all_errors.append(f"{fname} batch ending row {row_num}: {e}")
-                        batch = []
-
-                except Exception as e:
-                    all_errors.append(f"{fname} Row {row_num}: {e}")
-
-            if batch:
-                try:
-                    inserted = await repo.save_batch(batch)
-                    total_imported += inserted
-                except Exception as e:
-                    all_errors.append(f"{fname} final batch: {e}")
-
-        except Exception as e:
-            all_errors.append(f"{fname}: {e}")
+        result = await _import_single_csv(repo, uf, encoding, kb_id)
+        total_imported += result["imported"]
+        total_skipped += result["skipped"]
+        word_count += result["words"]
+        term_count += result["terms"]
+        all_errors.extend(result["errors"])
 
     return {
         "success": total_imported > 0,
@@ -127,6 +68,86 @@ async def import_csv(
         "auto_detected_terms": term_count,
         "errors": all_errors[:20],
     }
+
+
+async def _import_single_csv(
+    repo: Any, uf: UploadFile, encoding: str, kb_id: str,
+) -> dict[str, Any]:
+    """Process a single CSV file and return import stats."""
+    morpheme_analyzer = get_analyzer()
+    term_normalizer = TermNormalizer()
+    fname = uf.filename or "unknown.csv"
+    imported = 0
+    skipped = 0
+    words = 0
+    terms = 0
+    errors: list[str] = []
+
+    try:
+        content = await uf.read()
+        text = content.decode(encoding)
+        reader = csv.DictReader(io.StringIO(text))
+
+        if not _validate_columns(reader.fieldnames, fname, errors):
+            return {"imported": 0, "skipped": 0, "words": 0, "terms": 0, "errors": errors}
+
+        batch: list[dict[str, Any]] = []
+        for row_num, row in enumerate(reader, start=2):
+            row = _map_korean_columns(row)
+            term = row.get("term", "").strip()
+            if not term:
+                skipped += 1
+                continue
+
+            term = unicodedata.normalize("NFC", term)
+            term = morpheme_analyzer.strip_particles(term)
+
+            try:
+                term_data = _build_term_data(row, term, kb_id, term_normalizer)
+                if term_data["term_type"] == "word":
+                    words += 1
+                else:
+                    terms += 1
+                batch.append(term_data)
+
+                if len(batch) >= BATCH_SIZE:
+                    imported += await _flush_batch(repo, batch, fname, row_num, errors)
+                    batch = []
+            except Exception as e:
+                errors.append(f"{fname} Row {row_num}: {e}")
+
+        if batch:
+            imported += await _flush_batch(repo, batch, fname, "final", errors)
+    except Exception as e:
+        errors.append(f"{fname}: {e}")
+
+    return {"imported": imported, "skipped": skipped, "words": words, "terms": terms, "errors": errors}
+
+
+def _validate_columns(fieldnames: list[str] | None, fname: str, errors: list[str]) -> bool:
+    """Check CSV has required columns."""
+    if not fieldnames or "term" in fieldnames:
+        return True
+    if any(k in fieldnames for k in _KO_COLUMN_MAP):
+        return True
+    errors.append(f"{fname}: 필수 컬럼 'term' 또는 '물리명'이 없습니다. 발견된 컬럼: {fieldnames}")
+    return False
+
+
+def _map_korean_columns(row: dict[str, Any]) -> dict[str, Any]:
+    """Map Korean column names to English keys."""
+    return {_KO_COLUMN_MAP.get(k, k): v for k, v in row.items() if k is not None}
+
+
+async def _flush_batch(
+    repo: Any, batch: list[dict], fname: str, row_ref: Any, errors: list[str],
+) -> int:
+    """Save batch to repo, return count inserted."""
+    try:
+        return await repo.save_batch(batch)
+    except Exception as e:
+        errors.append(f"{fname} batch ending row {row_ref}: {e}")
+        return 0
 
 
 def _build_term_data(
