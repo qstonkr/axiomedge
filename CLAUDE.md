@@ -109,6 +109,8 @@ Constants and thresholds are centralized. **Do not hardcode values** — always 
 | Similarity fallback | `config_weights.SimilarityThresholds` | enhanced_similarity_matcher |
 | Prompt templates | `src/search/tiered_response.py` | answer_service imports from here |
 | Sparse token hash | `src/embedding/embedding_guard.sparse_token_hash()` | ollama_provider, tei_provider |
+| JWT issuer/algorithm | `config.AuthSettings.jwt_issuer/jwt_algorithm` | jwt_service, providers |
+| Bcrypt rounds (12) | `src/auth/password.BCRYPT_ROUNDS` | password hashing |
 
 ### Key Module Responsibilities
 
@@ -124,7 +126,7 @@ Constants and thresholds are centralized. **Do not hardcode values** — always 
 | `src/embedding/` | BGE-M3 providers with fallback: TEI → Ollama → ONNX. Protocol in `types.py` |
 | `src/llm/` | LLM clients (Ollama/SageMaker). Shared utils in `utils.py`, Protocol in `types.py` |
 | `src/database/` | SQLAlchemy async ORM models + repository pattern. Base class in `repositories/base.py` |
-| `src/auth/` | Auth providers (Local/Keycloak/AzureAD), RBAC + ABAC engines |
+| `src/auth/` | Auth: Internal(email/pw)+Local(API key)+Keycloak+AzureAD providers, JWT, RBAC, ABAC |
 | `src/cache/` | Multi-layer: L1 in-memory + L2 Redis semantic cache. ICacheLayer ABC |
 | `src/config.py` | Pydantic Settings (env-driven) + SSOT constants (DEFAULT_LLM_MODEL, etc.) |
 | `src/config_weights.py` | Frozen dataclasses for all tunable thresholds/weights (env-overridable) |
@@ -171,6 +173,23 @@ Key PaddleOCR settings:
 - `use_angle_cls=False` (segfault trigger), pre-filter images <20x20px
 - `restart: unless-stopped` on Docker container
 - Models pre-downloaded to `/root/.paddlex/official_models/` (avoid SSL issues)
+
+### Auth System
+
+Four providers via `AUTH_PROVIDER` env var: `local` (API key, default), `internal` (email/password+JWT), `keycloak`, `azure_ad`. `AUTH_ENABLED=false` bypasses all auth (anonymous admin).
+
+**Internal auth flow** (`AUTH_PROVIDER=internal`):
+- Login: `POST /auth/login` → bcrypt verify → JWT access (60min) + refresh (8h) in HttpOnly cookies
+- Refresh: `POST /auth/refresh` → token rotation with family tracking (reuse detection)
+- Logout: `POST /auth/logout` → revoke token family + clear cookies
+- Register: `POST /auth/register` (admin only) → bcrypt hash + DB user
+- JWT claims match oreo-ecosystem: `{sub, email, display_name, roles, permissions, jti, iss="oreo-internal-api"}`
+
+**Key files**: `jwt_service.py` (token create/verify), `token_store.py` (PostgreSQL refresh token rotation), `password.py` (bcrypt), `providers.py` (InternalAuthProvider)
+
+**Config** (`src/config.py` AuthSettings): `AUTH_JWT_SECRET` (required), `AUTH_JWT_ACCESS_EXPIRE_MINUTES`, `AUTH_JWT_REFRESH_EXPIRE_HOURS`, `AUTH_COOKIE_SECURE`, `AUTH_ADMIN_INITIAL_PASSWORD`
+
+**RBAC**: 5 roles (viewer→contributor→editor→kb_manager→admin). Permission format `resource:action`. Admin gets `*:*`.
 
 ## Code Conventions
 
