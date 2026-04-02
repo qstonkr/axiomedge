@@ -754,6 +754,7 @@ async def _shutdown_services():
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _init_services()
+    app.state._app_state = _state  # Expose for request.app.state access (no circular import)
     yield
     await _shutdown_services()
 

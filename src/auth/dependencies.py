@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable
+from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Request
 
@@ -41,6 +41,11 @@ _ANONYMOUS_USER = AuthUser(
     provider="local",
     roles=["admin"],  # Full access when auth is off
 )
+
+
+def _get_app_state(request: Request) -> Any:
+    """Get AppState from request without circular import."""
+    return getattr(request.app.state, "_app_state", None)
 
 
 async def get_current_user(request: Request) -> AuthUser:
@@ -69,9 +74,13 @@ async def get_current_user(request: Request) -> AuthUser:
     if not token:
         raise HTTPException(status_code=401, detail="Missing authentication token")
 
-    # Get provider from app state
-    from src.api.app import _get_state
-    state = _get_state()
+    # Get provider from app state (no circular import)
+    state = _get_app_state(request)
+    if not state:
+        # Fallback: lazy import for startup/testing scenarios
+        from src.api.app import _get_state
+        state = _get_state()
+
     auth_provider = state.get("auth_provider")
 
     if not auth_provider:
@@ -114,13 +123,17 @@ def require_role(*roles: str) -> Callable:
         @router.get("/admin", dependencies=[Depends(require_role("admin", "kb_manager"))])
     """
     async def _check(
+        request: Request,
         user: AuthUser = Depends(get_current_user),
     ) -> AuthUser:
         if not AUTH_ENABLED:
             return user
 
-        from src.api.app import _get_state
-        state = _get_state()
+        state = _get_app_state(request)
+        if not state:
+            from src.api.app import _get_state
+            state = _get_state()
+
         rbac = state.get("rbac_engine")
 
         if rbac:
@@ -165,8 +178,11 @@ def require_permission(resource: str, action: str) -> Callable:
         if not AUTH_ENABLED:
             return user
 
-        from src.api.app import _get_state
-        state = _get_state()
+        state = _get_app_state(request)
+        if not state:
+            from src.api.app import _get_state
+            state = _get_state()
+
         rbac = state.get("rbac_engine")
 
         if not rbac:
@@ -214,8 +230,10 @@ def require_kb_access(min_level: str = "reader") -> Callable:
         if not kb_id:
             return user  # No KB context
 
-        from src.api.app import _get_state
-        state = _get_state()
+        state = _get_app_state(request)
+        if not state:
+            from src.api.app import _get_state
+            state = _get_state()
 
         # 1. Check RBAC (admin bypasses everything)
         rbac = state.get("rbac_engine")
