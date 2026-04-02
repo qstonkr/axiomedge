@@ -17,8 +17,6 @@ import os
 import uuid
 import asyncio
 import time
-from datetime import datetime, timezone
-
 import boto3
 import requests
 
@@ -38,6 +36,11 @@ JUDGE_PROMPT = """당신은 RAG 평가 봇입니다. 반드시 JSON만 출력하
 faithfulness=실제답변이 근거있는가, relevancy=질문에 답하는가, completeness=핵심정보 포함하는가
 
 출력: {{"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}}"""
+
+
+def _get_db_url() -> str:
+    from src.config import get_settings
+    return get_settings().database.database_url
 
 
 def get_sm_client():
@@ -104,23 +107,20 @@ def judge_answer(question: str, expected: str, actual: str, retry: int = 2) -> d
                 }
             else:
                 logger.warning(f"Judge non-JSON (attempt {attempt+1}): {raw[:80]}")
-                continue  # Retry
+                continue
         except Exception as e:
             logger.warning(f"Judge failed (attempt {attempt+1}): {e}")
             if "AccessDeniedException" in str(e):
                 logger.error("SSO token expired. Run: aws sso login --profile jeongbeomkim")
                 return None
-    # All retries exhausted — return zero scores (don't skip, count as failure)
     logger.warning(f"Judge exhausted retries for: {question[:50]}")
     return {"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}
 
 
-async def load_golden_set(kb_id: str | None = None, status: str = "approved") -> list[dict]:
+async def load_golden_set(engine, kb_id: str | None = None) -> list[dict]:
     """Load golden set from DB. If no approved, use pending."""
-    from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text
 
-    engine = create_async_engine("postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
     async with engine.begin() as conn:
         if kb_id:
             r = await conn.execute(text(
@@ -135,20 +135,18 @@ async def load_golden_set(kb_id: str | None = None, status: str = "approved") ->
                 "ORDER BY kb_id, status ASC, created_at LIMIT 500"
             ))
         rows = r.fetchall()
-    await engine.dispose()
     return [{"id": str(r[0]), "kb_id": r[1], "question": r[2], "expected": r[3], "source_doc": r[4]} for r in rows]
 
 
-async def save_eval_results(eval_id: str, kb_id: str, results: list[dict], metrics: dict):
+async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict]):
     """Save evaluation results to DB."""
-    from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy import text
 
-    engine = create_async_engine("postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db")
+    # DDL in separate transaction so it persists even if INSERTs fail
     async with engine.begin() as conn:
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS rag_eval_results (
-                id UUID PRIMARY KEY,
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 eval_id VARCHAR(100) NOT NULL,
                 kb_id VARCHAR(100),
                 golden_set_id UUID,
@@ -162,117 +160,142 @@ async def save_eval_results(eval_id: str, kb_id: str, results: list[dict], metri
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """))
-        for r in results:
-            await conn.execute(text("""
-                INSERT INTO rag_eval_results (id, eval_id, kb_id, golden_set_id, question,
-                    expected_answer, actual_answer, faithfulness, relevancy, completeness, search_time_ms)
-                VALUES (:id, :eval_id, :kb_id, :gs_id, :q, :expected, :actual, :f, :r, :c, :t)
-            """), {
-                "id": str(uuid.uuid4()), "eval_id": eval_id, "kb_id": r["kb_id"],
-                "gs_id": r["golden_set_id"], "q": r["question"],
-                "expected": r["expected"], "actual": r["actual"],
-                "f": r["faithfulness"], "r": r["relevancy"], "c": r["completeness"],
-                "t": r["search_time_ms"],
-            })
-    await engine.dispose()
+
+    # INSERT in batches of 50 — partial saves survive on failure
+    batch_size = 50
+    saved = 0
+    for start in range(0, len(results), batch_size):
+        batch = results[start:start + batch_size]
+        try:
+            async with engine.begin() as conn:
+                for r in batch:
+                    gs_id = r["golden_set_id"] or None
+                    await conn.execute(text("""
+                        INSERT INTO rag_eval_results
+                            (eval_id, kb_id, golden_set_id, question,
+                             expected_answer, actual_answer, faithfulness, relevancy,
+                             completeness, search_time_ms)
+                        VALUES (:eval_id, :kb_id, CAST(:gs_id AS UUID),
+                                :q, :expected, :actual, :f, :r, :c, :t)
+                    """), {
+                        "eval_id": eval_id, "kb_id": r["kb_id"],
+                        "gs_id": gs_id, "q": r["question"],
+                        "expected": r["expected"], "actual": r["actual"],
+                        "f": r["faithfulness"], "r": r["relevancy"],
+                        "c": r["completeness"], "t": r["search_time_ms"],
+                    })
+            saved += len(batch)
+        except Exception as e:
+            logger.error(f"Failed to save batch {start}-{start+len(batch)}: {e}")
+    logger.info(f"DB save: {saved}/{len(results)} results inserted")
 
 
-def run_evaluation(kb_ids: list[str]):
-    eval_id = str(uuid.uuid4())[:8]
-    logger.info(f"Evaluation ID: {eval_id}")
+async def async_main(kb_ids: list[str]):
+    from sqlalchemy.ext.asyncio import create_async_engine
 
-    golden_set = asyncio.run(load_golden_set())
-    if kb_ids:
-        golden_set = [g for g in golden_set if g["kb_id"] in kb_ids]
-    logger.info(f"Golden set: {len(golden_set)} questions")
-
-    if not golden_set:
-        logger.error("No golden set found. Run generate_golden_set.py first.")
-        return
-
-    results: list[dict] = []
-    scores_sum = {"faithfulness": 0, "relevancy": 0, "completeness": 0}
-    skipped = 0
-
-    for i, gs in enumerate(golden_set):
-        t0 = time.time()
-        search_result = search_and_answer(gs["question"], [gs["kb_id"]])
-        search_time = (time.time() - t0) * 1000
-        actual_answer = search_result.get("answer") or ""
-
-        # Skip if search completely failed (no answer at all)
-        if not actual_answer:
-            skipped += 1
-            logger.debug(f"Skipped (no answer): {gs['question'][:50]}")
-            # Still judge with empty answer to measure search coverage
-
-        scores = judge_answer(gs["question"], gs["expected"], actual_answer)
-        if scores is None:
-            # Unrecoverable (e.g. SSO expired) — skip this question
-            skipped += 1
-            logger.warning(f"Skipped (judge failed): {gs['question'][:50]}")
-            continue
-
-        results.append({
-            "kb_id": gs["kb_id"],
-            "golden_set_id": gs["id"],
-            "question": gs["question"],
-            "expected": gs["expected"],
-            "actual": actual_answer[:500],
-            "faithfulness": scores["faithfulness"],
-            "relevancy": scores["relevancy"],
-            "completeness": scores["completeness"],
-            "search_time_ms": search_time,
-        })
-
-        for k in scores_sum:
-            scores_sum[k] += scores[k]
-
-        if (i + 1) % 10 == 0:
-            n = len(results) or 1
-            logger.info(
-                f"Progress: {i+1}/{len(golden_set)} (scored: {n}, skipped: {skipped}) | "
-                f"F={scores_sum['faithfulness']/n:.3f} "
-                f"R={scores_sum['relevancy']/n:.3f} "
-                f"C={scores_sum['completeness']/n:.3f}"
-            )
-
-    # Final metrics
-    n = len(results)
-    metrics = {
-        "faithfulness": round(scores_sum["faithfulness"] / n, 3) if n else 0,
-        "answer_relevancy": round(scores_sum["relevancy"] / n, 3) if n else 0,
-        "completeness": round(scores_sum["completeness"] / n, 3) if n else 0,
-        "overall_score": round(sum(scores_sum.values()) / (n * 3), 3) if n else 0,
-        "total_questions": n,
-        "avg_search_time_ms": round(sum(r["search_time_ms"] for r in results) / n, 1) if n else 0,
-    }
-
-    logger.info(f"\n{'='*60}")
-    logger.info(f"EVALUATION COMPLETE: {eval_id}")
-    logger.info(f"  Faithfulness:  {metrics['faithfulness']:.3f}")
-    logger.info(f"  Relevancy:     {metrics['answer_relevancy']:.3f}")
-    logger.info(f"  Completeness:  {metrics['completeness']:.3f}")
-    logger.info(f"  Overall:       {metrics['overall_score']:.3f}")
-    logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
-    logger.info(f"  Questions:     {metrics['total_questions']}")
-    logger.info(f"{'='*60}")
-
-    # Save to DB
-    asyncio.run(save_eval_results(eval_id, ",".join(kb_ids) if kb_ids else "all", results, metrics))
-    logger.info(f"Results saved to rag_eval_results (eval_id={eval_id})")
-
-    # Also update the eval history API
+    engine = create_async_engine(_get_db_url())
     try:
-        requests.post("http://localhost:8000/api/v1/admin/eval/trigger", json={
-            "kb_id": ",".join(kb_ids) if kb_ids else "all",
-            "eval_type": "golden_set",
-            "metrics": metrics,
-        })
-    except Exception:
-        pass
+        eval_id = str(uuid.uuid4())[:8]
+        logger.info(f"Evaluation ID: {eval_id}")
+
+        golden_set = await load_golden_set(engine)
+        if kb_ids:
+            golden_set = [g for g in golden_set if g["kb_id"] in kb_ids]
+        logger.info(f"Golden set: {len(golden_set)} questions")
+
+        if not golden_set:
+            logger.error("No golden set found. Run generate_golden_set.py first.")
+            return
+
+        results: list[dict] = []
+        scores_sum = {"faithfulness": 0, "relevancy": 0, "completeness": 0}
+        skipped = 0
+
+        for i, gs in enumerate(golden_set):
+            t0 = time.time()
+            search_result = search_and_answer(gs["question"], [gs["kb_id"]])
+            search_time = (time.time() - t0) * 1000
+            actual_answer = search_result.get("answer") or ""
+
+            if not actual_answer:
+                skipped += 1
+                logger.debug(f"Skipped (no answer): {gs['question'][:50]}")
+
+            scores = judge_answer(gs["question"], gs["expected"], actual_answer)
+            if scores is None:
+                skipped += 1
+                logger.warning(f"Skipped (judge failed): {gs['question'][:50]}")
+                continue
+
+            results.append({
+                "kb_id": gs["kb_id"],
+                "golden_set_id": gs["id"],
+                "question": gs["question"],
+                "expected": gs["expected"],
+                "actual": actual_answer[:500],
+                "faithfulness": scores["faithfulness"],
+                "relevancy": scores["relevancy"],
+                "completeness": scores["completeness"],
+                "search_time_ms": search_time,
+            })
+
+            for k in scores_sum:
+                scores_sum[k] += scores[k]
+
+            if (i + 1) % 10 == 0:
+                n = len(results) or 1
+                logger.info(
+                    f"Progress: {i+1}/{len(golden_set)} (scored: {n}, skipped: {skipped}) | "
+                    f"F={scores_sum['faithfulness']/n:.3f} "
+                    f"R={scores_sum['relevancy']/n:.3f} "
+                    f"C={scores_sum['completeness']/n:.3f}"
+                )
+
+        # Final metrics
+        n = len(results)
+        metrics = {
+            "faithfulness": round(scores_sum["faithfulness"] / n, 3) if n else 0,
+            "answer_relevancy": round(scores_sum["relevancy"] / n, 3) if n else 0,
+            "completeness": round(scores_sum["completeness"] / n, 3) if n else 0,
+            "overall_score": round(sum(scores_sum.values()) / (n * 3), 3) if n else 0,
+            "total_questions": n,
+            "avg_search_time_ms": round(sum(r["search_time_ms"] for r in results) / n, 1) if n else 0,
+        }
+
+        logger.info(f"\n{'='*60}")
+        logger.info(f"EVALUATION COMPLETE: {eval_id}")
+        logger.info(f"  Faithfulness:  {metrics['faithfulness']:.3f}")
+        logger.info(f"  Relevancy:     {metrics['answer_relevancy']:.3f}")
+        logger.info(f"  Completeness:  {metrics['completeness']:.3f}")
+        logger.info(f"  Overall:       {metrics['overall_score']:.3f}")
+        logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
+        logger.info(f"  Questions:     {metrics['total_questions']}")
+        logger.info(f"{'='*60}")
+
+        # Save to DB
+        try:
+            await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", results)
+            logger.info(f"Results saved to rag_eval_results (eval_id={eval_id})")
+        except Exception as e:
+            logger.error(f"FAILED to save results to DB: {e}")
+            fallback = f"eval_results_{eval_id}.json"
+            with open(fallback, "w") as f:
+                json.dump({"eval_id": eval_id, "metrics": metrics, "results": results}, f, ensure_ascii=False)
+            logger.error(f"Results dumped to {fallback}")
+
+        # Also update the eval history API
+        try:
+            requests.post("http://localhost:8000/api/v1/admin/eval/trigger", json={
+                "kb_id": ",".join(kb_ids) if kb_ids else "all",
+                "eval_type": "golden_set",
+                "metrics": metrics,
+            })
+        except Exception:
+            pass
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":
     targets = sys.argv[1:] if len(sys.argv) > 1 else ALL_KBS
-    run_evaluation(targets)
+    asyncio.run(async_main(targets))

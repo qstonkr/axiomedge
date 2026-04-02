@@ -273,25 +273,26 @@ with tab_quality:
 # 2) RAG 평가
 # ============================================================================
 with tab_rag:
-    eval_data = api_client.list_evaluation_history()
-    if api_failed(eval_data):
+    summary_data = api_client.get_eval_results_summary()
+    if api_failed(summary_data):
         st.warning("RAG 평가 API 데이터를 불러올 수 없습니다.")
         if st.button("재시도", key="retry_rag"):
             st.cache_data.clear()
             st.rerun()
     else:
-        st.subheader("RAG 평가 이력")
+        runs = summary_data.get("runs", [])
+        if runs:
+            st.subheader("RAG 평가 이력")
 
-        # API returns "jobs" key, fallback to "items" for compatibility
-        evaluations = eval_data.get("jobs", eval_data.get("items", eval_data.get("evaluations", [])))
-        if evaluations:
-            # Metrics summary
-            latest = evaluations[0] if evaluations else {}
-            metrics = latest.get("metrics", {})
+            # Latest run metrics
+            latest = runs[0]
+            faithfulness = latest.get("avg_faithfulness", 0)
+            relevancy = latest.get("avg_relevancy", 0)
+            completeness = latest.get("avg_completeness", 0)
+            overall = (faithfulness + relevancy + completeness) / 3
 
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                faithfulness = metrics.get("faithfulness", 0)
                 threshold_ok = faithfulness >= 0.65
                 st.metric(
                     "Faithfulness",
@@ -300,13 +301,10 @@ with tab_rag:
                     delta_color="normal" if threshold_ok else "inverse",
                 )
             with m2:
-                relevancy = metrics.get("answer_relevancy", 0)
-                st.metric("Answer Relevancy", f"{relevancy:.3f}")
+                st.metric("Relevancy", f"{relevancy:.3f}")
             with m3:
-                precision = metrics.get("context_precision", 0)
-                st.metric("Context Precision", f"{precision:.3f}")
+                st.metric("Completeness", f"{completeness:.3f}")
             with m4:
-                overall = metrics.get("overall_score", 0)
                 st.metric("Overall Score", f"{overall:.3f}")
 
             # Quality gate
@@ -319,22 +317,19 @@ with tab_rag:
             else:
                 st.error(f"Quality Gate 실패: Faithfulness {faithfulness:.3f} < {gate_threshold}")
 
-            # FaithfulnessChecker threshold display
-            st.markdown(f"- **FaithfulnessChecker 기준**: 0.7+ (엄격 모드)")
-
-            # Daily/weekly trend chart
+            # Trend chart (if multiple runs)
             st.markdown("---")
             st.subheader("평가 추이")
-            if len(evaluations) > 1:
-                dates = [e.get("created_at", e.get("started_at", ""))[:10] for e in evaluations]
-                faith_vals = [e.get("metrics", {}).get("faithfulness", 0) for e in evaluations]
-                relev_vals = [e.get("metrics", {}).get("answer_relevancy", 0) for e in evaluations]
-                prec_vals = [e.get("metrics", {}).get("context_precision", 0) for e in evaluations]
+            if len(runs) > 1:
+                dates = [(r.get("started_at") or "")[:10] for r in reversed(runs)]
+                faith_vals = [r.get("avg_faithfulness", 0) for r in reversed(runs)]
+                relev_vals = [r.get("avg_relevancy", 0) for r in reversed(runs)]
+                comp_vals = [r.get("avg_completeness", 0) for r in reversed(runs)]
 
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=dates, y=faith_vals, name="Faithfulness", mode="lines+markers"))
-                fig.add_trace(go.Scatter(x=dates, y=relev_vals, name="Answer Relevancy", mode="lines+markers"))
-                fig.add_trace(go.Scatter(x=dates, y=prec_vals, name="Context Precision", mode="lines+markers"))
+                fig.add_trace(go.Scatter(x=dates, y=relev_vals, name="Relevancy", mode="lines+markers"))
+                fig.add_trace(go.Scatter(x=dates, y=comp_vals, name="Completeness", mode="lines+markers"))
                 fig.add_hline(y=gate_threshold, line_dash="dash", line_color="red", annotation_text="Quality Gate")
                 fig.update_layout(
                     title="RAG 평가 추이", xaxis_title="날짜", yaxis_title="점수",
@@ -348,21 +343,22 @@ with tab_rag:
             # Evaluation history table
             st.markdown("---")
             st.subheader("평가 기록")
-            import pandas as pd
-
             rows = []
-            for e in evaluations:
-                m = e.get("metrics", {})
+            for r in runs:
                 rows.append({
-                    "날짜": (e.get("created_at") or e.get("started_at") or "")[:16],
-                    "Faithfulness": f"{m.get('faithfulness', 0):.3f}",
-                    "Answer Relevancy": f"{m.get('answer_relevancy', 0):.3f}",
-                    "Context Precision": f"{m.get('context_precision', 0):.3f}",
-                    "상태": e.get("status", ""),
-                    "엔진": e.get("engine", e.get("domain", "")),
+                    "Eval ID": r.get("eval_id", ""),
+                    "KB": r.get("kb_id", ""),
+                    "건수": r.get("count", 0),
+                    "Faithfulness": f"{r.get('avg_faithfulness', 0):.3f}",
+                    "Relevancy": f"{r.get('avg_relevancy', 0):.3f}",
+                    "Completeness": f"{r.get('avg_completeness', 0):.3f}",
+                    "평균 검색시간": f"{r.get('avg_search_time_ms', 0):.0f}ms",
+                    "시작": (r.get("started_at") or "")[:16],
                 })
             df = pd.DataFrame(rows)
             st.dataframe(df, use_container_width=True, hide_index=True)
+
+            st.info("상세 결과는 [골든 셋 관리] 페이지의 평가 결과 탭에서 확인하세요.")
         else:
             st.info("평가 기록이 없습니다.")
 

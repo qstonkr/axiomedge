@@ -646,6 +646,47 @@ def list_evaluation_history(page: int = 1, page_size: int = 20) -> dict:
 
 
 # ============================================================================
+# Golden Set & Eval Results
+# ============================================================================
+
+@st.cache_data(ttl=30)
+def list_golden_set(
+    kb_id: str | None = None, status: str | None = None,
+    page: int = 1, page_size: int = 50,
+) -> dict:
+    page, page_size = validate_page_params(page, page_size)
+    return _get(
+        "/api/v1/admin/golden-set",
+        kb_id=kb_id, status=status, page=page, page_size=page_size,
+    )
+
+
+def update_golden_set_item(item_id: str, body: dict) -> dict:
+    return _patch(f"/api/v1/admin/golden-set/{item_id}", body)
+
+
+def delete_golden_set_item(item_id: str) -> dict:
+    return _delete(f"/api/v1/admin/golden-set/{item_id}")
+
+
+@st.cache_data(ttl=30)
+def list_eval_results(
+    eval_id: str | None = None, kb_id: str | None = None,
+    page: int = 1, page_size: int = 50,
+) -> dict:
+    page, page_size = validate_page_params(page, page_size)
+    return _get(
+        "/api/v1/admin/eval-results",
+        eval_id=eval_id, kb_id=kb_id, page=page, page_size=page_size,
+    )
+
+
+@st.cache_data(ttl=30)
+def get_eval_results_summary() -> dict:
+    return _get("/api/v1/admin/eval-results/summary")
+
+
+# ============================================================================
 # Hub Search
 # ============================================================================
 
