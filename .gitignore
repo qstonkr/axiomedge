@@ -23,6 +23,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Scripts (non-code)
+scripts/notion_*
+
 # Data/logs
 *.log
 *.jsonl.bak
