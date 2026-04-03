@@ -40,7 +40,7 @@ class OllamaEmbeddingProvider:
     """
 
     backend = "ollama"
-    DIMENSION: int = _w.embedding.dimension
+    _DENSE_DIM: int = _w.embedding.dimension
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class OllamaEmbeddingProvider:
 
     @property
     def dimension(self) -> int:
-        return self.DIMENSION
+        return self._DENSE_DIM
 
     def close(self) -> None:
         if self._client:

@@ -262,11 +262,11 @@ class KoreanMorphemeAnalyzer:
             tokens.append(token)
 
             # 명사로 추정 (한글 2글자 이상 또는 영문)
-            if len(stripped) >= 2:
-                if re.match(r"^[\uac00-\ud7a3]+$", stripped):  # 한글
-                    nouns.append(stripped)
-                elif re.match(r"^[A-Za-z0-9]+$", stripped):  # 영문/숫자
-                    nouns.append(stripped)
+            if len(stripped) >= 2 and (
+                re.match(r"^[\uac00-\ud7a3]+$", stripped)  # 한글
+                or re.match(r"^[A-Za-z0-9]+$", stripped)  # 영문/숫자
+            ):
+                nouns.append(stripped)
 
         return AnalysisResult(
             tokens=tokens,

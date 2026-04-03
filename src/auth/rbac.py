@@ -19,6 +19,16 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Permission constants (used across multiple roles)
+_PERM_KB_READ = "kb:read"
+_PERM_GLOSSARY_READ = "glossary:read"
+_PERM_SEARCH_QUERY = "search:query"
+_PERM_ACTIVITY_VIEW_OWN = "activity:view_own"
+_PERM_GLOSSARY_WRITE = "glossary:write"
+_PERM_SEARCH_ANALYTICS = "search:analytics"
+_PERM_PIPELINE_EXECUTE = "pipeline:execute"
+_PERM_FEEDBACK_WRITE = "feedback:write"
+
 
 @dataclass
 class AccessDecision:
@@ -36,49 +46,49 @@ DEFAULT_ROLES: dict[str, dict] = {
         "display_name": "뷰어",
         "weight": 10,
         "permissions": [
-            "kb:read",
-            "glossary:read",
-            "search:query",
-            "activity:view_own",
+            _PERM_KB_READ,
+            _PERM_GLOSSARY_READ,
+            _PERM_SEARCH_QUERY,
+            _PERM_ACTIVITY_VIEW_OWN,
         ],
     },
     "contributor": {
         "display_name": "기여자",
         "weight": 20,
         "permissions": [
-            "kb:read",
-            "glossary:read", "glossary:write",
-            "search:query", "search:analytics",
-            "pipeline:execute",
-            "feedback:write",
-            "activity:view_own",
+            _PERM_KB_READ,
+            _PERM_GLOSSARY_READ, _PERM_GLOSSARY_WRITE,
+            _PERM_SEARCH_QUERY, _PERM_SEARCH_ANALYTICS,
+            _PERM_PIPELINE_EXECUTE,
+            _PERM_FEEDBACK_WRITE,
+            _PERM_ACTIVITY_VIEW_OWN,
         ],
     },
     "editor": {
         "display_name": "편집자",
         "weight": 30,
         "permissions": [
-            "kb:read", "kb:write",
-            "glossary:read", "glossary:write", "glossary:import",
-            "search:query", "search:analytics",
-            "pipeline:execute",
-            "feedback:write", "feedback:review",
+            _PERM_KB_READ, "kb:write",
+            _PERM_GLOSSARY_READ, _PERM_GLOSSARY_WRITE, "glossary:import",
+            _PERM_SEARCH_QUERY, _PERM_SEARCH_ANALYTICS,
+            _PERM_PIPELINE_EXECUTE,
+            _PERM_FEEDBACK_WRITE, "feedback:review",
             "ownership:assign",
-            "activity:view_own",
+            _PERM_ACTIVITY_VIEW_OWN,
         ],
     },
     "kb_manager": {
         "display_name": "KB 관리자",
         "weight": 40,
         "permissions": [
-            "kb:read", "kb:write", "kb:delete", "kb:manage",
-            "glossary:read", "glossary:write", "glossary:import", "glossary:delete",
-            "search:query", "search:analytics",
-            "pipeline:execute", "pipeline:manage",
-            "feedback:write", "feedback:review",
+            _PERM_KB_READ, "kb:write", "kb:delete", "kb:manage",
+            _PERM_GLOSSARY_READ, _PERM_GLOSSARY_WRITE, "glossary:import", "glossary:delete",
+            _PERM_SEARCH_QUERY, _PERM_SEARCH_ANALYTICS,
+            _PERM_PIPELINE_EXECUTE, "pipeline:manage",
+            _PERM_FEEDBACK_WRITE, "feedback:review",
             "ownership:assign", "ownership:manage",
             "data_source:manage",
-            "activity:view_own", "activity:view_team",
+            _PERM_ACTIVITY_VIEW_OWN, "activity:view_team",
         ],
     },
     "admin": {

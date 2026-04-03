@@ -39,7 +39,8 @@ class IGlossaryRepository(Protocol):
 class NoOpGlossaryRepository:
     """No-op glossary repository that returns no matches."""
 
-    async def search(self, kb_id: str, term: str, limit: int = 1) -> list[Any]:
+    async def search(self, kb_id: str, term: str, limit: int = 1) -> list[Any]:  # noqa: ARG002
+        del kb_id, term, limit  # NoOp: params unused
         await asyncio.sleep(0)
         return []
 
@@ -382,8 +383,8 @@ class SearchQueryExpander:
         """Back-compatible query expansion wrapper returning only query text."""
         decision = await self.expand_query_with_metadata(
             query=query,
-            query_type=query_type,
-            query_language=query_language,
+            _query_type=query_type,
+            _query_language=query_language,
             kb_id=kb_id,
         )
         return decision.expanded_query
@@ -391,8 +392,8 @@ class SearchQueryExpander:
     async def expand_query_with_metadata(
         self,
         query: str,
-        query_type: str | None = None,
-        query_language: str | None = None,
+        _query_type: str | None = None,
+        _query_language: str | None = None,
         kb_id: str | None = None,
     ) -> QueryExpansionDecision:
         """Expand query using glossary-based QueryExpansionService.

@@ -53,6 +53,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth & Permissions"])
 
+_AUTH_NOT_INIT = "Auth service not initialized"
+_REFRESH_PATH = "/api/v1/auth/refresh"
+_USER_NOT_FOUND = "User not found"
+
 
 def _get_auth_service():
     from src.api.app import _get_state
@@ -109,7 +113,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
     """Authenticate with email/password, return JWT tokens in HttpOnly cookies."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     user = await auth_service.authenticate(body.email, body.password)
     if not user:
@@ -167,7 +171,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
         secure=is_secure,
         samesite="lax",
         max_age=jwt_service.refresh_expire_seconds,
-        path="/api/v1/auth/refresh",
+        path=_REFRESH_PATH,
     )
 
     return {
@@ -274,7 +278,7 @@ async def refresh_token(request: Request, response: Response):
         secure=is_secure,
         samesite="lax",
         max_age=jwt_service.refresh_expire_seconds,
-        path="/api/v1/auth/refresh",
+        path=_REFRESH_PATH,
     )
 
     return {
@@ -301,7 +305,7 @@ async def logout(request: Request, response: Response):
 
     is_secure = _is_cookie_secure()
     response.delete_cookie("access_token", path="/", secure=is_secure, samesite="lax")
-    response.delete_cookie("refresh_token", path="/api/v1/auth/refresh", secure=is_secure, samesite="lax")
+    response.delete_cookie("refresh_token", path=_REFRESH_PATH, secure=is_secure, samesite="lax")
 
     return {"success": True}
 
@@ -321,7 +325,7 @@ async def register(
     """Register a new internal user (admin only)."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     if len(body.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
@@ -353,7 +357,7 @@ async def change_password(
     """Change current user's password. Revokes all existing sessions."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     if len(body.new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
@@ -444,7 +448,7 @@ async def create_user(
     """Create a new local user."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     try:
         result = await auth_service.create_user(
@@ -481,7 +485,7 @@ async def update_user(
     """Update user details."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     result = await auth_service.update_user(
         user_id=user_id,
@@ -491,7 +495,7 @@ async def update_user(
         is_active=body.is_active,
     )
     if not result:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=_USER_NOT_FOUND)
     return {"success": True, **result}
 
 
@@ -509,11 +513,11 @@ async def delete_user(
     """Delete a user."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     success = await auth_service.delete_user(user_id)
     if not success:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=_USER_NOT_FOUND)
     return {"success": True}
 
 
@@ -531,10 +535,10 @@ async def get_user(
     """Get user details."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
     user = await auth_service.get_user(user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail=_USER_NOT_FOUND)
     roles = await auth_service.get_user_roles(user_id)
     return {**user, "roles": roles}
 
@@ -577,7 +581,7 @@ async def assign_role(
     """Assign a role to a user."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     role_name = body.get("role")
     if not role_name:
@@ -613,7 +617,7 @@ async def revoke_role(
     """Revoke a role from a user."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     success = await auth_service.revoke_role(user_id, role_name, scope_type, scope_id)
     if not success:
@@ -655,7 +659,7 @@ async def set_kb_permission(
     """Set a user's permission level for a KB."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     user_id = body.get("user_id")
     permission_level = body.get("permission_level", "reader")
@@ -692,7 +696,7 @@ async def remove_kb_permission(
     """Remove a user's KB permission."""
     auth_service = _get_auth_service()
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     success = await auth_service.remove_kb_permission(user_id, kb_id)
     if not success:
@@ -816,7 +820,7 @@ async def create_abac_policy(
 
     auth_service = _get_state().get("auth_service")
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     required = ["name", "resource_type", "action", "conditions", "effect"]
     for field in required:
@@ -860,7 +864,7 @@ async def update_abac_policy(
 
     auth_service = _get_state().get("auth_service")
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     async with auth_service._session() as session:
         result = await session.execute(
@@ -896,7 +900,7 @@ async def delete_abac_policy(
 
     auth_service = _get_state().get("auth_service")
     if not auth_service:
-        raise HTTPException(status_code=503, detail="Auth service not initialized")
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
 
     async with auth_service._session() as session:
         result = await session.execute(

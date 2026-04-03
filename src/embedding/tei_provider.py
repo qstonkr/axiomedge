@@ -34,7 +34,7 @@ class TEIEmbeddingProvider:
     """
 
     backend = "tei"
-    DIMENSION: int = _w.embedding.dimension
+    _DENSE_DIM: int = _w.embedding.dimension
 
     def __init__(self, base_url: str | None = None, timeout: float = 60.0):
         self._base_url = (
@@ -112,7 +112,7 @@ class TEIEmbeddingProvider:
 
     @property
     def dimension(self) -> int:
-        return self.DIMENSION
+        return self._DENSE_DIM
 
     def close(self) -> None:
         if self._client:

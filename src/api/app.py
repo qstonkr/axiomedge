@@ -28,6 +28,8 @@ from src.api.state import AppState
 
 load_dotenv()
 
+_DEFAULT_REDIS_URL = "redis://localhost:6379"
+
 
 # ---------------------------------------------------------------------------
 # Structured JSON logging
@@ -186,7 +188,7 @@ async def _init_cache(state: AppState) -> None:
 
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
         from src.cache.redis_cache import SearchCache
         from src.cache.dedup_cache import DedupCache
 
@@ -212,7 +214,7 @@ async def _init_cache(state: AppState) -> None:
 
         l2 = None
         if cache_cfg.enable_semantic_cache:
-            _cache_redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            _cache_redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
             l2 = L2SemanticCache(
                 redis_url=_cache_redis_url,
                 embedding_provider=None,  # Set after embedder init below
@@ -233,7 +235,7 @@ async def _init_cache(state: AppState) -> None:
         try:
             import redis.asyncio as _aioredis
             _idemp_redis = _aioredis.from_url(
-                os.getenv("REDIS_URL", "redis://localhost:6379"),
+                os.getenv("REDIS_URL", _DEFAULT_REDIS_URL),
                 decode_responses=True,
             )
         except Exception:
@@ -294,7 +296,7 @@ async def _init_dedup(state: AppState) -> None:
         redis_client = None
         try:
             import redis.asyncio as aioredis
-            _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            _redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
             redis_client = aioredis.from_url(_redis_url, decode_responses=True)
         except Exception:
             pass

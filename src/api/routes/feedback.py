@@ -12,6 +12,8 @@ from src.api.app import _get_state
 
 logger = logging.getLogger(__name__)
 
+_ERR_REPORT_NOT_FOUND = "Error report not found"
+
 # Two routers: admin feedback + knowledge feedback/error-report
 admin_router = APIRouter(prefix="/api/v1/admin", tags=["Feedback"])
 knowledge_router = APIRouter(prefix="/api/v1/knowledge", tags=["Feedback"])
@@ -222,7 +224,7 @@ async def get_error_report(report_id: str):
                 return report
         except Exception as e:
             logger.warning("Error report repo get failed: %s", e)
-    raise HTTPException(status_code=404, detail="Error report not found")
+    raise HTTPException(status_code=404, detail=_ERR_REPORT_NOT_FOUND)
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +270,7 @@ async def resolve_error_report(report_id: str, body: dict[str, Any]):
         try:
             existing = await repo.get_by_id(report_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Error report not found")
+                raise HTTPException(status_code=404, detail=_ERR_REPORT_NOT_FOUND)
             from datetime import UTC, datetime
             update_data = {
                 "id": report_id,
@@ -304,7 +306,7 @@ async def reject_error_report(report_id: str, body: dict[str, Any]):
         try:
             existing = await repo.get_by_id(report_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Error report not found")
+                raise HTTPException(status_code=404, detail=_ERR_REPORT_NOT_FOUND)
             update_data = {"id": report_id, "status": "rejected", "resolution_note": body.get("reason", "")}
             await repo.save(update_data)
             return {"success": True, "report_id": report_id, "status": "rejected"}
@@ -334,7 +336,7 @@ async def escalate_error_report(report_id: str, body: dict[str, Any]):
         try:
             existing = await repo.get_by_id(report_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Error report not found")
+                raise HTTPException(status_code=404, detail=_ERR_REPORT_NOT_FOUND)
             update_data = {
                 "id": report_id,
                 "status": "escalated",

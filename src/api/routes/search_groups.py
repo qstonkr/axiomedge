@@ -18,6 +18,9 @@ from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
 
+_DB_NOT_INIT = "Database not initialized"
+_GROUP_NOT_FOUND = "Group not found"
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/search-groups", tags=["Search Groups"])
 
@@ -51,7 +54,7 @@ async def create_group(request: CreateGroupRequest):
     """검색 그룹 생성."""
     repo = _get_state().get("search_group_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+        raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
     group = await repo.create(
         name=request.name,
@@ -67,11 +70,11 @@ async def get_group(group_id: str):
     """검색 그룹 상세 조회."""
     repo = _get_state().get("search_group_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+        raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
     group = await repo.get(group_id)
     if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+        raise HTTPException(status_code=404, detail=_GROUP_NOT_FOUND)
     return group
 
 
@@ -80,7 +83,7 @@ async def update_group(group_id: str, request: UpdateGroupRequest):
     """검색 그룹 수정 (KB 추가/제거)."""
     repo = _get_state().get("search_group_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+        raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
     group = await repo.update(
         group_id=group_id,
@@ -90,7 +93,7 @@ async def update_group(group_id: str, request: UpdateGroupRequest):
         is_default=request.is_default,
     )
     if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+        raise HTTPException(status_code=404, detail=_GROUP_NOT_FOUND)
     return group
 
 
@@ -99,11 +102,11 @@ async def delete_group(group_id: str):
     """검색 그룹 삭제."""
     repo = _get_state().get("search_group_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+        raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
     deleted = await repo.delete(group_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Group not found")
+        raise HTTPException(status_code=404, detail=_GROUP_NOT_FOUND)
     return {"success": True, "message": f"Group {group_id} deleted"}
 
 
@@ -112,7 +115,7 @@ async def get_group_kbs(group_id: str):
     """그룹에 속한 KB 목록 조회."""
     repo = _get_state().get("search_group_repo")
     if not repo:
-        raise HTTPException(status_code=503, detail="Database not initialized")
+        raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
     kb_ids = await repo.resolve_kb_ids(group_id=group_id)
     return {"group_id": group_id, "kb_ids": kb_ids}

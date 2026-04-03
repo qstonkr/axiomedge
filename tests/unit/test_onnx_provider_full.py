@@ -32,7 +32,7 @@ class TestInit:
     def test_defaults(self):
         p = OnnxBgeEmbeddingProvider()
         assert p.backend == "onnx"
-        assert p.dimension == p.DIMENSION
+        assert p.dimension == p._DENSE_DIM
         assert p._ready is False
         assert p._session is None
         assert p._tokenizer is None

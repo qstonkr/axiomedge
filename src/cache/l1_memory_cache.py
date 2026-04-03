@@ -97,9 +97,9 @@ class L1InMemoryCache(ICacheLayer):
                     to_delete.append(key)
                     continue
                 val = (entry.metadata or {}).get(meta_key)
-                if val == meta_value:
-                    to_delete.append(key)
-                elif isinstance(val, (list, set, tuple)) and meta_value in val:
+                if val == meta_value or (
+                    isinstance(val, (list, set, tuple)) and meta_value in val
+                ):
                     to_delete.append(key)
             for key in to_delete:
                 del self._cache[key]

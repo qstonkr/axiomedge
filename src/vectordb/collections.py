@@ -334,7 +334,7 @@ class QdrantCollectionManager:
         previous_target = await self.get_live_alias_target(kb_id)
 
         if previous_target == target_collection_name:
-            return previous_target
+            return target_collection_name  # No-op: alias already points here
 
         from qdrant_client.models import (
             CreateAlias, CreateAliasOperation,

@@ -11,6 +11,8 @@ from fastapi import APIRouter, HTTPException, Query
 from src.api.app import _get_state
 
 logger = logging.getLogger(__name__)
+
+_DS_NOT_FOUND = "Data source not found"
 router = APIRouter(prefix="/api/v1/admin/data-sources", tags=["Data Sources"])
 
 
@@ -68,7 +70,7 @@ async def get_data_source(source_id: str):
                 return source
         except Exception as e:
             logger.warning("Data source repo get failed: %s", e)
-    raise HTTPException(status_code=404, detail="Data source not found")
+    raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +85,7 @@ async def update_data_source(source_id: str, body: dict[str, Any]):
         try:
             existing = await repo.get(source_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Data source not found")
+                raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
             # Update status if provided, otherwise keep current
             status = body.get("status", existing.get("status", "active"))
             error_message = body.get("error_message")
@@ -109,7 +111,7 @@ async def delete_data_source(source_id: str):
         try:
             deleted = await repo.delete(source_id)
             if not deleted:
-                raise HTTPException(status_code=404, detail="Data source not found")
+                raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
             return {"success": True, "source_id": source_id}
         except HTTPException:
             raise
@@ -134,7 +136,7 @@ async def trigger_data_source_sync(
         try:
             existing = await repo.get(source_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Data source not found")
+                raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
             await repo.update_status(source_id, "syncing")
             return {"success": True, "source_id": source_id, "sync_mode": sync_mode, "message": "Sync triggered"}
         except HTTPException:

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Cypher Safety (inlined from cypher_safety.py)
 # =============================================================================
-_SAFE_CYPHER_LABEL = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SAFE_CYPHER_LABEL = re.compile(r"^[A-Za-z_]\w*$")
 
 
 def _is_safe_cypher_label(value: str) -> bool:
@@ -284,11 +284,8 @@ class _SageMakerLLMClient:
         self._client = None
 
     def _get_client(self):
-        # TODO: 임시 — SSO 토큰 갱신 대응. IAM 키 전환 후 캐싱 방식으로 복원
-        # if self._client is None:
-        #     import boto3
-        #     session = boto3.Session(profile_name=self._profile, region_name=self._region)
-        #     self._client = session.client("sagemaker-runtime")
+        # SSO token renewal workaround: recreate client each call
+        # until IAM key migration, then switch to cached client
         # return self._client
         import boto3
         session = boto3.Session(profile_name=self._profile, region_name=self._region)
@@ -524,6 +521,7 @@ class GraphRAGExtractor:
                     data = json.loads(repair_json(json_str))
                     logger.warning("GraphRAG JSON repaired for document")
                 except Exception:
+                    logger.warning("GraphRAG JSON repair also failed")
                     raise
 
             # 노드 파싱

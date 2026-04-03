@@ -421,10 +421,8 @@ def _normalize_owners(raw_names: list[str]) -> list[str]:
         if skip:
             continue
 
-        # 유효한 이름 패턴
-        if re.match(r"^[가-힣]{2,4}$", name):
-            normalized.append(name)
-        elif re.match(r"^[A-Za-z]{2,20}$", name):
+        # 유효한 이름 패턴 (한글 2-4자 또는 영문 2-20자)
+        if re.match(r"^[가-힣]{2,4}$", name) or re.match(r"^[A-Za-z]{2,20}$", name):
             normalized.append(name)
 
     return normalized

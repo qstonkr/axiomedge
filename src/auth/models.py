@@ -24,6 +24,8 @@ from sqlalchemy.orm import relationship
 
 from src.database.models import KnowledgeBase
 
+_FK_AUTH_USER_ID = "auth_users.id"
+
 
 # =============================================================================
 # Users
@@ -79,7 +81,7 @@ class RefreshTokenModel(KnowledgeBase):
     __tablename__ = "auth_refresh_tokens"
 
     id = Column(String(36), primary_key=True)  # jti
-    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey(_FK_AUTH_USER_ID, ondelete="CASCADE"), nullable=False)
     family_id = Column(String(36), nullable=False)  # Token family for rotation detection
     rotation_count = Column(Integer, nullable=False, default=0)
     token_hash = Column(String(128), nullable=False)  # SHA256(refresh_token)
@@ -130,7 +132,7 @@ class UserRoleModel(KnowledgeBase):
     __tablename__ = "auth_user_roles"
 
     id = Column(String(36), primary_key=True)
-    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey(_FK_AUTH_USER_ID, ondelete="CASCADE"), nullable=False)
     role_id = Column(String(36), ForeignKey("auth_roles.id", ondelete="CASCADE"), nullable=False)
 
     # Scope: NULL = global, else scoped to specific KB/org
@@ -208,7 +210,7 @@ class KBUserPermissionModel(KnowledgeBase):
 
     id = Column(String(36), primary_key=True)
     kb_id = Column(String(100), nullable=False)
-    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey(_FK_AUTH_USER_ID, ondelete="CASCADE"), nullable=False)
     permission_level = Column(String(20), nullable=False, default="reader")  # reader | contributor | manager | owner
     granted_by = Column(String(36), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
@@ -286,7 +288,7 @@ class UserActivityLogModel(KnowledgeBase):
     __tablename__ = "auth_user_activity_logs"
 
     id = Column(String(36), primary_key=True)
-    user_id = Column(String(36), ForeignKey("auth_users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), ForeignKey(_FK_AUTH_USER_ID, ondelete="CASCADE"), nullable=False)
     activity_type = Column(String(50), nullable=False)  # search, view, upload, edit, feedback, export, ...
     resource_type = Column(String(50), nullable=False)  # kb, document, glossary, term, ...
     resource_id = Column(String(255), nullable=True)

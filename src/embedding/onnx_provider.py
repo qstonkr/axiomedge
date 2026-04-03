@@ -56,7 +56,7 @@ class OnnxBgeEmbeddingProvider:
     """
 
     backend = "onnx"
-    DIMENSION: int = weights.embedding.dimension
+    _DENSE_DIM: int = weights.embedding.dimension
 
     def __init__(
         self,
@@ -314,7 +314,7 @@ class OnnxBgeEmbeddingProvider:
     @property
     def dimension(self) -> int:
         """Dense vector dimension for BGE-M3 ONNX output."""
-        return self.DIMENSION
+        return self._DENSE_DIM
 
     def _extract_dense(
         self,

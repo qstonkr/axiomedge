@@ -62,21 +62,18 @@ class TrustScoreRepository(BaseRepository):
         sort: str = "trending",
     ) -> list[dict[str, Any]]:
         async with await self._get_session() as session:
-            try:
-                stmt = (
-                    select(TrustScoreModel)
-                    .where(
-                        TrustScoreModel.kb_id == kb_id,
-                        TrustScoreModel.kts_score >= min_score,
-                    )
-                    .order_by(self._sort_expression(sort))
-                    .offset(offset)
-                    .limit(limit)
+            stmt = (
+                select(TrustScoreModel)
+                .where(
+                    TrustScoreModel.kb_id == kb_id,
+                    TrustScoreModel.kts_score >= min_score,
                 )
-                result = await session.execute(stmt)
-                return [self._to_dict(m) for m in result.scalars().all()]
-            except SQLAlchemyError:
-                raise
+                .order_by(self._sort_expression(sort))
+                .offset(offset)
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return [self._to_dict(m) for m in result.scalars().all()]
 
     async def get_stale_entries(
         self, kb_id: str, max_freshness: float = 0.3, limit: int = 1000,

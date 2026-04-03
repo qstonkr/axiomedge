@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ALREADY_EXISTS = "already exists"
+
 
 # === Node/Relation Types (SSOT: node_registry.py) ===
 NODE_TYPES = dict(NODE_TYPE_BY_KEY)
@@ -110,7 +112,7 @@ async def apply_schema(client: "Neo4jClient") -> dict[str, Any]:
             await client.execute_write(constraint.strip())
             results["constraints_created"] += 1
         except Exception as e:
-            if "already exists" not in str(e).lower():
+            if _ALREADY_EXISTS not in str(e).lower():
                 results["errors"].append(f"Constraint error: {e}")
                 logger.warning("Constraint creation failed: %s", e)
 
@@ -120,7 +122,7 @@ async def apply_schema(client: "Neo4jClient") -> dict[str, Any]:
             await client.execute_write(index.strip())
             results["indexes_created"] += 1
         except Exception as e:
-            if "already exists" not in str(e).lower():
+            if _ALREADY_EXISTS not in str(e).lower():
                 results["errors"].append(f"Index error: {e}")
                 logger.warning("Index creation failed: %s", e)
 
@@ -130,7 +132,7 @@ async def apply_schema(client: "Neo4jClient") -> dict[str, Any]:
             await client.execute_write(ftindex.strip())
             results["fulltext_indexes_created"] += 1
         except Exception as e:
-            if "already exists" not in str(e).lower():
+            if _ALREADY_EXISTS not in str(e).lower():
                 results["errors"].append(f"Fulltext index error: {e}")
                 logger.warning("Fulltext index creation failed: %s", e)
 

@@ -15,6 +15,9 @@ from src.api.app import _get_state
 
 logger = logging.getLogger(__name__)
 
+_QDRANT_NOT_INIT = "Qdrant not initialized"
+_DEFAULT_QDRANT_URL = "http://localhost:6333"
+
 # Original KB router
 router = APIRouter(prefix="/api/v1/kb", tags=["KB Management"])
 
@@ -120,7 +123,7 @@ async def create_kb(request: KBCreateRequest):
     state = _get_state()
     collections = state.get("qdrant_collections")
     if not collections:
-        raise HTTPException(status_code=503, detail="Qdrant not initialized")
+        raise HTTPException(status_code=503, detail=_QDRANT_NOT_INIT)
 
     try:
         await collections.ensure_collection(request.kb_id)
@@ -141,7 +144,7 @@ async def delete_kb(kb_id: str):
     state = _get_state()
     provider = state.get("qdrant_provider")
     if not provider:
-        raise HTTPException(status_code=503, detail="Qdrant not initialized")
+        raise HTTPException(status_code=503, detail=_QDRANT_NOT_INIT)
 
     try:
         client = await provider.ensure_client()
@@ -178,7 +181,7 @@ async def admin_create_kb(body: dict[str, Any]):
     state = _get_state()
     collections = state.get("qdrant_collections")
     if not collections:
-        raise HTTPException(status_code=503, detail="Qdrant not initialized")
+        raise HTTPException(status_code=503, detail=_QDRANT_NOT_INIT)
 
     kb_id = body.get("kb_id", body.get("name", ""))
     try:
@@ -235,7 +238,7 @@ async def admin_kb_aggregation():
     if collections and store:
         try:
             import httpx
-            qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+            qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
             async with httpx.AsyncClient(timeout=10.0) as client:
                 raw_names = await collections.get_existing_collection_names()
                 for raw_name in raw_names:
@@ -345,7 +348,7 @@ async def admin_delete_kb(kb_id: str):
     state = _get_state()
     provider = state.get("qdrant_provider")
     if not provider:
-        raise HTTPException(status_code=503, detail="Qdrant not initialized")
+        raise HTTPException(status_code=503, detail=_QDRANT_NOT_INIT)
 
     try:
         client = await provider.ensure_client()
@@ -400,7 +403,7 @@ async def admin_kb_documents(
 
     state = _get_state()
     collections = state.get("qdrant_collections")
-    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
 
     if not collections:
         return {"documents": [], "total": 0, "page": page, "page_size": page_size, "kb_id": kb_id}
@@ -471,7 +474,7 @@ async def admin_kb_categories(kb_id: str):
 
     state = _get_state()
     collections = state.get("qdrant_collections")
-    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
 
     if not collections:
         return {"categories": [], "total": 0, "kb_id": kb_id}

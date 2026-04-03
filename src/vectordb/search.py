@@ -88,9 +88,9 @@ class QdrantSearchEngine:
             SparseVector,
         )
         try:
-            from qdrant_client.http.exceptions import UnexpectedResponse
+            from qdrant_client.http.exceptions import UnexpectedResponse as _unexpected_resp_cls
         except Exception:
-            UnexpectedResponse = ValueError  # type: ignore[assignment,misc]
+            _unexpected_resp_cls = ValueError  # type: ignore[assignment,misc]
 
         qdrant_filter = None
         if filter_conditions:
@@ -145,7 +145,7 @@ class QdrantSearchEngine:
                     query=FusionQuery(fusion=Fusion.RRF),
                     **query_kwargs,
                 )
-            except (UnexpectedResponse, ValueError) as primary_error:
+            except (_unexpected_resp_cls, ValueError) as primary_error:
                 status = getattr(primary_error, "status_code", None)
                 if status is not None and status >= 500:
                     logger.error(
@@ -187,7 +187,7 @@ class QdrantSearchEngine:
                     query_filter=qdrant_filter,
                     **query_kwargs,
                 )
-            except (UnexpectedResponse, ValueError) as primary_error:
+            except (_unexpected_resp_cls, ValueError) as primary_error:
                 status = getattr(primary_error, "status_code", None)
                 if status is not None and status >= 500:
                     logger.error(
@@ -232,8 +232,8 @@ class QdrantSearchEngine:
         dense_vector: list[float],
         sparse_vector: dict[int, float] | None = None,
         top_k: int = 10,
-        dense_weight: float = DEFAULT_DENSE_WEIGHT,
-        sparse_weight: float = DEFAULT_SPARSE_WEIGHT,
+        _dense_weight: float = DEFAULT_DENSE_WEIGHT,
+        _sparse_weight: float = DEFAULT_SPARSE_WEIGHT,
         score_threshold: float | None = None,
         filter_conditions: dict[str, Any] | None = None,
         prefetch_multiplier: int | None = None,
@@ -317,8 +317,8 @@ class QdrantSearchEngine:
                 dense_vector=dense_vector,
                 sparse_vector=sparse_vector,
                 top_k=candidate_top_k,
-                dense_weight=dense_weight,
-                sparse_weight=sparse_weight,
+                _dense_weight=dense_weight,
+                _sparse_weight=sparse_weight,
                 score_threshold=None,
                 filter_conditions=filter_conditions,
                 prefetch_multiplier=prefetch_multiplier,

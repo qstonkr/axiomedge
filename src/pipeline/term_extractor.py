@@ -314,19 +314,16 @@ class TermExtractor:
                     buf_tags.append(tag)
                     buf_scores.append(token.score)
                     _flush()
-                # SL (foreign) only compounds with adjacent SL
-                elif tag == self._FOREIGN_TAG and buf_forms and buf_tags[-1] != self._FOREIGN_TAG:
+                # SL (foreign) only compounds with adjacent SL; also flush on max compound size
+                elif (
+                    (tag == self._FOREIGN_TAG and buf_forms and buf_tags[-1] != self._FOREIGN_TAG)
+                    or len(buf_forms) >= _MAX_COMPOUND_TOKENS
+                ):
                     _flush()
                     buf_forms.append(token.form)
                     buf_tags.append(tag)
                     buf_scores.append(token.score)
-                # Max compound size
-                elif len(buf_forms) >= _MAX_COMPOUND_TOKENS:
-                    _flush()
-                    buf_forms.append(token.form)
-                    buf_tags.append(tag)
-                    buf_scores.append(token.score)
-                else:
+                else:  # default: continue compounding
                     buf_forms.append(token.form)
                     buf_tags.append(tag)
                     buf_scores.append(token.score)
@@ -671,7 +668,7 @@ class TermExtractor:
     async def _filter_global_terms(
         self,
         candidates: list[ExtractedTerm],
-        kb_id: str,
+        _kb_id: str,
     ) -> list[ExtractedTerm]:
         """Remove candidates that already exist as scope='global'.
 

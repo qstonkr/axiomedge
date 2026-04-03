@@ -147,7 +147,7 @@ class Chunker:
                     future = self._kss_executor.submit(kss.split_sentences, sub)
                     sentences = future.result(timeout=10)  # 10s timeout
                     all_sentences.extend(s.strip() for s in sentences if s.strip())
-                except (concurrent.futures.TimeoutError, Exception) as e:
+                except Exception as e:
                     if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):
                         logger.warning("KSS timeout on %d chars, using regex fallback", len(sub))
                     # Fallback to regex for this segment

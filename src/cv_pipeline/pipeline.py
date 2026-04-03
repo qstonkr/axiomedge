@@ -508,8 +508,15 @@ class CVPipeline:
                     })
                     step_counter += 1
 
+        if process_steps:
+            image_type = "flowchart"
+        elif cv_result.shapes:
+            image_type = "diagram"
+        else:
+            image_type = "text_image"
+
         return {
-            "image_type": "flowchart" if process_steps else ("diagram" if cv_result.shapes else "text_image"),
+            "image_type": image_type,
             "description": "",
             "entities": entities,
             "relationships": relationships,

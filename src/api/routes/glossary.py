@@ -14,6 +14,7 @@ from src.config_weights import weights as _w
 logger = logging.getLogger(__name__)
 
 _NO_DB = HTTPException(status_code=503, detail="No DB connection")
+_TERM_NOT_FOUND = "Term not found"
 
 _EXACT_MATCH_THRESHOLD = _w.similarity.exact_match_threshold
 router = APIRouter(prefix="/api/v1/admin/glossary", tags=["Glossary"])
@@ -27,7 +28,7 @@ async def _check_not_global_standard(repo: Any, term_id: str) -> dict[str, Any]:
     """
     existing = await repo.get_by_id(term_id)
     if not existing:
-        raise HTTPException(status_code=404, detail="Term not found")
+        raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
     if existing.get("scope") == "global" and existing.get("source") not in ("manual", "auto_discovered"):
         raise HTTPException(
             status_code=403,
@@ -239,12 +240,12 @@ async def get_similarity_distribution():
                 rf_scores.append(score)
 
             # 2) Jaccard n-gram (trigram)
-            q_ngrams = set(query[i:i+3] for i in range(max(1, len(query)-2)))
+            q_ngrams = {query[i:i+3] for i in range(max(1, len(query)-2))}
             best_jac = 0.0
             for std in comparison_names[:1000]:
                 if std.lower() == query.lower():
                     continue
-                s_ngrams = set(std[i:i+3] for i in range(max(1, len(std)-2)))
+                s_ngrams = {std[i:i+3] for i in range(max(1, len(std)-2))}
                 if q_ngrams and s_ngrams:
                     intersection = len(q_ngrams & s_ngrams)
                     union = len(q_ngrams | s_ngrams)
@@ -403,7 +404,7 @@ async def get_glossary_term(term_id: str):
                 return term
         except Exception as e:
             logger.warning("Glossary repo get failed: %s", e)
-    raise HTTPException(status_code=404, detail="Term not found")
+    raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
 
 
 # ---------------------------------------------------------------------------
@@ -480,7 +481,7 @@ async def approve_glossary_term(term_id: str, body: dict[str, Any]):
         try:
             existing = await repo.get_by_id(term_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Term not found")
+                raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
             from datetime import UTC, datetime
             update_data = {
                 "id": term_id,
@@ -518,7 +519,7 @@ async def reject_glossary_term(term_id: str, body: dict[str, Any]):
         try:
             existing = await repo.get_by_id(term_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Term not found")
+                raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
             update_data = {
                 "id": term_id,
                 "kb_id": existing["kb_id"],
@@ -579,7 +580,7 @@ async def promote_glossary_term_to_global(term_id: str):
         try:
             existing = await repo.get_by_id(term_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Term not found")
+                raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
             update_data = {
                 "id": term_id,
                 "kb_id": existing["kb_id"],
@@ -607,8 +608,8 @@ async def promote_glossary_term_to_global(term_id: str):
     },
 )
 async def import_glossary_csv(
-    file: UploadFile | None = File(default=None),
-    files: list[UploadFile] | None = File(default=None),
+    file: Annotated[UploadFile | None, File()] = None,
+    files: Annotated[list[UploadFile] | None, File()] = None,
     encoding: Annotated[str, Query()] = "utf-8",
     term_type: Annotated[str, Query()] = "term",
     kb_id: Annotated[str, Query()] = "global-standard",
@@ -695,7 +696,7 @@ async def add_synonym_to_standard(body: dict[str, Any]):
                 raise HTTPException(status_code=400, detail="term_id and synonym are required")
             existing = await repo.get_by_id(term_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Term not found")
+                raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
             synonyms = existing.get("synonyms", [])
             if synonym not in synonyms:
                 synonyms.append(synonym)
@@ -734,7 +735,7 @@ async def list_synonyms(term_id: str):
         try:
             existing = await repo.get_by_id(term_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Term not found")
+                raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
             synonyms = existing.get("synonyms", [])
             return {
                 "term_id": term_id,
@@ -768,7 +769,7 @@ async def remove_synonym(term_id: str, synonym: str):
         try:
             existing = await repo.get_by_id(term_id)
             if not existing:
-                raise HTTPException(status_code=404, detail="Term not found")
+                raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
             synonyms = existing.get("synonyms", [])
             if synonym not in synonyms:
                 raise HTTPException(status_code=404, detail=f"Synonym '{synonym}' not found on term")

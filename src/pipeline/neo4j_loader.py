@@ -24,7 +24,7 @@ from ..config_weights import weights as _w
 logger = logging.getLogger(__name__)
 
 # 안전한 라벨/관계 타입 패턴 (알파벳, 숫자, 언더스코어만 허용)
-SAFE_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+SAFE_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z]\w*$")
 
 # 허용된 노드/관계 타입 (화이트리스트)
 ALLOWED_NODE_TYPES = frozenset([

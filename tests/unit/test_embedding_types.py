@@ -29,9 +29,9 @@ class TestEmbeddingProviderProtocol:
     def test_all_have_consistent_dimension(self) -> None:
         from src.config_weights import weights
         expected = weights.embedding.dimension
-        assert OllamaEmbeddingProvider.DIMENSION == expected
-        assert TEIEmbeddingProvider.DIMENSION == expected
-        assert OnnxBgeEmbeddingProvider.DIMENSION == expected
+        assert OllamaEmbeddingProvider._DENSE_DIM == expected
+        assert TEIEmbeddingProvider._DENSE_DIM == expected
+        assert OnnxBgeEmbeddingProvider._DENSE_DIM == expected
 
     def test_arbitrary_class_does_not_satisfy(self) -> None:
         class NotAnEmbedder:

@@ -155,7 +155,7 @@ _DEPRECATED_KEYWORDS = re.compile(
 )
 
 # Word pattern for word count
-_WORD_RE = re.compile(r"[A-Za-z0-9_]+|[가-힣]+")
+_WORD_RE = re.compile(r"\w+|[가-힣]+")
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +210,9 @@ def _check_ig01_source_validation(document: RawDocument, _kb_id: str) -> CheckRe
     )
 
 
+_FRESHNESS_CHECK = "Freshness check"
+
+
 def _check_ig02_freshness(document: RawDocument) -> CheckResult:
     """IG-02: Freshness check (updated_at must not be too old)."""
     start = time.perf_counter()
@@ -217,7 +220,7 @@ def _check_ig02_freshness(document: RawDocument) -> CheckResult:
     if document.updated_at is None:
         return CheckResult(
             check_id="IG-02",
-            check_name="Freshness check",
+            check_name=_FRESHNESS_CHECK,
             verdict=GateVerdict.WARN,
             message="updated_at missing; freshness cannot be evaluated",
             details={"updated_at": None},
@@ -244,7 +247,7 @@ def _check_ig02_freshness(document: RawDocument) -> CheckResult:
 
         return CheckResult(
             check_id="IG-02",
-            check_name="Freshness check",
+            check_name=_FRESHNESS_CHECK,
             verdict=verdict,
             message=msg,
             details={"days_since_update": days, "max_age_days": max_age},
@@ -253,7 +256,7 @@ def _check_ig02_freshness(document: RawDocument) -> CheckResult:
     except Exception as e:
         return CheckResult(
             check_id="IG-02",
-            check_name="Freshness check",
+            check_name=_FRESHNESS_CHECK,
             verdict=GateVerdict.FAIL,
             message=f"Freshness evaluation failed: {e}",
             details={},

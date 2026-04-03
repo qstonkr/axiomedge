@@ -22,6 +22,8 @@ from typing import Any
 
 from src.config_weights import weights as _w
 
+_EXT_PPTX = ".pptx"
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,7 +99,7 @@ def parse_bytes(data: bytes, filename: str) -> str:
     elif ext == ".doc":
         logger.warning("Legacy .doc format is not supported (use .docx): %s", filename)
         return ""
-    elif ext == ".pptx":
+    elif ext == _EXT_PPTX:
         return _parse_pptx(data, filename)
     elif ext == ".ppt":
         converted = _convert_ppt_to_pptx(data, filename)
@@ -119,7 +121,7 @@ def parse_bytes_enhanced(data: bytes, filename: str) -> ParseResult:
 
     if ext == ".pdf":
         return _parse_pdf_enhanced(data, filename)
-    elif ext == ".pptx":
+    elif ext == _EXT_PPTX:
         return _parse_pptx_enhanced(data, filename)
     elif ext == ".ppt":
         converted = _convert_ppt_to_pptx(data, filename)
@@ -183,7 +185,7 @@ def _convert_ppt_to_pptx(data: bytes, filename: str) -> bytes | None:
                 )
                 return None
 
-            pptx_path = ppt_path.with_suffix(".pptx")
+            pptx_path = ppt_path.with_suffix(_EXT_PPTX)
             if not pptx_path.exists():
                 logger.warning(
                     "LibreOffice conversion produced no output for %s", filename
@@ -211,7 +213,7 @@ def _convert_ppt_to_pptx(data: bytes, filename: str) -> bytes | None:
 # ---------------------------------------------------------------------------
 
 
-def _parse_pdf(data: bytes, filename: str) -> str:
+def _parse_pdf(data: bytes, _filename: str) -> str:
     """Parse PDF using pymupdf (PyMuPDF)."""
     import pymupdf
 
@@ -419,7 +421,7 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     )
 
 
-def _parse_docx(data: bytes, filename: str) -> str:
+def _parse_docx(data: bytes, _filename: str) -> str:
     """Parse DOCX using python-docx."""
     from docx import Document
 
@@ -448,7 +450,7 @@ def _parse_docx(data: bytes, filename: str) -> str:
     return "\n\n".join(texts)
 
 
-def _parse_pptx(data: bytes, filename: str) -> str:
+def _parse_pptx(data: bytes, _filename: str) -> str:
     """Parse PPTX using python-pptx."""
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -489,7 +491,7 @@ def _parse_pptx(data: bytes, filename: str) -> str:
     return "\n\n".join(texts)
 
 
-def _parse_pptx_enhanced(data: bytes, filename: str) -> ParseResult:
+def _parse_pptx_enhanced(data: bytes, _filename: str) -> ParseResult:
     """Enhanced PPTX parsing with image extraction and OCR routing."""
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -565,7 +567,7 @@ def _parse_pptx_enhanced(data: bytes, filename: str) -> ParseResult:
     )
 
 
-def _parse_image(data: bytes, filename: str) -> ParseResult:
+def _parse_image(data: bytes, _filename: str) -> ParseResult:
     """Parse image file through OCR/CV pipeline."""
     ocr_text, visual_analyses = _process_images_ocr([data])
     return ParseResult(
@@ -575,7 +577,7 @@ def _parse_image(data: bytes, filename: str) -> ParseResult:
     )
 
 
-def _parse_xlsx(data: bytes, filename: str) -> str:
+def _parse_xlsx(data: bytes, _filename: str) -> str:
     """Parse XLSX using openpyxl."""
     import openpyxl
 

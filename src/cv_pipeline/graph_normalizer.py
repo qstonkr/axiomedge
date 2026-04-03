@@ -309,7 +309,7 @@ class GraphNormalizer:
         try:
             parsed = json.loads(json_str)
             return self._extract_fields(parsed)
-        except (json.JSONDecodeError, ValueError):
+        except ValueError:
             pass
 
         # Second attempt: repair with json-repair library

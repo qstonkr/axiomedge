@@ -27,7 +27,7 @@ _REPEAT_RE = re.compile(r"(.)\1{3,}")
 
 # Garbled OCR syllable combinations
 _NOISE_SYLLABLES = re.compile(
-    r"[륙곰슨묻릉룬륨름륵몽룸뭬룬늘믄뉘녈][어은을룸름릉늙류늘는근]"
+    r"[륙곰슨묻릉룬륨름륵몽룸뭬늘믄뉘녈][어은을룸름릉늙류늘는근]"
 )
 
 

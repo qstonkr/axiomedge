@@ -27,6 +27,9 @@ from typing import Any
 
 from ..domain.models import ConnectorResult, RawDocument
 
+_COMBINED_JSON = "crawl_combined.json"
+_COMBINED_JSONL = "crawl_combined.jsonl"
+
 logger = logging.getLogger(__name__)
 
 
@@ -239,15 +242,15 @@ class CrawlResultConnector:
             )
 
         if source_selector in ("all", "*", "combined"):
-            combined = input_path / "crawl_combined.json"
-            combined_jsonl = input_path / "crawl_combined.jsonl"
+            combined = input_path / _COMBINED_JSON
+            combined_jsonl = input_path / _COMBINED_JSONL
             if combined.is_file():
                 return [combined]
             if combined_jsonl.is_file():
                 return [combined_jsonl]
             return [
                 p for p in _all_candidates(input_path)
-                if p.name not in ("crawl_combined.json", "crawl_combined.jsonl")
+                if p.name not in (_COMBINED_JSON, _COMBINED_JSONL)
             ]
 
         safe = re.sub(r"[^\w]", "_", source_selector)
@@ -260,7 +263,7 @@ class CrawlResultConnector:
 
         candidates = [
             p for p in _all_candidates(input_path)
-            if p.name not in ("crawl_combined.json", "crawl_combined.jsonl")
+            if p.name not in (_COMBINED_JSON, _COMBINED_JSONL)
         ]
 
         # Try fuzzy match

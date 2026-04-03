@@ -55,6 +55,8 @@ from sqlalchemy.orm import declarative_base
 # Shared declarative base for all knowledge models
 KnowledgeBase = declarative_base()
 
+_FK_INGESTION_RUN_ID = "knowledge_ingestion_runs.id"
+
 # Separate base for KB registry + categories (uses JSONB, PG-specific)
 RegistryBase = declarative_base()
 
@@ -367,7 +369,7 @@ class ProvenanceModel(KnowledgeBase):
     knowledge_id = Column(String(255), nullable=False)
     kb_id = Column(String(255), nullable=False)
     ingestion_run_id = Column(
-        String(36), ForeignKey("knowledge_ingestion_runs.id"), nullable=True
+        String(36), ForeignKey(_FK_INGESTION_RUN_ID), nullable=True
     )
     source_type = Column(String(20), nullable=False)
     source_url = Column(Text, nullable=True)
@@ -408,7 +410,7 @@ class DocumentLineageModel(KnowledgeBase):
 
     id = Column(String(36), primary_key=True)
     ingestion_run_id = Column(
-        String(36), ForeignKey("knowledge_ingestion_runs.id"), nullable=True
+        String(36), ForeignKey(_FK_INGESTION_RUN_ID), nullable=True
     )
     kb_id = Column(String(128), nullable=False)
     source_type = Column(String(64), nullable=False)
@@ -443,7 +445,7 @@ class LineageEventModel(KnowledgeBase):
     version_after = Column(String(20), nullable=True)
     event_metadata = Column(Text, default="{}")  # JSON
     ingestion_run_id = Column(
-        String(36), ForeignKey("knowledge_ingestion_runs.id"), nullable=True
+        String(36), ForeignKey(_FK_INGESTION_RUN_ID), nullable=True
     )
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
@@ -703,7 +705,7 @@ class ApprovedKnowledgeEventModel(KnowledgeBase):
     verified = Column(Boolean, nullable=False, default=True)
     original_source_uri = Column(String(1000), nullable=False, default="")
     extra_metadata = Column("metadata", Text, nullable=False, default="{}")  # JSON object
-    ingested_at = Column(DateTime(timezone=True), nullable=True)  # NULL = pending
+    ingested_at = Column(DateTime(timezone=True), nullable=True)  # Nullable: pending until ingested
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

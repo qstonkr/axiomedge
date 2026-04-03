@@ -16,6 +16,8 @@ from typing import Any, AsyncIterator
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_BOLT_URI = "bolt://localhost:7687"
+
 
 class Neo4jClient:
     """Neo4j 연결 및 트랜잭션 관리
@@ -42,7 +44,7 @@ class Neo4jClient:
             database: 데이터베이스명 (기본: neo4j)
             auth_disabled: True이면 인증 없이 연결 (NEO4J_AUTH=none)
         """
-        self.uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        self.uri = uri or os.getenv("NEO4J_URI", _DEFAULT_BOLT_URI)
         self.user = user or os.getenv("NEO4J_USER", "neo4j")
         self.password = password if password is not None else os.getenv("NEO4J_PASSWORD", "")
         self.database = database or os.getenv("NEO4J_DATABASE", "neo4j")
@@ -50,7 +52,7 @@ class Neo4jClient:
             neo4j_auth = os.getenv("NEO4J_AUTH", "")
             auth_disabled = (
                 neo4j_auth.lower() == "none"
-                or (not self.password and self.uri != "bolt://localhost:7687")
+                or (not self.password and self.uri != _DEFAULT_BOLT_URI)
             )
         self._auth_disabled = auth_disabled
         self._driver = None
@@ -232,7 +234,7 @@ class NoOpNeo4jClient:
         password: str | None = None,
         database: str = "neo4j",
     ) -> None:
-        self.uri = uri or "bolt://localhost:7687"
+        self.uri = uri or _DEFAULT_BOLT_URI
         self.user = user or "neo4j"
         self.database = database
 

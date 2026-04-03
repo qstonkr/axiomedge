@@ -668,11 +668,12 @@ async def hub_search(request: HubSearchRequest):
                 )
                 answer = tiered_result.content
                 query_type = tiered_result.query_type.value
-                confidence = (
-                    "높음" if tiered_result.confidence >= weights.search.confidence_display_high
-                    else "보통" if tiered_result.confidence >= weights.search.confidence_display_medium
-                    else "낮음"
-                )
+                if tiered_result.confidence >= weights.search.confidence_display_high:
+                    confidence = "높음"
+                elif tiered_result.confidence >= weights.search.confidence_display_medium:
+                    confidence = "보통"
+                else:
+                    confidence = "낮음"
             except Exception as e:
                 logger.warning("TieredResponseGenerator failed, falling back to AnswerService: %s", e)
                 tiered_gen = None  # fall through to AnswerService

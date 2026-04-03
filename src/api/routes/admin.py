@@ -11,6 +11,8 @@ from src.api.app import _get_state
 from src.config_weights import weights
 
 logger = logging.getLogger(__name__)
+
+_GRAPH_INTEGRITY_FAILED = "Graph integrity check failed: %s"
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
 
@@ -44,7 +46,7 @@ async def graph_search(body: dict[str, Any]):
     state = _get_state()
     graph = state.get("graph_repo")
     query = body.get("query", "")
-    _max_hops = body.get("max_hops", 2)  # TODO: pass to graph query when multi-hop is implemented
+    _max_hops = body.get("max_hops", 2)  # Not yet used: pass to graph query when multi-hop is implemented
     max_nodes = body.get("max_nodes", 50)
 
     if not graph:
@@ -231,7 +233,7 @@ async def graph_integrity_check():
             "details": issues,
         }
     except Exception as e:
-        logger.warning("Graph integrity check failed: %s", e)
+        logger.warning(_GRAPH_INTEGRITY_FAILED, e)
         return {
             "total_nodes": 0, "total_edges": 0,
             "orphan_count": 0, "missing_relationships": 0, "inconsistencies": 0,
@@ -314,7 +316,7 @@ async def graph_integrity():
         result["last_check"] = None  # Could be stored if needed
         return result
     except Exception as e:
-        logger.warning("Graph integrity check failed: %s", e)
+        logger.warning(_GRAPH_INTEGRITY_FAILED, e)
         return {
             "status": "error",
             "orphan_nodes": 0,
@@ -350,7 +352,7 @@ async def run_graph_integrity_check(body: dict[str, Any] | None = None):
         result["success"] = True
         return result
     except Exception as e:
-        logger.warning("Graph integrity check failed: %s", e)
+        logger.warning(_GRAPH_INTEGRITY_FAILED, e)
         return {
             "success": False,
             "status": "error",

@@ -761,7 +761,7 @@ class EnhancedSimilarityMatcher:
                 )
 
         # L3 비활성 또는 실패 시: RRF 점수 기반 판정
-        best_idx, best_rrf = fused[0]
+        best_idx, _best_rrf = fused[0]
         pc = self._precomputed[best_idx]
 
         ch_scores = self._collect_channel_scores(

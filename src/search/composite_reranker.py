@@ -16,6 +16,7 @@ from __future__ import annotations
 import math
 import logging
 from dataclasses import dataclass, replace
+from typing import cast
 
 from ..config_weights import weights as _w
 from ..domain.models import SearchChunk
@@ -87,7 +88,7 @@ class CompositeReranker:
         self._faq_boost = max(0.0, faq_boost)
         self._mmr_lambda = max(0.0, min(1.0, mmr_lambda))
         self._mmr_enabled = bool(mmr_enabled)
-        self._axis_boosts = dict(axis_boosts or self._AXIS_BOOSTS)
+        self._axis_boost_map = dict(axis_boosts or self._AXIS_BOOSTS)
         self._source_weights = dict(self._source_type_weights)
         if source_weights:
             self._source_weights.update(
@@ -103,7 +104,7 @@ class CompositeReranker:
 
     def update_axis_boosts(self, boosts: dict[str, float]) -> None:
         """Update axis boosts dynamically (e.g., from AdaptiveAxisBoosts)."""
-        self._axis_boosts.update(boosts)
+        self._axis_boost_map.update(boosts)
 
     @staticmethod
     def _safe_float(value: object, default: float) -> float:
@@ -245,7 +246,7 @@ class CompositeReranker:
                         # Closer = higher score: 1/(1 + (d-1)*decay)
                         graph_score = 1.0 / (1 + (distance - 1) * _w.reranker.graph_distance_decay)
                         axis_name = str((chunk.metadata or {}).get("traversal_axis", ""))
-                        axis_boost = self._axis_boosts.get(axis_name, 1.0)
+                        axis_boost = self._axis_boost_map.get(axis_name, 1.0)
                         graph_distance_bonus = self._graph_distance_weight * graph_score * axis_boost
 
             # Keyword exact match bonus: boost chunks containing query keywords
@@ -310,7 +311,8 @@ class CompositeReranker:
         source_weights: dict[str, float] | None = None,
     ) -> list[SearchChunk]:
         del source_weights
-        pre_sorted = sorted(weighted_chunks, key=lambda item: item[1], reverse=True)
+        pre_sorted = list(weighted_chunks)
+        pre_sorted.sort(key=lambda item: item[1], reverse=True)
         selected: list[tuple[
             SearchChunk,
             float,
@@ -368,7 +370,7 @@ class CompositeReranker:
     def _replace_score(chunk: SearchChunk, score: float) -> SearchChunk:
         """Update reranker score with an immutable-friendly path."""
         try:
-            return replace(chunk, score=score)
+            return cast(SearchChunk, replace(chunk, score=score))
         except TypeError:
             # Fallback for non-dataclass-compatible chunk implementations.
             try:

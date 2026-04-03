@@ -102,7 +102,10 @@ class GlossaryRepository(BaseRepository):
             row = dict(item)
             for field in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
                 val = row.get(field)
-                row[field] = json.dumps(val if isinstance(val, list) else []) if val else "[]"
+                if val:
+                    row[field] = json.dumps(val if isinstance(val, list) else [])
+                else:
+                    row[field] = "[]"
             row.setdefault("related_terms", "[]")
             row.setdefault("source_kb_ids", "[]")
             row.setdefault("confidence_score", 0)

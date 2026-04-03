@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -62,6 +63,16 @@ from src.pipeline.ingestion_text import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class IngestionFeatureFlags:
+    """Feature toggles for the ingestion pipeline."""
+
+    enable_quality_filter: bool = True
+    enable_graphrag: bool = False
+    enable_term_extraction: bool = False
+    min_quality_tier: QualityTier = QualityTier.BRONZE
+    enable_ingestion_gate: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +114,8 @@ class IngestionPipeline:
         term_extractor: Any | None = None,
         dedup_cache: Any | None = None,
         dedup_pipeline: Any | None = None,
-        enable_quality_filter: bool = True,
-        enable_graphrag: bool = False,
-        enable_term_extraction: bool = False,
-        min_quality_tier: QualityTier = QualityTier.BRONZE,
-        enable_ingestion_gate: bool = False,
+        flags: IngestionFeatureFlags | None = None,
+        **flag_kwargs: Any,
     ) -> None:
         self.embedder = embedder or NoOpEmbedder()
         self.sparse_embedder = sparse_embedder or NoOpSparseEmbedder()
@@ -123,19 +131,29 @@ class IngestionPipeline:
         self.dedup_cache = dedup_cache
         self.dedup_pipeline = dedup_pipeline  # Full 4-stage dedup (preferred over dedup_cache)
 
+        if flags is not None:
+            _f = flags
+        elif flag_kwargs:
+            _f = IngestionFeatureFlags(**{
+                k: v for k, v in flag_kwargs.items()
+                if k in IngestionFeatureFlags.__dataclass_fields__
+            })
+        else:
+            _f = IngestionFeatureFlags()
+        self.enable_quality_filter = _f.enable_quality_filter
+        self.enable_graphrag = _f.enable_graphrag
+        self.enable_term_extraction = _f.enable_term_extraction
+        self.min_quality_tier = _f.min_quality_tier
+
         # Ingestion gate (Stage 0 pre-validation)
         self._ingestion_gate = None
-        if enable_ingestion_gate:
+        if _f.enable_ingestion_gate:
             try:
                 from .ingestion_gate import IngestionGate
                 self._ingestion_gate = IngestionGate(enabled=True)
                 logger.info("Ingestion gate enabled")
             except Exception as e:
                 logger.warning("Ingestion gate init failed: %s", e)
-        self.enable_quality_filter = enable_quality_filter
-        self.enable_graphrag = enable_graphrag
-        self.enable_term_extraction = enable_term_extraction
-        self.min_quality_tier = min_quality_tier
 
     _EMBED_MAX_RETRIES = 3
     _EMBED_RETRY_DELAY = 5  # seconds

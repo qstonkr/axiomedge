@@ -30,13 +30,15 @@ from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
+_KO_KUBERNETES = "쿠버네티스"
+
 # ---------------------------------------------------------------------------
 # Domain synonyms (extracted from oreo query_rewriter.py)
 # ---------------------------------------------------------------------------
 DOMAIN_SYNONYMS: dict[str, list[str]] = {
     # Kubernetes
-    "k8s": ["kubernetes", "쿠버네티스", "쿠베"],
-    "kubernetes": ["k8s", "쿠버네티스", "쿠베"],
+    "k8s": ["kubernetes", _KO_KUBERNETES, "쿠베"],
+    "kubernetes": ["k8s", _KO_KUBERNETES, "쿠베"],
     "pod": ["파드", "포드"],
     "deployment": ["디플로이먼트", "배포"],
     "service": ["서비스", "svc"],
@@ -124,10 +126,10 @@ class QueryPreprocessor:
         "conflunce": "confluence",
         "jenkin": "jenkins",
         # Korean domain typos
-        "쿠버네티즈": "쿠버네티스",
-        "큐버네티스": "쿠버네티스",
-        "쿠버네테스": "쿠버네티스",
-        "쿠베네티스": "쿠버네티스",
+        "쿠버네티즈": _KO_KUBERNETES,
+        "큐버네티스": _KO_KUBERNETES,
+        "쿠버네테스": _KO_KUBERNETES,
+        "쿠베네티스": _KO_KUBERNETES,
         "파드드": "파드",
         "컨플루언스": "콘플루언스",
         "콘플루언쓰": "콘플루언스",

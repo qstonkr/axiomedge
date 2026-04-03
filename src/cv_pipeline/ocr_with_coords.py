@@ -6,12 +6,8 @@ Extracts text with bounding box coordinates using PaddleOCR.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 from .models import OCRBox
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
