@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 SEARCH_URL = "http://localhost:8000/api/v1/search/hub"
 ALL_KBS = ["a-ari", "drp", "g-espa", "partnertalk", "hax", "itops_general"]
+# Delay between search calls to avoid embedding server overload (seconds)
+SEARCH_DELAY = float(os.getenv("EVAL_SEARCH_DELAY", "2.0"))
 
 JUDGE_PROMPT = """당신은 RAG 평가 봇입니다. 반드시 JSON만 출력하세요. 설명, 마크다운, 줄바꿈 없이 한 줄 JSON만 출력합니다.
 
@@ -270,6 +272,10 @@ async def async_main(kb_ids: list[str]):
                         time.sleep(3)
                     else:
                         logger.warning(f"Search failed after retry: {gs['question'][:40]}")
+
+            # Throttle: wait between calls to avoid embedding server overload
+            if SEARCH_DELAY > 0:
+                time.sleep(SEARCH_DELAY)
 
             if not actual_answer:
                 skipped += 1
