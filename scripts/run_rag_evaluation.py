@@ -81,7 +81,7 @@ def search_and_answer(question: str, kb_ids: list[str]) -> dict:
             logger.error("Auth failed (401). Set EVAL_API_TOKEN or EVAL_API_KEY env var.")
     except Exception as e:
         logger.warning(f"Search failed: {e}")
-    return {"answer": None, "chunks": []}
+    return {"answer": None, "chunks": [], "metadata": {}}
 
 
 _sm_client = None
@@ -173,6 +173,9 @@ async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict
                 relevancy FLOAT DEFAULT 0,
                 completeness FLOAT DEFAULT 0,
                 search_time_ms FLOAT DEFAULT 0,
+                crag_action VARCHAR(20) DEFAULT '',
+                crag_confidence FLOAT DEFAULT 0,
+                recall_hit BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """))
@@ -190,15 +193,20 @@ async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict
                         INSERT INTO rag_eval_results
                             (eval_id, kb_id, golden_set_id, question,
                              expected_answer, actual_answer, faithfulness, relevancy,
-                             completeness, search_time_ms)
+                             completeness, search_time_ms,
+                             crag_action, crag_confidence, recall_hit)
                         VALUES (:eval_id, :kb_id, CAST(:gs_id AS UUID),
-                                :q, :expected, :actual, :f, :r, :c, :t)
+                                :q, :expected, :actual, :f, :r, :c, :t,
+                                :crag_action, :crag_conf, :recall)
                     """), {
                         "eval_id": eval_id, "kb_id": r["kb_id"],
                         "gs_id": gs_id, "q": r["question"],
                         "expected": r["expected"], "actual": r["actual"],
                         "f": r["faithfulness"], "r": r["relevancy"],
                         "c": r["completeness"], "t": r["search_time_ms"],
+                        "crag_action": r.get("crag_action", ""),
+                        "crag_conf": r.get("crag_confidence", 0.0),
+                        "recall": r.get("recall_hit", False),
                     })
             saved += len(batch)
         except Exception as e:
@@ -248,6 +256,7 @@ async def async_main(kb_ids: list[str]):
             # Search with retry on timeout
             actual_answer = ""
             search_time = 0.0
+            search_result = {"answer": None, "chunks": [], "metadata": {}}
             for attempt in range(2):
                 try:
                     t0 = time.time()
@@ -266,6 +275,19 @@ async def async_main(kb_ids: list[str]):
                 skipped += 1
                 logger.debug(f"Skipped (no answer): {gs['question'][:50]}")
 
+            # Extract CRAG evaluation from search metadata
+            meta = search_result.get("metadata", {})
+            crag_action = meta.get("crag_action", "")
+            crag_confidence = meta.get("crag_confidence", 0.0)
+
+            # Recall: check if source document appears in retrieved chunks
+            source_doc = gs.get("source_doc", "")
+            chunks = search_result.get("chunks", [])
+            recall_hit = False
+            if source_doc and chunks:
+                retrieved_docs = {c.get("document_name", "") for c in chunks}
+                recall_hit = any(source_doc in d for d in retrieved_docs)
+
             scores = judge_answer(gs["question"], gs["expected"], actual_answer)
             if scores is None:
                 skipped += 1
@@ -282,6 +304,9 @@ async def async_main(kb_ids: list[str]):
                 "relevancy": scores["relevancy"],
                 "completeness": scores["completeness"],
                 "search_time_ms": search_time,
+                "crag_action": crag_action,
+                "crag_confidence": crag_confidence,
+                "recall_hit": recall_hit,
             }
             results.append(result)
             batch_to_save.append(result)
@@ -296,11 +321,14 @@ async def async_main(kb_ids: list[str]):
 
             if (i + 1) % 10 == 0:
                 n = len(results) or 1
+                crag_ok = sum(1 for r in results if r.get("crag_action") == "correct")
+                recall_ok = sum(1 for r in results if r.get("recall_hit"))
                 logger.info(
                     f"Progress: {i+1}/{len(golden_set)} (scored: {n}, skipped: {skipped}) | "
                     f"F={scores_sum['faithfulness']/n:.3f} "
                     f"R={scores_sum['relevancy']/n:.3f} "
-                    f"C={scores_sum['completeness']/n:.3f}"
+                    f"C={scores_sum['completeness']/n:.3f} | "
+                    f"CRAG-OK={crag_ok}/{n} Recall={recall_ok}/{n}"
                 )
 
         # Save remaining batch
@@ -318,12 +346,34 @@ async def async_main(kb_ids: list[str]):
             "avg_search_time_ms": round(sum(r["search_time_ms"] for r in results) / n, 1) if n else 0,
         }
 
+        # CRAG statistics
+        crag_actions = [r.get("crag_action", "") for r in results if r.get("crag_action")]
+        crag_correct = sum(1 for a in crag_actions if a == "correct")
+        crag_ambiguous = sum(1 for a in crag_actions if a == "ambiguous")
+        crag_incorrect = sum(1 for a in crag_actions if a == "incorrect")
+        crag_total = len(crag_actions) or 1
+        avg_crag_conf = sum(r.get("crag_confidence", 0) for r in results) / n if n else 0
+
+        # Recall statistics
+        recall_total = sum(1 for r in results if r.get("recall_hit") is not None)
+        recall_hits = sum(1 for r in results if r.get("recall_hit"))
+        recall_rate = recall_hits / recall_total if recall_total else 0
+
         logger.info(f"\n{'='*60}")
         logger.info(f"EVALUATION COMPLETE: {eval_id}")
+        logger.info(f"  --- LLM Judge ---")
         logger.info(f"  Faithfulness:  {metrics['faithfulness']:.3f}")
         logger.info(f"  Relevancy:     {metrics['answer_relevancy']:.3f}")
         logger.info(f"  Completeness:  {metrics['completeness']:.3f}")
         logger.info(f"  Overall:       {metrics['overall_score']:.3f}")
+        logger.info(f"  --- CRAG (Retrieval Quality) ---")
+        logger.info(f"  Correct:       {crag_correct}/{crag_total} ({crag_correct/crag_total:.0%})")
+        logger.info(f"  Ambiguous:     {crag_ambiguous}/{crag_total} ({crag_ambiguous/crag_total:.0%})")
+        logger.info(f"  Incorrect:     {crag_incorrect}/{crag_total} ({crag_incorrect/crag_total:.0%})")
+        logger.info(f"  Avg Confidence:{avg_crag_conf:.3f}")
+        logger.info(f"  --- Recall ---")
+        logger.info(f"  Source Recall:  {recall_hits}/{recall_total} ({recall_rate:.0%})")
+        logger.info(f"  --- Performance ---")
         logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
         logger.info(f"  Questions:     {metrics['total_questions']}")
         logger.info(f"{'='*60}")
