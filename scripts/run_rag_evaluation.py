@@ -25,8 +25,10 @@ logger = logging.getLogger(__name__)
 
 SEARCH_URL = "http://localhost:8000/api/v1/search/hub"
 ALL_KBS = ["a-ari", "drp", "g-espa", "partnertalk", "hax", "itops_general"]
-# Delay between search calls to avoid embedding server overload (seconds)
-SEARCH_DELAY = float(os.getenv("EVAL_SEARCH_DELAY", "2.0"))
+# Adaptive delay: auto-adjusts based on search response time
+SEARCH_DELAY_MIN = float(os.getenv("EVAL_SEARCH_DELAY_MIN", "0.5"))
+SEARCH_DELAY_MAX = float(os.getenv("EVAL_SEARCH_DELAY_MAX", "10.0"))
+SEARCH_DELAY_TARGET_MS = float(os.getenv("EVAL_SEARCH_TARGET_MS", "5000"))  # target response time
 
 JUDGE_PROMPT = """당신은 RAG 평가 봇입니다. 반드시 JSON만 출력하세요. 설명, 마크다운, 줄바꿈 없이 한 줄 JSON만 출력합니다.
 
@@ -273,9 +275,13 @@ async def async_main(kb_ids: list[str]):
                     else:
                         logger.warning(f"Search failed after retry: {gs['question'][:40]}")
 
-            # Throttle: wait between calls to avoid embedding server overload
-            if SEARCH_DELAY > 0:
-                time.sleep(SEARCH_DELAY)
+            # Adaptive throttle: slow down when server is stressed, speed up when fast
+            if search_time > SEARCH_DELAY_TARGET_MS:
+                # Server is slow — wait proportionally longer
+                delay = min(SEARCH_DELAY_MAX, search_time / 1000 * 0.5)
+            else:
+                delay = SEARCH_DELAY_MIN
+            time.sleep(delay)
 
             if not actual_answer:
                 skipped += 1
