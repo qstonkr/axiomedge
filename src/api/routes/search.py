@@ -595,12 +595,22 @@ async def hub_search(request: HubSearchRequest):
                                         points = resp.json().get("result", {}).get("points", [])
                                         for pt in points:
                                             pay = pt.get("payload", {})
+                                            # Dynamic score: boost if document name matches query keywords
+                                            _inject_score = 0.35
+                                            _dn = pay.get("document_name", "").lower()
+                                            _q_lower = display_query.lower()
+                                            _q_words = [w for w in _q_lower.split() if len(w) >= 2]
+                                            _match_count = sum(1 for w in _q_words if w in _dn)
+                                            if _match_count >= 2:
+                                                _inject_score = 0.75  # Strong match
+                                            elif _match_count == 1:
+                                                _inject_score = 0.55  # Partial match
                                             all_chunks.append({
                                                 "content": pay.get("content", ""),
                                                 "document_name": pay.get("document_name", ""),
                                                 "source_uri": pay.get("source_uri", ""),
                                                 "metadata": pay,
-                                                "score": 0.35,
+                                                "score": _inject_score,
                                                 "graph_injected": True,
                                                 "graph_boosted": True,
                                             })
