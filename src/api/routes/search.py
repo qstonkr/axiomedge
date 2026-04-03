@@ -418,6 +418,62 @@ async def hub_search(request: HubSearchRequest):
             except Exception:
                 pass
 
+    # 4.35. Specific identifier search: numbers, JIRA keys, codes, store names
+    # These are high-precision identifiers that vector search often misses
+    import re as _re_id
+    _identifiers = []
+    # Numbers with commas (금액: 6,720,009)
+    _identifiers.extend(_re_id.findall(r"\d{1,3}(?:,\d{3})+", display_query))
+    # JIRA keys (GRIT-12345, HANGBOT-999)
+    _identifiers.extend(_re_id.findall(r"[A-Z]+-\d{3,}", display_query))
+    # Store codes (VL820, VI664)
+    _identifiers.extend(_re_id.findall(r"[A-Z]{2}\d{3}", display_query))
+    # Error codes (E-4001)
+    _identifiers.extend(_re_id.findall(r"E-\d{4}", display_query))
+
+    if _identifiers and all_chunks:
+        _existing_ids = {c.get("chunk_id", "") for c in all_chunks}
+        try:
+            import httpx as _hx_id
+            _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+            async with _hx_id.AsyncClient(timeout=3.0) as _id_client:
+                for ident in _identifiers[:3]:  # Max 3 identifiers
+                    for coll in collections:
+                        _coll_name = f"kb_{coll.replace('-', '_')}"
+                        resp = await _id_client.post(
+                            f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
+                            json={
+                                "limit": 3,
+                                "with_payload": True,
+                                "with_vector": False,
+                                "filter": {"must": [
+                                    {"key": "content", "match": {"text": ident}},
+                                ]},
+                            },
+                        )
+                        if resp.status_code == 200:
+                            for pt in resp.json().get("result", {}).get("points", []):
+                                pid = str(pt["id"])
+                                if pid not in _existing_ids:
+                                    pay = pt.get("payload", {})
+                                    all_chunks.append({
+                                        "chunk_id": pid,
+                                        "content": pay.get("content", ""),
+                                        "score": 0.6,
+                                        "kb_id": coll,
+                                        "document_name": pay.get("document_name", ""),
+                                        "source_uri": pay.get("source_uri", ""),
+                                        "metadata": pay,
+                                        "_identifier_match": True,
+                                    })
+                                    _existing_ids.add(pid)
+            if _identifiers:
+                _id_count = sum(1 for c in all_chunks if c.get("_identifier_match"))
+                if _id_count:
+                    logger.info("Identifier search: %s → %d chunks injected", _identifiers[:3], _id_count)
+        except Exception:
+            pass
+
     # 4.4. Smart candidate selection: keyword-match priority + KB diversity
     # Instead of purely score-based cutoff, ensure keyword-matching chunks
     # from ALL KBs are included in the reranking pool.
@@ -458,6 +514,21 @@ async def hub_search(request: HubSearchRequest):
                     chunk["score"] = chunk.get("score", 0) + 0.3 * (matched / len(_query_tokens))
         all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
         all_chunks = all_chunks[:_pool_size]
+
+    # 4.42. Document diversity: prevent single document from dominating Top-K
+    # Max N chunks per document, push excess to the back of the pool
+    _MAX_CHUNKS_PER_DOC = 5
+    _doc_counts: dict[str, int] = {}
+    _diverse_chunks: list[dict] = []
+    _overflow: list[dict] = []
+    for chunk in all_chunks:
+        dn = chunk.get("document_name", "")
+        _doc_counts[dn] = _doc_counts.get(dn, 0) + 1
+        if _doc_counts[dn] <= _MAX_CHUNKS_PER_DOC:
+            _diverse_chunks.append(chunk)
+        else:
+            _overflow.append(chunk)
+    all_chunks = (_diverse_chunks + _overflow)[:_pool_size]
 
     # 4.45. Date-filtered search: if query contains a date, do a supplementary
     # Qdrant scroll with doc_date filter to catch date-specific documents that
