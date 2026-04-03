@@ -841,13 +841,15 @@ class NoOpNeo4jGraphRepository:
         await asyncio.sleep(0)
         return {}
 
-    async def get_entity_count(self) -> int:
+    async def _noop_zero(self) -> int:
         await asyncio.sleep(0)
         return 0
 
+    async def get_entity_count(self) -> int:
+        return await self._noop_zero()
+
     async def get_document_count(self) -> int:
-        await asyncio.sleep(0)
-        return 0
+        return await self._noop_zero()
 
     async def get_stats(self) -> dict[str, Any]:
         await asyncio.sleep(0)
