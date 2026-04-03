@@ -25,6 +25,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from src.config_weights import weights as _w
 
@@ -107,6 +108,103 @@ _HANGUL_PATTERN = re.compile(r"[\uac00-\ud7a3]")
 _LATIN_PATTERN = re.compile(r"[A-Za-z]")
 
 
+# Relative time expressions that can be resolved by rule
+_RELATIVE_TIME_KEYWORDS = frozenset({
+    "차주", "다음 주", "이번 주", "금주", "지난 주", "전주",
+    "이번 달", "이번달", "지난 달", "지난달", "다음 달",
+})
+
+# Patterns that suggest time context but need LLM to resolve
+_COMPLEX_TIME_RE = re.compile(
+    r"지난\s*주\s*[월화수목금토일]요일|"
+    r"다음\s*주\s*[월화수목금토일]요일|"
+    r"이번\s*주\s*[월화수목금토일]요일|"
+    r"어제|그제|그저께|내일|모레|"
+    r"최근\s*\d+\s*[일주월년]|"
+    r"올해|작년|내년|"
+    r"\d+\s*일\s*전|\d+\s*주\s*전|\d+\s*달\s*전"
+)
+
+_LLM_TIME_PROMPT = """현재 날짜: {today}
+
+사용자 질문에서 상대적 시점 표현을 찾아 절대 날짜로 변환하세요.
+변환할 표현이 없으면 원문 그대로 출력하세요.
+
+질문: {query}
+
+규칙:
+- "차주" → 다음 주의 날짜 범위
+- "지난 주 월요일" → 구체적 날짜 (YYYY년 M월 D일)
+- "최근 3일" → 구체적 날짜 범위
+- 변환한 표현만 교체하고 나머지는 그대로 유지
+- 설명 없이 변환된 질문만 출력
+
+변환된 질문:"""
+
+
+def _resolve_relative_time(query: str, llm_client=None) -> tuple[str, list[QueryCorrection]]:
+    """Replace relative time expressions with absolute dates.
+
+    Two-tier strategy:
+    1. Rule-based: instant replacement for common expressions (0ms)
+    2. LLM fallback: complex expressions that rules can't handle (2-3s)
+
+    Examples:
+        "차주 업무" → "2026년 4월 2주차 업무" (rule)
+        "지난 주 월요일 회의" → "2026년 3월 31일 회의" (LLM)
+    """
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone(timedelta(hours=9)))  # KST
+    corrections: list[QueryCorrection] = []
+
+    _TIME_MAP = {
+        "차주": lambda n: f"{(n + timedelta(weeks=1)).year}년 {(n + timedelta(weeks=1)).month}월 {((n + timedelta(weeks=1)).day - 1) // 7 + 1}주차",
+        "다음 주": lambda n: f"{(n + timedelta(weeks=1)).year}년 {(n + timedelta(weeks=1)).month}월 {((n + timedelta(weeks=1)).day - 1) // 7 + 1}주차",
+        "이번 주": lambda n: f"{n.year}년 {n.month}월 {(n.day - 1) // 7 + 1}주차",
+        "금주": lambda n: f"{n.year}년 {n.month}월 {(n.day - 1) // 7 + 1}주차",
+        "지난 주": lambda n: f"{(n - timedelta(weeks=1)).year}년 {(n - timedelta(weeks=1)).month}월 {((n - timedelta(weeks=1)).day - 1) // 7 + 1}주차",
+        "전주": lambda n: f"{(n - timedelta(weeks=1)).year}년 {(n - timedelta(weeks=1)).month}월 {((n - timedelta(weeks=1)).day - 1) // 7 + 1}주차",
+        "이번 달": lambda n: f"{n.year}년 {n.month}월",
+        "이번달": lambda n: f"{n.year}년 {n.month}월",
+        "지난 달": lambda n: f"{(n.replace(day=1) - timedelta(days=1)).year}년 {(n.replace(day=1) - timedelta(days=1)).month}월",
+        "지난달": lambda n: f"{(n.replace(day=1) - timedelta(days=1)).year}년 {(n.replace(day=1) - timedelta(days=1)).month}월",
+        "다음 달": lambda n: f"{(n.replace(day=28) + timedelta(days=4)).year}년 {(n.replace(day=28) + timedelta(days=4)).month}월",
+    }
+
+    # Tier 1: Rule-based (instant)
+    result = query
+    rule_matched = False
+    for expr, resolver in _TIME_MAP.items():
+        if expr in result:
+            resolved = resolver(now)
+            result = result.replace(expr, resolved)
+            corrections.append(QueryCorrection(
+                original=expr, corrected=resolved, reason="시점 해석 (규칙)",
+            ))
+            rule_matched = True
+
+    if rule_matched:
+        return result, corrections
+
+    # Tier 2: LLM fallback for complex expressions
+    if llm_client and _COMPLEX_TIME_RE.search(query):
+        try:
+            today_str = now.strftime("%Y년 %m월 %d일 (%A)")
+            prompt = _LLM_TIME_PROMPT.format(today=today_str, query=query)
+            resolved = llm_client.generate_sync(prompt, max_tokens=200, temperature=0.0)
+            if resolved and resolved.strip() != query.strip():
+                resolved = resolved.strip()
+                corrections.append(QueryCorrection(
+                    original=query, corrected=resolved, reason="시점 해석 (LLM)",
+                ))
+                return resolved, corrections
+        except Exception as e:
+            logger.warning("LLM time resolution failed: %s", e)
+
+    return result, corrections
+
+
 class QueryPreprocessor:
     """Normalize and typo-correct knowledge search queries."""
 
@@ -143,7 +241,9 @@ class QueryPreprocessor:
         typo_map: dict[str, str] | None = None,
         fuzzy_enabled: bool | None = None,
         fuzzy_cutoff: float | None = None,
+        llm_client: Any | None = None,
     ) -> None:
+        self._llm_client = llm_client
         source_typo_map = self._DEFAULT_TYPO_MAP if typo_map is None else typo_map
         self._typo_map = {
             key.lower(): value
@@ -176,7 +276,15 @@ class QueryPreprocessor:
                 detected_language="unknown",
             )
 
+        # Resolve relative time expressions first (rule → LLM fallback)
+        time_resolved, time_corrections = _resolve_relative_time(
+            normalized_query, llm_client=self._llm_client
+        )
+        if time_resolved != normalized_query:
+            normalized_query = time_resolved
+
         corrected_query, corrections = self._apply_token_corrections(normalized_query)
+        corrections = list(time_corrections) + corrections
         if corrections:
             logger.info(
                 "Knowledge query preprocessed with corrections",
