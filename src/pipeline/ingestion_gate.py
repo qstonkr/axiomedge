@@ -185,7 +185,7 @@ class _ExactDedupIndex:
 # Individual gate checks
 # ---------------------------------------------------------------------------
 
-def _check_ig01_source_validation(document: RawDocument, kb_id: str) -> CheckResult:
+def _check_ig01_source_validation(document: RawDocument, _kb_id: str) -> CheckResult:
     """IG-01: Source validation (source_type must be known)."""
     start = time.perf_counter()
     source_type = (document.metadata.get("source_type", "") or "").strip().lower()

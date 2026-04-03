@@ -118,7 +118,7 @@ async def correct_ocr_text(text: str, ollama_client) -> str:
 async def correct_ocr_chunks(
     ocr_text: str,
     ollama_client,
-    chunk_size: int = 2000,
+    _chunk_size: int = 2000,
 ) -> str:
     """Correct OCR text in chunks to handle long texts.
 

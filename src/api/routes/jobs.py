@@ -6,6 +6,7 @@ Key format: ``job:{job_id}`` with a hash of job fields.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -29,6 +30,7 @@ async def _get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
         _redis = aioredis.from_url(_REDIS_URL, decode_responses=True)
+    await asyncio.sleep(0)
     return _redis
 
 

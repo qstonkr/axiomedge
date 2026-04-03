@@ -77,11 +77,11 @@ class ExtractedTerm:
 class IGlossaryRepo:
     """Minimal glossary repository interface for global term lookup."""
 
-    async def get_by_term(self, kb_id: str, term: str) -> dict[str, Any] | None:
+    async def get_by_term(self, _kb_id: str, _term: str) -> dict[str, Any] | None:
         """Return term dict if exists (check scope='global')."""
         ...
 
-    async def save(self, term_data: dict[str, Any]) -> None:
+    async def save(self, _term_data: dict[str, Any]) -> None:
         """Save a term."""
         ...
 
@@ -744,7 +744,7 @@ class TermExtractor:
     async def _filter_by_dense_similarity(
         self,
         candidates: list[ExtractedTerm],
-        kb_id: str,
+        _kb_id: str,
     ) -> list[ExtractedTerm]:
         """Remove candidates too similar to approved terms via dense embedding.
 

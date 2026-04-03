@@ -8,6 +8,7 @@ Created: 2026-02-04 (Sprint 9)
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -236,29 +237,34 @@ class NoOpNeo4jClient:
         self.database = database
 
     async def connect(self) -> None:
+        await asyncio.sleep(0)
         logger.debug("[NoOp] Neo4j connect called")
 
     async def close(self) -> None:
+        await asyncio.sleep(0)
         logger.debug("[NoOp] Neo4j close called")
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[Any]:
+        await asyncio.sleep(0)
         yield NoOpSession()
 
     async def execute_query(
         self,
         cypher: str,
-        params: dict[str, Any] | None = None,
+        _params: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        logger.debug(f"[NoOp] execute_query: {cypher[:100]}...")
+        await asyncio.sleep(0)
+        logger.debug("[NoOp] execute_query: %s...", cypher[:100])
         return []
 
     async def execute_write(
         self,
         cypher: str,
-        params: dict[str, Any] | None = None,
+        _params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        logger.debug(f"[NoOp] execute_write: {cypher[:100]}...")
+        await asyncio.sleep(0)
+        logger.debug("[NoOp] execute_write: %s...", cypher[:100])
         return {
             "nodes_created": 0,
             "nodes_deleted": 0,
@@ -271,17 +277,19 @@ class NoOpNeo4jClient:
         self,
         queries: list[tuple[str, dict[str, Any] | None]],
     ) -> list[dict[str, Any]]:
-        logger.debug(f"[NoOp] execute_batch: {len(queries)} queries")
+        await asyncio.sleep(0)
+        logger.debug("[NoOp] execute_batch: %d queries", len(queries))
         return [{"nodes_created": 0, "relationships_created": 0}] * len(queries)
 
     async def execute_unwind_batch(
         self,
-        cypher: str,
+        _cypher: str,
         *,
         param_name: str,
         items: list[dict[str, Any]],
         batch_size: int = 5000,
     ) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         logger.debug(
             "[NoOp] execute_unwind_batch: param=%s, items=%d, batch_size=%d",
             param_name,
@@ -299,16 +307,19 @@ class NoOpNeo4jClient:
         ] if items else []
 
     async def health_check(self) -> bool:
+        await asyncio.sleep(0)
         return True
 
 
 class NoOpSession:
     """NoOp Session (테스트용)"""
 
-    async def run(self, cypher: str, params: dict | None = None) -> "NoOpResult":
+    async def run(self, _cypher: str, _params: dict | None = None) -> "NoOpResult":
+        await asyncio.sleep(0)
         return NoOpResult()
 
     async def begin_transaction(self) -> "NoOpTransaction":
+        await asyncio.sleep(0)
         return NoOpTransaction()
 
 
@@ -322,6 +333,7 @@ class NoOpResult:
         raise StopAsyncIteration
 
     async def consume(self) -> "NoOpSummary":
+        await asyncio.sleep(0)
         return NoOpSummary()
 
 
@@ -345,10 +357,11 @@ class NoOpTransaction:
         return self
 
     async def __aexit__(self, *args):
-        pass
+        await asyncio.sleep(0)
 
-    async def run(self, cypher: str, params: dict | None = None) -> NoOpResult:
+    async def run(self, _cypher: str, _params: dict | None = None) -> NoOpResult:
+        await asyncio.sleep(0)
         return NoOpResult()
 
     async def commit(self) -> None:
-        pass
+        await asyncio.sleep(0)

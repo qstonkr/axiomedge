@@ -248,14 +248,14 @@ class MultiHopSearcher:
     async def find_experts(
         self,
         topic: str,
-        kb_id: str | None = None,
+        _kb_id: str | None = None,
         limit: int = 10,
     ) -> list[Expert]:
         """Find experts for a topic via AUTHORED/OWNED_BY relationships.
 
         Args:
             topic: Topic name
-            kb_id: Optional KB ID filter (unused currently)
+            _kb_id: Optional KB ID filter (unused currently)
             limit: Maximum results (default: 10)
 
         Returns:

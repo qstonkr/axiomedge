@@ -156,7 +156,7 @@ class ArrowDetector:
     def _detect_arrowhead(
         self,
         image_np: np.ndarray,
-        start: tuple[float, float],
+        _start: tuple[float, float],
         end: tuple[float, float],
     ) -> bool:
         """Detect arrowhead by finding triangle contour near endpoint."""

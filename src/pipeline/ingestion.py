@@ -713,7 +713,7 @@ class IngestionPipeline:
     async def _create_graph_edges(
         self,
         raw: RawDocument,
-        collection_name: str,
+        _collection_name: str,
         *,
         owner: str = "",
         l1_category: str = "",

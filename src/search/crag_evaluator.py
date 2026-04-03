@@ -19,6 +19,7 @@ Extracted from oreo-ecosystem crag_retrieval_evaluator.py.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -156,6 +157,7 @@ class CRAGRetrievalEvaluator:
         search_time_ms: float,
     ) -> CRAGEvaluation:
         """Evaluate retrieval -> CORRECT / AMBIGUOUS / INCORRECT decision."""
+        await asyncio.sleep(0)
         retrieval_quality = self._calculate_retrieval_relevance(search_chunks)
         source_coverage = self._calculate_source_coverage(search_chunks, query)
         source_freshness = self._calculate_source_freshness(search_chunks)

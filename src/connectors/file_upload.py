@@ -35,6 +35,7 @@ class FileUploadConnector:
         return "file_upload"
 
     async def health_check(self) -> bool:
+        await asyncio.sleep(0)
         return True
 
     async def fetch(

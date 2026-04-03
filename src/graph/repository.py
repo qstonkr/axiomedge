@@ -11,6 +11,7 @@ Created: 2026-03-09 (Knowledge Graph Refactoring Phase 2)
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -774,62 +775,82 @@ class Neo4jGraphRepository:
 class NoOpNeo4jGraphRepository:
     """Test / development no-op implementation."""
 
-    async def upsert_document(self, doc_id: str, **kw: Any) -> dict[str, int]:
+    async def upsert_document(self, _doc_id: str, **_kw: Any) -> dict[str, int]:
+        await asyncio.sleep(0)
         return {"nodes_created": 0, "properties_set": 0}
 
-    async def upsert_entity(self, entity_type: str, entity_id: str, **kw: Any) -> dict[str, int]:
+    async def upsert_entity(self, _entity_type: str, _entity_id: str, **_kw: Any) -> dict[str, int]:
+        await asyncio.sleep(0)
         return {"nodes_created": 0, "properties_set": 0}
 
-    async def create_relationship(self, source_id: str, target_id: str, rel_type: str, **kw: Any) -> dict[str, int]:
+    async def create_relationship(self, _source_id: str, _target_id: str, _rel_type: str, **_kw: Any) -> dict[str, int]:
+        await asyncio.sleep(0)
         return {"nodes_created": 0, "relationships_created": 0}
 
-    async def batch_upsert_nodes(self, node_type: str, nodes: list[dict[str, Any]], **kw: Any) -> list[dict[str, Any]]:
+    async def batch_upsert_nodes(self, _node_type: str, _nodes: list[dict[str, Any]], **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def batch_upsert_edges(self, rel_type: str, edges: list[dict[str, Any]], **kw: Any) -> list[dict[str, Any]]:
+    async def batch_upsert_edges(self, _rel_type: str, _edges: list[dict[str, Any]], **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def upsert_document_lineage(self, doc_id: str, **kw: Any) -> dict[str, int]:
+    async def upsert_document_lineage(self, _doc_id: str, **_kw: Any) -> dict[str, int]:
+        await asyncio.sleep(0)
         return {"nodes_created": 0, "properties_set": 0}
 
-    async def find_related_chunks(self, entity_names: list[str], **kw: Any) -> set[str]:
+    async def find_related_chunks(self, _entity_names: list[str], **_kw: Any) -> set[str]:
+        await asyncio.sleep(0)
         return set()
 
-    async def search_entities(self, keywords: list[str], **kw: Any) -> list[dict[str, Any]]:
+    async def search_entities(self, _keywords: list[str], **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def find_experts(self, topic: str, **kw: Any) -> list[dict[str, Any]]:
+    async def find_experts(self, _topic: str, **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def search_related_nodes(self, doc_id: str, **kw: Any) -> list[dict[str, Any]]:
+    async def search_related_nodes(self, _doc_id: str, **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def get_entity_neighbors(self, entity_name: str, entity_type: str, **kw: Any) -> list[dict[str, Any]]:
+    async def get_entity_neighbors(self, _entity_name: str, _entity_type: str, **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def get_knowledge_path(self, source_id: str, target_id: str) -> list[dict[str, Any]]:
+    async def get_knowledge_path(self, _source_id: str, _target_id: str) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def find_common_entities(self, doc_ids: list[str]) -> list[dict[str, Any]]:
+    async def find_common_entities(self, _doc_ids: list[str]) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def find_similar_documents(self, doc_id: str, **kw: Any) -> list[dict[str, Any]]:
+    async def find_similar_documents(self, _doc_id: str, **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def query_process_chain(self, process_keyword: str, **kw: Any) -> list[dict[str, Any]]:
+    async def query_process_chain(self, _process_keyword: str, **_kw: Any) -> list[dict[str, Any]]:
+        await asyncio.sleep(0)
         return []
 
-    async def find_step_context(self, step_keyword: str, **kw: Any) -> dict[str, Any]:
+    async def find_step_context(self, _step_keyword: str, **_kw: Any) -> dict[str, Any]:
+        await asyncio.sleep(0)
         return {}
 
     async def get_entity_count(self) -> int:
+        await asyncio.sleep(0)
         return 0
 
     async def get_document_count(self) -> int:
+        await asyncio.sleep(0)
         return 0
 
     async def get_stats(self) -> dict[str, Any]:
+        await asyncio.sleep(0)
         return {"node_types": {}, "edge_types": {}}
 
     async def health_check(self) -> bool:
+        await asyncio.sleep(0)
         return True

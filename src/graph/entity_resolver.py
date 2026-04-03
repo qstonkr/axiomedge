@@ -172,7 +172,7 @@ class EntityResolver:
         self,
         name: str,
         kb_id: str,
-        entity_type: EntityType,
+        _entity_type: EntityType,
     ) -> ResolvedEntity | None:
         """Glossary-based matching (exact + variant matching)."""
         try:

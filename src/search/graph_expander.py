@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -328,10 +329,11 @@ class NoOpGraphSearchExpander:
 
     async def expand(
         self,
-        query: str,
+        _query: str,
         chunks: list[dict[str, Any]],
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> ExpandedSearchResult:
+        await asyncio.sleep(0)
         return ExpandedSearchResult(
             original_chunks=chunks,
             expanded_source_uris=set(),
@@ -341,7 +343,7 @@ class NoOpGraphSearchExpander:
     def boost_chunks(
         self,
         chunks: list[dict[str, Any]],
-        expanded_uris: set[str],
+        _expanded_uris: set[str],
     ) -> list[dict[str, Any]]:
         return chunks
 

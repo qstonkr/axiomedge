@@ -165,7 +165,7 @@ def get_kb_schema(kb_id: str) -> dict[str, Any]:
     return KB_SCHEMA_PROFILES.get(kb_id, DEFAULT_SCHEMA_PROFILE)
 
 
-def build_extraction_prompt(document: str, kb_id: str | None = None) -> str:
+def build_extraction_prompt(_document: str, kb_id: str | None = None) -> str:
     """Build KB-specific extraction prompt."""
     schema = get_kb_schema(kb_id) if kb_id else DEFAULT_SCHEMA_PROFILE
     focus = schema.get("prompt_focus", "사람, 팀, 시스템")

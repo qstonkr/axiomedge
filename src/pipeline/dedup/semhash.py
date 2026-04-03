@@ -16,6 +16,7 @@ Adapted from oreo-ecosystem infrastructure/dedup/semhash.py.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -45,7 +46,8 @@ class NoOpEmbeddingProvider:
             dimension = weights.embedding.dimension
         self._dimension = dimension
 
-    async def embed(self, text: str) -> list[float]:
+    async def embed(self, _text: str) -> list[float]:
+        await asyncio.sleep(0)
         return [0.0] * self._dimension
 
 

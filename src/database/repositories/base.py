@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 
@@ -15,4 +17,5 @@ class BaseRepository:
         self._session_maker = session_maker
 
     async def _get_session(self) -> AsyncSession:
+        await asyncio.sleep(0)
         return self._session_maker()

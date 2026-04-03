@@ -6,6 +6,7 @@ All oreo framework dependencies removed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -181,6 +182,7 @@ async def _init_database(state: AppState, settings) -> None:
 
 async def _init_cache(state: AppState) -> None:
     """Initialize Redis caches + multi-layer cache."""
+    await asyncio.sleep(0)
 
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
@@ -252,6 +254,7 @@ async def _init_cache(state: AppState) -> None:
 
 async def _init_dedup(state: AppState) -> None:
     """Initialize 4-stage dedup pipeline."""
+    await asyncio.sleep(0)
     try:
         from src.pipeline.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
         from src.pipeline.dedup.bloom_filter import BloomFilter
@@ -393,6 +396,7 @@ async def _init_graph(state: AppState, settings) -> None:
 
 async def _init_embedding(state: AppState, settings) -> None:
     """Initialize embedding provider: TEI > Ollama > ONNX fallback, wire to cache."""
+    await asyncio.sleep(0)
     embedder = None
 
     # 1st: HuggingFace TEI (dedicated embedding server, fastest)
@@ -454,6 +458,7 @@ async def _init_embedding(state: AppState, settings) -> None:
 
 async def _init_llm(state: AppState, settings) -> None:
     """Initialize LLM client (Ollama or SageMaker) + GraphRAG extractor."""
+    await asyncio.sleep(0)
     try:
         use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
         if use_sagemaker:
@@ -486,6 +491,7 @@ async def _init_llm(state: AppState, settings) -> None:
 
 async def _init_search_services(state: AppState) -> None:
     """Initialize all search services + RAG pipeline."""
+    await asyncio.sleep(0)
     # QueryPreprocessor
     try:
         from src.search.query_preprocessor import QueryPreprocessor

@@ -222,6 +222,7 @@ class SageMakerLLMClient:
 
     async def check_health(self) -> dict:
         """Check SageMaker endpoint status."""
+        await asyncio.sleep(0)
         try:
             import boto3
             session = boto3.Session(

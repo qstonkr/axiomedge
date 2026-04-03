@@ -6,6 +6,7 @@ Extracted from oreo-ecosystem PostgreSQLKBRegistry.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -97,6 +98,7 @@ class KBRegistryRepository:
     async def _get_session(self) -> AsyncSession:
         if not self._session_maker:
             raise RuntimeError("Repository not initialized")
+        await asyncio.sleep(0)
         return self._session_maker()
 
     async def create_kb(self, data: dict[str, Any]) -> dict[str, Any]:

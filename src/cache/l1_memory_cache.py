@@ -15,6 +15,7 @@ Uses threading.Lock instead of asyncio.Lock for broader compatibility.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from collections import OrderedDict
@@ -41,6 +42,7 @@ class L1InMemoryCache(ICacheLayer):
 
     async def get(self, key: str, **kwargs: Any) -> CacheEntry | None:
         """Exact-match lookup with TTL check and LRU promotion."""
+        await asyncio.sleep(0)
         with self._lock:
             if key not in self._cache:
                 return None
@@ -59,6 +61,7 @@ class L1InMemoryCache(ICacheLayer):
 
     async def set(self, entry: CacheEntry, ttl_seconds: int | None = None) -> None:
         """Store entry with TTL, evicting LRU if at capacity."""
+        await asyncio.sleep(0)
         ttl = ttl_seconds or self._ttl_seconds
         with self._lock:
             while len(self._cache) >= self._max_size:
@@ -67,6 +70,7 @@ class L1InMemoryCache(ICacheLayer):
             self._cache[entry.key] = (entry, expire_time)
 
     async def delete(self, key: str) -> bool:
+        await asyncio.sleep(0)
         with self._lock:
             if key in self._cache:
                 del self._cache[key]
@@ -75,6 +79,7 @@ class L1InMemoryCache(ICacheLayer):
 
     async def delete_by_prefix(self, prefix: str) -> int:
         """Delete all entries whose key starts with prefix."""
+        await asyncio.sleep(0)
         with self._lock:
             keys = [k for k in self._cache if k.startswith(prefix)]
             for k in keys:
@@ -83,6 +88,7 @@ class L1InMemoryCache(ICacheLayer):
 
     async def invalidate_by_metadata_value(self, meta_key: str, meta_value: str) -> int:
         """Delete entries whose metadata[meta_key] matches meta_value."""
+        await asyncio.sleep(0)
         with self._lock:
             now = time.time()
             to_delete: list[str] = []
@@ -100,6 +106,7 @@ class L1InMemoryCache(ICacheLayer):
             return len(to_delete)
 
     async def clear(self) -> int:
+        await asyncio.sleep(0)
         with self._lock:
             count = len(self._cache)
             self._cache.clear()
