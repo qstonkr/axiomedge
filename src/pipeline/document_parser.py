@@ -241,27 +241,8 @@ def _extract_pdf_date(raw: str) -> str:
     return ""
 
 
-def _classify_pdf_page(
-    page, page_num: int, filename: str, doc,
-    has_broken_cmap_fn, is_garbled_fn,
-    texts: list, scanned_pages: list, tables: list, extracted_images: list,
-) -> None:
-    """Classify a single PDF page and extract text/tables/images."""
-    has_broken_fonts = has_broken_cmap_fn(page)
-    text = page.get_text()
-
-    if has_broken_fonts or (text.strip() and is_garbled_fn(text)):
-        scanned_pages.append(page_num + 1)
-        if has_broken_fonts:
-            logger.info("Broken CMap font on page %d of %s, routing to OCR", page_num + 1, filename)
-        elif text.strip():
-            logger.info("Garbled text on page %d of %s, routing to OCR", page_num + 1, filename)
-    elif text.strip():
-        texts.append(f"[Page {page_num + 1}]\n{text}")
-    else:
-        scanned_pages.append(page_num + 1)
-
-    # Table extraction
+def _extract_page_tables(page, tables: list) -> None:
+    """Extract tables from a PDF page."""
     for table in page.find_tables():
         table_data = table.extract()
         if table_data:
@@ -271,7 +252,9 @@ def _classify_pdf_page(
             ]
             tables.append(cleaned)
 
-    # Image extraction
+
+def _extract_page_images(page, doc, extracted_images: list) -> None:
+    """Extract images from a PDF page."""
     for img_info in page.get_images(full=True):
         xref = img_info[0]
         img_data = doc.extract_image(xref)
@@ -279,6 +262,31 @@ def _classify_pdf_page(
             img_bytes = img_data["image"]
             if 1024 < len(img_bytes) < 10_000_000:
                 extracted_images.append(img_bytes)
+
+
+def _classify_pdf_page(
+    page, page_num: int, filename: str, doc,
+    has_broken_cmap_fn, is_garbled_fn,
+    texts: list, scanned_pages: list, tables: list, extracted_images: list,
+) -> None:
+    """Classify a single PDF page and extract text/tables/images."""
+    has_broken_fonts = has_broken_cmap_fn(page)
+    text = page.get_text()
+    page_label = page_num + 1
+
+    if has_broken_fonts or (text.strip() and is_garbled_fn(text)):
+        scanned_pages.append(page_label)
+        if has_broken_fonts:
+            logger.info("Broken CMap font on page %d of %s, routing to OCR", page_label, filename)
+        elif text.strip():
+            logger.info("Garbled text on page %d of %s, routing to OCR", page_label, filename)
+    elif text.strip():
+        texts.append(f"[Page {page_label}]\n{text}")
+    else:
+        scanned_pages.append(page_label)
+
+    _extract_page_tables(page, tables)
+    _extract_page_images(page, doc, extracted_images)
 
 
 def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
@@ -511,23 +519,28 @@ def _extract_pptx_modified_date(prs) -> str:
         return ""
 
 
-def _process_enhanced_slide(slide, slide_num: int, tables: list, images: list) -> str | None:
-    """Process a single slide for enhanced parsing, collecting tables and images."""
+def _process_pptx_shape(shape, slide_texts: list, tables: list, images: list) -> None:
+    """Process a single PPTX shape: extract text, table, or image."""
     from pptx.enum.shapes import MSO_SHAPE_TYPE
 
+    if hasattr(shape, "text") and shape.text.strip():
+        slide_texts.append(shape.text)
+    if shape.has_table:
+        table_data = _extract_table_data(shape.table)
+        if table_data:
+            tables.append(table_data)
+            slide_texts.append(_table_to_markdown(table_data))
+    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+        img_bytes = shape.image.blob
+        if img_bytes and 1024 < len(img_bytes) < 10_000_000:
+            images.append(img_bytes)
+
+
+def _process_enhanced_slide(slide, slide_num: int, tables: list, images: list) -> str | None:
+    """Process a single slide for enhanced parsing, collecting tables and images."""
     slide_texts = [f"[Slide {slide_num}]"]
     for shape in _iter_pptx_shapes(slide.shapes):
-        if hasattr(shape, "text") and shape.text.strip():
-            slide_texts.append(shape.text)
-        if shape.has_table:
-            table_data = _extract_table_data(shape.table)
-            if table_data:
-                tables.append(table_data)
-                slide_texts.append(_table_to_markdown(table_data))
-        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-            img_bytes = shape.image.blob
-            if img_bytes and 1024 < len(img_bytes) < 10_000_000:
-                images.append(img_bytes)
+        _process_pptx_shape(shape, slide_texts, tables, images)
     if slide.has_notes_slide:
         notes_text = slide.notes_slide.notes_text_frame.text.strip()
         if notes_text:

@@ -83,7 +83,7 @@ async def _init_db_with_retry(settings) -> None:
                 raise
 
 
-def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
+def _create_repositories(state: AppState, session_factory, db_url: str):
     """Create all repository instances and store in state."""
     from src.database.repositories.kb_registry import KBRegistryRepository
     from src.database.repositories.glossary import GlossaryRepository

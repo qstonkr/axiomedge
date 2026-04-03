@@ -61,10 +61,9 @@ class TextShapeMapper:
         best_idx: int | None = None
         best_area = float("inf")
         for idx, shape in enumerate(shapes):
-            if self._point_in_shape(center, shape):
-                if shape.area < best_area:
-                    best_area = shape.area
-                    best_idx = idx
+            if self._point_in_shape(center, shape) and shape.area < best_area:
+                best_area = shape.area
+                best_idx = idx
         return best_idx
 
     def _point_in_shape(

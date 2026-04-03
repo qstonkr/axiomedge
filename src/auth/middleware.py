@@ -97,13 +97,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         ("/feedback", "POST", "feedback", "feedback"),
     ]
 
+    _PATH_GLOSSARY = "/glossary"
+    _PATH_KB = "/kb"
+
     _RESOURCE_METHOD_MAP: list[tuple[str, str, dict]] = [
-        ("/glossary", "POST", {"type": "create", "resource": "glossary"}),
-        ("/glossary", "PUT", {"type": "edit", "resource": "glossary"}),
-        ("/glossary", "PATCH", {"type": "edit", "resource": "glossary"}),
-        ("/kb", "POST", {"type": "create", "resource": "kb"}),
-        ("/kb", "PUT", {"type": "edit", "resource": "kb"}),
-        ("/kb", "PATCH", {"type": "edit", "resource": "kb"}),
+        (_PATH_GLOSSARY, "POST", {"type": "create", "resource": "glossary"}),
+        (_PATH_GLOSSARY, "PUT", {"type": "edit", "resource": "glossary"}),
+        (_PATH_GLOSSARY, "PATCH", {"type": "edit", "resource": "glossary"}),
+        (_PATH_KB, "POST", {"type": "create", "resource": "kb"}),
+        (_PATH_KB, "PUT", {"type": "edit", "resource": "kb"}),
+        (_PATH_KB, "PATCH", {"type": "edit", "resource": "kb"}),
     ]
 
     def _classify_activity(self, method: str, path: str) -> dict | None:
