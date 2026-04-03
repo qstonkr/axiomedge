@@ -170,7 +170,7 @@ class GraphSearchExpander:
 
         # Person-based expansion: find documents where Person is MENTIONED_IN
         person_uris = await self._find_person_mentioned_docs(
-            entity_names, scope_kb_ids=scope_kb_ids,
+            entity_names, query=query, scope_kb_ids=scope_kb_ids,
         )
         if person_uris:
             new_person_docs = person_uris - existing_uris - existing_docs
@@ -230,17 +230,43 @@ class GraphSearchExpander:
                 graph_related_count=0,
             )
 
+    @staticmethod
+    def _extract_date_tokens(query: str) -> list[str]:
+        """Extract date-like tokens from query for document name filtering.
+
+        Matches: "2024년 4월", "4월 2주차", "2024_04", "3월", "2026년" etc.
+        """
+        import re
+        date_tokens = []
+        # "2024년 4월" → "2024_04", "2024" + "04"
+        m = re.search(r"(20\d{2})년\s*(\d{1,2})월", query)
+        if m:
+            date_tokens.append(f"{m.group(1)}_{m.group(2).zfill(2)}")
+            date_tokens.append(m.group(1))
+            date_tokens.append(f"{m.group(2)}월")
+        # "4월 2주차" → "04", "4월"
+        m2 = re.search(r"(\d{1,2})월\s*(\d)주차", query)
+        if m2:
+            date_tokens.append(f"{m2.group(1)}월")
+            date_tokens.append(f"{m2.group(1).zfill(2)}")
+        # "2024_04" already in query
+        m3 = re.search(r"(20\d{2})[_\-](0[1-9]|1[0-2])", query)
+        if m3:
+            date_tokens.append(f"{m3.group(1)}_{m3.group(2)}")
+        return date_tokens
+
     async def _find_person_mentioned_docs(
         self,
         entity_names: list[str],
         *,
+        query: str = "",
         scope_kb_ids: list[str] | None = None,
         max_results: int = 10,
     ) -> set[str]:
         """Find documents where query entities are MENTIONED_IN.
 
-        Directly queries Neo4j for Person→MENTIONED_IN→Document relations.
-        Returns document names (for Qdrant matching).
+        Uses date tokens from query to narrow down results when
+        Person is mentioned in many documents.
         """
         if not hasattr(self._graph_repo, "_client") or not self._graph_repo._client:
             return set()
@@ -254,27 +280,62 @@ class GraphSearchExpander:
 
         scope_filter = "AND d.kb_id IN $scope" if scope_kb_ids else ""
 
+        # Extract date tokens for document name filtering
+        date_tokens = self._extract_date_tokens(query) if query else []
+        if date_tokens:
+            # Narrow: Person + date in document name
+            date_conditions = " OR ".join(
+                f"COALESCE(d.name, d.title, '') CONTAINS $dt{i}"
+                for i in range(len(date_tokens))
+            )
+            date_filter = f"AND ({date_conditions})"
+        else:
+            date_filter = ""
+
         try:
             cypher = f"""
             UNWIND $names AS person_name
             MATCH (p:Person)-[:MENTIONED_IN]->(d:Document)
             WHERE p.name = person_name
               {scope_filter}
+              {date_filter}
             RETURN DISTINCT COALESCE(d.name, d.title, d.url) AS doc_name
             LIMIT $limit
             """
             params: dict[str, Any] = {"names": korean_names, "limit": max_results}
             if scope_kb_ids:
                 params["scope"] = scope_kb_ids
+            for i, dt in enumerate(date_tokens):
+                params[f"dt{i}"] = dt
 
             async with self._graph_repo._client.session() as session:
                 result = await session.run(cypher, params)
                 records = [record async for record in result]
 
             doc_names = {r["doc_name"] for r in records if r.get("doc_name")}
+
+            # Fallback: if date filter returned nothing, try without date
+            if not doc_names and date_tokens:
+                cypher_fallback = f"""
+                UNWIND $names AS person_name
+                MATCH (p:Person)-[:MENTIONED_IN]->(d:Document)
+                WHERE p.name = person_name
+                  {scope_filter}
+                RETURN DISTINCT COALESCE(d.name, d.title, d.url) AS doc_name
+                LIMIT $limit
+                """
+                params_fb: dict[str, Any] = {"names": korean_names, "limit": max_results}
+                if scope_kb_ids:
+                    params_fb["scope"] = scope_kb_ids
+                async with self._graph_repo._client.session() as session:
+                    result = await session.run(cypher_fallback, params_fb)
+                    records = [record async for record in result]
+                doc_names = {r["doc_name"] for r in records if r.get("doc_name")}
+
             if doc_names:
                 logger.info(
-                    "Person MENTIONED_IN: names=%s → %d docs: %s",
+                    "Person MENTIONED_IN: names=%s date=%s → %d docs: %s",
+                    korean_names[:3], date_tokens[:2], len(doc_names), list(doc_names)[:3],
                     korean_names[:3], len(doc_names), list(doc_names)[:3],
                 )
             return doc_names
@@ -390,7 +451,7 @@ class GraphSearchExpander:
 
                     # Person MENTIONED_IN: find docs where query Person is mentioned
                     person_docs = await self._find_person_mentioned_docs(
-                        entity_names, scope_kb_ids=scope_kb_ids,
+                        entity_names, query=query, scope_kb_ids=scope_kb_ids,
                     )
                     if person_docs:
                         new_person = person_docs - result.expanded_source_uris
