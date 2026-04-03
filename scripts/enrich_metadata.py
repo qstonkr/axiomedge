@@ -269,6 +269,81 @@ def update_doc_dates(collection: str, doc_date_map: dict[str, str]):
 
 
 # ---------------------------------------------------------------------------
+# 6. Qdrant: enrich morphemes with date/owner tokens
+# ---------------------------------------------------------------------------
+
+
+def enrich_morphemes(collection: str, chunks: list[dict]):
+    """Append date and owner tokens to morphemes payload for sparse matching."""
+    updated = 0
+    batch: list[tuple] = []  # (point_id, extra_tokens)
+
+    for chunk in chunks:
+        extra = []
+        doc_name = chunk["document_name"]
+
+        # Date tokens from document name
+        doc_date = extract_date_from_docname(doc_name)
+        if doc_date:
+            # "2020-12" → ["2020", "2020년", "12월", "2020_12"]
+            parts = doc_date.split("-")
+            if len(parts) == 2:
+                extra.extend([parts[0], f"{parts[0]}년", f"{int(parts[1])}월", doc_date.replace("-", "_")])
+
+        # Date tokens from doc_name directly (주차, 월 patterns)
+        import re
+        m = re.search(r"(\d{1,2})월\s*(\d)주차", doc_name)
+        if m:
+            extra.append(f"{m.group(1)}월")
+            extra.append(f"{m.group(2)}주차")
+            extra.append(f"{m.group(1)}월 {m.group(2)}주차")
+
+        # Owner/author from payload (if exists)
+        # Note: owner is not in scroll payload, but Person names from content are
+
+        if extra:
+            batch.append((chunk["point_id"], " ".join(extra)))
+
+    # Batch update: read current morphemes, append tokens, write back
+    for i in range(0, len(batch), 100):
+        sub = batch[i:i + 100]
+        point_ids = [p[0] for p in sub]
+        token_map = {p[0]: p[1] for p in sub}
+
+        try:
+            # Read current morphemes
+            resp = requests.post(
+                f"{QDRANT_URL}/collections/{collection}/points",
+                json={"ids": point_ids, "with_payload": ["morphemes"], "with_vector": False},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                continue
+
+            points = resp.json().get("result", [])
+            updates: list[dict] = []
+            for pt in points:
+                pid = pt["id"]
+                current = pt.get("payload", {}).get("morphemes", "")
+                extra_tokens = token_map.get(pid, "")
+                if extra_tokens and extra_tokens not in current:
+                    updates.append({"id": pid, "morphemes": f"{current} {extra_tokens}"})
+
+            # Write updated morphemes
+            for upd in updates:
+                requests.post(
+                    f"{QDRANT_URL}/collections/{collection}/points/payload",
+                    json={"payload": {"morphemes": upd["morphemes"]}, "points": [upd["id"]]},
+                    timeout=5,
+                )
+                updated += 1
+        except Exception as e:
+            logger.warning(f"Morphemes update failed: {e}")
+
+    return updated
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -319,9 +394,13 @@ def enrich_kb(kb_id: str):
     neo4j_created = create_mentioned_in_relations(kb_id, person_doc_map)
     logger.info(f"[{kb_id}] Neo4j: {neo4j_created} MENTIONED_IN relations created")
 
-    # 3. Update Qdrant payload
+    # 3. Update Qdrant payload (doc_date)
     qdrant_updated = update_doc_dates(collection, doc_date_map)
     logger.info(f"[{kb_id}] Qdrant: {qdrant_updated} chunks updated with doc_date")
+
+    # 4. Enrich morphemes with date tokens (for sparse matching)
+    morphemes_updated = enrich_morphemes(collection, chunks)
+    logger.info(f"[{kb_id}] Qdrant: {morphemes_updated} chunks morphemes enriched")
 
     # Sample output
     if person_doc_map:

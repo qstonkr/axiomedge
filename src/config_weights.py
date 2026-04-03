@@ -98,6 +98,9 @@ class HybridSearchWeights:
     concept_sparse_weight: float = 0.25
     procedure_dense_weight: float = 0.25
     procedure_sparse_weight: float = 0.45
+    # Date-containing queries: boost sparse for document_name/morphemes matching
+    date_query_dense_weight: float = 0.25
+    date_query_sparse_weight: float = 0.45
 
 
 # ============================================================================

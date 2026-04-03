@@ -445,6 +445,23 @@ class IngestionPipeline:
             except Exception:
                 chunk_morphemes = [""] * len(typed_chunks)
 
+            # META-09b: Append date/author tokens to morphemes for sparse matching
+            import re as _re_morph
+            _dm = _re_morph.search(r"(20\d{2})[_\-./](0[1-9]|1[0-2])", raw.title or "")
+            if not _dm:
+                _dm = _re_morph.search(r"(20\d{2})년\s*(\d{1,2})월", raw.title or "")
+            _date_tokens = ""
+            if _dm:
+                _y, _m = _dm.group(1), str(int(_dm.group(2))).zfill(2)
+                _date_tokens = f" {_y} {_y}년 {int(_m)}월 {_y}_{_m}"
+            _wk = _re_morph.search(r"(\d{1,2})월\s*(\d)주차", raw.title or "")
+            if _wk:
+                _date_tokens += f" {_wk.group(1)}월 {_wk.group(2)}주차"
+            if raw.author:
+                _date_tokens += f" {raw.author}"
+            if _date_tokens:
+                chunk_morphemes = [m + _date_tokens for m in chunk_morphemes]
+
             # META-05: Content type flags from quality metrics
             content_flags: dict[str, bool] = {}
             if quality_metrics:

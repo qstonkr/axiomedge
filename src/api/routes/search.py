@@ -286,6 +286,12 @@ async def hub_search(request: HubSearchRequest):
         except Exception:
             pass
 
+    # Date-containing queries: boost sparse for document_name/morphemes matching
+    import re as _re_dq
+    if _re_dq.search(r"20\d{2}년\s*\d{1,2}월|20\d{2}[_\-]\d{2}|\d{1,2}월\s*\d주차", display_query):
+        _dense_w = weights.hybrid_search.date_query_dense_weight
+        _sparse_w = weights.hybrid_search.date_query_sparse_weight
+
     # 3. Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
     embedder = state.get("embedder")
     if not embedder:
