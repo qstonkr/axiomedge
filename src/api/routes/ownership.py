@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -21,8 +21,8 @@ knowledge_router = APIRouter(prefix="/api/v1/knowledge/experts", tags=["Ownershi
 # ---------------------------------------------------------------------------
 @admin_router.get("/documents")
 async def list_document_owners(
-    kb_id: str = Query(...),
-    status: str | None = Query(default=None),
+    kb_id: Annotated[str, Query()],
+    status: Annotated[str | None, Query()] = None,
 ):
     """List document owners."""
     state = _get_state()
@@ -42,7 +42,7 @@ async def list_document_owners(
 @admin_router.get("/documents/{document_id}")
 async def get_document_owner(
     document_id: str,
-    kb_id: str = Query(...),
+    kb_id: Annotated[str, Query()],
 ):
     """Get document owner."""
     state = _get_state()
@@ -65,7 +65,7 @@ async def get_document_owner(
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/ownership/documents
 # ---------------------------------------------------------------------------
-@admin_router.post("/documents")
+@admin_router.post("/documents", responses={500: {"description": "Failed to assign owner"}})
 async def assign_document_owner(body: dict[str, Any]):
     """Assign document owner."""
     state = _get_state()
@@ -83,7 +83,7 @@ async def assign_document_owner(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/ownership/documents/{document_id}/transfer
 # ---------------------------------------------------------------------------
-@admin_router.post("/documents/{document_id}/transfer")
+@admin_router.post("/documents/{document_id}/transfer", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to transfer ownership"}})
 async def transfer_ownership(document_id: str, body: dict[str, Any]):
     """Transfer document ownership."""
     state = _get_state()
@@ -114,7 +114,7 @@ async def transfer_ownership(document_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/ownership/documents/{document_id}/verify
 # ---------------------------------------------------------------------------
-@admin_router.post("/documents/{document_id}/verify")
+@admin_router.post("/documents/{document_id}/verify", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to verify owner"}})
 async def verify_document_owner(document_id: str, body: dict[str, Any]):
     """Verify document owner."""
     state = _get_state()
@@ -142,8 +142,8 @@ async def verify_document_owner(document_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 @admin_router.get("/stale")
 async def get_stale_owners(
-    kb_id: str = Query(...),
-    days_threshold: int = Query(default=90, ge=1),
+    kb_id: Annotated[str, Query()],
+    days_threshold: Annotated[int, Query(ge=1)] = 90,
 ):
     """Get stale owners."""
     state = _get_state()
@@ -220,7 +220,7 @@ async def update_owner_availability(owner_user_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 @admin_router.get("/topics")
 async def list_topic_owners(
-    kb_id: str = Query(...),
+    kb_id: Annotated[str, Query()],
 ):
     """List topic owners."""
     state = _get_state()
@@ -237,7 +237,7 @@ async def list_topic_owners(
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/ownership/topics
 # ---------------------------------------------------------------------------
-@admin_router.post("/topics")
+@admin_router.post("/topics", responses={500: {"description": "Failed to assign topic owner"}})
 async def assign_topic_owner(body: dict[str, Any]):
     """Assign topic owner."""
     state = _get_state()
@@ -257,8 +257,8 @@ async def assign_topic_owner(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 @knowledge_router.get("/search")
 async def search_experts(
-    query: str = Query(..., max_length=200),
-    kb_id: str | None = Query(default=None),
+    query: Annotated[str, Query(max_length=200)],
+    kb_id: Annotated[str | None, Query()] = None,
 ):
     """Search for experts by matching topic keywords."""
     state = _get_state()

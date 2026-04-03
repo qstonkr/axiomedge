@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import tempfile
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -47,7 +47,7 @@ class IngestResponse(BaseModel):
     errors: list[str] = []
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})
 async def ingest_directory(request: IngestRequest):
     """Ingest documents from a directory."""
     state = _get_state()
@@ -150,10 +150,10 @@ async def ingest_directory(request: IngestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/upload")
+@router.post("/upload", responses={503: {"description": "Ingestion services not initialized"}, 500: {"description": "Upload ingestion failed"}})
 async def upload_file(
-    file: UploadFile = File(...),
-    kb_id: str = Form(default="knowledge"),
+    file: Annotated[UploadFile, File()],
+    kb_id: Annotated[str, Form()] = "knowledge",
 ):
     """Upload and ingest a single file."""
     state = _get_state()

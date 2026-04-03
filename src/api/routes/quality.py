@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -72,7 +72,10 @@ async def get_document_lineage(doc_id: str):
 
 
 @router.get("/knowledge/{doc_id}/versions")
-async def get_document_versions(doc_id: str, kb_id: str = Query(default="")):
+async def get_document_versions(
+    doc_id: str,
+    kb_id: Annotated[str, Query()] = "",
+):
     """Get document versions."""
     state = _get_state()
     lifecycle_repo = state.get("lifecycle_repo")
@@ -146,8 +149,8 @@ async def get_dedup_stats():
 
 @router.get("/dedup/conflicts")
 async def get_dedup_conflicts(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """Get dedup conflicts from Redis tracker."""
     state = _get_state()
@@ -202,7 +205,7 @@ async def resolve_dedup_conflict(body: dict[str, Any]):
 
 @router.post("/trust-scores/calculate", responses={503: {"description": "Trust score repo or Qdrant not available"}})
 async def calculate_trust_scores(
-    kb_id: str = Query(...),
+    kb_id: Annotated[str, Query(...)],
 ):
     """Calculate KTS (Knowledge Trust Score) for all documents in a KB."""
     from src.api.services.trust_score_calculator import calculate_kb_trust_scores
@@ -285,8 +288,8 @@ async def get_evaluation_status():
 
 @router.get("/eval/history")
 async def list_evaluation_history(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """Get evaluation history."""
     all_evals = sorted(
@@ -398,8 +401,8 @@ async def get_transparency_stats():
 
 @router.get("/contributors")
 async def list_contributors(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """List contributors from contributor_reputations table."""
     state = _get_state()
@@ -462,8 +465,8 @@ async def list_contributors(
 
 @router.get("/verification/pending")
 async def get_verification_pending(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """Get documents pending verification (KTS below threshold)."""
     state = _get_state()
@@ -714,10 +717,10 @@ async def get_cache_stats():
 
 @router.get("/golden-set")
 async def list_golden_set(
-    kb_id: str | None = Query(None),
-    status: str | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    kb_id: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
     """List golden set Q&A pairs."""
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -774,7 +777,10 @@ async def list_golden_set(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-@router.patch("/golden-set/{item_id}", responses={400: {"description": "No valid fields to update"}})
+@router.patch(
+    "/golden-set/{item_id}",
+    responses={400: {"description": "No valid fields to update"}},
+)
 async def update_golden_set_item(item_id: str, body: dict[str, Any]):
     """Update golden set item (status, question, expected_answer)."""
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -822,10 +828,10 @@ async def delete_golden_set_item(item_id: str):
 
 @router.get("/eval-results")
 async def list_eval_results(
-    eval_id: str | None = Query(None),
-    kb_id: str | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    eval_id: Annotated[str | None, Query()] = None,
+    kb_id: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
     """List evaluation results."""
     from sqlalchemy.ext.asyncio import create_async_engine

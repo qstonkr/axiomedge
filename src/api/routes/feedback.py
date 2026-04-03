@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -26,10 +26,10 @@ knowledge_router = APIRouter(prefix="/api/v1/knowledge", tags=["Feedback"])
 # ---------------------------------------------------------------------------
 @admin_router.get("/feedback/list")
 async def list_feedback(
-    status: str | None = Query(default=None),
-    feedback_type: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    status: Annotated[str | None, Query()] = None,
+    feedback_type: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """List feedback."""
     state = _get_state()
@@ -48,7 +48,10 @@ async def list_feedback(
 # ---------------------------------------------------------------------------
 # POST /api/v1/knowledge/feedback
 # ---------------------------------------------------------------------------
-@knowledge_router.post("/feedback")
+@knowledge_router.post(
+    "/feedback",
+    responses={500: {"description": "Failed to create feedback"}},
+)
 async def create_feedback(body: dict[str, Any]):
     """Create feedback."""
     state = _get_state()
@@ -70,7 +73,13 @@ async def create_feedback(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # PATCH /api/v1/admin/feedback/{feedback_id}
 # ---------------------------------------------------------------------------
-@admin_router.patch("/feedback/{feedback_id}")
+@admin_router.patch(
+    "/feedback/{feedback_id}",
+    responses={
+        404: {"description": "Feedback not found"},
+        500: {"description": "Failed to update feedback"},
+    },
+)
 async def update_feedback(feedback_id: str, body: dict[str, Any]):
     """Update feedback."""
     state = _get_state()
@@ -144,10 +153,10 @@ async def get_feedback_workflow_stats():
 # ---------------------------------------------------------------------------
 @admin_router.get("/error-reports")
 async def list_error_reports(
-    kb_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    kb_id: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """List error reports."""
     state = _get_state()
@@ -173,8 +182,8 @@ async def list_error_reports(
 # ---------------------------------------------------------------------------
 @admin_router.get("/error-reports/statistics")
 async def get_error_report_statistics(
-    kb_id: str | None = Query(default=None),
-    days: int = Query(default=30, ge=1),
+    kb_id: Annotated[str | None, Query()] = None,
+    days: Annotated[int, Query(ge=1)] = 30,
 ):
     """Get error report statistics."""
     state = _get_state()
@@ -198,7 +207,10 @@ async def get_error_report_statistics(
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/error-reports/{report_id}
 # ---------------------------------------------------------------------------
-@admin_router.get("/error-reports/{report_id}")
+@admin_router.get(
+    "/error-reports/{report_id}",
+    responses={404: {"description": "Error report not found"}},
+)
 async def get_error_report(report_id: str):
     """Get error report."""
     state = _get_state()
@@ -216,7 +228,10 @@ async def get_error_report(report_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/knowledge/report-error
 # ---------------------------------------------------------------------------
-@knowledge_router.post("/report-error")
+@knowledge_router.post(
+    "/report-error",
+    responses={500: {"description": "Failed to create error report"}},
+)
 async def create_error_report(body: dict[str, Any]):
     """Create error report."""
     state = _get_state()
@@ -238,7 +253,13 @@ async def create_error_report(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/error-reports/{report_id}/resolve
 # ---------------------------------------------------------------------------
-@admin_router.post("/error-reports/{report_id}/resolve")
+@admin_router.post(
+    "/error-reports/{report_id}/resolve",
+    responses={
+        404: {"description": "Error report not found"},
+        500: {"description": "Failed to resolve report"},
+    },
+)
 async def resolve_error_report(report_id: str, body: dict[str, Any]):
     """Resolve error report."""
     state = _get_state()
@@ -268,7 +289,13 @@ async def resolve_error_report(report_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/error-reports/{report_id}/reject
 # ---------------------------------------------------------------------------
-@admin_router.post("/error-reports/{report_id}/reject")
+@admin_router.post(
+    "/error-reports/{report_id}/reject",
+    responses={
+        404: {"description": "Error report not found"},
+        500: {"description": "Failed to reject report"},
+    },
+)
 async def reject_error_report(report_id: str, body: dict[str, Any]):
     """Reject error report."""
     state = _get_state()
@@ -292,7 +319,13 @@ async def reject_error_report(report_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/error-reports/{report_id}/escalate
 # ---------------------------------------------------------------------------
-@admin_router.post("/error-reports/{report_id}/escalate")
+@admin_router.post(
+    "/error-reports/{report_id}/escalate",
+    responses={
+        404: {"description": "Error report not found"},
+        500: {"description": "Failed to escalate report"},
+    },
+)
 async def escalate_error_report(report_id: str, body: dict[str, Any]):
     """Escalate error report."""
     state = _get_state()
@@ -326,8 +359,8 @@ async def escalate_error_report(report_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 @admin_router.get("/kb/learning/low-confidence")
 async def get_learning_artifacts(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """Get low-confidence learning artifacts."""
     return {

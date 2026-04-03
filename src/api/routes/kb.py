@@ -6,7 +6,7 @@ Serves both /api/v1/kb/* (original) and /api/v1/admin/kb/* (dashboard calls).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -114,7 +114,7 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
 # Original /api/v1/kb/* routes
 # ============================================================================
 
-@router.post("/create")
+@router.post("/create", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
 async def create_kb(request: KBCreateRequest):
     """Create a new knowledge base (Qdrant collection)."""
     state = _get_state()
@@ -135,7 +135,7 @@ async def list_kbs():
     return await _list_kbs_impl()
 
 
-@router.delete("/{kb_id}")
+@router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
 async def delete_kb(kb_id: str):
     """Delete a knowledge base."""
     state = _get_state()
@@ -162,8 +162,8 @@ async def delete_kb(kb_id: str):
 # ---------------------------------------------------------------------------
 @admin_router.get("")
 async def admin_list_kbs(
-    tier: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    tier: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
 ):
     """List KBs (admin)."""
     return await _list_kbs_impl(tier=tier, status=status)
@@ -172,7 +172,7 @@ async def admin_list_kbs(
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/kb
 # ---------------------------------------------------------------------------
-@admin_router.post("")
+@admin_router.post("", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
 async def admin_create_kb(body: dict[str, Any]):
     """Create a KB (admin)."""
     state = _get_state()
@@ -339,7 +339,7 @@ async def admin_update_kb(kb_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/kb/{kb_id}
 # ---------------------------------------------------------------------------
-@admin_router.delete("/{kb_id}")
+@admin_router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
 async def admin_delete_kb(kb_id: str):
     """Delete KB (admin)."""
     state = _get_state()
@@ -392,8 +392,8 @@ async def admin_kb_stats(kb_id: str):
 @admin_router.get("/{kb_id}/documents")
 async def admin_kb_documents(
     kb_id: str,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """List KB documents from Qdrant (unique doc_ids with metadata)."""
     import httpx

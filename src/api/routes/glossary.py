@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
@@ -41,12 +41,12 @@ async def _check_not_global_standard(repo: Any, term_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 @router.get("")
 async def list_glossary_terms(
-    kb_id: str = Query(default="all"),
-    status: str | None = Query(default=None),
-    scope: str | None = Query(default=None),
-    term_type: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=100, ge=1, le=500),
+    kb_id: Annotated[str, Query()] = "all",
+    status: Annotated[str | None, Query()] = None,
+    scope: Annotated[str | None, Query()] = None,
+    term_type: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=500)] = 100,
 ):
     """List glossary terms."""
     state = _get_state()
@@ -187,7 +187,7 @@ async def get_similarity_distribution():
         jac_scores = []
 
         # Build UNIQUE standard terms (deduplicated by lower(term))
-        seen_terms: dict[str, dict] = {}  # lower(term) → full term dict
+        seen_terms: dict[str, dict] = {}  # lower(term) -> full term dict
         for t in standard_terms:
             term_lower = t.get("term", "").lower()
             if term_lower and term_lower not in seen_terms:
@@ -195,7 +195,7 @@ async def get_similarity_distribution():
         unique_standard = list(seen_terms.values())
         unique_standard_names = [t["term"] for t in unique_standard]
 
-        # Build term→definition map for definition-based comparison
+        # Build term->definition map for definition-based comparison
         std_definitions = {}
         for t in unique_standard:
             defn = (t.get("definition") or t.get("term_ko") or "").strip()
@@ -366,9 +366,9 @@ async def get_similarity_distribution():
 # ---------------------------------------------------------------------------
 @router.get("/discovered-synonyms")
 async def list_discovered_synonyms_early(
-    status: str = Query(default="pending"),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=200),
+    status: Annotated[str, Query()] = "pending",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
     """List auto-discovered synonym candidates."""
     state = _get_state()
@@ -388,7 +388,10 @@ async def list_discovered_synonyms_early(
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/glossary/{term_id}
 # ---------------------------------------------------------------------------
-@router.get("/{term_id}")
+@router.get(
+    "/{term_id}",
+    responses={404: {"description": "Term not found"}},
+)
 async def get_glossary_term(term_id: str):
     """Get single glossary term."""
     state = _get_state()
@@ -406,7 +409,10 @@ async def get_glossary_term(term_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary
 # ---------------------------------------------------------------------------
-@router.post("")
+@router.post(
+    "",
+    responses={500: {"description": "Failed to create term"}},
+)
 async def create_glossary_term(body: dict[str, Any]):
     """Create a glossary term."""
     state = _get_state()
@@ -427,7 +433,14 @@ async def create_glossary_term(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # PATCH /api/v1/admin/glossary/{term_id}
 # ---------------------------------------------------------------------------
-@router.patch("/{term_id}")
+@router.patch(
+    "/{term_id}",
+    responses={
+        403: {"description": "Global standard term is read-only"},
+        404: {"description": "Term not found"},
+        500: {"description": "Failed to update term"},
+    },
+)
 async def update_glossary_term(term_id: str, body: dict[str, Any]):
     """Update a glossary term. Global standards are read-only."""
     state = _get_state()
@@ -452,7 +465,13 @@ async def update_glossary_term(term_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/{term_id}/approve
 # ---------------------------------------------------------------------------
-@router.post("/{term_id}/approve")
+@router.post(
+    "/{term_id}/approve",
+    responses={
+        404: {"description": "Term not found"},
+        500: {"description": "Failed to approve term"},
+    },
+)
 async def approve_glossary_term(term_id: str, body: dict[str, Any]):
     """Approve a glossary term."""
     state = _get_state()
@@ -484,7 +503,13 @@ async def approve_glossary_term(term_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/{term_id}/reject
 # ---------------------------------------------------------------------------
-@router.post("/{term_id}/reject")
+@router.post(
+    "/{term_id}/reject",
+    responses={
+        404: {"description": "Term not found"},
+        500: {"description": "Failed to reject term"},
+    },
+)
 async def reject_glossary_term(term_id: str, body: dict[str, Any]):
     """Reject a glossary term."""
     state = _get_state()
@@ -513,7 +538,13 @@ async def reject_glossary_term(term_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/glossary/{term_id}
 # ---------------------------------------------------------------------------
-@router.delete("/{term_id}")
+@router.delete(
+    "/{term_id}",
+    responses={
+        403: {"description": "Global standard term is read-only"},
+        404: {"description": "Term not found"},
+    },
+)
 async def delete_glossary_term(term_id: str):
     """Delete a glossary term. Global standards are read-only."""
     state = _get_state()
@@ -533,7 +564,13 @@ async def delete_glossary_term(term_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/{term_id}/promote-global
 # ---------------------------------------------------------------------------
-@router.post("/{term_id}/promote-global")
+@router.post(
+    "/{term_id}/promote-global",
+    responses={
+        404: {"description": "Term not found"},
+        500: {"description": "Failed to promote term"},
+    },
+)
 async def promote_glossary_term_to_global(term_id: str):
     """Promote a glossary term to global scope."""
     state = _get_state()
@@ -562,13 +599,19 @@ async def promote_glossary_term_to_global(term_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/import-csv
 # ---------------------------------------------------------------------------
-@router.post("/import-csv", responses={503: {"description": "Glossary repository not initialized"}, 400: {"description": "No files provided"}})
+@router.post(
+    "/import-csv",
+    responses={
+        400: {"description": "No files provided"},
+        503: {"description": "Glossary repository not initialized"},
+    },
+)
 async def import_glossary_csv(
     file: UploadFile | None = File(default=None),
     files: list[UploadFile] | None = File(default=None),
-    encoding: str = Query(default="utf-8"),
-    term_type: str = Query(default="term"),
-    kb_id: str = Query(default="global-standard"),
+    encoding: Annotated[str, Query()] = "utf-8",
+    term_type: Annotated[str, Query()] = "term",
+    kb_id: Annotated[str, Query()] = "global-standard",
 ):
     """Import glossary terms from one or multiple CSV files."""
     from src.api.services.glossary_import_service import import_csv
@@ -603,10 +646,13 @@ async def import_glossary_csv(
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/glossary/by-type/{term_type}
 # ---------------------------------------------------------------------------
-@router.delete("/by-type/{term_type}")
+@router.delete(
+    "/by-type/{term_type}",
+    responses={500: {"description": "Failed to delete by type"}},
+)
 async def delete_glossary_by_type(
     term_type: str,
-    kb_id: str = Query(default="global-standard"),
+    kb_id: Annotated[str, Query()] = "global-standard",
 ):
     """Delete glossary terms by type."""
     state = _get_state()
@@ -629,7 +675,14 @@ async def delete_glossary_by_type(
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/add-synonym
 # ---------------------------------------------------------------------------
-@router.post("/add-synonym")
+@router.post(
+    "/add-synonym",
+    responses={
+        400: {"description": "Missing required fields"},
+        404: {"description": "Term not found"},
+        500: {"description": "Failed to add synonym"},
+    },
+)
 async def add_synonym_to_standard(body: dict[str, Any]):
     """Add synonym to a standard term."""
     state = _get_state()
@@ -665,7 +718,14 @@ async def add_synonym_to_standard(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/glossary/{term_id}/synonyms
 # ---------------------------------------------------------------------------
-@router.get("/{term_id}/synonyms")
+@router.get(
+    "/{term_id}/synonyms",
+    responses={
+        404: {"description": "Term not found"},
+        500: {"description": "Failed to list synonyms"},
+        503: {"description": "No DB connection"},
+    },
+)
 async def list_synonyms(term_id: str):
     """List synonyms for a glossary term."""
     state = _get_state()
@@ -692,7 +752,14 @@ async def list_synonyms(term_id: str):
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/glossary/{term_id}/synonyms/{synonym}
 # ---------------------------------------------------------------------------
-@router.delete("/{term_id}/synonyms/{synonym}")
+@router.delete(
+    "/{term_id}/synonyms/{synonym}",
+    responses={
+        404: {"description": "Term or synonym not found"},
+        500: {"description": "Failed to remove synonym"},
+        503: {"description": "No DB connection"},
+    },
+)
 async def remove_synonym(term_id: str, synonym: str):
     """Remove a synonym from a glossary term."""
     state = _get_state()
@@ -728,7 +795,13 @@ async def remove_synonym(term_id: str, synonym: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/discovered-synonyms/approve
 # ---------------------------------------------------------------------------
-@router.post("/discovered-synonyms/approve")
+@router.post(
+    "/discovered-synonyms/approve",
+    responses={
+        400: {"description": "Missing synonym_ids"},
+        503: {"description": "No DB connection"},
+    },
+)
 async def approve_discovered_synonyms(body: dict[str, Any]):
     """Approve one or more discovered synonym candidates.
 
@@ -784,7 +857,13 @@ async def approve_discovered_synonyms(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/discovered-synonyms/reject
 # ---------------------------------------------------------------------------
-@router.post("/discovered-synonyms/reject")
+@router.post(
+    "/discovered-synonyms/reject",
+    responses={
+        400: {"description": "Missing synonym_ids"},
+        503: {"description": "No DB connection"},
+    },
+)
 async def reject_discovered_synonyms(body: dict[str, Any]):
     """Reject one or more discovered synonym candidates."""
     state = _get_state()
@@ -820,11 +899,14 @@ async def reject_discovered_synonyms(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/similarity-check
 # ---------------------------------------------------------------------------
-@router.post("/similarity-check")
+@router.post(
+    "/similarity-check",
+    responses={500: {"description": "Similarity check failed"}},
+)
 async def check_pending_similarity(
-    threshold: float = Query(default=0.7),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=500, ge=1, le=1000),
+    threshold: Annotated[float, Query()] = 0.7,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=1000)] = 500,
 ):
     """Check pending term similarity. Returns pairs of pending terms that look similar to approved terms."""
     state = _get_state()
@@ -857,9 +939,12 @@ async def check_pending_similarity(
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/glossary/similarity-cleanup
 # ---------------------------------------------------------------------------
-@router.post("/similarity-cleanup")
+@router.post(
+    "/similarity-cleanup",
+    responses={500: {"description": "Similarity cleanup failed"}},
+)
 async def cleanup_pending_by_similarity(
-    threshold: float = Query(default=0.7),
+    threshold: Annotated[float, Query()] = 0.7,
     body: dict[str, Any] | None = None,
 ):
     """Cleanup pending terms by similarity. Removes pending terms that duplicate approved ones."""

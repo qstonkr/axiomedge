@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -311,14 +311,14 @@ async def _process_files(
 # ---------------------------------------------------------------------------
 @knowledge_router.post("/file-upload-ingest", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "No files provided"}})
 async def upload_and_ingest(
-    file: UploadFile | None = File(default=None),
-    files: list[UploadFile] | None = File(default=None),
-    kb_id: str = Form(default=""),
-    kb_name: str | None = Form(default=None),
-    enable_vision: str = Form(default="false"),
-    create_new_kb: str = Form(default="false"),
-    tier: str | None = Form(default=None),
-    organization_id: str | None = Form(default=None),
+    file: Annotated[UploadFile | None, File()] = None,
+    files: Annotated[list[UploadFile] | None, File()] = None,
+    kb_id: Annotated[str, Form()] = "",
+    kb_name: Annotated[str | None, Form()] = None,
+    enable_vision: Annotated[str, Form()] = "false",
+    create_new_kb: Annotated[str, Form()] = "false",
+    tier: Annotated[str | None, Form()] = None,
+    organization_id: Annotated[str | None, Form()] = None,
 ):
     """Upload and ingest files (returns job ID, processes in background)."""
     import os
@@ -453,10 +453,10 @@ async def upload_and_ingest(
 # POST /api/v1/knowledge/reingest-from-jsonl
 # ============================================================================
 
-@knowledge_router.post("/reingest-from-jsonl")
+@knowledge_router.post("/reingest-from-jsonl", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Invalid JSONL path"}, 404: {"description": "No records in JSONL"}})
 async def reingest_from_jsonl(
-    kb_id: str = Form(...),
-    jsonl_path: str | None = Form(default=None),
+    kb_id: Annotated[str, Form()],
+    jsonl_path: Annotated[str | None, Form()] = None,
 ):
     """Re-run Stage 2 (chunk/embed/store) from an existing JSONL checkpoint.
 

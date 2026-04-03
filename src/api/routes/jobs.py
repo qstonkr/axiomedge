@@ -125,7 +125,7 @@ def _deserialize(raw: dict) -> dict:
     return job
 
 
-@router.get("/{job_id}")
+@router.get("/{job_id}", responses={404: {"description": "Job not found"}})
 async def get_job_status(job_id: str):
     """Get status of an ingestion job."""
     job = await get_job(job_id)
@@ -134,7 +134,7 @@ async def get_job_status(job_id: str):
     return job
 
 
-@router.post("/{job_id}/cancel")
+@router.post("/{job_id}/cancel", responses={404: {"description": "Job not found"}, 400: {"description": "Job is not in processing state"}})
 async def cancel_job(job_id: str):
     """Cancel a running ingestion job."""
     job = await get_job(job_id)

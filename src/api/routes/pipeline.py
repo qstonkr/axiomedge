@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 
@@ -234,10 +234,10 @@ async def get_pipeline_gate_blocked(gate_id: str):
 # ---------------------------------------------------------------------------
 @router.get("/knowledge/ingest/jobs")
 async def list_ingestion_runs(
-    kb_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    kb_id: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """List ingestion runs."""
     state = _get_state()
@@ -311,7 +311,7 @@ async def cancel_ingestion(run_id: str):
 # ---------------------------------------------------------------------------
 @router.get("/ingestion/stats")
 async def get_ingestion_stats(
-    kb_id: str | None = Query(default=None),
+    kb_id: Annotated[str | None, Query()] = None,
 ):
     """Get ingestion stats."""
     state = _get_state()

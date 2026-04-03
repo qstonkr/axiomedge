@@ -46,7 +46,7 @@ async def list_groups():
     return {"groups": groups}
 
 
-@router.post("")
+@router.post("", responses={503: {"description": "Database not initialized"}})
 async def create_group(request: CreateGroupRequest):
     """검색 그룹 생성."""
     repo = _get_state().get("search_group_repo")
@@ -62,7 +62,7 @@ async def create_group(request: CreateGroupRequest):
     return group
 
 
-@router.get("/{group_id}")
+@router.get("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
 async def get_group(group_id: str):
     """검색 그룹 상세 조회."""
     repo = _get_state().get("search_group_repo")
@@ -75,7 +75,7 @@ async def get_group(group_id: str):
     return group
 
 
-@router.put("/{group_id}")
+@router.put("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
 async def update_group(group_id: str, request: UpdateGroupRequest):
     """검색 그룹 수정 (KB 추가/제거)."""
     repo = _get_state().get("search_group_repo")
@@ -94,7 +94,7 @@ async def update_group(group_id: str, request: UpdateGroupRequest):
     return group
 
 
-@router.delete("/{group_id}")
+@router.delete("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
 async def delete_group(group_id: str):
     """검색 그룹 삭제."""
     repo = _get_state().get("search_group_repo")
@@ -107,7 +107,7 @@ async def delete_group(group_id: str):
     return {"success": True, "message": f"Group {group_id} deleted"}
 
 
-@router.get("/{group_id}/kbs")
+@router.get("/{group_id}/kbs", responses={503: {"description": "Database not initialized"}})
 async def get_group_kbs(group_id: str):
     """그룹에 속한 KB 목록 조회."""
     repo = _get_state().get("search_group_repo")

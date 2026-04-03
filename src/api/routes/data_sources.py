@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -34,7 +34,7 @@ async def list_data_sources():
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/data-sources
 # ---------------------------------------------------------------------------
-@router.post("")
+@router.post("", responses={500: {"description": "Failed to create data source"}})
 async def create_data_source(body: dict[str, Any]):
     """Create a data source."""
     state = _get_state()
@@ -56,7 +56,7 @@ async def create_data_source(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
-@router.get("/{source_id}")
+@router.get("/{source_id}", responses={404: {"description": "Data source not found"}})
 async def get_data_source(source_id: str):
     """Get data source."""
     state = _get_state()
@@ -74,7 +74,7 @@ async def get_data_source(source_id: str):
 # ---------------------------------------------------------------------------
 # PUT /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
-@router.put("/{source_id}")
+@router.put("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to update data source"}})
 async def update_data_source(source_id: str, body: dict[str, Any]):
     """Update data source."""
     state = _get_state()
@@ -100,7 +100,7 @@ async def update_data_source(source_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
-@router.delete("/{source_id}")
+@router.delete("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to delete data source"}})
 async def delete_data_source(source_id: str):
     """Delete data source."""
     state = _get_state()
@@ -122,10 +122,10 @@ async def delete_data_source(source_id: str):
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/data-sources/{source_id}/trigger
 # ---------------------------------------------------------------------------
-@router.post("/{source_id}/trigger")
+@router.post("/{source_id}/trigger", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to trigger sync"}})
 async def trigger_data_source_sync(
     source_id: str,
-    sync_mode: str = Query(default="resume"),
+    sync_mode: Annotated[str, Query()] = "resume",
 ):
     """Trigger data source sync."""
     state = _get_state()

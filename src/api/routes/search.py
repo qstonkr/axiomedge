@@ -110,7 +110,7 @@ class HubSearchResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/hub", response_model=HubSearchResponse)
+@router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})
 async def hub_search(request: HubSearchRequest):
     """Hub Search - unified knowledge search with full pipeline."""
     state = _get_state()

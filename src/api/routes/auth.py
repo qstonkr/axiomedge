@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -98,7 +98,13 @@ class ChangePasswordRequest(BaseModel):
 # =============================================================================
 
 
-@router.post("/login")
+@router.post(
+    "/login",
+    responses={
+        401: {"description": "Invalid email or password"},
+        503: {"description": "Service not initialized"},
+    },
+)
 async def login(body: LoginRequest, request: Request, response: Response):
     """Authenticate with email/password, return JWT tokens in HttpOnly cookies."""
     auth_service = _get_auth_service()
@@ -173,7 +179,13 @@ async def login(body: LoginRequest, request: Request, response: Response):
     }
 
 
-@router.post("/refresh")
+@router.post(
+    "/refresh",
+    responses={
+        401: {"description": "Invalid or revoked refresh token"},
+        503: {"description": "Service not initialized"},
+    },
+)
 async def refresh_token(request: Request, response: Response):
     """Refresh access token using refresh token from cookie or body."""
     state = _get_state()
@@ -294,10 +306,17 @@ async def logout(request: Request, response: Response):
     return {"success": True}
 
 
-@router.post("/register")
+@router.post(
+    "/register",
+    responses={
+        400: {"description": "Invalid input"},
+        409: {"description": "User already exists"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def register(
     body: RegisterRequest,
-    _user: AuthUser = Depends(require_permission("admin", "users")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
 ):
     """Register a new internal user (admin only)."""
     auth_service = _get_auth_service()
@@ -320,10 +339,16 @@ async def register(
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@router.post("/change-password")
+@router.post(
+    "/change-password",
+    responses={
+        400: {"description": "Invalid password"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def change_password(
     body: ChangePasswordRequest,
-    user: AuthUser = Depends(get_current_user),
+    user: Annotated[AuthUser, Depends(get_current_user)],
 ):
     """Change current user's password. Revokes all existing sessions."""
     auth_service = _get_auth_service()
@@ -353,7 +378,7 @@ async def change_password(
 
 
 @router.get("/me")
-async def get_me(user: AuthUser = Depends(get_current_user)):
+async def get_me(user: Annotated[AuthUser, Depends(get_current_user)]):
     """Get current user info and permissions."""
     auth_service = _get_auth_service()
     roles = []
@@ -387,7 +412,7 @@ async def get_me(user: AuthUser = Depends(get_current_user)):
 async def list_users(
     limit: int = 50,
     offset: int = 0,
-    _user: AuthUser = Depends(require_permission("admin", "users")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))] = None,
 ):
     """List all users."""
     auth_service = _get_auth_service()
@@ -405,10 +430,16 @@ class CreateUserRequest(BaseModel):
     role: str = "viewer"
 
 
-@router.post("/users")
+@router.post(
+    "/users",
+    responses={
+        409: {"description": "User already exists"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def create_user(
     body: CreateUserRequest,
-    _user: AuthUser = Depends(require_permission("admin", "users")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
 ):
     """Create a new local user."""
     auth_service = _get_auth_service()
@@ -435,11 +466,17 @@ class UpdateUserRequest(BaseModel):
     is_active: bool | None = None
 
 
-@router.put("/users/{user_id}")
+@router.put(
+    "/users/{user_id}",
+    responses={
+        404: {"description": "User not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def update_user(
     user_id: str,
     body: UpdateUserRequest,
-    _user: AuthUser = Depends(require_permission("admin", "users")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
 ):
     """Update user details."""
     auth_service = _get_auth_service()
@@ -458,10 +495,16 @@ async def update_user(
     return {"success": True, **result}
 
 
-@router.delete("/users/{user_id}")
+@router.delete(
+    "/users/{user_id}",
+    responses={
+        404: {"description": "User not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def delete_user(
     user_id: str,
-    _user: AuthUser = Depends(require_permission("admin", "users")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
 ):
     """Delete a user."""
     auth_service = _get_auth_service()
@@ -474,10 +517,16 @@ async def delete_user(
     return {"success": True}
 
 
-@router.get("/users/{user_id}")
+@router.get(
+    "/users/{user_id}",
+    responses={
+        404: {"description": "User not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def get_user(
     user_id: str,
-    _user: AuthUser = Depends(require_permission("admin", "users")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
 ):
     """Get user details."""
     auth_service = _get_auth_service()
@@ -496,7 +545,7 @@ async def get_user(
 
 
 @router.get("/roles")
-async def list_roles(user: AuthUser = Depends(get_current_user)):
+async def list_roles(user: Annotated[AuthUser, Depends(get_current_user)]):
     """List all available roles."""
     from src.auth.rbac import DEFAULT_ROLES
     return {
@@ -512,11 +561,18 @@ async def list_roles(user: AuthUser = Depends(get_current_user)):
     }
 
 
-@router.post("/users/{user_id}/roles")
+@router.post(
+    "/users/{user_id}/roles",
+    responses={
+        400: {"description": "Missing required fields"},
+        404: {"description": "User or role not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def assign_role(
     user_id: str,
     body: dict[str, Any],
-    _user: AuthUser = Depends(require_permission("admin", "roles")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "roles"))],
 ):
     """Assign a role to a user."""
     auth_service = _get_auth_service()
@@ -540,13 +596,19 @@ async def assign_role(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.delete("/users/{user_id}/roles/{role_name}")
+@router.delete(
+    "/users/{user_id}/roles/{role_name}",
+    responses={
+        404: {"description": "Role assignment not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def revoke_role(
     user_id: str,
     role_name: str,
     scope_type: str | None = None,
     scope_id: str | None = None,
-    _user: AuthUser = Depends(require_permission("admin", "roles")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "roles"))] = None,
 ):
     """Revoke a role from a user."""
     auth_service = _get_auth_service()
@@ -567,7 +629,7 @@ async def revoke_role(
 @router.get("/kb/{kb_id}/permissions")
 async def list_kb_permissions(
     kb_id: str,
-    user: AuthUser = Depends(get_current_user),
+    user: Annotated[AuthUser, Depends(get_current_user)],
 ):
     """List all user permissions for a KB."""
     auth_service = _get_auth_service()
@@ -577,11 +639,18 @@ async def list_kb_permissions(
     return {"kb_id": kb_id, "permissions": perms}
 
 
-@router.post("/kb/{kb_id}/permissions")
+@router.post(
+    "/kb/{kb_id}/permissions",
+    responses={
+        400: {"description": "Invalid input"},
+        404: {"description": "User not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def set_kb_permission(
     kb_id: str,
     body: dict[str, Any],
-    current_user: AuthUser = Depends(require_permission("kb", "manage")),
+    current_user: Annotated[AuthUser, Depends(require_permission("kb", "manage"))],
 ):
     """Set a user's permission level for a KB."""
     auth_service = _get_auth_service()
@@ -608,11 +677,17 @@ async def set_kb_permission(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.delete("/kb/{kb_id}/permissions/{user_id}")
+@router.delete(
+    "/kb/{kb_id}/permissions/{user_id}",
+    responses={
+        404: {"description": "Permission not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def remove_kb_permission(
     kb_id: str,
     user_id: str,
-    _user: AuthUser = Depends(require_permission("kb", "manage")),
+    _user: Annotated[AuthUser, Depends(require_permission("kb", "manage"))],
 ):
     """Remove a user's KB permission."""
     auth_service = _get_auth_service()
@@ -637,7 +712,7 @@ async def get_my_activities(
     date_to: str | None = None,
     limit: int = 50,
     offset: int = 0,
-    user: AuthUser = Depends(get_current_user),
+    user: Annotated[AuthUser, Depends(get_current_user)] = None,
 ):
     """Get current user's activity log."""
     auth_service = _get_auth_service()
@@ -675,7 +750,7 @@ async def get_my_activities(
 @router.get("/my-activities/summary")
 async def get_my_activity_summary(
     days: int = 30,
-    user: AuthUser = Depends(get_current_user),
+    user: Annotated[AuthUser, Depends(get_current_user)] = None,
 ):
     """Get activity summary for dashboard."""
     auth_service = _get_auth_service()
@@ -691,7 +766,7 @@ async def get_my_activity_summary(
 
 @router.get("/abac/policies")
 async def list_abac_policies(
-    _user: AuthUser = Depends(require_permission("admin", "system")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
 ):
     """List all ABAC policies."""
     from src.auth.models import ABACPolicyModel
@@ -724,10 +799,16 @@ async def list_abac_policies(
     return {"policies": policies}
 
 
-@router.post("/abac/policies")
+@router.post(
+    "/abac/policies",
+    responses={
+        400: {"description": "Missing required fields"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def create_abac_policy(
     body: dict[str, Any],
-    _user: AuthUser = Depends(require_permission("admin", "system")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
 ):
     """Create a new ABAC policy."""
     from src.auth.models import ABACPolicyModel
@@ -760,11 +841,17 @@ async def create_abac_policy(
         return {"success": True, "id": policy.id}
 
 
-@router.put("/abac/policies/{policy_id}")
+@router.put(
+    "/abac/policies/{policy_id}",
+    responses={
+        404: {"description": "Policy not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def update_abac_policy(
     policy_id: str,
     body: dict[str, Any],
-    _user: AuthUser = Depends(require_permission("admin", "system")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
 ):
     """Update an ABAC policy."""
     from src.auth.models import ABACPolicyModel
@@ -791,10 +878,16 @@ async def update_abac_policy(
         return {"success": True}
 
 
-@router.delete("/abac/policies/{policy_id}")
+@router.delete(
+    "/abac/policies/{policy_id}",
+    responses={
+        404: {"description": "Policy not found"},
+        503: {"description": "Auth service not initialized"},
+    },
+)
 async def delete_abac_policy(
     policy_id: str,
-    _user: AuthUser = Depends(require_permission("admin", "system")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
 ):
     """Delete an ABAC policy."""
     from src.auth.models import ABACPolicyModel
@@ -822,7 +915,7 @@ async def delete_abac_policy(
 
 @router.get("/system/stats")
 async def get_system_auth_stats(
-    _user: AuthUser = Depends(require_permission("admin", "system")),
+    _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
 ):
     """System-level auth statistics for operations dashboard."""
     from src.auth.models import UserModel, UserRoleModel, KBUserPermissionModel, UserActivityLogModel, ABACPolicyModel

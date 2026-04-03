@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -92,8 +92,8 @@ async def graph_search(body: dict[str, Any]):
 
 @router.get("/graph/experts")
 async def find_experts(
-    topic: str = Query(default=""),
-    limit: int = Query(default=10, ge=1, le=50),
+    topic: Annotated[str, Query()] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
 ):
     """Find experts for a topic."""
     state = _get_state()
@@ -477,7 +477,7 @@ async def list_collections():
         return {"collections": [], "error": str(e)}
 
 
-@router.get("/qdrant/collection/{name}/stats")
+@router.get("/qdrant/collection/{name}/stats", responses={503: {"description": "Store not initialized"}, 500: {"description": "Internal error"}})
 async def collection_stats(name: str):
     """Get collection statistics."""
     state = _get_state()
@@ -503,7 +503,7 @@ async def get_config_weights():
     return weights.to_dict()
 
 
-@router.put("/config/weights")
+@router.put("/config/weights", responses={400: {"description": "Empty body or no valid weight fields matched"}})
 async def update_config_weights(body: dict[str, Any]):
     """Update specific weight values (partial update).
 
