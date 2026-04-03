@@ -146,6 +146,7 @@ with tab_eval:
 
             # Latest run metrics
             latest = runs[0]
+            st.markdown("**LLM Judge**")
             m1, m2, m3, m4, m5 = st.columns(5)
             with m1:
                 st.metric("Faithfulness", f"{latest.get('avg_faithfulness', 0):.3f}")
@@ -163,19 +164,41 @@ with tab_eval:
             with m5:
                 st.metric("평가 건수", f"{latest.get('count', 0)}건")
 
+            # CRAG + Recall metrics
+            cnt = latest.get("count", 1) or 1
+            crag_ok = latest.get("crag_correct", 0)
+            recall = latest.get("recall_hits", 0)
+            st.markdown("**CRAG / Recall**")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1:
+                st.metric("CRAG Correct", f"{crag_ok}/{cnt} ({crag_ok/cnt:.0%})")
+            with c2:
+                st.metric("CRAG Ambiguous", f"{latest.get('crag_ambiguous', 0)}")
+            with c3:
+                st.metric("CRAG Incorrect", f"{latest.get('crag_incorrect', 0)}")
+            with c4:
+                st.metric("Avg Confidence", f"{latest.get('avg_crag_confidence', 0):.3f}")
+            with c5:
+                st.metric("Source Recall", f"{recall}/{cnt} ({recall/cnt:.0%})")
+
             # Runs table
             st.markdown("---")
             st.subheader("실행 목록")
             run_rows = []
             for r in runs:
+                cnt = r.get("count", 1) or 1
+                crag_ok = r.get("crag_correct", 0)
+                recall_ok = r.get("recall_hits", 0)
                 run_rows.append({
                     "Eval ID": r.get("eval_id", ""),
                     "KB": r.get("kb_id", ""),
                     "건수": r.get("count", 0),
-                    "Faithfulness": f"{r.get('avg_faithfulness', 0):.3f}",
-                    "Relevancy": f"{r.get('avg_relevancy', 0):.3f}",
-                    "Completeness": f"{r.get('avg_completeness', 0):.3f}",
-                    "평균 검색시간": f"{r.get('avg_search_time_ms', 0):.0f}ms",
+                    "F": f"{r.get('avg_faithfulness', 0):.3f}",
+                    "R": f"{r.get('avg_relevancy', 0):.3f}",
+                    "C": f"{r.get('avg_completeness', 0):.3f}",
+                    "CRAG OK": f"{crag_ok}/{cnt}",
+                    "Recall": f"{recall_ok}/{cnt}",
+                    "검색시간": f"{r.get('avg_search_time_ms', 0):.0f}ms",
                     "시작": (r.get("started_at") or "")[:16],
                 })
             df_runs = pd.DataFrame(run_rows)
@@ -205,6 +228,8 @@ with tab_eval:
                                 "F": f"{f_val:.2f}",
                                 "R": f"{r_val:.2f}",
                                 "C": f"{c_val:.2f}",
+                                "CRAG": d.get("crag_action", "-"),
+                                "Recall": "O" if d.get("recall_hit") else "X",
                                 "검색시간": f"{d.get('search_time_ms', 0):.0f}ms",
                                 "실제 답변": d.get("actual_answer", "")[:60],
                             })

@@ -868,7 +868,8 @@ async def list_eval_results(
                 text(
                     f"SELECT id, eval_id, kb_id, golden_set_id, question, "
                     f"expected_answer, actual_answer, faithfulness, relevancy, "
-                    f"completeness, search_time_ms, created_at "
+                    f"completeness, search_time_ms, created_at, "
+                    f"crag_action, crag_confidence, recall_hit "
                     f"FROM rag_eval_results {where} "
                     f"ORDER BY created_at DESC "
                     f"LIMIT :limit OFFSET :offset"
@@ -889,6 +890,9 @@ async def list_eval_results(
                     "completeness": r[9],
                     "search_time_ms": r[10],
                     "created_at": r[11].isoformat() if r[11] else None,
+                    "crag_action": r[12] or "",
+                    "crag_confidence": float(r[13]) if r[13] else 0.0,
+                    "recall_hit": bool(r[14]) if r[14] is not None else None,
                 }
                 for r in rows.fetchall()
             ]
@@ -924,7 +928,12 @@ async def eval_results_summary():
                     "round(avg(relevancy)::numeric, 3) as avg_r, "
                     "round(avg(completeness)::numeric, 3) as avg_c, "
                     "round(avg(search_time_ms)::numeric, 1) as avg_time, "
-                    "min(created_at) as started_at "
+                    "min(created_at) as started_at, "
+                    "round(avg(crag_confidence)::numeric, 3) as avg_crag_conf, "
+                    "count(CASE WHEN crag_action = 'correct' THEN 1 END) as crag_correct, "
+                    "count(CASE WHEN crag_action = 'ambiguous' THEN 1 END) as crag_ambiguous, "
+                    "count(CASE WHEN crag_action = 'incorrect' THEN 1 END) as crag_incorrect, "
+                    "count(CASE WHEN recall_hit = TRUE THEN 1 END) as recall_hits "
                     "FROM rag_eval_results "
                     "GROUP BY eval_id, kb_id "
                     "ORDER BY started_at DESC"
@@ -940,6 +949,11 @@ async def eval_results_summary():
                     "avg_completeness": float(r[5]) if r[5] else 0,
                     "avg_search_time_ms": float(r[6]) if r[6] else 0,
                     "started_at": r[7].isoformat() if r[7] else None,
+                    "avg_crag_confidence": float(r[8]) if r[8] else 0,
+                    "crag_correct": r[9] or 0,
+                    "crag_ambiguous": r[10] or 0,
+                    "crag_incorrect": r[11] or 0,
+                    "recall_hits": r[12] or 0,
                 }
                 for r in rows.fetchall()
             ]
