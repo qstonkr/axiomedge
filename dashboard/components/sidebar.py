@@ -65,6 +65,7 @@ def render_sidebar(show_admin: bool = False, user_role: str | None = None):
                 st.page_link("pages/dashboard.py", label="📊 KB 현황")
                 st.page_link("pages/search_groups.py", label="📂 검색 그룹")
                 st.page_link("pages/quality.py", label="📈 품질 관리")
+                st.page_link("pages/golden_set.py", label="🎯 골든 셋 관리")
                 st.page_link("pages/glossary.py", label="📖 용어집")
                 st.page_link("pages/owners.py", label="👥 담당자 관리")
                 st.page_link("pages/conflicts.py", label="⚠️ 충돌 / 중복")
