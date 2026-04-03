@@ -514,6 +514,7 @@ async def hub_search(request: HubSearchRequest):
     #    Must run BEFORE answer generation so expanded chunks are included in the answer.
     graph_expander = state.get("graph_expander")
     logger.info("Graph expander: %s, chunks: %d", type(graph_expander).__name__ if graph_expander else "None", len(all_chunks))
+
     if graph_expander and all_chunks:
         try:
             # Graph expansion with timeout (max 3s to avoid blocking search)
@@ -543,12 +544,19 @@ async def hub_search(request: HubSearchRequest):
                 )
 
                 # Inject graph-found documents NOT already in results
-                existing_docs = {c.get("document_name", "") for c in all_chunks}
+                # Match by both document_name and source_uri for compatibility
                 import unicodedata as _uc
-                existing_docs_nfc = {_uc.normalize("NFC", d) for d in existing_docs}
+                existing_docs = set()
+                for c in all_chunks:
+                    dn = c.get("document_name", "")
+                    su = c.get("source_uri", "")
+                    if dn:
+                        existing_docs.add(_uc.normalize("NFC", dn))
+                    if su:
+                        existing_docs.add(_uc.normalize("NFC", su))
                 new_docs = {
                     d for d in expansion.expanded_source_uris
-                    if _uc.normalize("NFC", d) not in existing_docs_nfc
+                    if _uc.normalize("NFC", d) not in existing_docs
                 }
                 logger.info("Graph injection: existing=%d, new=%d, new_docs=%s",
                             len(existing_docs), len(new_docs), list(new_docs)[:3])
@@ -556,33 +564,34 @@ async def hub_search(request: HubSearchRequest):
                     import httpx as _hx
                     qdrant_url = state.get("qdrant_url", "http://localhost:6333")
                     async with _hx.AsyncClient(timeout=3.0) as _qc:
-                        for doc_name in list(new_docs)[:3]:
+                        for doc_name in list(new_docs)[:5]:
                             for coll in collections:
                                 try:
                                     coll_name = f"kb_{coll.replace('-', '_')}"
-                                    # NFD normalize for Qdrant match
                                     dn_nfd = _uc.normalize("NFD", doc_name)
-                                    resp = await _qc.post(
-                                        f"{qdrant_url}/collections/{coll_name}/points/scroll",
-                                        json={
-                                            "limit": 2,
-                                            "with_payload": True,
-                                            "with_vector": False,
-                                            "filter": {"must": [{"key": "document_name", "match": {"value": doc_name}}]},
-                                        },
-                                    )
-                                    if resp.status_code != 200:
-                                        # Try NFD
+                                    # Try document_name match (NFC → NFD fallback)
+                                    # Then source_uri match as last resort
+                                    _match_filters = [
+                                        {"must": [{"key": "document_name", "match": {"value": doc_name}}]},
+                                        {"must": [{"key": "document_name", "match": {"value": dn_nfd}}]},
+                                        {"must": [{"key": "source_uri", "match": {"text": doc_name}}]},
+                                    ]
+                                    resp = None
+                                    for _filt in _match_filters:
                                         resp = await _qc.post(
                                             f"{qdrant_url}/collections/{coll_name}/points/scroll",
                                             json={
                                                 "limit": 2,
                                                 "with_payload": True,
                                                 "with_vector": False,
-                                                "filter": {"must": [{"key": "document_name", "match": {"value": dn_nfd}}]},
+                                                "filter": _filt,
                                             },
                                         )
-                                    if resp.status_code == 200:
+                                        if resp.status_code == 200:
+                                            pts = resp.json().get("result", {}).get("points", [])
+                                            if pts:
+                                                break
+                                    if resp and resp.status_code == 200:
                                         points = resp.json().get("result", {}).get("points", [])
                                         for pt in points:
                                             pay = pt.get("payload", {})

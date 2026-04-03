@@ -159,10 +159,27 @@ class GraphSearchExpander:
 
         # Existing source URIs from initial results
         existing_uris: set[str] = set()
+        existing_docs: set[str] = set()
         for chunk in chunks:
             uri = chunk.get("source_uri") or ""
+            doc = chunk.get("document_name") or ""
             if uri:
                 existing_uris.add(uri)
+            if doc:
+                existing_docs.add(doc)
+
+        # Person-based expansion: find documents where Person is MENTIONED_IN
+        person_uris = await self._find_person_mentioned_docs(
+            entity_names, scope_kb_ids=scope_kb_ids,
+        )
+        if person_uris:
+            new_person_docs = person_uris - existing_uris - existing_docs
+            if new_person_docs:
+                logger.info(
+                    "Person MENTIONED_IN expansion: %d new docs from query names",
+                    len(new_person_docs),
+                )
+                existing_uris |= person_uris
 
         try:
             # Single-KB expansion (scoped)
@@ -186,8 +203,8 @@ class GraphSearchExpander:
             except Exception as _xkb_err:
                 logger.debug("Cross-KB graph expansion failed (best-effort): %s", _xkb_err)
 
-            all_related = related_uris | cross_kb_uris
-            new_uris = all_related - existing_uris
+            all_related = related_uris | cross_kb_uris | person_uris
+            new_uris = all_related - existing_uris - existing_docs
             graph_related_count = len(new_uris)
 
             logger.info(
@@ -212,6 +229,58 @@ class GraphSearchExpander:
                 expanded_source_uris=set(),
                 graph_related_count=0,
             )
+
+    async def _find_person_mentioned_docs(
+        self,
+        entity_names: list[str],
+        *,
+        scope_kb_ids: list[str] | None = None,
+        max_results: int = 10,
+    ) -> set[str]:
+        """Find documents where query entities are MENTIONED_IN.
+
+        Directly queries Neo4j for Person→MENTIONED_IN→Document relations.
+        Returns document names (for Qdrant matching).
+        """
+        if not hasattr(self._graph_repo, "_client") or not self._graph_repo._client:
+            return set()
+
+        korean_names = [
+            n for n in entity_names
+            if 2 <= len(n) <= 4 and all("\uac00" <= c <= "\ud7a3" for c in n)
+        ]
+        if not korean_names:
+            return set()
+
+        scope_filter = "AND d.kb_id IN $scope" if scope_kb_ids else ""
+
+        try:
+            cypher = f"""
+            UNWIND $names AS person_name
+            MATCH (p:Person)-[:MENTIONED_IN]->(d:Document)
+            WHERE p.name = person_name
+              {scope_filter}
+            RETURN DISTINCT COALESCE(d.name, d.title, d.url) AS doc_name
+            LIMIT $limit
+            """
+            params: dict[str, Any] = {"names": korean_names, "limit": max_results}
+            if scope_kb_ids:
+                params["scope"] = scope_kb_ids
+
+            async with self._graph_repo._client.session() as session:
+                result = await session.run(cypher, params)
+                records = [record async for record in result]
+
+            doc_names = {r["doc_name"] for r in records if r.get("doc_name")}
+            if doc_names:
+                logger.info(
+                    "Person MENTIONED_IN: names=%s → %d docs: %s",
+                    korean_names[:3], len(doc_names), list(doc_names)[:3],
+                )
+            return doc_names
+        except Exception as e:
+            logger.debug("Person MENTIONED_IN lookup failed: %s", e)
+            return set()
 
     def boost_chunks(
         self,
@@ -318,6 +387,15 @@ class GraphSearchExpander:
                     if entity_doc_names:
                         result.expanded_source_uris |= entity_doc_names
                         result.graph_related_count += len(entity_doc_names)
+
+                    # Person MENTIONED_IN: find docs where query Person is mentioned
+                    person_docs = await self._find_person_mentioned_docs(
+                        entity_names, scope_kb_ids=scope_kb_ids,
+                    )
+                    if person_docs:
+                        new_person = person_docs - result.expanded_source_uris
+                        result.expanded_source_uris |= new_person
+                        result.graph_related_count += len(new_person)
         except Exception as e:
             logger.warning("Entity expansion failed: %s", e)
 
