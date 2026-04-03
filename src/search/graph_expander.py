@@ -308,10 +308,7 @@ class GraphSearchExpander:
             for i, dt in enumerate(date_tokens):
                 params[f"dt{i}"] = dt
 
-            async with self._graph_repo._client.session() as session:
-                result = await session.run(cypher, params)
-                records = [record async for record in result]
-
+            records = await self._graph_repo._client.execute_query(cypher, params)
             doc_names = {r["doc_name"] for r in records if r.get("doc_name")}
 
             # Fallback: if date filter returned nothing, try without date
@@ -327,9 +324,7 @@ class GraphSearchExpander:
                 params_fb: dict[str, Any] = {"names": korean_names, "limit": max_results}
                 if scope_kb_ids:
                     params_fb["scope"] = scope_kb_ids
-                async with self._graph_repo._client.session() as session:
-                    result = await session.run(cypher_fallback, params_fb)
-                    records = [record async for record in result]
+                records = await self._graph_repo._client.execute_query(cypher_fallback, params_fb)
                 doc_names = {r["doc_name"] for r in records if r.get("doc_name")}
 
             if doc_names:
