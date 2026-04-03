@@ -222,6 +222,7 @@ class SemHash:
 
     async def find_duplicates(self) -> list[SemanticMatch]:
         """Find all duplicate document pairs."""
+        await asyncio.sleep(0)
         _MAX_PAIRWISE_DOCS = 10_000
         seen_pairs: set[tuple[str, str]] = set()
         duplicates: list[SemanticMatch] = []

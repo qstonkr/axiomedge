@@ -532,6 +532,7 @@ class TermExtractor:
         Returns:
             List of (term, synonym, pattern_type) tuples.
         """
+        await asyncio.sleep(0)
         if not text:
             return []
 

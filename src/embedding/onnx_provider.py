@@ -396,7 +396,7 @@ class OnnxBgeEmbeddingProvider:
         results: list[list[list[float]]] = []
         try:
             for token_row, mask_row in zip(token_emb, attention_mask, strict=False):
-                valid_indices = np.where(mask_row.astype(np.int64) == 1)[0]
+                valid_indices = np.nonzero(mask_row.astype(np.int64))[0]
                 if valid_indices.size == 0:
                     results.append([])
                     continue

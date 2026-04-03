@@ -688,7 +688,7 @@ class TestEvalResults:
 
     def test_list_eval_results_with_data(self):
         from datetime import datetime
-        row = ("id1", "eval1", "kb1", "gs1", "Q?", "A", "Actual", 0.9, 0.8, 0.7, 150, datetime(2024, 1, 1))
+        row = ("id1", "eval1", "kb1", "gs1", "Q?", "A", "Actual", 0.9, 0.8, 0.7, 150, datetime(2024, 1, 1), "correct", 0.85, True)
         engine = self._make_engine_mock(table_exists=True, rows=[row], count=1)
         with patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=engine):
             with patch("src.config.get_settings"):
@@ -720,7 +720,7 @@ class TestEvalResults:
         check_result.scalar.return_value = True
         rows_result = MagicMock()
         rows_result.fetchall.return_value = [
-            ("eval1", "kb1", 10, 0.85, 0.90, 0.75, 120.5, datetime(2024, 1, 1))
+            ("eval1", "kb1", 10, 0.85, 0.90, 0.75, 120.5, datetime(2024, 1, 1), 0.80, 7, 2, 1, 8)
         ]
         mock_conn.execute = AsyncMock(side_effect=[check_result, rows_result])
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)

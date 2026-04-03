@@ -502,6 +502,8 @@ class NoOpTieredResponseGenerator:
         query_type: QueryType,
         context: RAGContext,
     ) -> TieredResponse:
+        import asyncio
+        await asyncio.sleep(0)
         return TieredResponse(
             content=f"[NoOp] {query_type.value} 유형에 대한 테스트 응답입니다.",
             query_type=query_type,

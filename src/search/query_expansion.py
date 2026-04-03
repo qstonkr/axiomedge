@@ -14,6 +14,8 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
+
 import hashlib
 import logging
 import re
@@ -38,6 +40,7 @@ class NoOpGlossaryRepository:
     """No-op glossary repository that returns no matches."""
 
     async def search(self, kb_id: str, term: str, limit: int = 1) -> list[Any]:
+        await asyncio.sleep(0)
         return []
 
 

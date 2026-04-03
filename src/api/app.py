@@ -805,16 +805,7 @@ app = FastAPI(
 app.add_exception_handler(HTTPException, _http_exc_handler)
 app.add_exception_handler(Exception, _unhandled_exc_handler)
 
-cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True if cors_origins != ["*"] else False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Rate limiter middleware (after CORS, conditional on env var)
+# Rate limiter middleware (conditional on env var) — added before CORS
 if os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true":
     from src.api.middleware.rate_limiter import RateLimiterMiddleware
     app.add_middleware(RateLimiterMiddleware)
@@ -823,6 +814,16 @@ if os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true":
         os.getenv("RATE_LIMIT_REQUESTS", "100"),
         os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"),
     )
+
+# CORSMiddleware must be added LAST (outermost in middleware chain)
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True if cors_origins != ["*"] else False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Register routes
 from src.api.routes import (  # noqa: E402
