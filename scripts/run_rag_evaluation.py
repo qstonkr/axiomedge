@@ -179,6 +179,7 @@ async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict
                 search_time_ms FLOAT DEFAULT 0,
                 crag_action VARCHAR(20) DEFAULT '',
                 crag_confidence FLOAT DEFAULT 0,
+                crag_recommendation TEXT DEFAULT '',
                 recall_hit BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
@@ -198,10 +199,11 @@ async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict
                             (eval_id, kb_id, golden_set_id, question,
                              expected_answer, actual_answer, faithfulness, relevancy,
                              completeness, search_time_ms,
-                             crag_action, crag_confidence, recall_hit)
+                             crag_action, crag_confidence, crag_recommendation,
+                             recall_hit)
                         VALUES (:eval_id, :kb_id, CAST(:gs_id AS UUID),
                                 :q, :expected, :actual, :f, :r, :c, :t,
-                                :crag_action, :crag_conf, :recall)
+                                :crag_action, :crag_conf, :crag_rec, :recall)
                     """), {
                         "eval_id": eval_id, "kb_id": r["kb_id"],
                         "gs_id": gs_id, "q": r["question"],
@@ -210,6 +212,7 @@ async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict
                         "c": r["completeness"], "t": r["search_time_ms"],
                         "crag_action": r.get("crag_action", ""),
                         "crag_conf": r.get("crag_confidence", 0.0),
+                        "crag_rec": r.get("crag_recommendation", ""),
                         "recall": r.get("recall_hit", False),
                     })
             saved += len(batch)
@@ -291,6 +294,7 @@ async def async_main(kb_ids: list[str]):
             meta = search_result.get("metadata", {})
             crag_action = meta.get("crag_action", "")
             crag_confidence = meta.get("crag_confidence", 0.0)
+            crag_recommendation = meta.get("crag_recommendation", "")
 
             # Recall: check if source document appears in retrieved chunks
             source_doc = gs.get("source_doc", "")
@@ -318,6 +322,7 @@ async def async_main(kb_ids: list[str]):
                 "search_time_ms": search_time,
                 "crag_action": crag_action,
                 "crag_confidence": crag_confidence,
+                "crag_recommendation": crag_recommendation[:500] if crag_recommendation else "",
                 "recall_hit": recall_hit,
             }
             results.append(result)
