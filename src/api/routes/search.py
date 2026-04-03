@@ -453,6 +453,55 @@ async def hub_search(request: HubSearchRequest):
         all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
         all_chunks = all_chunks[:_pool_size]
 
+    # 4.45. Date-filtered search: if query contains a date, do a supplementary
+    # Qdrant scroll with doc_date filter to catch date-specific documents that
+    # the vector search may have missed.
+    import re as _re_date
+    _date_match = _re_date.search(r"(20\d{2})년\s*(\d{1,2})월", display_query)
+    if not _date_match:
+        _date_match = _re_date.search(r"(20\d{2})[_\-](0[1-9]|1[0-2])", display_query)
+    if _date_match:
+        _q_date = f"{_date_match.group(1)}-{int(_date_match.group(2)):02d}"
+        _existing_docs = {c.get("document_name", "") for c in all_chunks}
+        try:
+            import httpx as _hx_date
+            _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+            async with _hx_date.AsyncClient(timeout=3.0) as _dc:
+                for coll in collections:
+                    _coll_name = f"kb_{coll.replace('-', '_')}"
+                    resp = await _dc.post(
+                        f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
+                        json={
+                            "limit": 5,
+                            "with_payload": True,
+                            "with_vector": False,
+                            "filter": {"must": [{"key": "doc_date", "match": {"value": _q_date}}]},
+                        },
+                    )
+                    if resp.status_code == 200:
+                        for pt in resp.json().get("result", {}).get("points", []):
+                            pay = pt.get("payload", {})
+                            dn = pay.get("document_name", "")
+                            if dn and dn not in _existing_docs:
+                                all_chunks.append({
+                                    "chunk_id": str(pt["id"]),
+                                    "content": pay.get("content", ""),
+                                    "document_name": dn,
+                                    "source_uri": pay.get("source_uri", ""),
+                                    "metadata": pay,
+                                    "score": 0.6,
+                                    "kb_id": coll,
+                                    "_date_filtered": True,
+                                })
+                                _existing_docs.add(dn)
+            logger.info("Date-filtered search: doc_date=%s, injected %d chunks",
+                        _q_date, sum(1 for c in all_chunks if c.get("_date_filtered")))
+        except Exception:
+            pass
+
+        all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+        all_chunks = all_chunks[:_pool_size]
+
     # 4.5. Passage cleaning - normalize text before reranking
     all_chunks = clean_chunks(all_chunks)
 
