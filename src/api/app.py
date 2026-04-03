@@ -815,16 +815,6 @@ if os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true":
         os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"),
     )
 
-# CORSMiddleware must be added LAST (outermost in middleware chain)
-cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True if cors_origins != ["*"] else False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Register routes
 from src.api.routes import (  # noqa: E402
     health, search, ingest, admin, kb,
@@ -864,3 +854,13 @@ app.include_router(auth_routes.router)
 # Auth middleware (adds user context + activity logging)
 from src.auth.middleware import AuthMiddleware  # noqa: E402
 app.add_middleware(AuthMiddleware)
+
+# CORSMiddleware MUST be added LAST (outermost = first to execute)
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True if cors_origins != ["*"] else False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
