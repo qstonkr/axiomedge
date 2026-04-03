@@ -420,7 +420,7 @@ class SearchDefaults:
     """Default search parameters."""
 
     top_k: int = 5
-    rerank_pool_multiplier: int = 5  # top_k * 5 before reranking (wider pool for keyword accuracy)
+    rerank_pool_multiplier: int = 8  # top_k * 8 before reranking (wider pool for date/person queries)
     max_query_length: int = 2000
 
     # Keyword boost multiplier for keyword-matched chunks
