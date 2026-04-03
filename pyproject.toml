@@ -54,6 +54,8 @@ dependencies = [
     # Auth (JWT verification for Keycloak/AzureAD)
     "PyJWT[crypto]>=2.8.0",
     "bcrypt>=4.0.0",
+    # MCP Server
+    "mcp>=1.8.0",
     # Utilities
     "python-multipart>=0.0.9",
     "pdfplumber>=0.11.9",

@@ -132,6 +132,29 @@ services:
       timeout: 10s
       retries: 5
 
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: mcp
+    ports:
+      - "5010:5010"
+    environment:
+      - KH_API_BASE=http://host.docker.internal:8000
+      - KH_API_KEY=${KH_API_KEY:-}
+      - KH_API_TIMEOUT=60
+    depends_on:
+      - postgres
+      - qdrant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5010/sse || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - mcp
+
 volumes:
   postgres_data:
   qdrant_data:

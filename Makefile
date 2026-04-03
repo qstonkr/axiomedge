@@ -25,6 +25,13 @@ api:
 dashboard:
 	uv run streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
 
+# === MCP Server ===
+mcp:
+	uv run python -m src.mcp_server
+
+mcp-sse:
+	uv run python -m src.mcp_server --sse
+
 # === CLI ===
 crawl:
 	uv run python -m cli.crawl $(ARGS)

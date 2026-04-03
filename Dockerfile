@@ -23,6 +23,11 @@ FROM base AS api
 EXPOSE 8000
 CMD ["uv", "run", "uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
 
+# --- MCP Server ---
+FROM base AS mcp
+EXPOSE 5010
+CMD ["uv", "run", "python", "-m", "src.mcp_server", "--sse"]
+
 # --- Dashboard ---
 FROM base AS dashboard
 EXPOSE 8501
