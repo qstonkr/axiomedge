@@ -421,7 +421,7 @@ class Neo4jGraphRepository:
         # Path 1: Direct document ownership (title/id match)
         # Try both NFC and NFD forms for macOS filename compatibility
         cypher_docs = """
-        MATCH (p:Person)-[r:OWNS|AUTHORED|MANAGES|RESPONSIBLE_FOR]->(d:Document)
+        MATCH (p:Person)-[r:OWNS|AUTHORED|MANAGES|RESPONSIBLE_FOR|MENTIONED_IN]->(d:Document)
         WHERE COALESCE(d.title, d.id, '') CONTAINS $topic_nfc
            OR COALESCE(d.title, d.id, '') CONTAINS $topic_nfd
         WITH p, count(DISTINCT d) AS doc_count,

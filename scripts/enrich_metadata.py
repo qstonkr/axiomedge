@@ -60,16 +60,33 @@ _NAME_BLACKLIST = frozenset({
     # 일반 명사 (KiwiPy가 NNP로 잘못 태깅)
     "자점만", "비탁", "우리", "본사", "본부", "지점", "점포", "매장",
     "시스템", "서비스", "프로젝트", "프로세스", "플랫폼", "데이터",
+    "이슈사항", "대시보드", "업그레이드", "테스트", "개발팀", "운영팀",
 })
 
 
+# Table cell pattern: "| 이름M |" or "| 이름 |" in markdown tables
+_TABLE_NAME_RE = re.compile(r"\|\s*([가-힣]{2,4})M?\s*\|")
+
+# Context pattern: "담당자: 이름" or "작성자: 이름" etc.
+_CONTEXT_NAME_RE = re.compile(
+    r"(?:담당자|작성자|보고자|요청자|승인자|검토자|발표자|OFC)\s*[:\s]\s*([가-힣]{2,4})M?"
+)
+
+
 def extract_persons_from_text(text: str) -> set[str]:
-    """Extract Korean person names from text using KiwiPy NNP tag."""
+    """Extract Korean person names using KiwiPy NNP + regex patterns.
+
+    Two-tier extraction:
+    1. KiwiPy NNP tag (morphological analysis)
+    2. Regex fallback for table cells and context patterns
+    """
     kiwi = _get_kiwi()
     persons = set()
+    sample = text[:3000]
 
+    # Tier 1: KiwiPy NNP
     try:
-        tokens = kiwi.tokenize(text[:3000])  # Limit for performance
+        tokens = kiwi.tokenize(sample)
         for tok in tokens:
             if tok.tag == "NNP" and _KOREAN_NAME_RE.match(tok.form):
                 name = tok.form.rstrip("M")
@@ -77,6 +94,18 @@ def extract_persons_from_text(text: str) -> set[str]:
                     persons.add(name)
     except Exception:
         pass
+
+    # Tier 2: Regex for table cells (| 유경희 |, | 김재경M |)
+    for m in _TABLE_NAME_RE.finditer(sample):
+        name = m.group(1)
+        if name not in _NAME_BLACKLIST and len(name) >= 2:
+            persons.add(name)
+
+    # Tier 3: Context patterns (담당자: 유경희)
+    for m in _CONTEXT_NAME_RE.finditer(sample):
+        name = m.group(1)
+        if name not in _NAME_BLACKLIST and len(name) >= 2:
+            persons.add(name)
 
     return persons
 
