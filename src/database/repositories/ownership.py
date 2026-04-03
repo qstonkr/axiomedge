@@ -119,6 +119,28 @@ class DocumentOwnerRepository(BaseRepository):
 class TopicOwnerRepository(BaseRepository):
     """PostgreSQL topic owner repository."""
 
+    @staticmethod
+    def _update_existing(existing: TopicOwnerModel, data: dict[str, Any]) -> None:
+        """Update mutable fields on an existing topic owner model."""
+        if "topic_keywords" in data:
+            existing.topic_keywords = json.dumps(data["topic_keywords"])
+        if "sme_user_id" in data:
+            existing.sme_user_id = data["sme_user_id"]
+        if "escalation_chain" in data:
+            existing.escalation_chain = json.dumps(data["escalation_chain"])
+
+    @staticmethod
+    def _build_new_model(data: dict[str, Any]) -> TopicOwnerModel:
+        """Create a new TopicOwnerModel from data dict."""
+        model_data = dict(data)
+        if "id" not in model_data or not model_data["id"]:
+            model_data["id"] = str(uuid.uuid4())
+        if "topic_keywords" in model_data:
+            model_data["topic_keywords"] = json.dumps(model_data["topic_keywords"])
+        if "escalation_chain" in model_data:
+            model_data["escalation_chain"] = json.dumps(model_data["escalation_chain"])
+        return TopicOwnerModel(**model_data)
+
     async def save(self, data: dict[str, Any]) -> None:
         async with await self._get_session() as session:
             try:
@@ -130,22 +152,9 @@ class TopicOwnerRepository(BaseRepository):
                 existing = result.scalar_one_or_none()
 
                 if existing:
-                    if "topic_keywords" in data:
-                        existing.topic_keywords = json.dumps(data["topic_keywords"])
-                    if "sme_user_id" in data:
-                        existing.sme_user_id = data["sme_user_id"]
-                    if "escalation_chain" in data:
-                        existing.escalation_chain = json.dumps(data["escalation_chain"])
+                    self._update_existing(existing, data)
                 else:
-                    model_data = dict(data)
-                    if "id" not in model_data or not model_data["id"]:
-                        model_data["id"] = str(uuid.uuid4())
-                    if "topic_keywords" in model_data:
-                        model_data["topic_keywords"] = json.dumps(model_data["topic_keywords"])
-                    if "escalation_chain" in model_data:
-                        model_data["escalation_chain"] = json.dumps(model_data["escalation_chain"])
-                    model = TopicOwnerModel(**model_data)
-                    session.add(model)
+                    session.add(self._build_new_model(data))
 
                 await session.commit()
             except SQLAlchemyError:

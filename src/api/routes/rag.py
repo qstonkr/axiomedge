@@ -88,6 +88,23 @@ async def get_rag_stats():
 # File Upload & Ingest (background processing with job ID)
 # ============================================================================
 
+
+async def _correct_ocr_if_needed(parse_result) -> None:
+    """Apply LLM OCR noise correction if ocr_text is present."""
+    if not parse_result.ocr_text:
+        return
+    try:
+        from src.api.app import _get_state
+        from src.pipeline.ocr_corrector import correct_ocr_chunks
+        llm = _get_state().get("llm")
+        if llm:
+            parse_result.ocr_text = await correct_ocr_chunks(
+                parse_result.ocr_text, llm,
+            )
+    except Exception as _corr_err:
+        logger.warning("OCR LLM correction skipped: %s", _corr_err)
+
+
 async def _stage1_parse_to_jsonl(
     job_id: str,
     file_paths: list[tuple[str, str]],
@@ -148,17 +165,7 @@ async def _stage1_parse_to_jsonl(
                     continue
 
                 # LLM correction for OCR noise
-                if parse_result.ocr_text:
-                    try:
-                        from src.api.app import _get_state
-                        from src.pipeline.ocr_corrector import correct_ocr_chunks
-                        llm = _get_state().get("llm")
-                        if llm:
-                            parse_result.ocr_text = await correct_ocr_chunks(
-                                parse_result.ocr_text, llm,
-                            )
-                    except Exception as _corr_err:
-                        logger.warning("OCR LLM correction skipped: %s", _corr_err)
+                await _correct_ocr_if_needed(parse_result)
 
                 # Write to JSONL checkpoint
                 json_line = serialize_parse_result(
@@ -453,6 +460,60 @@ async def upload_and_ingest(
 # POST /api/v1/knowledge/reingest-from-jsonl
 # ============================================================================
 
+def _build_reingest_pipeline(state, embedder, store):
+    """Build an IngestionPipeline for re-ingestion."""
+    from src.pipeline.ingestion import IngestionPipeline
+    from src.api.routes.ingest import _OnnxSparseEmbedder
+
+    sparse_embedder = _OnnxSparseEmbedder(embedder)
+    return IngestionPipeline(
+        embedder=embedder,
+        sparse_embedder=sparse_embedder,
+        vector_store=store,
+        graph_store=state.get("graph_repo"),
+        dedup_cache=state.get("dedup_cache"),
+        dedup_pipeline=state.get("dedup_pipeline"),
+        enable_ingestion_gate=True,
+        enable_term_extraction=True,
+        enable_graphrag=True,
+        term_extractor=state.get("term_extractor"),
+        graphrag_extractor=state.get("graphrag_extractor"),
+    )
+
+
+def _attach_reingest_callbacks(task, job_id: str, kb_id: str, state) -> None:
+    """Attach finalization and background-task tracking callbacks."""
+
+    async def _finalize(t: asyncio.Task) -> None:
+        try:
+            total_docs, total_chunks, errors = t.result()
+            st = "completed" if total_docs > 0 else "failed"
+            await update_job(job_id, status=st, processed=total_docs, chunks=total_chunks, errors=errors)
+            if total_docs > 0:
+                try:
+                    kb_registry = state.get("kb_registry")
+                    if kb_registry:
+                        await kb_registry.update_counts(kb_id, total_docs, total_chunks)
+                except Exception as _e:
+                    logger.warning("KB count update failed: %s", _e)
+        except Exception as e:
+            await update_job(job_id, status="failed", errors=[str(e)])
+
+    def _safe_finalize_callback(t: asyncio.Task) -> None:
+        try:
+            finalize_task = asyncio.ensure_future(_finalize(t))
+            bg: set = state.setdefault("_background_tasks", set())
+            bg.add(finalize_task)
+            finalize_task.add_done_callback(bg.discard)
+        except RuntimeError:
+            logger.warning("Event loop closed, finalize skipped for job %s", job_id)
+
+    task.add_done_callback(_safe_finalize_callback)
+    bg_tasks: set = state.setdefault("_background_tasks", set())
+    bg_tasks.add(task)
+    task.add_done_callback(bg_tasks.discard)
+
+
 @knowledge_router.post("/reingest-from-jsonl", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Invalid JSONL path"}, 404: {"description": "No records in JSONL"}})
 async def reingest_from_jsonl(
     kb_id: Annotated[str, Form()],
@@ -464,7 +525,6 @@ async def reingest_from_jsonl(
     """
     from src.api.app import _get_state
     from src.pipeline.jsonl_checkpoint import get_jsonl_path, JsonlCheckpointReader
-    from src.pipeline.ingestion import IngestionPipeline
 
     state = _get_state()
     store = state.get("qdrant_store")
@@ -484,54 +544,11 @@ async def reingest_from_jsonl(
     if record_count == 0:
         raise HTTPException(status_code=404, detail=f"No records in JSONL: {path}")
 
-    from src.api.routes.ingest import _OnnxSparseEmbedder
-    sparse_embedder = _OnnxSparseEmbedder(embedder)
-    pipeline = IngestionPipeline(
-        embedder=embedder,
-        sparse_embedder=sparse_embedder,
-        vector_store=store,
-        graph_store=state.get("graph_repo"),
-        dedup_cache=state.get("dedup_cache"),
-        dedup_pipeline=state.get("dedup_pipeline"),
-        enable_ingestion_gate=True,
-        enable_term_extraction=True,
-        enable_graphrag=True,
-        term_extractor=state.get("term_extractor"),
-        graphrag_extractor=state.get("graphrag_extractor"),
-    )
+    pipeline = _build_reingest_pipeline(state, embedder, store)
 
     job_id = await create_job(kb_id, record_count)
     task = asyncio.create_task(_stage2_ingest_from_jsonl(job_id, path, pipeline, kb_id))
-
-    async def _finalize(t: asyncio.Task) -> None:
-        try:
-            total_docs, total_chunks, errors = t.result()
-            st = "completed" if total_docs > 0 else "failed"
-            await update_job(job_id, status=st, processed=total_docs, chunks=total_chunks, errors=errors)
-            # Update KB registry counts
-            if total_docs > 0:
-                try:
-                    kb_registry = state.get("kb_registry")
-                    if kb_registry:
-                        await kb_registry.update_counts(kb_id, total_docs, total_chunks)
-                except Exception as _e:
-                    logger.warning("KB count update failed: %s", _e)
-        except Exception as e:
-            await update_job(job_id, status="failed", errors=[str(e)])
-
-    def _safe_finalize_callback(t: asyncio.Task) -> None:
-        try:
-            finalize_task = asyncio.ensure_future(_finalize(t))
-            bg_tasks: set = state.setdefault("_background_tasks", set())
-            bg_tasks.add(finalize_task)
-            finalize_task.add_done_callback(bg_tasks.discard)
-        except RuntimeError:
-            logger.warning("Event loop closed, finalize skipped for job %s", job_id)
-
-    task.add_done_callback(_safe_finalize_callback)
-    bg_tasks: set = state.setdefault("_background_tasks", set())
-    bg_tasks.add(task)
-    task.add_done_callback(bg_tasks.discard)
+    _attach_reingest_callbacks(task, job_id, kb_id, state)
 
     return {
         "success": True,

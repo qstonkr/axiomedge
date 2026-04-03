@@ -234,6 +234,20 @@ class L2SemanticCache(ICacheLayer):
             logger.warning("L2 cache delete error: %s", e)
             return False
 
+    async def _check_and_delete_key(self, redis_key, meta_key: str, meta_value: str) -> bool:
+        """Check if a cached entry matches the metadata filter and delete it."""
+        data = await self._redis.get(redis_key)
+        if not data:
+            return False
+        stored = json.loads(data)
+        val = stored.get("metadata", {}).get(meta_key)
+        if val == meta_value or (
+            isinstance(val, (list, tuple)) and meta_value in val
+        ):
+            await self._redis.delete(redis_key)
+            return True
+        return False
+
     async def invalidate_by_metadata_value(self, meta_key: str, meta_value: str) -> int:
         """Scan and delete entries whose metadata[meta_key] matches."""
         deleted_count = 0
@@ -245,15 +259,7 @@ class L2SemanticCache(ICacheLayer):
                 )
                 for redis_key in keys:
                     try:
-                        data = await self._redis.get(redis_key)
-                        if not data:
-                            continue
-                        stored = json.loads(data)
-                        val = stored.get("metadata", {}).get(meta_key)
-                        if val == meta_value or (
-                            isinstance(val, (list, tuple)) and meta_value in val
-                        ):
-                            await self._redis.delete(redis_key)
+                        if await self._check_and_delete_key(redis_key, meta_key, meta_value):
                             deleted_count += 1
                     except Exception:
                         continue

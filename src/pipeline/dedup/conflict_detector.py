@@ -213,6 +213,50 @@ class OllamaLLMClient(ILLMClient):
             )
 
 
+def _parse_llm_json(response: str) -> dict:
+    """Parse LLM response as JSON, handling markdown fences and fallback regex."""
+    cleaned = response.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        cleaned = "\n".join(
+            line for line in lines
+            if not line.strip().startswith("```")
+        )
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        json_match = re.search(r"\{[\s\S]*\}", response)
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse conflict analysis JSON")
+        return {"has_conflict": False, "conflict_type": "unknown"}
+
+
+def _populate_conflicts(result, conflicts_data: list) -> None:
+    """Parse conflict entries and append to result."""
+    for conflict_data in conflicts_data:
+        try:
+            conflict = ConflictDetail(
+                conflict_type=ConflictType(
+                    conflict_data.get("conflict_type", "factual_conflict")
+                ),
+                severity=ConflictSeverity(
+                    conflict_data.get("severity", "medium")
+                ),
+                description=conflict_data.get("description", ""),
+                doc1_excerpt=conflict_data.get("doc1_excerpt", ""),
+                doc2_excerpt=conflict_data.get("doc2_excerpt", ""),
+                resolution_suggestion=conflict_data.get(
+                    "resolution_suggestion", ""
+                ),
+            )
+            result.conflicts.append(conflict)
+        except ValueError as e:
+            logger.warning("Invalid conflict data: %s", e)
+
+
 class ConflictDetector:
     """LLM-based content conflict detector.
 
@@ -323,52 +367,11 @@ Focus on information that could cause confusion or errors if both documents are 
                 timeout=self.LLM_TIMEOUT_SECONDS,
             )
 
-            # JSON parsing with markdown fence removal
-            cleaned = response.strip()
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                cleaned = "\n".join(
-                    line for line in lines
-                    if not line.strip().startswith("```")
-                )
-
-            try:
-                analysis = json.loads(cleaned)
-            except json.JSONDecodeError:
-                # Fallback: regex extraction for nested JSON
-                json_match = re.search(r"\{[\s\S]*\}", response)
-                if json_match:
-                    try:
-                        analysis = json.loads(json_match.group())
-                    except json.JSONDecodeError:
-                        logger.warning("Failed to parse conflict analysis JSON")
-                        analysis = {"has_conflict": False, "conflict_type": "unknown"}
-                else:
-                    analysis = {"has_conflict": False, "conflict_type": "unknown"}
-
+            analysis = _parse_llm_json(response)
             if analysis:
                 result.has_conflict = analysis.get("has_conflict", False)
                 result.confidence = analysis.get("confidence", 0.0)
-
-                for conflict_data in analysis.get("conflicts", []):
-                    try:
-                        conflict = ConflictDetail(
-                            conflict_type=ConflictType(
-                                conflict_data.get("conflict_type", "factual_conflict")
-                            ),
-                            severity=ConflictSeverity(
-                                conflict_data.get("severity", "medium")
-                            ),
-                            description=conflict_data.get("description", ""),
-                            doc1_excerpt=conflict_data.get("doc1_excerpt", ""),
-                            doc2_excerpt=conflict_data.get("doc2_excerpt", ""),
-                            resolution_suggestion=conflict_data.get(
-                                "resolution_suggestion", ""
-                            ),
-                        )
-                        result.conflicts.append(conflict)
-                    except ValueError as e:
-                        logger.warning("Invalid conflict data: %s", e)
+                _populate_conflicts(result, analysis.get("conflicts", []))
 
         except asyncio.TimeoutError:
             logger.error(

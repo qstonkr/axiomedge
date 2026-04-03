@@ -163,6 +163,16 @@ class OnnxBgeEmbeddingProvider:
         self._tokenizer = AutoTokenizer.from_pretrained(source)
         self._ready = True
 
+    def _check_cache(self, cache_key: str) -> dict[str, Any] | None:
+        """Check LRU cache, return cached result or None."""
+        with self._cache_lock:
+            if cache_key in self._cache:
+                self._cache_hits += 1
+                self._cache.move_to_end(cache_key)
+                return self._cache[cache_key]
+            self._cache_misses += 1
+        return None
+
     def encode(
         self,
         texts: list[str],
@@ -193,12 +203,9 @@ class OnnxBgeEmbeddingProvider:
         # P1: Thread-safe LRU cache for single-text queries (search hot path)
         if len(texts) == 1 and not return_colbert_vecs:
             cache_key = f"{texts[0]}::d={return_dense}::s={return_sparse}"
-            with self._cache_lock:
-                if cache_key in self._cache:
-                    self._cache_hits += 1
-                    self._cache.move_to_end(cache_key)
-                    return self._cache[cache_key]
-                self._cache_misses += 1
+            cached = self._check_cache(cache_key)
+            if cached is not None:
+                return cached
 
         # Tokenize
         encoded = self._tokenizer(

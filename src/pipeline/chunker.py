@@ -119,6 +119,21 @@ class Chunker:
 
         return self._regex_split_sentences(text)
 
+    def _kss_split_with_timeout(self, sub: str, kss) -> list[str]:
+        """Split a sub-segment with KSS using a timeout, falling back to regex."""
+        import concurrent.futures
+
+        try:
+            if self._kss_executor is None:
+                self.__class__._kss_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = self._kss_executor.submit(kss.split_sentences, sub)
+            sentences = future.result(timeout=10)
+            return [s.strip() for s in sentences if s.strip()]
+        except Exception as e:
+            if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):
+                logger.warning("KSS timeout on %d chars, using regex fallback", len(sub))
+            return self._regex_split_sentences(sub)
+
     def _split_sentences_chunked(self, text: str, kss) -> list[str]:
         """Split long text into segments, apply KSS to each segment."""
         # Split by page/slide markers or double newlines
@@ -139,19 +154,7 @@ class Chunker:
                 sub_segs = [seg]
 
             for sub in sub_segs:
-                try:
-                    # Use threading-safe timeout (signal.SIGALRM only works in main thread)
-                    import concurrent.futures
-                    if self._kss_executor is None:
-                        self.__class__._kss_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-                    future = self._kss_executor.submit(kss.split_sentences, sub)
-                    sentences = future.result(timeout=10)  # 10s timeout
-                    all_sentences.extend(s.strip() for s in sentences if s.strip())
-                except Exception as e:
-                    if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):
-                        logger.warning("KSS timeout on %d chars, using regex fallback", len(sub))
-                    # Fallback to regex for this segment
-                    all_sentences.extend(self._regex_split_sentences(sub))
+                all_sentences.extend(self._kss_split_with_timeout(sub, kss))
 
         return all_sentences
 
@@ -177,6 +180,15 @@ class Chunker:
 
         return self._group_sentences(sentences)
 
+    def _flush_oversized_paragraph(self, para: str, chunks: list[str]) -> str:
+        """Handle a paragraph that exceeds max_chunk_chars by sentence splitting."""
+        if len(para) > self._max_chunk_chars:
+            sentences = self.split_sentences(para)
+            sub_result = self._group_sentences(sentences)
+            chunks.extend(sub_result.chunks)
+            return ""
+        return para
+
     def _semantic_chunk(self, text: str) -> ChunkResult:
         """Paragraph-aware semantic chunking.
 
@@ -195,14 +207,7 @@ class Chunker:
             if len(current_chunk) + len(para) + 2 > self._max_chunk_chars:
                 if current_chunk:
                     chunks.append(current_chunk)
-                # If a single paragraph exceeds max, further split by sentences
-                if len(para) > self._max_chunk_chars:
-                    sentences = self.split_sentences(para)
-                    sub_result = self._group_sentences(sentences)
-                    chunks.extend(sub_result.chunks)
-                    current_chunk = ""
-                else:
-                    current_chunk = para
+                current_chunk = self._flush_oversized_paragraph(para, chunks)
             else:
                 current_chunk = f"{current_chunk}\n\n{para}" if current_chunk else para
 

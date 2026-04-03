@@ -64,6 +64,40 @@ def _read_source_attr(source: Any, name: str, default: Any = None) -> Any:
     return getattr(source, name, default)
 
 
+def _build_citation_entry(idx: int, citation: dict[str, Any]) -> CitationEntry:
+    """Build a single CitationEntry from a response citation dict."""
+    ref = str(citation.get("ref") or idx)
+    document_name = str(citation.get("document_name") or f"문서 {idx}")
+    source_uri = citation.get("url") or citation.get("source_uri")
+    relevance = _safe_float(
+        citation.get("relevance_score")
+        if "relevance_score" in citation
+        else citation.get("score")
+    )
+    return CitationEntry(
+        index=idx,
+        ref=ref,
+        document_name=document_name,
+        kb_name=(str(citation.get("kb_name")).strip() or None)
+        if citation.get("kb_name") is not None
+        else None,
+        source_uri=str(source_uri).strip() if source_uri else None,
+        relevance_score=relevance,
+        is_stale=bool(citation.get("is_stale", False)),
+        freshness_warning=(
+            str(citation.get("freshness_warning")).strip() or None
+            if citation.get("freshness_warning") is not None
+            else None
+        ),
+        days_since_update=_safe_int(citation.get("days_since_update")),
+        updated_at=(
+            str(citation.get("updated_at")).strip() or None
+            if citation.get("updated_at") is not None
+            else None
+        ),
+    )
+
+
 class CitationFormatter:
     """Normalize and render citations with a single output convention."""
 
@@ -72,41 +106,7 @@ class CitationFormatter:
     @classmethod
     def from_response_citations(cls, citations: list[dict[str, Any]]) -> list[CitationEntry]:
         """Normalize TieredResponse citation dictionaries."""
-        entries: list[CitationEntry] = []
-        for idx, citation in enumerate(citations, start=1):
-            ref = str(citation.get("ref") or idx)
-            document_name = str(citation.get("document_name") or f"문서 {idx}")
-            source_uri = citation.get("url") or citation.get("source_uri")
-            relevance = _safe_float(
-                citation.get("relevance_score")
-                if "relevance_score" in citation
-                else citation.get("score")
-            )
-            entries.append(
-                CitationEntry(
-                    index=idx,
-                    ref=ref,
-                    document_name=document_name,
-                    kb_name=(str(citation.get("kb_name")).strip() or None)
-                    if citation.get("kb_name") is not None
-                    else None,
-                    source_uri=str(source_uri).strip() if source_uri else None,
-                    relevance_score=relevance,
-                    is_stale=bool(citation.get("is_stale", False)),
-                    freshness_warning=(
-                        str(citation.get("freshness_warning")).strip() or None
-                        if citation.get("freshness_warning") is not None
-                        else None
-                    ),
-                    days_since_update=_safe_int(citation.get("days_since_update")),
-                    updated_at=(
-                        str(citation.get("updated_at")).strip() or None
-                        if citation.get("updated_at") is not None
-                        else None
-                    ),
-                )
-            )
-        return entries
+        return [_build_citation_entry(idx, c) for idx, c in enumerate(citations, start=1)]
 
     @classmethod
     def from_sources(cls, sources: Iterable[Any]) -> list[CitationEntry]:

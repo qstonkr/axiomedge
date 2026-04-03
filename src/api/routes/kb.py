@@ -389,6 +389,54 @@ async def admin_kb_stats(kb_id: str):
     }
 
 
+async def _scroll_kb_documents(
+    qdrant_url: str, collection_name: str, max_docs: int,
+) -> dict[str, dict]:
+    """Scroll through Qdrant points and collect unique documents."""
+    import httpx
+
+    docs: dict[str, dict] = {}
+    offset = None
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        while len(docs) < max_docs:
+            body: dict[str, Any] = {
+                "limit": 100,
+                "with_payload": ["doc_id", "document_name", "source_type", "quality_tier",
+                                 "quality_score", "owner", "l1_category", "ingested_at", "last_modified"],
+                "with_vector": False,
+            }
+            if offset:
+                body["offset"] = offset
+            resp = await client.post(f"{qdrant_url}/collections/{collection_name}/points/scroll", json=body)
+            if resp.status_code != 200:
+                break
+            data = resp.json().get("result", {})
+            points = data.get("points", [])
+            if not points:
+                break
+            for p in points:
+                pay = p["payload"]
+                did = pay.get("doc_id", "")
+                if did and did not in docs:
+                    docs[did] = {
+                        "doc_id": did,
+                        "title": pay.get("document_name", ""),
+                        "source_type": pay.get("source_type", "file"),
+                        "quality_tier": pay.get("quality_tier", ""),
+                        "quality_score": pay.get("quality_score", 0),
+                        "owner": pay.get("owner", ""),
+                        "l1_category": pay.get("l1_category", ""),
+                        "updated_at": pay.get("last_modified", pay.get("ingested_at", "")),
+                        "status": "active",
+                    }
+            offset = data.get("next_page_offset")
+            if not offset:
+                break
+
+    return docs
+
+
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/kb/{kb_id}/documents
 # ---------------------------------------------------------------------------
@@ -399,8 +447,6 @@ async def admin_kb_documents(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     """List KB documents from Qdrant (unique doc_ids with metadata)."""
-    import httpx
-
     state = _get_state()
     collections = state.get("qdrant_collections")
     qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
@@ -410,44 +456,7 @@ async def admin_kb_documents(
 
     try:
         collection_name = collections.get_collection_name(kb_id) if collections else f"kb_{kb_id}"
-        docs: dict[str, dict] = {}
-        offset = None
-
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            while len(docs) < page * page_size + page_size:
-                body: dict[str, Any] = {
-                    "limit": 100,
-                    "with_payload": ["doc_id", "document_name", "source_type", "quality_tier",
-                                     "quality_score", "owner", "l1_category", "ingested_at", "last_modified"],
-                    "with_vector": False,
-                }
-                if offset:
-                    body["offset"] = offset
-                resp = await client.post(f"{qdrant_url}/collections/{collection_name}/points/scroll", json=body)
-                if resp.status_code != 200:
-                    break
-                data = resp.json().get("result", {})
-                points = data.get("points", [])
-                if not points:
-                    break
-                for p in points:
-                    pay = p["payload"]
-                    did = pay.get("doc_id", "")
-                    if did and did not in docs:
-                        docs[did] = {
-                            "doc_id": did,
-                            "title": pay.get("document_name", ""),
-                            "source_type": pay.get("source_type", "file"),
-                            "quality_tier": pay.get("quality_tier", ""),
-                            "quality_score": pay.get("quality_score", 0),
-                            "owner": pay.get("owner", ""),
-                            "l1_category": pay.get("l1_category", ""),
-                            "updated_at": pay.get("last_modified", pay.get("ingested_at", "")),
-                            "status": "active",
-                        }
-                offset = data.get("next_page_offset")
-                if not offset:
-                    break
+        docs = await _scroll_kb_documents(qdrant_url, collection_name, page * page_size + page_size)
 
         all_docs = list(docs.values())
         start = (page - 1) * page_size

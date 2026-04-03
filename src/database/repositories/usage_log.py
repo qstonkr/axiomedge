@@ -74,6 +74,26 @@ class UsageLogRepository(BaseRepository):
                 "total": total,
             }
 
+    @staticmethod
+    def _compute_context_averages(contexts) -> tuple[float, float]:
+        """Parse context JSON strings and compute average results/time."""
+        total_chunks_sum = 0
+        time_sum = 0.0
+        parsed_count = 0
+        for ctx_str in contexts:
+            try:
+                ctx = json.loads(ctx_str) if isinstance(ctx_str, str) else {}
+                if "total_chunks" in ctx:
+                    total_chunks_sum += ctx["total_chunks"]
+                    parsed_count += 1
+                if "search_time_ms" in ctx:
+                    time_sum += ctx["search_time_ms"]
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if parsed_count > 0:
+            return round(total_chunks_sum / parsed_count, 1), round(time_sum / parsed_count, 1)
+        return 0.0, 0.0
+
     async def get_analytics(self, days: int = 30) -> dict[str, Any]:
         """Aggregated analytics for the given period."""
         async with self._session_maker() as session:
@@ -132,7 +152,6 @@ class UsageLogRepository(BaseRepository):
             ]
 
             # Average results per query - parse from context JSON
-            # We compute this in Python to avoid DB-specific JSON functions
             avg_results = 0.0
             avg_time_ms = 0.0
             if total_searches > 0:
@@ -143,24 +162,7 @@ class UsageLogRepository(BaseRepository):
                 )
                 sample_result = await session.execute(sample_stmt)
                 contexts = sample_result.scalars().all()
-
-                total_chunks_sum = 0
-                time_sum = 0.0
-                parsed_count = 0
-                for ctx_str in contexts:
-                    try:
-                        ctx = json.loads(ctx_str) if isinstance(ctx_str, str) else {}
-                        if "total_chunks" in ctx:
-                            total_chunks_sum += ctx["total_chunks"]
-                            parsed_count += 1
-                        if "search_time_ms" in ctx:
-                            time_sum += ctx["search_time_ms"]
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-
-                if parsed_count > 0:
-                    avg_results = round(total_chunks_sum / parsed_count, 1)
-                    avg_time_ms = round(time_sum / parsed_count, 1)
+                avg_results, avg_time_ms = self._compute_context_averages(contexts)
 
             return {
                 "total_searches": total_searches,

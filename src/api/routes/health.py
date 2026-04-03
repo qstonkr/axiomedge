@@ -7,10 +7,9 @@ from src.api.app import _get_state
 router = APIRouter(tags=["Health"])
 
 
-@router.get("/health")
-async def health():
-    state = _get_state()
-    checks = {}
+async def _check_services(state) -> dict[str, bool]:
+    """Run health checks for all backend services."""
+    checks: dict[str, bool] = {}
 
     # Qdrant
     try:
@@ -80,6 +79,13 @@ async def health():
     except Exception:
         checks["paddleocr"] = False
 
+    return checks
+
+
+@router.get("/health")
+async def health():
+    state = _get_state()
+    checks = await _check_services(state)
     healthy = checks.get("qdrant", False) and checks.get("embedding", False)
     status = "healthy" if healthy else "degraded"
     return {"status": status, "checks": checks}

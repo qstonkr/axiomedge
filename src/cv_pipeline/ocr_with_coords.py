@@ -92,20 +92,27 @@ class OCRWithCoords:
             if not isinstance(ocr_lines, list):
                 return []
             for line in ocr_lines:
-                if not isinstance(line, (list, tuple)) or len(line) < 2:
-                    continue
-                poly_raw = line[0]
-                text_info = line[1]
-                if not isinstance(text_info, (list, tuple)) or len(text_info) < 2:
-                    continue
-                text = str(text_info[0]) if text_info[0] else ""
-                conf = float(text_info[1]) if text_info[1] else 0.0
-                if not text or not isinstance(poly_raw, (list, tuple)) or len(poly_raw) < 4:
-                    continue
-                polygon = [[float(p[0]), float(p[1])] for p in poly_raw[:4]]
-                cx = sum(p[0] for p in polygon) / 4
-                cy = sum(p[1] for p in polygon) / 4
-                boxes.append(OCRBox(text=text, polygon=polygon, confidence=conf, center=(cx, cy)))
+                box = self._parse_legacy_line(line)
+                if box is not None:
+                    boxes.append(box)
         except Exception as exc:
             logger.warning("Legacy OCR parsing failed: %s", exc)
         return boxes
+
+    @staticmethod
+    def _parse_legacy_line(line) -> OCRBox | None:
+        """Parse a single legacy OCR line into an OCRBox, or None."""
+        if not isinstance(line, (list, tuple)) or len(line) < 2:
+            return None
+        poly_raw = line[0]
+        text_info = line[1]
+        if not isinstance(text_info, (list, tuple)) or len(text_info) < 2:
+            return None
+        text = str(text_info[0]) if text_info[0] else ""
+        conf = float(text_info[1]) if text_info[1] else 0.0
+        if not text or not isinstance(poly_raw, (list, tuple)) or len(poly_raw) < 4:
+            return None
+        polygon = [[float(p[0]), float(p[1])] for p in poly_raw[:4]]
+        cx = sum(p[0] for p in polygon) / 4
+        cy = sum(p[1] for p in polygon) / 4
+        return OCRBox(text=text, polygon=polygon, confidence=conf, center=(cx, cy))

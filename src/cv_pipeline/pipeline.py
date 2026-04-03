@@ -488,25 +488,7 @@ class CVPipeline:
                 })
 
         # edge -> shape mapping for relationships + process_steps
-        relationships = []
-        process_steps = []
-        step_counter = 1
-        for edge in cv_result.edges:
-            src = edge.source_shape_idx
-            tgt = edge.target_shape_idx
-            if src is not None and tgt is not None and src in shape_names and tgt in shape_names:
-                relationships.append({
-                    "source": shape_names[src],
-                    "target": shape_names[tgt],
-                    "type": "CONNECTS_TO",
-                    "label": "",
-                })
-                if edge.has_arrowhead:
-                    process_steps.append({
-                        "step": step_counter,
-                        "action": f"{shape_names[src]} \u2192 {shape_names[tgt]}",
-                    })
-                    step_counter += 1
+        relationships, process_steps = self._edges_to_relationships(cv_result.edges, shape_names)
 
         if process_steps:
             image_type = "flowchart"
@@ -523,6 +505,32 @@ class CVPipeline:
             "process_steps": process_steps,
             "tags": [],
         }
+
+    @staticmethod
+    def _edges_to_relationships(
+        edges, shape_names: dict[int, str],
+    ) -> tuple[list[dict], list[dict]]:
+        """Convert edges to relationship and process step lists."""
+        relationships = []
+        process_steps = []
+        step_counter = 1
+        for edge in edges:
+            src = edge.source_shape_idx
+            tgt = edge.target_shape_idx
+            if src is not None and tgt is not None and src in shape_names and tgt in shape_names:
+                relationships.append({
+                    "source": shape_names[src],
+                    "target": shape_names[tgt],
+                    "type": "CONNECTS_TO",
+                    "label": "",
+                })
+                if edge.has_arrowhead:
+                    process_steps.append({
+                        "step": step_counter,
+                        "action": f"{shape_names[src]} \u2192 {shape_names[tgt]}",
+                    })
+                    step_counter += 1
+        return relationships, process_steps
 
     def _estimate_confidence(
         self, quality: SignalQuality, cv_result: CVResult

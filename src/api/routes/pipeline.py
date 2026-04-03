@@ -367,6 +367,21 @@ async def list_l1_categories():
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/categories/stats
 # ---------------------------------------------------------------------------
+def _extract_kb_ids(raw_names: list[str], collections) -> list[str]:
+    """Extract and deduplicate KB IDs from collection names."""
+    prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
+    kb_ids = []
+    for name in raw_names:
+        if name.endswith("__live"):
+            kb_id = name[len(prefix):-len("__live")] if name.startswith(prefix) else name
+        elif name.startswith(prefix):
+            kb_id = name[len(prefix):]
+        else:
+            continue
+        kb_ids.append(kb_id)
+    return sorted(set(kb_ids))
+
+
 @router.get("/categories/stats")
 async def get_l1_stats():
     """Get L1 category stats aggregated from Qdrant facet API."""
@@ -379,20 +394,7 @@ async def get_l1_stats():
                 "kb_breakdown": []}
 
     try:
-        # Discover all KB collections
-        raw_names = await collections.get_existing_collection_names()
-        prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
-        kb_ids = []
-        for name in raw_names:
-            if name.endswith("__live"):
-                kb_id = name[len(prefix):-len("__live")] if name.startswith(prefix) else name
-            elif name.startswith(prefix):
-                kb_id = name[len(prefix):]
-            else:
-                continue
-            kb_ids.append(kb_id)
-        # Deduplicate (live alias + base collection may resolve to same kb_id)
-        kb_ids = sorted(set(kb_ids))
+        kb_ids = _extract_kb_ids(await collections.get_existing_collection_names(), collections)
 
         # Aggregate l1_category facets across all KBs
         l1_totals: dict[str, int] = {}

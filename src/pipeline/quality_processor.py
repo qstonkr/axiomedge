@@ -389,42 +389,32 @@ def _calculate_freshness_status(
         return "archived"
 
 
+def _clean_owner_name(raw: str) -> str | None:
+    """Clean a single raw owner name, returning None if invalid."""
+    name = raw.strip()
+    if re.match(r"Unknown User \([^)]+\)", name):
+        return None
+    if "/" in name:
+        name = name.split("/")[0].strip()
+    if name.endswith("M") and len(name) > 1:
+        name = name[:-1]
+    for pattern in SKIP_OWNER_PATTERNS:
+        if re.search(pattern, name, re.IGNORECASE):
+            return None
+    if re.match(r"^[가-힣]{2,4}$", name) or re.match(r"^[A-Za-z]{2,20}$", name):
+        return name
+    return None
+
+
 def _normalize_owners(raw_names: list[str]) -> list[str]:
     """소유자 이름 정규화."""
     normalized = []
-
     for raw in raw_names:
         if not raw:
             continue
-
-        name = raw.strip()
-
-        # Unknown User 패턴 제거
-        if re.match(r"Unknown User \([^)]+\)", name):
-            continue
-
-        # 슬래시 분리
-        if "/" in name:
-            name = name.split("/")[0].strip()
-
-        # M 접미사 제거
-        if name.endswith("M") and len(name) > 1:
-            name = name[:-1]
-
-        # 제외 패턴 체크
-        skip = False
-        for pattern in SKIP_OWNER_PATTERNS:
-            if re.search(pattern, name, re.IGNORECASE):
-                skip = True
-                break
-
-        if skip:
-            continue
-
-        # 유효한 이름 패턴 (한글 2-4자 또는 영문 2-20자)
-        if re.match(r"^[가-힣]{2,4}$", name) or re.match(r"^[A-Za-z]{2,20}$", name):
+        name = _clean_owner_name(raw)
+        if name:
             normalized.append(name)
-
     return normalized
 
 

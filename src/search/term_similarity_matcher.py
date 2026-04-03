@@ -35,22 +35,21 @@ _PARTICLES_LONG = ["에서", "으로", "까지", "부터", "처럼", "같이", "
 _PARTICLES_SHORT = ["가", "를", "에", "의", "는", "은", "도", "와", "과", "이", "로", "만", "서"]
 
 
+def _try_strip_particle(term: str, particles: list[str]) -> tuple[str, bool]:
+    """Try to strip one trailing particle from the given list."""
+    for p in particles:
+        if term.endswith(p) and len(term) > len(p) + 2:
+            return term[: -len(p)], True
+    return term, False
+
+
 def _strip_particles(term: str) -> str:
     """한국어 trailing 조사 제거."""
     changed = True
     while changed:
-        changed = False
-        for p in _PARTICLES_LONG:
-            if term.endswith(p) and len(term) > len(p) + 2:
-                term = term[: -len(p)]
-                changed = True
-                break
+        term, changed = _try_strip_particle(term, _PARTICLES_LONG)
         if not changed:
-            for p in _PARTICLES_SHORT:
-                if term.endswith(p) and len(term) > len(p) + 2:
-                    term = term[: -len(p)]
-                    changed = True
-                    break
+            term, changed = _try_strip_particle(term, _PARTICLES_SHORT)
     return term
 
 
@@ -139,6 +138,33 @@ class TermSimilarityMatcher:
         self._ngram_index: dict[str, list[int]] = {}  # n-gram -> precomputed indices
         self._loaded = False
 
+    def _precompute_term(self, t) -> _PrecomputedStd:
+        """Pre-compute normalized forms, n-grams, and tokens for a standard term."""
+        normalized = TermNormalizer.normalize_for_comparison(t.term)
+        if normalized:
+            self._normalized_lookup[normalized] = t
+
+        normalized_ko = ""
+        if t.term_ko:
+            normalized_ko = TermNormalizer.normalize_for_comparison(t.term_ko)
+            if normalized_ko:
+                self._normalized_lookup[normalized_ko] = t
+
+        ngrams = self._scorer._ngrams(normalized)
+        ngrams_ko = self._scorer._ngrams(normalized_ko) if normalized_ko else set()
+        tokens = _tokenize(t.term)
+        if t.term_ko:
+            tokens |= _tokenize(t.term_ko)
+
+        return _PrecomputedStd(
+            term=t,
+            normalized=normalized,
+            normalized_ko=normalized_ko,
+            ngrams=ngrams,
+            ngrams_ko=ngrams_ko,
+            tokens=tokens,
+        )
+
     def load_standard_terms(self, terms: list[Any]) -> None:
         """표준 용어를 메모리 캐시로 로드.
 
@@ -156,34 +182,11 @@ class TermSimilarityMatcher:
         self._ngram_index = {}
 
         for idx, t in enumerate(terms):
-            normalized = TermNormalizer.normalize_for_comparison(t.term)
-            if normalized:
-                self._normalized_lookup[normalized] = t
-
-            normalized_ko = ""
-            if t.term_ko:
-                normalized_ko = TermNormalizer.normalize_for_comparison(t.term_ko)
-                if normalized_ko:
-                    self._normalized_lookup[normalized_ko] = t
-
-            # 사전 계산: n-gram + 토큰
-            ngrams = self._scorer._ngrams(normalized)
-            ngrams_ko = self._scorer._ngrams(normalized_ko) if normalized_ko else set()
-            tokens = _tokenize(t.term)
-            if t.term_ko:
-                tokens |= _tokenize(t.term_ko)
-
-            self._precomputed.append(_PrecomputedStd(
-                term=t,
-                normalized=normalized,
-                normalized_ko=normalized_ko,
-                ngrams=ngrams,
-                ngrams_ko=ngrams_ko,
-                tokens=tokens,
-            ))
+            pc = self._precompute_term(t)
+            self._precomputed.append(pc)
 
             # n-gram 역색인 구축
-            for ng in ngrams | ngrams_ko:
+            for ng in pc.ngrams | pc.ngrams_ko:
                 if ng not in self._ngram_index:
                     self._ngram_index[ng] = []
                 self._ngram_index[ng].append(idx)

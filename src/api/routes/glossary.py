@@ -803,6 +803,35 @@ async def remove_synonym(term_id: str, synonym: str):
         503: {"description": "No DB connection"},
     },
 )
+async def _approve_single_synonym(repo, syn_id: str, errors: list[str]) -> bool:
+    """Approve a single synonym record. Returns True if approved."""
+    syn_record = await repo.get_by_id(syn_id)
+    if not syn_record:
+        errors.append(f"{syn_id}: not found")
+        return False
+    base_term_id = syn_record.get("related_terms", [None])[0] if syn_record.get("related_terms") else None
+    synonym_text = syn_record.get("term", "")
+    if base_term_id:
+        base_term = await repo.get_by_id(base_term_id)
+        if base_term:
+            existing_synonyms = base_term.get("synonyms", [])
+            if synonym_text and synonym_text not in existing_synonyms:
+                existing_synonyms.append(synonym_text)
+            await repo.save({
+                "id": base_term_id,
+                "kb_id": base_term["kb_id"],
+                "term": base_term["term"],
+                "synonyms": existing_synonyms,
+            })
+    await repo.save({
+        "id": syn_id,
+        "kb_id": syn_record["kb_id"],
+        "term": syn_record["term"],
+        "status": "approved",
+    })
+    return True
+
+
 async def approve_discovered_synonyms(body: dict[str, Any]):
     """Approve one or more discovered synonym candidates.
 
@@ -822,33 +851,9 @@ async def approve_discovered_synonyms(body: dict[str, Any]):
     errors: list[str] = []
     for syn_id in synonym_ids:
         try:
-            syn_record = await repo.get_by_id(syn_id)
-            if not syn_record:
-                errors.append(f"{syn_id}: not found")
-                continue
-            base_term_id = syn_record.get("related_terms", [None])[0] if syn_record.get("related_terms") else None
-            synonym_text = syn_record.get("term", "")
-            if base_term_id:
-                # Add synonym to the base term
-                base_term = await repo.get_by_id(base_term_id)
-                if base_term:
-                    existing_synonyms = base_term.get("synonyms", [])
-                    if synonym_text and synonym_text not in existing_synonyms:
-                        existing_synonyms.append(synonym_text)
-                    await repo.save({
-                        "id": base_term_id,
-                        "kb_id": base_term["kb_id"],
-                        "term": base_term["term"],
-                        "synonyms": existing_synonyms,
-                    })
-            # Mark synonym record as approved
-            await repo.save({
-                "id": syn_id,
-                "kb_id": syn_record["kb_id"],
-                "term": syn_record["term"],
-                "status": "approved",
-            })
-            approved_count += 1
+            ok = await _approve_single_synonym(repo, syn_id, errors)
+            if ok:
+                approved_count += 1
         except Exception as e:
             errors.append(f"{syn_id}: {e}")
 

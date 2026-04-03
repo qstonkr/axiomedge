@@ -88,6 +88,20 @@ CARDINALITY_RULES: dict[str, dict[str, str]] = {
 }
 
 
+async def _apply_ddl_group(
+    client, statements: list[str], results: dict[str, Any], count_key: str, label: str,
+) -> None:
+    """Execute a group of DDL statements, counting successes and logging errors."""
+    for stmt in statements:
+        try:
+            await client.execute_write(stmt.strip())
+            results[count_key] += 1
+        except Exception as e:
+            if _ALREADY_EXISTS not in str(e).lower():
+                results["errors"].append(f"{label} error: {e}")
+                logger.warning("%s creation failed: %s", label, e)
+
+
 async def apply_schema(client: "Neo4jClient") -> dict[str, Any]:
     """Apply graph schema (constraints, indexes, fulltext indexes).
 
@@ -106,35 +120,13 @@ async def apply_schema(client: "Neo4jClient") -> dict[str, Any]:
         "errors": [],
     }
 
-    # Constraints
-    for constraint in GRAPH_CONSTRAINTS:
-        try:
-            await client.execute_write(constraint.strip())
-            results["constraints_created"] += 1
-        except Exception as e:
-            if _ALREADY_EXISTS not in str(e).lower():
-                results["errors"].append(f"Constraint error: {e}")
-                logger.warning("Constraint creation failed: %s", e)
-
-    # Indexes
-    for index in GRAPH_INDEXES:
-        try:
-            await client.execute_write(index.strip())
-            results["indexes_created"] += 1
-        except Exception as e:
-            if _ALREADY_EXISTS not in str(e).lower():
-                results["errors"].append(f"Index error: {e}")
-                logger.warning("Index creation failed: %s", e)
-
-    # Full-text Indexes
-    for ftindex in GRAPH_FULLTEXT_INDEXES:
-        try:
-            await client.execute_write(ftindex.strip())
-            results["fulltext_indexes_created"] += 1
-        except Exception as e:
-            if _ALREADY_EXISTS not in str(e).lower():
-                results["errors"].append(f"Fulltext index error: {e}")
-                logger.warning("Fulltext index creation failed: %s", e)
+    ddl_groups = [
+        (GRAPH_CONSTRAINTS, "constraints_created", "Constraint"),
+        (GRAPH_INDEXES, "indexes_created", "Index"),
+        (GRAPH_FULLTEXT_INDEXES, "fulltext_indexes_created", "Fulltext index"),
+    ]
+    for statements, count_key, label in ddl_groups:
+        await _apply_ddl_group(client, statements, results, count_key, label)
 
     logger.info(
         "Schema applied: %d constraints, %d indexes, %d fulltext indexes",

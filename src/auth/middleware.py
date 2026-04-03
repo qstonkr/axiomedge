@@ -89,32 +89,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             logger.debug("Activity logging failed: %s", e)
 
+    _ACTIVITY_RULES: list[tuple[str, str, str, str]] = [
+        ("/search", "POST", "search", "search"),
+        ("/knowledge/file-upload-ingest", "POST", "upload", "document"),
+        ("/knowledge/ingest", "POST", "ingest", "pipeline"),
+        ("/knowledge/ask", "POST", "query", "rag"),
+        ("/feedback", "POST", "feedback", "feedback"),
+    ]
+
+    _RESOURCE_METHOD_MAP: list[tuple[str, str, dict]] = [
+        ("/glossary", "POST", {"type": "create", "resource": "glossary"}),
+        ("/glossary", "PUT", {"type": "edit", "resource": "glossary"}),
+        ("/glossary", "PATCH", {"type": "edit", "resource": "glossary"}),
+        ("/kb", "POST", {"type": "create", "resource": "kb"}),
+        ("/kb", "PUT", {"type": "edit", "resource": "kb"}),
+        ("/kb", "PATCH", {"type": "edit", "resource": "kb"}),
+    ]
+
     def _classify_activity(self, method: str, path: str) -> dict | None:
         """Classify request into activity type."""
-        # Search
-        if "/search" in path and method == "POST":
-            return {"type": "search", "resource": "search"}
-        # KB operations
-        if "/knowledge/file-upload-ingest" in path and method == "POST":
-            return {"type": "upload", "resource": "document"}
-        if "/knowledge/ingest" in path and method == "POST":
-            return {"type": "ingest", "resource": "pipeline"}
-        if "/knowledge/ask" in path and method == "POST":
-            return {"type": "query", "resource": "rag"}
-        # Glossary
-        if "/glossary" in path:
-            if method == "POST":
-                return {"type": "create", "resource": "glossary"}
-            elif method in ("PUT", "PATCH"):
-                return {"type": "edit", "resource": "glossary"}
-        # Feedback
-        if "/feedback" in path and method == "POST":
-            return {"type": "feedback", "resource": "feedback"}
-        # KB management
-        if "/kb" in path:
-            if method == "POST":
-                return {"type": "create", "resource": "kb"}
-            elif method in ("PUT", "PATCH"):
-                return {"type": "edit", "resource": "kb"}
-
+        for path_pattern, req_method, act_type, resource in self._ACTIVITY_RULES:
+            if path_pattern in path and method == req_method:
+                return {"type": act_type, "resource": resource}
+        for path_pattern, req_method, result in self._RESOURCE_METHOD_MAP:
+            if path_pattern in path and method == req_method:
+                return result
         return None

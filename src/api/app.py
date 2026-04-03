@@ -65,9 +65,8 @@ def _get_state() -> AppState:
     return _state
 
 
-async def _init_database(state: AppState, settings) -> None:
-    """Initialize PostgreSQL + all repositories + domain services."""
-    from src.database.session import create_async_session_factory
+async def _init_db_with_retry(settings) -> None:
+    """Attempt DB init with up to 3 retries."""
     from src.database.init_db import init_database
     import asyncio as _asyncio
 
@@ -83,15 +82,9 @@ async def _init_database(state: AppState, settings) -> None:
             else:
                 raise
 
-    session_factory = create_async_session_factory(
-        db_url,
-        pool_size=settings.database.pool_size,
-        max_overflow=settings.database.max_overflow,
-        echo=settings.database.echo,
-    )
-    state["db_session_factory"] = session_factory
 
-    # Initialize repositories
+def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
+    """Create all repository instances and store in state."""
     from src.database.repositories.kb_registry import KBRegistryRepository
     from src.database.repositories.glossary import GlossaryRepository
     from src.database.repositories.ownership import (
@@ -109,11 +102,6 @@ async def _init_database(state: AppState, settings) -> None:
     from src.database.repositories.search_group import SearchGroupRepository
     from src.database.repositories.usage_log import UsageLogRepository
 
-    # KB Registry uses its own engine (manages RegistryBase tables)
-    kb_registry = KBRegistryRepository(db_url)
-    await kb_registry.initialize()
-    state["kb_registry"] = kb_registry
-
     state["glossary_repo"] = GlossaryRepository(session_factory)
     state["doc_owner_repo"] = DocumentOwnerRepository(session_factory)
     state["topic_owner_repo"] = TopicOwnerRepository(session_factory)
@@ -127,6 +115,30 @@ async def _init_database(state: AppState, settings) -> None:
     state["category_repo"] = CategoryRepository(session_factory)
     state["search_group_repo"] = SearchGroupRepository(session_factory)
     state["usage_log_repo"] = UsageLogRepository(session_factory)
+    return KBRegistryRepository(db_url)
+
+
+async def _init_database(state: AppState, settings) -> None:
+    """Initialize PostgreSQL + all repositories + domain services."""
+    from src.database.session import create_async_session_factory
+
+    db_url = settings.database.database_url
+    await _init_db_with_retry(settings)
+
+    session_factory = create_async_session_factory(
+        db_url,
+        pool_size=settings.database.pool_size,
+        max_overflow=settings.database.max_overflow,
+        echo=settings.database.echo,
+    )
+    state["db_session_factory"] = session_factory
+
+    # Initialize repositories
+    kb_registry = _create_repositories(state, session_factory, db_url)
+
+    # KB Registry uses its own engine (manages RegistryBase tables)
+    await kb_registry.initialize()
+    state["kb_registry"] = kb_registry
 
     # Load L1 categories into ingestion pipeline cache
     try:

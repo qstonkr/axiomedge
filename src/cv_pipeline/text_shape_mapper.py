@@ -37,25 +37,14 @@ class TextShapeMapper:
             if not box.text.strip():
                 continue
 
-            mapped = False
             center = (box.center[0], box.center[1])
-
-            # Map to smallest (innermost) shape instead of first-match
-            best_idx: int | None = None
-            best_area = float("inf")
-            for idx, shape in enumerate(shapes):
-                if self._point_in_shape(center, shape):
-                    if shape.area < best_area:
-                        best_area = shape.area
-                        best_idx = idx
+            best_idx = self._find_smallest_containing_shape(center, shapes)
 
             if best_idx is not None:
                 if best_idx not in shape_texts:
                     shape_texts[best_idx] = []
                 shape_texts[best_idx].append(box.text)
-                mapped = True
-
-            if not mapped:
+            else:
                 unmapped_texts.append(box.text)
 
         logger.debug(
@@ -64,6 +53,19 @@ class TextShapeMapper:
             len(unmapped_texts),
         )
         return shape_texts, unmapped_texts
+
+    def _find_smallest_containing_shape(
+        self, center: tuple[float, float], shapes: list[DetectedShape],
+    ) -> int | None:
+        """Find the smallest shape containing the center point."""
+        best_idx: int | None = None
+        best_area = float("inf")
+        for idx, shape in enumerate(shapes):
+            if self._point_in_shape(center, shape):
+                if shape.area < best_area:
+                    best_area = shape.area
+                    best_idx = idx
+        return best_idx
 
     def _point_in_shape(
         self, point: tuple[float, float], shape: DetectedShape

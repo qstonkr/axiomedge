@@ -44,22 +44,21 @@ _PARTICLES_LONG = ["에서", "으로", "까지", "부터", "처럼", "같이", "
 _PARTICLES_SHORT = ["가", "를", "에", "의", "는", "은", "도", "와", "과", "이", "로", "만", "서"]
 
 
+def _try_strip_particle(term: str, particles: list[str]) -> tuple[str, bool]:
+    """Try to strip one trailing particle from the given list."""
+    for p in particles:
+        if term.endswith(p) and len(term) > len(p) + 2:
+            return term[: -len(p)], True
+    return term, False
+
+
 def _strip_particles(term: str) -> str:
     """한국어 trailing 조사 제거."""
     changed = True
     while changed:
-        changed = False
-        for p in _PARTICLES_LONG:
-            if term.endswith(p) and len(term) > len(p) + 2:
-                term = term[: -len(p)]
-                changed = True
-                break
+        term, changed = _try_strip_particle(term, _PARTICLES_LONG)
         if not changed:
-            for p in _PARTICLES_SHORT:
-                if term.endswith(p) and len(term) > len(p) + 2:
-                    term = term[: -len(p)]
-                    changed = True
-                    break
+            term, changed = _try_strip_particle(term, _PARTICLES_SHORT)
     return term
 
 
@@ -303,6 +302,16 @@ class EnhancedSimilarityMatcher:
     # Layer 1: Normalization + Exact Match
     # =========================================================================
 
+    def _classify_match_type(self, normalized: str, t) -> str:
+        """Determine if a normalized match is exact or synonym."""
+        if not self._config.enable_synonym_expansion:
+            return "exact"
+        t_norm = TermNormalizer.normalize_for_comparison(t.term)
+        t_ko_norm = TermNormalizer.normalize_for_comparison(t.term_ko) if t.term_ko else ""
+        if normalized != t_norm and normalized != t_ko_norm:
+            return "synonym"
+        return "exact"
+
     def _l1_exact_match(self, candidate: str) -> MatchDecision | None:
         """L1: 정규화 후 exact match."""
         if not candidate:
@@ -315,18 +324,11 @@ class EnhancedSimilarityMatcher:
         # Step 1: Exact match
         if normalized in self._normalized_lookup:
             t = self._normalized_lookup[normalized]
-            match_type = "exact"
-            if self._config.enable_synonym_expansion:
-                # 동의어/약어 매칭인지 구분
-                t_norm = TermNormalizer.normalize_for_comparison(t.term)
-                t_ko_norm = TermNormalizer.normalize_for_comparison(t.term_ko) if t.term_ko else ""
-                if normalized != t_norm and normalized != t_ko_norm:
-                    match_type = "synonym"
             return MatchDecision(
                 zone="AUTO_MATCH",
                 matched_term=t,
                 score=1.0,
-                match_type=match_type,
+                match_type=self._classify_match_type(normalized, t),
             )
 
         # Step 2: 조사 제거 후 매칭
@@ -432,6 +434,16 @@ class EnhancedSimilarityMatcher:
     # Layer 2: Multi-Channel Candidate Retrieval
     # =========================================================================
 
+    @staticmethod
+    def _apply_length_penalty(score: float, query_len: int, matched_choice: str) -> float:
+        """Apply length ratio penalty to prevent short-term false positives."""
+        matched_len = len(matched_choice) if matched_choice else 0
+        if matched_len > 0 and query_len > 0:
+            length_ratio = min(matched_len, query_len) / max(matched_len, query_len)
+            if length_ratio < _w.similarity.rapidfuzz_length_ratio_min:
+                score *= max(length_ratio, _w.similarity.rapidfuzz_length_ratio_floor)
+        return score
+
     def _l2_rapidfuzz(
         self, candidate: str, top_k: int = 50, score_cutoff: int = _w.similarity.rapidfuzz_score_cutoff
     ) -> list[tuple[int, float]]:
@@ -463,18 +475,9 @@ class EnhancedSimilarityMatcher:
         query_len = len(normalized)
         for match_str, score, choice_idx in results:
             pc_idx = self._rf_idx_map[choice_idx]
-            score_normalized = score / 100.0
-
-            # Length ratio penalty: WRatio partial matching이 짧은 표준 용어를
-            # 긴 PENDING 용어에 높은 점수로 매칭하는 false positive 방지
-            # e.g., "시"(1글자)가 "본부시스템"(5글자)에 90% 매칭되는 문제
-            matched_choice = self._rf_choices[choice_idx]
-            matched_len = len(matched_choice) if matched_choice else 0
-            if matched_len > 0 and query_len > 0:
-                length_ratio = min(matched_len, query_len) / max(matched_len, query_len)
-                if length_ratio < _w.similarity.rapidfuzz_length_ratio_min:
-                    score_normalized *= max(length_ratio, _w.similarity.rapidfuzz_length_ratio_floor)
-
+            score_normalized = self._apply_length_penalty(
+                score / 100.0, query_len, self._rf_choices[choice_idx],
+            )
             if pc_idx not in seen or score_normalized > seen[pc_idx]:
                 seen[pc_idx] = score_normalized
 

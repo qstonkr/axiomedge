@@ -78,6 +78,26 @@ class GlossaryRepository(BaseRepository):
                 logger.error("Database error saving glossary term", extra={"error": str(e)})
                 raise
 
+    @staticmethod
+    def _prepare_batch_row(item: dict[str, Any], columns: list[str], now) -> tuple:
+        """Normalize a single glossary item into a tuple for bulk insert."""
+        row = dict(item)
+        for field in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
+            val = row.get(field)
+            if val:
+                row[field] = json.dumps(val if isinstance(val, list) else [])
+            else:
+                row[field] = "[]"
+        row.setdefault("related_terms", "[]")
+        row.setdefault("source_kb_ids", "[]")
+        row.setdefault("confidence_score", 0)
+        row.setdefault("occurrence_count", 0)
+        row.setdefault("created_at", now)
+        row.setdefault("updated_at", now)
+        for k in columns:
+            row.setdefault(k, None)
+        return tuple(row.get(c) for c in columns)
+
     async def save_batch(self, items: list[dict[str, Any]]) -> int:
         """Bulk INSERT glossary terms via raw asyncpg connection.
 
@@ -97,24 +117,7 @@ class GlossaryRepository(BaseRepository):
             "created_at", "updated_at",
         ]
 
-        tuples = []
-        for item in items:
-            row = dict(item)
-            for field in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
-                val = row.get(field)
-                if val:
-                    row[field] = json.dumps(val if isinstance(val, list) else [])
-                else:
-                    row[field] = "[]"
-            row.setdefault("related_terms", "[]")
-            row.setdefault("source_kb_ids", "[]")
-            row.setdefault("confidence_score", 0)
-            row.setdefault("occurrence_count", 0)
-            row.setdefault("created_at", now)
-            row.setdefault("updated_at", now)
-            for k in columns:
-                row.setdefault(k, None)
-            tuples.append(tuple(row.get(c) for c in columns))
+        tuples = [self._prepare_batch_row(item, columns, now) for item in items]
 
         if not tuples:
             return 0

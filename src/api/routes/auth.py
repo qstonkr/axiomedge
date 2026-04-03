@@ -709,6 +709,27 @@ async def remove_kb_permission(
 # =============================================================================
 
 
+def _filter_activities_by_date(
+    activities: list[dict], date_from: str | None, date_to: str | None,
+) -> list[dict]:
+    """Filter activity records by date range."""
+    filtered = []
+    for act in activities:
+        created = act.get("created_at", act.get("timestamp", ""))
+        if not created:
+            continue
+        try:
+            act_date = str(created)[:10]  # YYYY-MM-DD
+            if date_from and act_date < date_from:
+                continue
+            if date_to and act_date > date_to:
+                continue
+            filtered.append(act)
+        except (ValueError, TypeError):
+            filtered.append(act)
+    return filtered
+
+
 @router.get("/my-activities")
 async def get_my_activities(
     activity_type: str | None = None,
@@ -731,22 +752,7 @@ async def get_my_activities(
 
     # Filter by date range if provided
     if date_from or date_to:
-
-        filtered = []
-        for act in activities:
-            created = act.get("created_at", act.get("timestamp", ""))
-            if not created:
-                continue
-            try:
-                act_date = str(created)[:10]  # YYYY-MM-DD
-                if date_from and act_date < date_from:
-                    continue
-                if date_to and act_date > date_to:
-                    continue
-                filtered.append(act)
-            except (ValueError, TypeError):
-                filtered.append(act)
-        activities = filtered
+        activities = _filter_activities_by_date(activities, date_from, date_to)
 
     return {"activities": activities}
 

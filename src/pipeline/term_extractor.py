@@ -588,6 +588,45 @@ class TermExtractor:
         )
         return discovered
 
+    async def _save_single_synonym(
+        self, kb_id: str, base_term: str, synonym: str, pattern_type: str,
+    ) -> bool:
+        """Save a single discovered synonym. Returns True if saved."""
+        existing = None
+        get_fn = getattr(self._glossary_repo, "get_by_term", None)
+        if get_fn and callable(get_fn):
+            existing = await get_fn(kb_id, base_term)
+            if not existing:
+                existing = await get_fn("all", base_term)
+
+        if existing:
+            current_synonyms = existing.get("synonyms", [])
+            if synonym not in current_synonyms:
+                current_synonyms.append(synonym)
+                await self._glossary_repo.save({
+                    "id": existing["id"],
+                    "kb_id": existing["kb_id"],
+                    "term": existing["term"],
+                    "synonyms": current_synonyms,
+                })
+                return True
+            return False
+        else:
+            await self._glossary_repo.save({
+                "id": str(uuid.uuid4()),
+                "kb_id": kb_id,
+                "term": synonym,
+                "definition": f"Auto-discovered synonym of '{base_term}' ({pattern_type})",
+                "source": "auto_discovered",
+                "status": "pending",
+                "category": pattern_type,
+                "scope": "kb",
+                "synonyms": [base_term],
+                "related_terms": [],
+                "source_kb_ids": [kb_id],
+            })
+            return True
+
     async def save_discovered_synonyms(
         self,
         discoveries: list[tuple[str, str, str]],
@@ -615,41 +654,8 @@ class TermExtractor:
         saved = 0
         for base_term, synonym, pattern_type in discoveries:
             try:
-                # Check if base term exists in glossary
-                existing = None
-                get_fn = getattr(self._glossary_repo, "get_by_term", None)
-                if get_fn and callable(get_fn):
-                    existing = await get_fn(kb_id, base_term)
-                    if not existing:
-                        existing = await get_fn("all", base_term)
-
-                if existing:
-                    # Add synonym to existing term (only if not already present)
-                    current_synonyms = existing.get("synonyms", [])
-                    if synonym not in current_synonyms:
-                        current_synonyms.append(synonym)
-                        await self._glossary_repo.save({
-                            "id": existing["id"],
-                            "kb_id": existing["kb_id"],
-                            "term": existing["term"],
-                            "synonyms": current_synonyms,
-                        })
-                        saved += 1
-                else:
-                    # Create a new discovered-synonym record for admin review
-                    await self._glossary_repo.save({
-                        "id": str(uuid.uuid4()),
-                        "kb_id": kb_id,
-                        "term": synonym,
-                        "definition": f"Auto-discovered synonym of '{base_term}' ({pattern_type})",
-                        "source": "auto_discovered",
-                        "status": "pending",
-                        "category": pattern_type,
-                        "scope": "kb",
-                        "synonyms": [base_term],
-                        "related_terms": [],
-                        "source_kb_ids": [kb_id],
-                    })
+                ok = await self._save_single_synonym(kb_id, base_term, synonym, pattern_type)
+                if ok:
                     saved += 1
             except Exception as exc:
                 logger.debug(
@@ -739,6 +745,35 @@ class TermExtractor:
 
         return filtered
 
+    async def _load_approved_term_embeddings(self, np) -> bool:
+        """Load and embed approved terms into cache. Returns False if unavailable."""
+        list_fn = getattr(self._glossary_repo, "list_by_kb", None)
+        if not list_fn:
+            return False
+        approved_terms_data = await list_fn(
+            kb_id="all", status="approved", limit=10000, offset=0,
+        )
+        if not approved_terms_data:
+            return False
+        self._approved_terms_cache = [t["term"] for t in approved_terms_data if t.get("term")]
+        if not self._approved_terms_cache:
+            return False
+
+        encode_fn = getattr(self._embedder, "encode", None)
+        if not encode_fn:
+            return False
+        approved_vecs = await asyncio.to_thread(encode_fn, self._approved_terms_cache)
+        if isinstance(approved_vecs, dict):
+            approved_vecs = approved_vecs.get("dense", [])
+        self._approved_vecs_cache = np.array(approved_vecs)
+        norms = np.linalg.norm(self._approved_vecs_cache, axis=1, keepdims=True)
+        self._approved_vecs_cache = self._approved_vecs_cache / np.maximum(norms, 1e-8)
+        logger.info(
+            "Dense similarity filter: loaded %d approved term embeddings",
+            len(self._approved_terms_cache),
+        )
+        return True
+
     async def _filter_by_dense_similarity(
         self,
         candidates: list[ExtractedTerm],
@@ -755,35 +790,9 @@ class TermExtractor:
         try:
             # Load approved terms (cached)
             if self._approved_vecs_cache is None:
-                list_fn = getattr(self._glossary_repo, "list_by_kb", None)
-                if not list_fn:
+                loaded = await self._load_approved_term_embeddings(np)
+                if not loaded:
                     return candidates
-                approved_terms_data = await list_fn(
-                    kb_id="all", status="approved", limit=10000, offset=0,
-                )
-                if not approved_terms_data:
-                    return candidates
-                self._approved_terms_cache = [t["term"] for t in approved_terms_data if t.get("term")]
-                if not self._approved_terms_cache:
-                    return candidates
-
-                # Embed approved terms
-                encode_fn = getattr(self._embedder, "encode", None)
-                if not encode_fn:
-                    return candidates
-                approved_vecs = await asyncio.to_thread(
-                    encode_fn, self._approved_terms_cache,
-                )
-                if isinstance(approved_vecs, dict):
-                    approved_vecs = approved_vecs.get("dense", [])
-                self._approved_vecs_cache = np.array(approved_vecs)
-                # Normalize
-                norms = np.linalg.norm(self._approved_vecs_cache, axis=1, keepdims=True)
-                self._approved_vecs_cache = self._approved_vecs_cache / np.maximum(norms, 1e-8)
-                logger.info(
-                    "Dense similarity filter: loaded %d approved term embeddings",
-                    len(self._approved_terms_cache),
-                )
 
             # Embed candidates
             candidate_terms = [c.term for c in candidates]

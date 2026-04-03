@@ -241,6 +241,46 @@ def _extract_pdf_date(raw: str) -> str:
     return ""
 
 
+def _classify_pdf_page(
+    page, page_num: int, filename: str, doc,
+    has_broken_cmap_fn, is_garbled_fn,
+    texts: list, scanned_pages: list, tables: list, extracted_images: list,
+) -> None:
+    """Classify a single PDF page and extract text/tables/images."""
+    has_broken_fonts = has_broken_cmap_fn(page)
+    text = page.get_text()
+
+    if has_broken_fonts or (text.strip() and is_garbled_fn(text)):
+        scanned_pages.append(page_num + 1)
+        if has_broken_fonts:
+            logger.info("Broken CMap font on page %d of %s, routing to OCR", page_num + 1, filename)
+        elif text.strip():
+            logger.info("Garbled text on page %d of %s, routing to OCR", page_num + 1, filename)
+    elif text.strip():
+        texts.append(f"[Page {page_num + 1}]\n{text}")
+    else:
+        scanned_pages.append(page_num + 1)
+
+    # Table extraction
+    for table in page.find_tables():
+        table_data = table.extract()
+        if table_data:
+            cleaned = [
+                [str(cell) if cell is not None else "" for cell in row]
+                for row in table_data
+            ]
+            tables.append(cleaned)
+
+    # Image extraction
+    for img_info in page.get_images(full=True):
+        xref = img_info[0]
+        img_data = doc.extract_image(xref)
+        if img_data and img_data.get("image"):
+            img_bytes = img_data["image"]
+            if 1024 < len(img_bytes) < 10_000_000:
+                extracted_images.append(img_bytes)
+
+
 def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     """Enhanced PDF parsing with table extraction, scanned page detection, and image OCR."""
     import pymupdf
@@ -339,45 +379,11 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
         return False
 
     for page_num, page in enumerate(doc):
-        # Font-level broken CMap detection (most reliable)
-        has_broken_fonts = _has_broken_cmap_fonts(page)
-        text = page.get_text()
-
-        if has_broken_fonts or (text.strip() and _is_garbled_text(text)):
-            # Broken font CMap or garbled text → route entire page to OCR
-            scanned_pages.append(page_num + 1)
-            if has_broken_fonts:
-                logger.info("Broken CMap font on page %d of %s, routing to OCR", page_num + 1, filename)
-            elif text.strip():
-                logger.info("Garbled text on page %d of %s, routing to OCR", page_num + 1, filename)
-        elif text.strip():
-            texts.append(f"[Page {page_num + 1}]\n{text}")
-        else:
-            # Empty page (scanned) → needs OCR
-            scanned_pages.append(page_num + 1)
-
-        # Table extraction using PyMuPDF find_tables()
-        page_tables = page.find_tables()
-        for table in page_tables:
-            table_data = table.extract()
-            if table_data:
-                # Convert None cells to empty strings
-                cleaned = [
-                    [str(cell) if cell is not None else "" for cell in row]
-                    for row in table_data
-                ]
-                tables.append(cleaned)
-
-        # Image extraction from PDF pages
-        image_list = page.get_images(full=True)
-        for img_info in image_list:
-            xref = img_info[0]
-            img_data = doc.extract_image(xref)
-            if img_data and img_data.get("image"):
-                img_bytes = img_data["image"]
-                # Only process reasonably sized images (> 1KB, < 10MB)
-                if 1024 < len(img_bytes) < 10_000_000:
-                    extracted_images.append(img_bytes)
+        _classify_pdf_page(
+            page, page_num, filename, doc,
+            _has_broken_cmap_fonts, _is_garbled_text,
+            texts, scanned_pages, tables, extracted_images,
+        )
 
     doc.close()
 

@@ -140,6 +140,29 @@ async def verify_document_owner(document_id: str, body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/ownership/stale
 # ---------------------------------------------------------------------------
+def _find_stale_owners(all_owners: list[dict], cutoff) -> list[dict]:
+    """Filter owners whose updated_at is before cutoff."""
+    from datetime import datetime
+
+    stale = []
+    for o in all_owners:
+        updated_str = o.get("updated_at")
+        if not updated_str:
+            continue
+        if isinstance(updated_str, str):
+            updated = datetime.fromisoformat(updated_str)
+        else:
+            updated = updated_str
+        # Normalize timezone awareness for comparison
+        if updated.tzinfo is None:
+            cutoff_cmp = cutoff.replace(tzinfo=None)
+        else:
+            cutoff_cmp = cutoff
+        if updated < cutoff_cmp:
+            stale.append(o)
+    return stale
+
+
 @admin_router.get("/stale")
 async def get_stale_owners(
     kb_id: Annotated[str, Query()],
@@ -153,22 +176,7 @@ async def get_stale_owners(
             from datetime import UTC, datetime, timedelta
             all_owners = await repo.get_by_kb(kb_id)
             cutoff = datetime.now(UTC) - timedelta(days=days_threshold)
-            stale = []
-            for o in all_owners:
-                updated_str = o.get("updated_at")
-                if not updated_str:
-                    continue
-                if isinstance(updated_str, str):
-                    updated = datetime.fromisoformat(updated_str)
-                else:
-                    updated = updated_str
-                # Normalize timezone awareness for comparison
-                if updated.tzinfo is None:
-                    cutoff_cmp = cutoff.replace(tzinfo=None)
-                else:
-                    cutoff_cmp = cutoff
-                if updated < cutoff_cmp:
-                    stale.append(o)
+            stale = _find_stale_owners(all_owners, cutoff)
             return {"stale_owners": stale, "total": len(stale), "kb_id": kb_id, "days_threshold": days_threshold}
         except Exception as e:
             logger.warning("Doc owner repo stale query failed: %s", e)

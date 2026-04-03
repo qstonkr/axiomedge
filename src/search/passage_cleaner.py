@@ -20,6 +20,20 @@ from typing import Any
 _SENTENCE_END_RE = re.compile(r'[.!?。다요음]\s*$')
 
 
+def _trim_trailing_fragment(text: str) -> str:
+    """Remove trailing incomplete fragment if not ending at a sentence boundary."""
+    text = text.rstrip()
+    if len(text) > 15:
+        last_chunk = text[-15:]
+        if not _SENTENCE_END_RE.search(last_chunk):
+            for sep in ('다.', '요.', '음.', '.', '!', '?', '。'):
+                pos = text.rfind(sep)
+                if pos > len(text) - 100 and pos > 0:
+                    text = text[:pos + len(sep)]
+                    break
+    return text
+
+
 def clean_passage(text: str, min_length: int = 10) -> str:
     """Clean a single passage for reranking.
 
@@ -49,15 +63,7 @@ def clean_passage(text: str, min_length: int = 10) -> str:
     text = '\n'.join(deduped)
 
     # 3. Remove trailing incomplete fragment (< 15 chars without sentence end)
-    text = text.rstrip()
-    if len(text) > 15:
-        last_chunk = text[-15:]
-        if not _SENTENCE_END_RE.search(last_chunk):
-            for sep in ('다.', '요.', '음.', '.', '!', '?', '。'):
-                pos = text.rfind(sep)
-                if pos > len(text) - 100 and pos > 0:
-                    text = text[:pos + len(sep)]  # Include full separator
-                    break
+    text = _trim_trailing_fragment(text)
 
     return text
 

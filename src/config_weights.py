@@ -625,30 +625,35 @@ class Weights:
         for section_name, field_overrides in normalized.items():
             if section_name not in self._SECTION_CLASSES:
                 continue
-            cls = self._SECTION_CLASSES[section_name]
-            current = getattr(self, section_name)
-            current_dict = asdict(current)
-            valid_fields = {f.name for f in fields(cls)}
-
-            changes: dict[str, Any] = {}
-            for field_name, new_value in field_overrides.items():
-                if field_name not in valid_fields:
-                    continue
-                old_value = current_dict.get(field_name)
-                # Coerce type to match the dataclass field type
-                expected_type = next(f.type for f in fields(cls) if f.name == field_name)
-                try:
-                    coerced = _coerce_value(new_value, expected_type)
-                except (ValueError, TypeError):
-                    continue
-                changes[field_name] = coerced
-                applied[f"{section_name}.{field_name}"] = {"old": old_value, "new": coerced}
-
-            if changes:
-                merged = {**current_dict, **changes}
-                object.__setattr__(self, section_name, cls(**merged))
+            self._apply_section_overrides(section_name, field_overrides, applied)
 
         return applied
+
+    def _apply_section_overrides(
+        self, section_name: str, field_overrides: dict[str, Any], applied: dict[str, Any],
+    ) -> None:
+        """Apply field overrides to a single weight section."""
+        cls = self._SECTION_CLASSES[section_name]
+        current = getattr(self, section_name)
+        current_dict = asdict(current)
+        valid_fields = {f.name for f in fields(cls)}
+
+        changes: dict[str, Any] = {}
+        for field_name, new_value in field_overrides.items():
+            if field_name not in valid_fields:
+                continue
+            old_value = current_dict.get(field_name)
+            expected_type = next(f.type for f in fields(cls) if f.name == field_name)
+            try:
+                coerced = _coerce_value(new_value, expected_type)
+            except (ValueError, TypeError):
+                continue
+            changes[field_name] = coerced
+            applied[f"{section_name}.{field_name}"] = {"old": old_value, "new": coerced}
+
+        if changes:
+            merged = {**current_dict, **changes}
+            object.__setattr__(self, section_name, cls(**merged))
 
     # ----- Reset -----
 

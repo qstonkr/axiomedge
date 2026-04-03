@@ -53,6 +53,23 @@ ANALYTICAL_PROMPT = _TRG.ANALYTICAL_PROMPT
 ADVISORY_PROMPT = _TRG.ADVISORY_PROMPT
 
 
+def _build_context(chunks: list[dict[str, Any]]) -> tuple[str, list[dict]]:
+    """Build LLM context string and citation entries from search chunks."""
+    context_parts = []
+    citation_entries = []
+    for i, chunk in enumerate(chunks):
+        content = chunk.get("content", "")
+        doc_name = chunk.get("document_name", "Unknown")
+        context_parts.append(f"[{i+1}] ({doc_name})\n{content}")
+        citation_entries.append({
+            "index": i + 1,
+            "document_name": doc_name,
+            "source_uri": chunk.get("source_uri", ""),
+            "score": chunk.get("score", 0),
+        })
+    return "\n\n".join(context_parts), citation_entries
+
+
 class AnswerService:
     """Generate tiered LLM answers based on query type."""
 
@@ -94,20 +111,7 @@ class AnswerService:
             )
 
         # Build context
-        context_parts = []
-        citation_entries = []
-        for i, chunk in enumerate(chunks):
-            content = chunk.get("content", "")
-            doc_name = chunk.get("document_name", "Unknown")
-            context_parts.append(f"[{i+1}] ({doc_name})\n{content}")
-            citation_entries.append({
-                "index": i + 1,
-                "document_name": doc_name,
-                "source_uri": chunk.get("source_uri", ""),
-                "score": chunk.get("score", 0),
-            })
-
-        context = "\n\n".join(context_parts)
+        context, citation_entries = _build_context(chunks)
 
         # Select prompt by query type
         prompt_map = {

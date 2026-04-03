@@ -116,6 +116,22 @@ _COMPOUND_SPLIT_RE = re.compile(r"[a-zA-Z0-9]+|[가-힣]+")
 # QueryExpansionService
 # ---------------------------------------------------------------------------
 
+def _expand_glossary_variants(glossary_term: dict) -> list[str]:
+    """Build expansion variants list based on term_type."""
+    if glossary_term.get("term_type") == "word":
+        all_variants = [glossary_term["term"]]
+        if glossary_term.get("term_ko"):
+            all_variants.append(glossary_term["term_ko"])
+        return [v for v in all_variants if v]
+    # Full expansion: term + synonyms + abbreviations + term_ko
+    all_variants = [glossary_term["term"]]
+    all_variants.extend(glossary_term.get("synonyms", []))
+    all_variants.extend(glossary_term.get("abbreviations", []))
+    if glossary_term.get("term_ko"):
+        all_variants.append(glossary_term["term_ko"])
+    return all_variants
+
+
 class QueryExpansionService:
     """Glossary-based query expansion service.
 
@@ -209,25 +225,7 @@ class QueryExpansionService:
             )
 
         glossary_term = matched_terms[0]
-
-        # Differentiate expansion strategy by term_type:
-        # - "word": Simple 1:1 bidirectional mapping (term <-> term_ko).
-        #   No fuzzy expansion with synonyms/abbreviations.
-        # - "term": Full expansion with synonyms, abbreviations, term_ko.
-        if glossary_term.get("term_type") == "word":
-            all_variants = [glossary_term["term"]]
-            if glossary_term.get("term_ko"):
-                all_variants.append(glossary_term["term_ko"])
-            # Deduplicate: remove the original query term if it's already
-            # present so we get a clean bidirectional mapping.
-            all_variants = [v for v in all_variants if v]
-        else:
-            # Full expansion: term + synonyms + abbreviations + term_ko
-            all_variants = [glossary_term["term"]]
-            all_variants.extend(glossary_term.get("synonyms", []))
-            all_variants.extend(glossary_term.get("abbreviations", []))
-            if glossary_term.get("term_ko"):
-                all_variants.append(glossary_term["term_ko"])
+        all_variants = _expand_glossary_variants(glossary_term)
 
         if len(all_variants) > self._max_expansions:
             all_variants = all_variants[: self._max_expansions]
