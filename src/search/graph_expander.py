@@ -340,7 +340,7 @@ class GraphSearchExpander:
                 )
             return doc_names
         except Exception as e:
-            logger.debug("Person MENTIONED_IN lookup failed: %s", e)
+            logger.warning("Person MENTIONED_IN lookup failed: %s", e)
             return set()
 
     def boost_chunks(
