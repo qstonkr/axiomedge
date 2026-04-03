@@ -25,7 +25,19 @@ QDRANT_URL = "http://localhost:6333"
 ALL_KBS = ["a-ari", "drp", "g-espa", "partnertalk", "hax", "itops_general"]
 QUESTIONS_PER_KB = 50
 
+# KB별 질문 유형 가이드 — 해당 KB의 특성에 맞는 질문을 생성하도록 유도
+KB_CONTEXT = {
+    "a-ari": "이 KB는 GS25 가맹점 계약, 양수도, 폐점, 정산, 경영주 지원 절차 문서입니다. 절차/프로세스/규정/정산 방식을 묻는 질문을 만드세요.",
+    "drp": "이 KB는 가맹 분쟁 관련 법령/지침/조정 문서입니다. 분쟁 원인, 조정답변서 내용, 법적 근거, 해결 절차를 묻는 질문을 만드세요.",
+    "g-espa": "이 KB는 GS25 점포 ESPA 실행보고서(매출 분석, 상권 분석, 경쟁점 비교, 개선 활동)입니다. 특정 점포의 매출/성과/활동 결과를 묻는 질문을 만드세요.",
+    "partnertalk": "이 KB는 GS홈쇼핑 파트너사 문의/답변(상품 등록, 배송, 정산, 시스템 이슈)입니다. 특정 협력사의 문의 내용과 해결 방법을 묻는 질문을 만드세요.",
+    "hax": "이 KB는 GS홈쇼핑 IT개발/운영 주간보고(배포, 장애, 프로젝트 진행, 시스템 운영)입니다. 특정 날짜/담당자의 업무 진행 상황을 묻는 질문을 만드세요.",
+    "itops_general": "이 KB는 GS홈쇼핑 IT운영 문서(API 테스트, 시스템 설정, 배포, 운영 문의)입니다. 특정 시스템/API의 설정값이나 테스트 결과를 묻는 질문을 만드세요.",
+}
+
 PROMPT = """다음 문서 내용을 읽고, 이 문서에서 답변할 수 있는 질문과 정답을 3개 생성하세요.
+
+{kb_context}
 
 문서 제목: {title}
 문서 내용:
@@ -87,10 +99,13 @@ def fetch_quality_chunks(collection: str, limit: int = 20) -> list[dict]:
     return chunks[:limit]
 
 
-def generate_qa_from_chunk(sm_client, chunk: dict) -> list[dict]:
+def generate_qa_from_chunk(sm_client, chunk: dict, kb_id: str = "") -> list[dict]:
     """Generate Q&A pairs from a single chunk using LLM."""
     endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
-    prompt = PROMPT.format(title=chunk["title"], content=chunk["content"][:1500])
+    kb_context = KB_CONTEXT.get(kb_id, "")
+    prompt = PROMPT.format(
+        title=chunk["title"], content=chunk["content"][:1500], kb_context=kb_context,
+    )
 
     try:
         resp = sm_client.invoke_endpoint(
@@ -200,7 +215,7 @@ def run_generate(kb_id: str):
     all_qa: list[dict] = []
 
     for i, chunk in enumerate(chunks):
-        qa_pairs = generate_qa_from_chunk(sm_client, chunk)
+        qa_pairs = generate_qa_from_chunk(sm_client, chunk, kb_id=kb_id)
         all_qa.extend(qa_pairs)
         if (i + 1) % 5 == 0:
             logger.info(f"[{kb_id}] {i+1}/{len(chunks)} chunks processed, {len(all_qa)} Q&As generated")
