@@ -194,12 +194,10 @@ class TestQdrantClientProvider:
         provider.emit_gauge("test", 1.0, tags=[])
         provider.emit_increment("test", tags=[])
 
-    @pytest.mark.asyncio
     async def test_close_no_client(self):
         provider = QdrantClientProvider(config=QdrantConfig())
         await provider.close()  # should not raise
 
-    @pytest.mark.asyncio
     async def test_close_with_client(self):
         provider = QdrantClientProvider(config=QdrantConfig())
         mock_client = AsyncMock()

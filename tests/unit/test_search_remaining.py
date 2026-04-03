@@ -16,7 +16,6 @@ class TestCRAGEvaluator:
         from src.search.crag_evaluator import CRAGRetrievalEvaluator
         self.evaluator = CRAGRetrievalEvaluator()
 
-    @pytest.mark.asyncio
     async def test_evaluate_no_chunks(self):
         result = await self.evaluator.evaluate("test query", [], 100.0)
         assert result.action.value == "incorrect"
@@ -24,7 +23,6 @@ class TestCRAGEvaluator:
         assert result.confidence_score < 0.3
         assert result.source_attribution is False
 
-    @pytest.mark.asyncio
     async def test_evaluate_high_quality_chunks(self):
         chunks = [
             {"score": 0.95, "document_id": "d1", "metadata": {"updated_at": datetime.now(timezone.utc).isoformat()}},
@@ -34,7 +32,6 @@ class TestCRAGEvaluator:
         assert result.confidence_score > 0
         assert result.source_attribution is True
 
-    @pytest.mark.asyncio
     async def test_evaluate_low_quality_chunks(self):
         chunks = [
             {"score": 0.1, "document_id": "d1", "metadata": {}},
@@ -232,7 +229,6 @@ class TestDenseTermIndex:
 # ===========================================================================
 
 class TestGraphSearchExpander:
-    @pytest.mark.asyncio
     async def test_expand_empty_chunks(self):
         from src.search.graph_expander import GraphSearchExpander
         repo = AsyncMock()
@@ -242,7 +238,6 @@ class TestGraphSearchExpander:
         assert result.graph_related_count == 0
         assert result.expanded_source_uris == set()
 
-    @pytest.mark.asyncio
     async def test_expand_no_entities(self):
         from src.search.graph_expander import GraphSearchExpander
         repo = AsyncMock()
@@ -252,7 +247,6 @@ class TestGraphSearchExpander:
         result = await expander.expand("a b c", [{"source_uri": "u1"}])
         assert result.graph_related_count == 0
 
-    @pytest.mark.asyncio
     async def test_expand_with_results(self):
         from src.search.graph_expander import GraphSearchExpander
         repo = AsyncMock()
@@ -299,7 +293,6 @@ class TestGraphSearchExpander:
 
 
 class TestNoOpGraphSearchExpander:
-    @pytest.mark.asyncio
     async def test_expand(self):
         from src.search.graph_expander import NoOpGraphSearchExpander
         expander = NoOpGraphSearchExpander()
@@ -331,7 +324,6 @@ class TestSplitCompoundWords:
 # ===========================================================================
 
 class TestAnswerService:
-    @pytest.mark.asyncio
     async def test_enrich_chitchat(self):
         from src.search.answer_service import AnswerService
         svc = AnswerService(llm_client=None)
@@ -339,7 +331,6 @@ class TestAnswerService:
         assert result.query_type == "chitchat"
         assert "안녕하세요" in result.answer
 
-    @pytest.mark.asyncio
     async def test_enrich_no_chunks(self):
         from src.search.answer_service import AnswerService
         svc = AnswerService(llm_client=None)
@@ -347,7 +338,6 @@ class TestAnswerService:
         assert result.confidence_indicator == "낮음"
         assert result.disclaimer is not None
 
-    @pytest.mark.asyncio
     async def test_enrich_with_chunks_no_llm(self):
         from src.search.answer_service import AnswerService
         svc = AnswerService(llm_client=None)
@@ -358,7 +348,6 @@ class TestAnswerService:
         assert "1건" in result.answer
         assert result.citation_entries is not None
 
-    @pytest.mark.asyncio
     async def test_enrich_with_llm(self):
         from src.search.answer_service import AnswerService
         llm = AsyncMock()
@@ -371,7 +360,6 @@ class TestAnswerService:
         result = await svc.enrich("질문", chunks)
         assert result.answer == "LLM 생성 답변입니다."
 
-    @pytest.mark.asyncio
     async def test_enrich_llm_failure(self):
         from src.search.answer_service import AnswerService
         llm = AsyncMock()
@@ -382,7 +370,6 @@ class TestAnswerService:
         result = await svc.enrich("q", chunks)
         assert "오류" in result.answer
 
-    @pytest.mark.asyncio
     async def test_enrich_analytical_disclaimer(self):
         from src.search.answer_service import AnswerService
         svc = AnswerService(llm_client=None)
@@ -390,7 +377,6 @@ class TestAnswerService:
         result = await svc.enrich("왜 이 시스템이 느린가요?", chunks, query_type_hint="analytical")
         assert result.disclaimer is not None and "추론" in result.disclaimer
 
-    @pytest.mark.asyncio
     async def test_enrich_invalid_type_hint(self):
         from src.search.answer_service import AnswerService
         svc = AnswerService(llm_client=None)

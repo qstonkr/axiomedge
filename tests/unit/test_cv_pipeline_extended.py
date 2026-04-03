@@ -181,7 +181,6 @@ class TestGraphNormalizerExtractFields:
 
 
 class TestGraphNormalizerNormalize:
-    @pytest.mark.asyncio
     async def test_normalize_full_flow(self):
         normalizer = GraphNormalizer()
         cv = CVResult(

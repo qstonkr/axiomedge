@@ -51,19 +51,16 @@ class TestNeo4jClient:
             client = Neo4jClient()
             assert client._auth_disabled is True
 
-    @pytest.mark.asyncio
     async def test_close_no_driver(self):
         client = Neo4jClient()
         await client.close()  # Should not raise
 
-    @pytest.mark.asyncio
     async def test_close_with_driver(self):
         client = Neo4jClient()
         client._driver = AsyncMock()
         await client.close()
         client._driver is None
 
-    @pytest.mark.asyncio
     async def test_health_check_no_driver(self):
         client = Neo4jClient()
         client._driver = None
@@ -72,7 +69,6 @@ class TestNeo4jClient:
             result = await client.health_check()
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_execute_query(self):
         client = Neo4jClient()
         mock_session = AsyncMock()
@@ -98,7 +94,6 @@ class TestNeo4jClient:
         assert len(records) == 1
         assert records[0]["n"] == 1
 
-    @pytest.mark.asyncio
     async def test_execute_write(self):
         client = Neo4jClient()
         mock_session = AsyncMock()
@@ -127,46 +122,38 @@ class TestNeo4jClient:
 # ===========================================================================
 
 class TestNoOpNeo4jClient:
-    @pytest.mark.asyncio
     async def test_connect(self):
         client = NoOpNeo4jClient()
         await client.connect()  # No-op
 
-    @pytest.mark.asyncio
     async def test_close(self):
         client = NoOpNeo4jClient()
         await client.close()
 
-    @pytest.mark.asyncio
     async def test_execute_query(self):
         client = NoOpNeo4jClient()
         result = await client.execute_query("RETURN 1")
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_execute_write(self):
         client = NoOpNeo4jClient()
         result = await client.execute_write("CREATE (n:Test)")
         assert result["nodes_created"] == 0
 
-    @pytest.mark.asyncio
     async def test_execute_batch(self):
         client = NoOpNeo4jClient()
         result = await client.execute_batch([("Q1", None), ("Q2", None)])
         assert len(result) == 2
 
-    @pytest.mark.asyncio
     async def test_health_check(self):
         client = NoOpNeo4jClient()
         assert await client.health_check() is True
 
-    @pytest.mark.asyncio
     async def test_execute_unwind_batch_empty(self):
         client = NoOpNeo4jClient()
         result = await client.execute_unwind_batch("Q", param_name="items", items=[])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_execute_unwind_batch_nonempty(self):
         client = NoOpNeo4jClient()
         result = await client.execute_unwind_batch("Q", param_name="items", items=[{"a": 1}])
@@ -174,13 +161,11 @@ class TestNoOpNeo4jClient:
 
 
 class TestNoOpSession:
-    @pytest.mark.asyncio
     async def test_run(self):
         session = NoOpSession()
         result = await session.run("RETURN 1")
         assert isinstance(result, NoOpResult)
 
-    @pytest.mark.asyncio
     async def test_begin_transaction(self):
         session = NoOpSession()
         tx = await session.begin_transaction()
@@ -188,13 +173,11 @@ class TestNoOpSession:
 
 
 class TestNoOpResult:
-    @pytest.mark.asyncio
     async def test_consume(self):
         result = NoOpResult()
         summary = await result.consume()
         assert summary.counters.nodes_created == 0
 
-    @pytest.mark.asyncio
     async def test_async_iteration(self):
         result = NoOpResult()
         items = []
@@ -223,25 +206,21 @@ class TestEntityResolver:
     def setup_method(self):
         self.resolver = EntityResolver()
 
-    @pytest.mark.asyncio
     async def test_resolve_known_abbreviation(self):
         result = await self.resolver.resolve("k8s", "kb1")
         assert result.canonical_name == "Kubernetes"
         assert result.confidence == 1.0
 
-    @pytest.mark.asyncio
     async def test_resolve_unknown_returns_original(self):
         result = await self.resolver.resolve("my_custom_term", "kb1")
         assert result.canonical_name == "my_custom_term"
         assert result.resolution_stage == ResolutionStage.RULE_BASED
         assert result.confidence == 0.5
 
-    @pytest.mark.asyncio
     async def test_resolve_rule_based(self):
         result = await self.resolver.resolve("pg", "kb1")
         assert result.canonical_name == "PostgreSQL"
 
-    @pytest.mark.asyncio
     async def test_resolve_with_glossary(self):
         glossary = AsyncMock()
         glossary.get_by_term = AsyncMock(return_value=None)
@@ -251,7 +230,6 @@ class TestEntityResolver:
         result = await resolver.resolve("unknown", "kb1")
         assert result.canonical_name == "unknown"
 
-    @pytest.mark.asyncio
     async def test_resolve_with_glossary_match(self):
         term = MagicMock()
         term.term = "Kubernetes"
@@ -264,7 +242,6 @@ class TestEntityResolver:
         assert result.canonical_name == "Kubernetes"
         assert result.resolution_stage == ResolutionStage.GLOSSARY
 
-    @pytest.mark.asyncio
     async def test_resolve_batch(self):
         result = await self.resolver.resolve_batch(
             [("k8s", EntityType.SYSTEM), ("pg", EntityType.SYSTEM)],
@@ -280,13 +257,11 @@ class TestEntityResolver:
 # ===========================================================================
 
 class TestMultiHopSearcher:
-    @pytest.mark.asyncio
     async def test_find_related_no_client(self):
         searcher = MultiHopSearcher()
         result = await searcher.find_related(["test"])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_find_related_with_neo4j(self):
         neo4j = AsyncMock()
         neo4j.execute_query.return_value = [
@@ -298,7 +273,6 @@ class TestMultiHopSearcher:
         assert len(result) == 1
         assert result[0].id == "doc1"
 
-    @pytest.mark.asyncio
     async def test_find_related_with_repository(self):
         repo = AsyncMock()
         repo.find_related_chunks.return_value = {"http://doc1", "http://doc2"}
@@ -308,13 +282,11 @@ class TestMultiHopSearcher:
             result = await searcher.find_related(["test"])
         assert len(result) == 2
 
-    @pytest.mark.asyncio
     async def test_find_experts_no_client(self):
         searcher = MultiHopSearcher()
         result = await searcher.find_experts("k8s")
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_find_experts_with_neo4j(self):
         neo4j = AsyncMock()
         neo4j.execute_query.return_value = [
@@ -326,19 +298,16 @@ class TestMultiHopSearcher:
         assert len(result) == 1
         assert result[0].name == "Alice"
 
-    @pytest.mark.asyncio
     async def test_search_related_no_client(self):
         searcher = MultiHopSearcher()
         result = await searcher.search_related("doc1")
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_get_knowledge_path_no_client(self):
         searcher = MultiHopSearcher()
         result = await searcher.get_knowledge_path("doc1", "doc2")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_knowledge_path_found(self):
         neo4j = AsyncMock()
         neo4j.execute_query.return_value = [
@@ -350,13 +319,11 @@ class TestMultiHopSearcher:
         assert result is not None
         assert result.path_length == 2
 
-    @pytest.mark.asyncio
     async def test_find_similar_documents_no_client(self):
         searcher = MultiHopSearcher()
         result = await searcher.find_similar_documents("doc1")
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_find_similar_documents_with_neo4j(self):
         neo4j = AsyncMock()
         neo4j.execute_query.return_value = [
@@ -390,7 +357,6 @@ class TestGraphSchema:
         assert len(GRAPH_FULLTEXT_INDEXES) > 0
         assert "OWNED_BY" in CARDINALITY_RULES
 
-    @pytest.mark.asyncio
     async def test_apply_schema(self):
         from src.graph.schema import apply_schema
 
@@ -403,7 +369,6 @@ class TestGraphSchema:
         assert "fulltext_indexes_created" in result
         assert client.execute_write.await_count > 0
 
-    @pytest.mark.asyncio
     async def test_apply_schema_handles_already_exists(self):
         from src.graph.schema import apply_schema
 

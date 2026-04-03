@@ -48,14 +48,12 @@ from src.pipeline.quality_processor import QualityTier, QualityMetrics
 # =========================================================================
 
 class TestNoOpEmbedder:
-    @pytest.mark.asyncio
     async def test_default_dimension(self):
         e = NoOpEmbedder()
         vecs = await e.embed_documents(["hello", "world"])
         assert len(vecs) == 2
         assert all(v == 0.0 for v in vecs[0])
 
-    @pytest.mark.asyncio
     async def test_custom_dimension(self):
         e = NoOpEmbedder(dimension=128)
         vecs = await e.embed_documents(["test"])
@@ -63,7 +61,6 @@ class TestNoOpEmbedder:
 
 
 class TestNoOpSparseEmbedder:
-    @pytest.mark.asyncio
     async def test_returns_empty_sparse(self):
         e = NoOpSparseEmbedder()
         result = await e.embed_sparse(["a", "b"])
@@ -72,7 +69,6 @@ class TestNoOpSparseEmbedder:
 
 
 class TestNoOpVectorStore:
-    @pytest.mark.asyncio
     async def test_upsert_noop(self):
         s = NoOpVectorStore()
         # Should not raise
@@ -80,12 +76,10 @@ class TestNoOpVectorStore:
 
 
 class TestNoOpGraphStore:
-    @pytest.mark.asyncio
     async def test_upsert_document_noop(self):
         s = NoOpGraphStore()
         await s.upsert_document("doc1")
 
-    @pytest.mark.asyncio
     async def test_execute_write_noop(self):
         s = NoOpGraphStore()
         await s.execute_write("MATCH (n) RETURN n", {})

@@ -69,7 +69,6 @@ def _make_point(pid: str, score: float, content: str = "test content", **extra_p
 # ---------------------------------------------------------------------------
 
 class TestQueryCandidates:
-    @pytest.mark.asyncio
     async def test_hybrid_search_with_sparse(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -89,7 +88,6 @@ class TestQueryCandidates:
         assert results[0].point_id == "p1"
         assert results[0].score == 0.9
 
-    @pytest.mark.asyncio
     async def test_dense_only_search(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -108,7 +106,6 @@ class TestQueryCandidates:
         assert len(results) == 1
         assert results[0].point_id == "p2"
 
-    @pytest.mark.asyncio
     async def test_score_threshold_filtering(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -127,7 +124,6 @@ class TestQueryCandidates:
         assert len(results) == 1
         assert results[0].point_id == "high"
 
-    @pytest.mark.asyncio
     async def test_filter_conditions(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -144,7 +140,6 @@ class TestQueryCandidates:
         )
         client.query_points.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_filter_with_match_text(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -161,7 +156,6 @@ class TestQueryCandidates:
         )
         client.query_points.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_hybrid_fallback_to_legacy_names(self, engine: QdrantSearchEngine, provider, collection_mgr):
         """When named-vector query fails with non-500 error, retry with legacy names."""
         client = provider._client
@@ -191,7 +185,6 @@ class TestQueryCandidates:
         assert results[0].point_id == "fallback"
         assert call_count == 2
 
-    @pytest.mark.asyncio
     async def test_dense_fallback_to_legacy(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -219,7 +212,6 @@ class TestQueryCandidates:
         assert len(results) == 1
         assert call_count == 2
 
-    @pytest.mark.asyncio
     async def test_server_500_error_raises(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -245,7 +237,6 @@ class TestQueryCandidates:
 # ---------------------------------------------------------------------------
 
 class TestSearch:
-    @pytest.mark.asyncio
     async def test_search_no_projection(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -261,7 +252,6 @@ class TestSearch:
         assert len(results) == 1
         assert results[0].point_id == "s1"
 
-    @pytest.mark.asyncio
     async def test_search_with_projection(self, engine: QdrantSearchEngine, provider, collection_mgr):
         provider.config.retrieval_projection_enabled = True
         client = provider._client
@@ -280,7 +270,6 @@ class TestSearch:
         )
         assert len(results) == 1
 
-    @pytest.mark.asyncio
     async def test_search_empty_results(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -299,7 +288,6 @@ class TestSearch:
 # ---------------------------------------------------------------------------
 
 class TestColBERTRerank:
-    @pytest.mark.asyncio
     async def test_colbert_rerank_no_colbert_vectors(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -314,7 +302,6 @@ class TestColBERTRerank:
         )
         assert len(results) == 1
 
-    @pytest.mark.asyncio
     async def test_colbert_rerank_with_vectors(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -329,7 +316,6 @@ class TestColBERTRerank:
         )
         assert len(results) == 1
 
-    @pytest.mark.asyncio
     async def test_colbert_rerank_with_projection(self, engine: QdrantSearchEngine, provider, collection_mgr):
         provider.config.retrieval_projection_enabled = True
         client = provider._client
@@ -349,7 +335,6 @@ class TestColBERTRerank:
         )
         assert len(results) == 1
 
-    @pytest.mark.asyncio
     async def test_colbert_score_threshold(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -371,12 +356,10 @@ class TestColBERTRerank:
 # ---------------------------------------------------------------------------
 
 class TestHydrateByIds:
-    @pytest.mark.asyncio
     async def test_hydrate_empty(self, engine: QdrantSearchEngine):
         result = await engine.hydrate_by_ids("test", [])
         assert result == {}
 
-    @pytest.mark.asyncio
     async def test_hydrate_returns_map(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))
@@ -389,7 +372,6 @@ class TestHydrateByIds:
         assert "h1" in result
         assert result["h1"].content == "hydrated"
 
-    @pytest.mark.asyncio
     async def test_hydrate_error_returns_empty(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("no alias"))

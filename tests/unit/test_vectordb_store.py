@@ -88,7 +88,6 @@ class TestAdminStatsCache:
 # ---------------------------------------------------------------------------
 
 class TestUpsert:
-    @pytest.mark.asyncio
     async def test_upsert_returns_point_id(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.upsert = AsyncMock()
@@ -102,7 +101,6 @@ class TestUpsert:
         assert pid  # non-empty string
         client.upsert.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_upsert_with_sparse_vector(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.upsert = AsyncMock()
@@ -119,7 +117,6 @@ class TestUpsert:
         point = points[0]
         assert "bge_sparse" in point.vector
 
-    @pytest.mark.asyncio
     async def test_upsert_with_custom_point_id(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.upsert = AsyncMock()
@@ -132,7 +129,6 @@ class TestUpsert:
         )
         assert pid == "my-custom-id"
 
-    @pytest.mark.asyncio
     async def test_upsert_dimension_mismatch_logs_warning(
         self, store: QdrantStoreOperations, provider, caplog
     ):
@@ -154,12 +150,10 @@ class TestUpsert:
 # ---------------------------------------------------------------------------
 
 class TestUpsertBatch:
-    @pytest.mark.asyncio
     async def test_upsert_batch_empty(self, store: QdrantStoreOperations, provider):
         result = await store.upsert_batch(kb_id="test", items=[])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_upsert_batch_valid_items(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.upsert = AsyncMock()
@@ -176,7 +170,6 @@ class TestUpsertBatch:
         assert ids == ["pid-0", "pid-1", "pid-2"]
         client.upsert.assert_awaited()
 
-    @pytest.mark.asyncio
     async def test_upsert_batch_skips_empty_vectors(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.upsert = AsyncMock()
@@ -188,7 +181,6 @@ class TestUpsertBatch:
         ids = await store.upsert_batch(kb_id="test", items=items)
         assert ids == ["good"]
 
-    @pytest.mark.asyncio
     async def test_upsert_batch_all_invalid_returns_empty(self, store: QdrantStoreOperations, provider):
         items = [
             {"content": "bad1", "dense_vector": None},
@@ -197,7 +189,6 @@ class TestUpsertBatch:
         ids = await store.upsert_batch(kb_id="test", items=items)
         assert ids == []
 
-    @pytest.mark.asyncio
     async def test_upsert_batch_with_colbert_and_sparse(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.upsert = AsyncMock()
@@ -219,12 +210,10 @@ class TestUpsertBatch:
 # ---------------------------------------------------------------------------
 
 class TestDelete:
-    @pytest.mark.asyncio
     async def test_delete_by_filter_empty_conditions(self, store: QdrantStoreOperations):
         result = await store.delete_by_filter(kb_id="test", filter_conditions={})
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_delete_by_filter_simple(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete = AsyncMock()
@@ -236,7 +225,6 @@ class TestDelete:
         assert result is True
         client.delete.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_delete_by_filter_with_exclude_ids(self, store: QdrantStoreOperations, provider):
         client = provider._client
         pt1 = SimpleNamespace(id="keep-1")
@@ -252,7 +240,6 @@ class TestDelete:
         assert result is True
         client.delete.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_delete_by_filter_collection_not_found(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete = AsyncMock(side_effect=Exception("Collection doesn't exist"))
@@ -263,7 +250,6 @@ class TestDelete:
         )
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_delete_by_filter_unexpected_error(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete = AsyncMock(side_effect=Exception("Network error"))
@@ -274,7 +260,6 @@ class TestDelete:
         )
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_delete_by_kb(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete_collection = AsyncMock()
@@ -283,7 +268,6 @@ class TestDelete:
         assert result is True
         client.delete_collection.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_delete_by_kb_error(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete_collection = AsyncMock(side_effect=Exception("fail"))
@@ -291,7 +275,6 @@ class TestDelete:
         result = await store.delete_by_kb("test")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_delete_points(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete = AsyncMock()
@@ -299,7 +282,6 @@ class TestDelete:
         result = await store.delete_points("test", ["id1", "id2"])
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_delete_points_error(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.delete = AsyncMock(side_effect=Exception("fail"))
@@ -313,12 +295,10 @@ class TestDelete:
 # ---------------------------------------------------------------------------
 
 class TestFetchByIds:
-    @pytest.mark.asyncio
     async def test_fetch_by_ids_empty(self, store: QdrantStoreOperations):
         result = await store.fetch_by_ids("test", [])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_fetch_by_ids_returns_results(self, store: QdrantStoreOperations, provider, collection_mgr):
         record = SimpleNamespace(
             id="abc", payload={"content": "hello", "kb_id": "test"}, score=None
@@ -332,7 +312,6 @@ class TestFetchByIds:
         assert results[0].point_id == "abc"
         assert results[0].content == "hello"
 
-    @pytest.mark.asyncio
     async def test_fetch_by_ids_error_returns_empty(self, store: QdrantStoreOperations, provider):
         client = provider._client
         client.retrieve = AsyncMock(side_effect=Exception("fail"))
@@ -347,7 +326,6 @@ class TestFetchByIds:
 # ---------------------------------------------------------------------------
 
 class TestCountStatistics:
-    @pytest.mark.asyncio
     async def test_count_returns_value(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.count = AsyncMock(return_value=SimpleNamespace(count=42))
@@ -357,7 +335,6 @@ class TestCountStatistics:
         result = await store.count("test")
         assert result == 42
 
-    @pytest.mark.asyncio
     async def test_count_uses_cache(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.count = AsyncMock(return_value=SimpleNamespace(count=42))
@@ -370,7 +347,6 @@ class TestCountStatistics:
         # Second call should hit cache
         assert client.count.await_count == 1
 
-    @pytest.mark.asyncio
     async def test_count_error_returns_zero(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.count = AsyncMock(side_effect=Exception("fail"))
@@ -380,7 +356,6 @@ class TestCountStatistics:
         result = await store.count("test")
         assert result == 0
 
-    @pytest.mark.asyncio
     async def test_count_distinct_documents(self, store: QdrantStoreOperations, provider, collection_mgr):
         hit1 = SimpleNamespace(value="http://a.com")
         hit2 = SimpleNamespace(value="http://b.com#sec1")
@@ -393,7 +368,6 @@ class TestCountStatistics:
         result = await store.count_distinct_documents("test")
         assert result == 2  # b.com deduped
 
-    @pytest.mark.asyncio
     async def test_count_distinct_documents_facet_error(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.facet = AsyncMock(side_effect=Exception("facet not supported"))
@@ -403,7 +377,6 @@ class TestCountStatistics:
         result = await store.count_distinct_documents("test")
         assert result == 0
 
-    @pytest.mark.asyncio
     async def test_facet_l1_categories(self, store: QdrantStoreOperations, provider, collection_mgr):
         hit1 = SimpleNamespace(value="인프라", count=10)
         hit2 = SimpleNamespace(value="개발", count=5)
@@ -421,7 +394,6 @@ class TestCountStatistics:
 # ---------------------------------------------------------------------------
 
 class TestListDistinctSourceUris:
-    @pytest.mark.asyncio
     async def test_list_via_facet(self, store: QdrantStoreOperations, provider, collection_mgr):
         hit = SimpleNamespace(value="http://a.com")
         client = provider._client
@@ -432,7 +404,6 @@ class TestListDistinctSourceUris:
         result = await store.list_distinct_source_uris("test")
         assert result == ["http://a.com"]
 
-    @pytest.mark.asyncio
     async def test_list_facet_fallback_to_scroll(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.facet = AsyncMock(side_effect=Exception("not supported"))
@@ -450,12 +421,10 @@ class TestListDistinctSourceUris:
 # ---------------------------------------------------------------------------
 
 class TestScrollBySourceUris:
-    @pytest.mark.asyncio
     async def test_scroll_empty_uris(self, store: QdrantStoreOperations):
         result = await store.scroll_by_source_uris("test", [])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_scroll_returns_results(self, store: QdrantStoreOperations, provider, collection_mgr):
         pt = SimpleNamespace(id="p1", payload={"content": "data", "kb_id": "test"})
         client = provider._client
@@ -468,7 +437,6 @@ class TestScrollBySourceUris:
         assert results[0].point_id == "p1"
         assert results[0].score == 0.75
 
-    @pytest.mark.asyncio
     async def test_scroll_error_returns_empty(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.scroll = AsyncMock(side_effect=Exception("fail"))

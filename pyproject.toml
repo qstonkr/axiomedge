@@ -79,7 +79,7 @@ packages = ["src", "cli", "dashboard"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# asyncio_mode = "auto"  # Enable when pytest-asyncio >= 0.21 available
+asyncio_mode = "auto"
 markers = [
     "integration: integration tests requiring running API server",
     "e2e: end-to-end tests requiring running API server and all services",

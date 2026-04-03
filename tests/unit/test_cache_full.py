@@ -111,13 +111,11 @@ class TestICacheLayer:
 
 
 class TestL1InMemoryCache:
-    @pytest.mark.asyncio
     async def test_get_miss(self):
         cache = L1InMemoryCache()
         result = await cache.get("nonexistent")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_set_and_get(self):
         cache = L1InMemoryCache()
         entry = CacheEntry(key="k1", query="q", response="resp")
@@ -127,7 +125,6 @@ class TestL1InMemoryCache:
         assert result.response == "resp"
         assert result.hit_count == 1
 
-    @pytest.mark.asyncio
     async def test_ttl_expiry(self):
         cache = L1InMemoryCache(ttl_seconds=0)
         entry = CacheEntry(key="k1", query="q", response="r")
@@ -138,7 +135,6 @@ class TestL1InMemoryCache:
         result = await cache.get("k1")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_lru_eviction(self):
         cache = L1InMemoryCache(max_size=2)
         await cache.set(CacheEntry(key="a", query="q", response="1"))
@@ -149,19 +145,16 @@ class TestL1InMemoryCache:
         assert await cache.get("b") is not None
         assert await cache.get("c") is not None
 
-    @pytest.mark.asyncio
     async def test_delete_exists(self):
         cache = L1InMemoryCache()
         await cache.set(CacheEntry(key="k", query="q", response="r"))
         assert await cache.delete("k") is True
         assert await cache.get("k") is None
 
-    @pytest.mark.asyncio
     async def test_delete_not_exists(self):
         cache = L1InMemoryCache()
         assert await cache.delete("nope") is False
 
-    @pytest.mark.asyncio
     async def test_delete_by_prefix(self):
         cache = L1InMemoryCache()
         await cache.set(CacheEntry(key="prefix:1", query="q", response="r"))
@@ -171,7 +164,6 @@ class TestL1InMemoryCache:
         assert deleted == 2
         assert await cache.get("other:1") is not None
 
-    @pytest.mark.asyncio
     async def test_invalidate_by_metadata_value(self):
         cache = L1InMemoryCache()
         await cache.set(CacheEntry(key="k1", query="q", response="r", metadata={"kb_id": "kb1"}))
@@ -181,14 +173,12 @@ class TestL1InMemoryCache:
         assert await cache.get("k1") is None
         assert await cache.get("k2") is not None
 
-    @pytest.mark.asyncio
     async def test_invalidate_by_metadata_list_value(self):
         cache = L1InMemoryCache()
         await cache.set(CacheEntry(key="k1", query="q", response="r", metadata={"tags": ["a", "b"]}))
         deleted = await cache.invalidate_by_metadata_value("tags", "a")
         assert deleted == 1
 
-    @pytest.mark.asyncio
     async def test_invalidate_by_metadata_also_removes_expired(self):
         cache = L1InMemoryCache(ttl_seconds=0)
         await cache.set(CacheEntry(key="k1", query="q", response="r", metadata={"x": "y"}))
@@ -197,7 +187,6 @@ class TestL1InMemoryCache:
         deleted = await cache.invalidate_by_metadata_value("x", "y")
         assert deleted >= 1
 
-    @pytest.mark.asyncio
     async def test_clear(self):
         cache = L1InMemoryCache()
         await cache.set(CacheEntry(key="k1", query="q", response="r"))
@@ -217,7 +206,6 @@ class TestL1InMemoryCache:
         cache = L1InMemoryCache()
         assert len(cache) == 0
 
-    @pytest.mark.asyncio
     async def test_custom_ttl_on_set(self):
         cache = L1InMemoryCache(ttl_seconds=300)
         entry = CacheEntry(key="k1", query="q", response="r")
@@ -261,7 +249,6 @@ class TestL2SemanticCache:
                 embedding_provider=embedding_provider,
             )
 
-    @pytest.mark.asyncio
     async def test_exact_match_hit(self):
         mock_redis = AsyncMock()
         stored = json.dumps({
@@ -279,7 +266,6 @@ class TestL2SemanticCache:
         assert result.response == "cached"
         assert result.hit_count == 1
 
-    @pytest.mark.asyncio
     async def test_exact_match_miss(self):
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
@@ -288,7 +274,6 @@ class TestL2SemanticCache:
         result = await cache._exact_match("missing")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_exact_match_error(self):
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(side_effect=Exception("redis error"))
@@ -297,7 +282,6 @@ class TestL2SemanticCache:
         result = await cache._exact_match("key")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_policy_domain_exact_only(self):
         """Policy domain threshold >= 1.0 -> exact match only."""
         mock_redis = AsyncMock()
@@ -307,7 +291,6 @@ class TestL2SemanticCache:
         result = await cache.get("key", query="q", domain=CacheDomain.POLICY)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_no_embedding_provider(self):
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
@@ -316,7 +299,6 @@ class TestL2SemanticCache:
         result = await cache.get("key", query="q", domain=CacheDomain.GENERAL)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_semantic_error_falls_back(self):
         mock_emb = AsyncMock()
         mock_emb.embed = AsyncMock(side_effect=Exception("embed fail"))
@@ -327,7 +309,6 @@ class TestL2SemanticCache:
         result = await cache.get("key", query="q", domain=CacheDomain.GENERAL)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_empty_embedding(self):
         mock_emb = AsyncMock()
         mock_emb.embed = AsyncMock(return_value=[])
@@ -338,7 +319,6 @@ class TestL2SemanticCache:
         result = await cache.get("key", query="q", domain=CacheDomain.GENERAL)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_set_basic(self):
         mock_redis = AsyncMock()
         mock_redis.setex = AsyncMock()
@@ -348,7 +328,6 @@ class TestL2SemanticCache:
         await cache.set(entry)
         mock_redis.setex.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_set_with_embedding_provider(self):
         mock_emb = AsyncMock()
         mock_emb.embed = AsyncMock(return_value=[0.1, 0.2])
@@ -360,7 +339,6 @@ class TestL2SemanticCache:
         await cache.set(entry)
         assert entry.embedding == [0.1, 0.2]
 
-    @pytest.mark.asyncio
     async def test_set_embedding_error(self):
         mock_emb = AsyncMock()
         mock_emb.embed = AsyncMock(side_effect=Exception("fail"))
@@ -372,7 +350,6 @@ class TestL2SemanticCache:
         await cache.set(entry)  # should not raise
         mock_redis.setex.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_set_redis_error(self):
         mock_redis = AsyncMock()
         mock_redis.setex = AsyncMock(side_effect=Exception("redis down"))
@@ -381,7 +358,6 @@ class TestL2SemanticCache:
         entry = CacheEntry(key="k", query="q", response="r")
         await cache.set(entry)  # should not raise
 
-    @pytest.mark.asyncio
     async def test_delete_success(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(return_value=1)
@@ -389,7 +365,6 @@ class TestL2SemanticCache:
 
         assert await cache.delete("k") is True
 
-    @pytest.mark.asyncio
     async def test_delete_not_found(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(return_value=0)
@@ -397,7 +372,6 @@ class TestL2SemanticCache:
 
         assert await cache.delete("k") is False
 
-    @pytest.mark.asyncio
     async def test_delete_error(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(side_effect=Exception("err"))
@@ -405,7 +379,6 @@ class TestL2SemanticCache:
 
         assert await cache.delete("k") is False
 
-    @pytest.mark.asyncio
     async def test_clear(self):
         mock_redis = AsyncMock()
 
@@ -420,7 +393,6 @@ class TestL2SemanticCache:
         count = await cache.clear()
         assert count == 2
 
-    @pytest.mark.asyncio
     async def test_clear_empty(self):
         mock_redis = AsyncMock()
 
@@ -434,7 +406,6 @@ class TestL2SemanticCache:
         count = await cache.clear()
         assert count == 0
 
-    @pytest.mark.asyncio
     async def test_clear_error(self):
         mock_redis = AsyncMock()
 
@@ -455,7 +426,6 @@ class TestL2SemanticCache:
         assert "threshold" in s
         assert "has_embedding_provider" in s
 
-    @pytest.mark.asyncio
     async def test_close(self):
         mock_redis = AsyncMock()
         mock_redis.aclose = AsyncMock()
@@ -470,7 +440,6 @@ class TestL2SemanticCache:
 
 
 class TestMultiLayerCache:
-    @pytest.mark.asyncio
     async def test_l1_hit(self):
         l1 = L1InMemoryCache()
         entry = CacheEntry(key="", query="test", response="cached_r")
@@ -485,7 +454,6 @@ class TestMultiLayerCache:
         assert result.response == "cached_r"
         assert mlc._metrics.l1_hits == 1
 
-    @pytest.mark.asyncio
     async def test_l1_miss_l2_hit(self):
         l1 = L1InMemoryCache()
         l2 = AsyncMock(spec=ICacheLayer)
@@ -501,7 +469,6 @@ class TestMultiLayerCache:
         l1_result = await l1.get(l2_entry.key)
         assert l1_result is not None
 
-    @pytest.mark.asyncio
     async def test_both_miss(self):
         l1 = L1InMemoryCache()
         l2 = AsyncMock(spec=ICacheLayer)
@@ -512,14 +479,12 @@ class TestMultiLayerCache:
         assert result is None
         assert mlc._metrics.total_misses == 1
 
-    @pytest.mark.asyncio
     async def test_miss_no_l2(self):
         mlc = MultiLayerCache()
         result = await mlc.get("anything")
         assert result is None
         assert mlc._metrics.total_misses == 1
 
-    @pytest.mark.asyncio
     async def test_set_write_through(self):
         l1 = AsyncMock(spec=ICacheLayer)
         l1.set = AsyncMock()
@@ -534,7 +499,6 @@ class TestMultiLayerCache:
         l1.set.assert_called_once()
         l2.set.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_set_l1_error_continues(self):
         l1 = AsyncMock(spec=ICacheLayer)
         l1.set = AsyncMock(side_effect=Exception("l1 fail"))
@@ -547,7 +511,6 @@ class TestMultiLayerCache:
         assert key  # should not raise
         l2.set.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_set_with_embedding_provider(self):
         mock_emb = AsyncMock()
         mock_emb.embed = AsyncMock(return_value=[0.1, 0.2])
@@ -555,7 +518,6 @@ class TestMultiLayerCache:
         await mlc.set("q", "r")
         mock_emb.embed.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_invalidate(self):
         l1 = L1InMemoryCache()
         mlc = MultiLayerCache(l1_cache=l1)
@@ -563,13 +525,11 @@ class TestMultiLayerCache:
         result = await mlc.invalidate("q")
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_invalidate_miss(self):
         mlc = MultiLayerCache()
         result = await mlc.invalidate("nonexistent")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_invalidate_with_l2(self):
         l2 = AsyncMock(spec=ICacheLayer)
         l2.delete = AsyncMock(return_value=True)
@@ -577,7 +537,6 @@ class TestMultiLayerCache:
         result = await mlc.invalidate("q")
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_invalidate_kb(self):
         l1 = L1InMemoryCache()
         await l1.set(CacheEntry(key="k1", query="q", response="r", metadata={"kb_id": "kb1"}))
@@ -585,7 +544,6 @@ class TestMultiLayerCache:
         result = await mlc.invalidate_kb("kb1")
         assert result["l1"] == 1
 
-    @pytest.mark.asyncio
     async def test_invalidate_kb_with_l2(self):
         l1 = L1InMemoryCache()
         l2 = AsyncMock()
@@ -594,7 +552,6 @@ class TestMultiLayerCache:
         result = await mlc.invalidate_kb("kb1")
         assert result["l2"] == 3
 
-    @pytest.mark.asyncio
     async def test_clear(self):
         l1 = L1InMemoryCache()
         await l1.set(CacheEntry(key="k", query="q", response="r"))
@@ -603,7 +560,6 @@ class TestMultiLayerCache:
         assert result["l1"] == 1
         assert result["l2"] == 0
 
-    @pytest.mark.asyncio
     async def test_clear_with_l2(self):
         l2 = AsyncMock(spec=ICacheLayer)
         l2.clear = AsyncMock(return_value=5)
@@ -643,7 +599,6 @@ class TestMultiLayerCache:
         s = mlc.stats()
         assert "l2" in s
 
-    @pytest.mark.asyncio
     async def test_get_or_compute_cache_hit(self):
         l1 = L1InMemoryCache()
         mlc = MultiLayerCache(l1_cache=l1)
@@ -655,7 +610,6 @@ class TestMultiLayerCache:
         assert hit is True
         compute.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_get_or_compute_cache_miss(self):
         mlc = MultiLayerCache()
         compute = AsyncMock(return_value="computed")
@@ -683,7 +637,6 @@ class TestMultiLayerCache:
         k2 = MultiLayerCache._generate_key("q", kb_ids=["a"], top_k=5)
         assert k1 == k2
 
-    @pytest.mark.asyncio
     async def test_l2_version_mismatch_discards(self):
         l1 = L1InMemoryCache()
         l2 = AsyncMock(spec=ICacheLayer)
@@ -728,73 +681,62 @@ class TestRequestHash:
 
 
 class TestIdempotencyCache:
-    @pytest.mark.asyncio
     async def test_memory_new_request(self):
         cache = IdempotencyCache()
         assert await cache.check_and_set("hash1") is True
 
-    @pytest.mark.asyncio
     async def test_memory_duplicate(self):
         cache = IdempotencyCache()
         await cache.check_and_set("hash1")
         assert await cache.check_and_set("hash1") is False
 
-    @pytest.mark.asyncio
     async def test_memory_ttl_expiry(self):
         cache = IdempotencyCache(ttl_seconds=0)
         await cache.check_and_set("hash1")
         await asyncio.sleep(0.01)
         assert await cache.check_and_set("hash1") is True
 
-    @pytest.mark.asyncio
     async def test_redis_new_request(self):
         mock_redis = AsyncMock()
         mock_redis.set = AsyncMock(return_value=True)
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.check_and_set("hash1") is True
 
-    @pytest.mark.asyncio
     async def test_redis_duplicate(self):
         mock_redis = AsyncMock()
         mock_redis.set = AsyncMock(return_value=None)
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.check_and_set("hash1") is False
 
-    @pytest.mark.asyncio
     async def test_redis_error_allows(self):
         mock_redis = AsyncMock()
         mock_redis.set = AsyncMock(side_effect=Exception("fail"))
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.check_and_set("hash1") is True
 
-    @pytest.mark.asyncio
     async def test_remove_redis(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(return_value=1)
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.remove("hash1") is True
 
-    @pytest.mark.asyncio
     async def test_remove_redis_not_found(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(return_value=0)
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.remove("hash1") is False
 
-    @pytest.mark.asyncio
     async def test_remove_redis_error(self):
         mock_redis = AsyncMock()
         mock_redis.delete = AsyncMock(side_effect=Exception("fail"))
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.remove("hash1") is False
 
-    @pytest.mark.asyncio
     async def test_remove_memory(self):
         cache = IdempotencyCache()
         await cache.check_and_set("hash1")
         assert await cache.remove("hash1") is True
 
-    @pytest.mark.asyncio
     async def test_remove_memory_not_found(self):
         cache = IdempotencyCache()
         assert await cache.remove("hash1") is False

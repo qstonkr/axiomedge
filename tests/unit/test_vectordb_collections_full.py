@@ -72,12 +72,10 @@ class TestCollectionNameResolution:
 # ---------------------------------------------------------------------------
 
 class TestCollectionExistence:
-    @pytest.mark.asyncio
     async def test_collection_exists_cache_hit(self, mgr: QdrantCollectionManager):
         mgr._collection_exists_cache.add("kb_test")
         assert await mgr.collection_exists("test") is True
 
-    @pytest.mark.asyncio
     async def test_collection_exists_remote_check(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         col = SimpleNamespace(name="kb_test")
@@ -89,7 +87,6 @@ class TestCollectionExistence:
         assert result is True
         assert "kb_test" in mgr._collection_exists_cache
 
-    @pytest.mark.asyncio
     async def test_collection_exists_false(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_collections = AsyncMock(
@@ -99,7 +96,6 @@ class TestCollectionExistence:
         result = await mgr.collection_exists("nonexistent")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_get_existing_collection_names_with_ttl(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         col = SimpleNamespace(name="kb_a")
@@ -118,7 +114,6 @@ class TestCollectionExistence:
         assert names2 == names
         assert client.get_collections.await_count == 1
 
-    @pytest.mark.asyncio
     async def test_get_existing_collection_names_includes_aliases(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         col = SimpleNamespace(name="kb_a")
@@ -161,13 +156,11 @@ class TestCacheInvalidation:
 # ---------------------------------------------------------------------------
 
 class TestEnsureCollection:
-    @pytest.mark.asyncio
     async def test_ensure_collection_already_cached(self, mgr: QdrantCollectionManager, provider):
         mgr._collection_exists_cache.add("kb_test")
         await mgr.ensure_collection("test")
         provider._client.create_collection.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_ensure_collection_creates_new(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_collections = AsyncMock(
@@ -180,7 +173,6 @@ class TestEnsureCollection:
         client.create_collection.assert_awaited_once()
         assert "kb_new_kb" in mgr._collection_exists_cache
 
-    @pytest.mark.asyncio
     async def test_ensure_collection_alias_conflict(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_collections = AsyncMock(
@@ -199,7 +191,6 @@ class TestEnsureCollection:
         await mgr.ensure_collection("conflict")
         assert client.create_collection.await_count == 2
 
-    @pytest.mark.asyncio
     async def test_ensure_collection_validates_existing_schema(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         col = SimpleNamespace(name="kb_existing")
@@ -220,7 +211,6 @@ class TestEnsureCollection:
         await mgr.ensure_collection("existing")
         client.create_collection.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_ensure_collection_schema_mismatch_empty_recreate(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         col = SimpleNamespace(name="kb_bad_schema")
@@ -251,7 +241,6 @@ class TestEnsureCollection:
 # ---------------------------------------------------------------------------
 
 class TestAliasManagement:
-    @pytest.mark.asyncio
     async def test_resolve_collection_name_no_alias(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_collection = AsyncMock(side_effect=Exception("not found"))
@@ -259,7 +248,6 @@ class TestAliasManagement:
         result = await mgr.resolve_collection_name("test")
         assert result == "kb_test"
 
-    @pytest.mark.asyncio
     async def test_resolve_collection_name_with_alias(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_collection = AsyncMock(return_value=SimpleNamespace())
@@ -267,7 +255,6 @@ class TestAliasManagement:
         result = await mgr.resolve_collection_name("test")
         assert result == "kb_test__alias"
 
-    @pytest.mark.asyncio
     async def test_resolve_collection_name_uses_cache(self, mgr: QdrantCollectionManager, provider):
         mgr._alias_resolution_cache["test"] = ("kb_test__alias", time.time() + 120)
 
@@ -275,7 +262,6 @@ class TestAliasManagement:
         assert result == "kb_test__alias"
         provider._client.get_collection.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_resolve_collection_name_expired_cache(self, mgr: QdrantCollectionManager, provider):
         mgr._alias_resolution_cache["test"] = ("kb_test__alias", time.time() - 10)
         client = provider._client
@@ -284,7 +270,6 @@ class TestAliasManagement:
         result = await mgr.resolve_collection_name("test")
         assert result == "kb_test"
 
-    @pytest.mark.asyncio
     async def test_get_alias_target(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         alias_item = SimpleNamespace(alias_name="kb_test__live", collection_name="kb_test_v2")
@@ -295,7 +280,6 @@ class TestAliasManagement:
         result = await mgr._get_alias_target("kb_test__live")
         assert result == "kb_test_v2"
 
-    @pytest.mark.asyncio
     async def test_get_alias_target_missing(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
@@ -304,7 +288,6 @@ class TestAliasManagement:
         assert result is None
         assert "nonexistent" in mgr._missing_alias_cache
 
-    @pytest.mark.asyncio
     async def test_resolve_read_collection_name_with_live_alias(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         alias_item = SimpleNamespace(alias_name="kb_test__live", collection_name="kb_test_v2")
@@ -315,7 +298,6 @@ class TestAliasManagement:
         result = await mgr.resolve_read_collection_name("test")
         assert result == "kb_test__live"
 
-    @pytest.mark.asyncio
     async def test_switch_live_alias(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
@@ -325,7 +307,6 @@ class TestAliasManagement:
         assert prev is None
         client.update_collection_aliases.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_switch_live_alias_same_target_noop(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         alias_item = SimpleNamespace(alias_name="kb_test__live", collection_name="kb_test_v2")
@@ -343,7 +324,6 @@ class TestAliasManagement:
 # ---------------------------------------------------------------------------
 
 class TestCloneCollection:
-    @pytest.mark.asyncio
     async def test_clone_collection(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
         client.get_collections = AsyncMock(
@@ -367,7 +347,6 @@ class TestCloneCollection:
         client.create_collection.assert_awaited_once()
         client.upsert.assert_awaited()
 
-    @pytest.mark.asyncio
     async def test_clone_upsert_batch_retry_and_split(self, mgr: QdrantCollectionManager, provider):
         """Test that _clone_upsert_batch retries and splits on failure."""
         client = provider._client

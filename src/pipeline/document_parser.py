@@ -421,6 +421,21 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     )
 
 
+def _format_docx_paragraph(para) -> str | None:
+    """Format a DOCX paragraph, returning None if empty."""
+    if not para.text.strip():
+        return None
+    if para.style and para.style.name.startswith("Heading"):
+        level = para.style.name[-1] if para.style.name[-1].isdigit() else "1"
+        return f"{'#' * int(level)} {para.text}"
+    return para.text
+
+
+def _extract_table_data(table) -> list[list[str]]:
+    """Extract table rows as list of lists."""
+    return [[cell.text.strip() for cell in row.cells] for row in table.rows]
+
+
 def _parse_docx(data: bytes, _filename: str) -> str:
     """Parse DOCX using python-docx."""
     from docx import Document
@@ -429,129 +444,107 @@ def _parse_docx(data: bytes, _filename: str) -> str:
         doc = Document(io.BytesIO(data))
     except Exception as e:
         raise ValueError(f"DOCX open failed (corrupt?): {e}") from e
-    texts = []
 
-    for para in doc.paragraphs:
-        if para.text.strip():
-            if para.style and para.style.name.startswith("Heading"):
-                level = para.style.name[-1] if para.style.name[-1].isdigit() else "1"
-                texts.append(f"{'#' * int(level)} {para.text}")
-            else:
-                texts.append(para.text)
+    texts = [t for p in doc.paragraphs if (t := _format_docx_paragraph(p))]
 
     for table in doc.tables:
-        table_data = []
-        for row in table.rows:
-            row_data = [cell.text.strip() for cell in row.cells]
-            table_data.append(row_data)
+        table_data = _extract_table_data(table)
         if table_data:
             texts.append(_table_to_markdown(table_data))
 
     return "\n\n".join(texts)
 
 
+def _iter_pptx_shapes(shapes, _depth: int = 0):
+    """Recursively yield shapes from PPTX, handling grouped shapes."""
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    if _depth > 10:
+        return
+    for shape in shapes:
+        yield shape
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            yield from _iter_pptx_shapes(shape.shapes, _depth + 1)
+
+
+def _extract_slide_text(slide, slide_num: int) -> str | None:
+    """Extract text from a single PPTX slide."""
+    slide_texts = [f"[Slide {slide_num}]"]
+    for shape in _iter_pptx_shapes(slide.shapes):
+        if hasattr(shape, "text") and shape.text.strip():
+            slide_texts.append(shape.text)
+        if shape.has_table:
+            table_data = _extract_table_data(shape.table)
+            if table_data:
+                slide_texts.append(_table_to_markdown(table_data))
+    if slide.has_notes_slide:
+        notes_text = slide.notes_slide.notes_text_frame.text.strip()
+        if notes_text:
+            slide_texts.append(f"[Notes] {notes_text}")
+    return "\n".join(slide_texts) if len(slide_texts) > 1 else None
+
+
 def _parse_pptx(data: bytes, _filename: str) -> str:
     """Parse PPTX using python-pptx."""
     from pptx import Presentation
-    from pptx.enum.shapes import MSO_SHAPE_TYPE
 
     try:
         prs = Presentation(io.BytesIO(data))
     except Exception as e:
         raise ValueError(f"PPTX open failed (corrupt?): {e}") from e
-    texts = []
 
-    def _iter_shapes(shapes, _depth: int = 0):
-        if _depth > 10:
-            return
-        for shape in shapes:
-            yield shape
-            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                yield from _iter_shapes(shape.shapes, _depth + 1)
-
-    for slide_num, slide in enumerate(prs.slides, 1):
-        slide_texts = [f"[Slide {slide_num}]"]
-        for shape in _iter_shapes(slide.shapes):
-            if hasattr(shape, "text") and shape.text.strip():
-                slide_texts.append(shape.text)
-            if shape.has_table:
-                table_data = []
-                for row in shape.table.rows:
-                    row_data = [cell.text.strip() for cell in row.cells]
-                    table_data.append(row_data)
-                if table_data:
-                    slide_texts.append(_table_to_markdown(table_data))
-        if slide.has_notes_slide:
-            notes_text = slide.notes_slide.notes_text_frame.text.strip()
-            if notes_text:
-                slide_texts.append(f"[Notes] {notes_text}")
-        if len(slide_texts) > 1:
-            texts.append("\n".join(slide_texts))
-
+    texts = [t for i, s in enumerate(prs.slides, 1) if (t := _extract_slide_text(s, i))]
     return "\n\n".join(texts)
+
+
+def _extract_pptx_modified_date(prs) -> str:
+    """Extract modification date from PPTX core properties."""
+    try:
+        modified = prs.core_properties.modified
+        return modified.isoformat() if modified else ""
+    except Exception:
+        return ""
+
+
+def _process_enhanced_slide(slide, slide_num: int, tables: list, images: list) -> str | None:
+    """Process a single slide for enhanced parsing, collecting tables and images."""
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    slide_texts = [f"[Slide {slide_num}]"]
+    for shape in _iter_pptx_shapes(slide.shapes):
+        if hasattr(shape, "text") and shape.text.strip():
+            slide_texts.append(shape.text)
+        if shape.has_table:
+            table_data = _extract_table_data(shape.table)
+            if table_data:
+                tables.append(table_data)
+                slide_texts.append(_table_to_markdown(table_data))
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            img_bytes = shape.image.blob
+            if img_bytes and 1024 < len(img_bytes) < 10_000_000:
+                images.append(img_bytes)
+    if slide.has_notes_slide:
+        notes_text = slide.notes_slide.notes_text_frame.text.strip()
+        if notes_text:
+            slide_texts.append(f"[Notes] {notes_text}")
+    return "\n".join(slide_texts) if len(slide_texts) > 1 else None
 
 
 def _parse_pptx_enhanced(data: bytes, _filename: str) -> ParseResult:
     """Enhanced PPTX parsing with image extraction and OCR routing."""
     from pptx import Presentation
-    from pptx.enum.shapes import MSO_SHAPE_TYPE
 
     prs = Presentation(io.BytesIO(data))
-
-    # Extract file modification date from PPTX core properties
-    file_modified_at = ""
-    try:
-        modified = prs.core_properties.modified
-        if modified:
-            file_modified_at = modified.isoformat()
-    except Exception:
-        pass
+    file_modified_at = _extract_pptx_modified_date(prs)
 
     texts = []
     tables: list[list[list[str]]] = []
     extracted_images: list[bytes] = []
 
-    def _iter_shapes(shapes, _depth: int = 0):
-        if _depth > 10:
-            return
-        for shape in shapes:
-            yield shape
-            if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-                yield from _iter_shapes(shape.shapes, _depth + 1)
-
     for slide_num, slide in enumerate(prs.slides, 1):
-        slide_texts = [f"[Slide {slide_num}]"]
-        for shape in _iter_shapes(slide.shapes):
-            # Text frames
-            if hasattr(shape, "text") and shape.text.strip():
-                slide_texts.append(shape.text)
+        text = _process_enhanced_slide(slide, slide_num, tables, extracted_images)
+        if text:
+            texts.append(text)
 
-            # Tables
-            if shape.has_table:
-                table_data = []
-                for row in shape.table.rows:
-                    row_data = [cell.text.strip() for cell in row.cells]
-                    table_data.append(row_data)
-                if table_data:
-                    tables.append(table_data)
-                    slide_texts.append(_table_to_markdown(table_data))
-
-            # Image extraction from PICTURE shapes
-            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                img_bytes = shape.image.blob
-                if img_bytes and 1024 < len(img_bytes) < 10_000_000:
-                    extracted_images.append(img_bytes)
-
-        # Slide notes
-        if slide.has_notes_slide:
-            notes_text = slide.notes_slide.notes_text_frame.text.strip()
-            if notes_text:
-                slide_texts.append(f"[Notes] {notes_text}")
-
-        if len(slide_texts) > 1:
-            texts.append("\n".join(slide_texts))
-
-    # Route extracted images through OCR/CV pipeline
     visual_analyses = []
     ocr_text = ""
     if extracted_images:

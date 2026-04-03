@@ -144,7 +144,6 @@ class TestClassifyQuery:
 # ---------------------------------------------------------------------------
 
 class TestProcess:
-    @pytest.mark.asyncio
     async def test_process_no_search_engine(self):
         pipeline = KnowledgeRAGPipeline(
             embedder=_make_embedder(),
@@ -152,7 +151,6 @@ class TestProcess:
         resp = await pipeline.process(RAGRequest(query="test"))
         assert "검색 엔진이 초기화되지 않았습니다" in resp.answer
 
-    @pytest.mark.asyncio
     async def test_process_no_embedder(self):
         pipeline = KnowledgeRAGPipeline(
             search_engine=AsyncMock(),
@@ -160,7 +158,6 @@ class TestProcess:
         resp = await pipeline.process(RAGRequest(query="test"))
         assert "임베딩 프로바이더가 초기화되지 않았습니다" in resp.answer
 
-    @pytest.mark.asyncio
     async def test_process_no_results(self):
         search = _make_search_mock([])
         pipeline = KnowledgeRAGPipeline(
@@ -170,7 +167,6 @@ class TestProcess:
         resp = await pipeline.process(RAGRequest(query="nothing found"))
         assert "찾을 수 없습니다" in resp.answer
 
-    @pytest.mark.asyncio
     async def test_process_with_results_and_llm(self):
         results = [_make_search_result("p1", 0.9, "result content")]
         search = _make_search_mock(results)
@@ -187,7 +183,6 @@ class TestProcess:
         assert len(resp.sources) == 1
         assert resp.metadata["search_count"] == 1
 
-    @pytest.mark.asyncio
     async def test_process_without_llm(self):
         results = [_make_search_result("p1", 0.8, "some content")]
         search = _make_search_mock(results)
@@ -200,7 +195,6 @@ class TestProcess:
         assert "검색 결과" in resp.answer
         assert "some content" in resp.answer
 
-    @pytest.mark.asyncio
     async def test_process_with_preprocessor(self):
         search = _make_search_mock([])
         pipeline = KnowledgeRAGPipeline(
@@ -213,7 +207,6 @@ class TestProcess:
         total_calls = search.search.await_count + search.search_with_colbert_rerank.await_count
         assert total_calls == 1
 
-    @pytest.mark.asyncio
     async def test_process_preprocessor_failure(self):
         search = _make_search_mock([])
         pp = MagicMock()
@@ -228,7 +221,6 @@ class TestProcess:
         # Should still work with original query
         assert "찾을 수 없습니다" in resp.answer
 
-    @pytest.mark.asyncio
     async def test_process_with_query_expander(self):
         search = _make_search_mock([])
         pipeline = KnowledgeRAGPipeline(
@@ -240,7 +232,6 @@ class TestProcess:
         total_calls = search.search.await_count + search.search_with_colbert_rerank.await_count
         assert total_calls == 1
 
-    @pytest.mark.asyncio
     async def test_process_with_colbert_reranking(self):
         """ColBERT reranking is enabled by default in config."""
         results = [_make_search_result("p1", 0.9, "colbert result")]
@@ -262,7 +253,6 @@ class TestProcess:
 # ---------------------------------------------------------------------------
 
 class TestHandleOwnerQuery:
-    @pytest.mark.asyncio
     async def test_owner_query_with_results(self):
         graph = AsyncMock()
         graph.execute_query = AsyncMock(return_value=[
@@ -278,7 +268,6 @@ class TestHandleOwnerQuery:
         assert resp.confidence == 1.0
         assert resp.query_type == QueryIntent.OWNER_QUERY
 
-    @pytest.mark.asyncio
     async def test_owner_query_no_results(self):
         graph = AsyncMock()
         graph.execute_query = AsyncMock(return_value=[])
@@ -291,7 +280,6 @@ class TestHandleOwnerQuery:
         assert "찾을 수 없습니다" in resp.answer
         assert resp.confidence == 0.0
 
-    @pytest.mark.asyncio
     async def test_owner_query_graph_error(self):
         graph = AsyncMock()
         graph.execute_query = AsyncMock(side_effect=Exception("neo4j down"))
@@ -309,7 +297,6 @@ class TestHandleOwnerQuery:
 # ---------------------------------------------------------------------------
 
 class TestOwnerQueryRouting:
-    @pytest.mark.asyncio
     async def test_owner_query_routes_to_graph(self):
         graph = AsyncMock()
         graph.execute_query = AsyncMock(return_value=[
@@ -324,7 +311,6 @@ class TestOwnerQueryRouting:
         assert resp.query_type == QueryIntent.OWNER_QUERY
         assert "김철수" in resp.answer
 
-    @pytest.mark.asyncio
     async def test_owner_query_without_graph_falls_through(self):
         search = _make_search_mock([])
 
@@ -362,7 +348,6 @@ class TestCalculateConfidence:
 # ---------------------------------------------------------------------------
 
 class TestProcessStream:
-    @pytest.mark.asyncio
     async def test_stream_no_search(self):
         pipeline = KnowledgeRAGPipeline(embedder=_make_embedder())
         tokens = []
@@ -370,7 +355,6 @@ class TestProcessStream:
             tokens.append(token)
         assert any("초기화" in t for t in tokens)
 
-    @pytest.mark.asyncio
     async def test_stream_no_embedder(self):
         pipeline = KnowledgeRAGPipeline(search_engine=AsyncMock())
         tokens = []
@@ -378,7 +362,6 @@ class TestProcessStream:
             tokens.append(token)
         assert any("임베딩" in t for t in tokens)
 
-    @pytest.mark.asyncio
     async def test_stream_no_results(self):
         search = _make_search_mock([])
 
@@ -391,7 +374,6 @@ class TestProcessStream:
             tokens.append(token)
         assert any("찾을 수 없습니다" in t for t in tokens)
 
-    @pytest.mark.asyncio
     async def test_stream_with_llm_stream(self):
         results = [_make_search_result("p1", 0.9, "content")]
         search = _make_search_mock(results)
@@ -413,7 +395,6 @@ class TestProcessStream:
             tokens.append(token)
         assert tokens == ["Hello ", "World"]
 
-    @pytest.mark.asyncio
     async def test_stream_owner_query(self):
         graph = AsyncMock()
         graph.execute_query = AsyncMock(return_value=[
@@ -430,7 +411,6 @@ class TestProcessStream:
         assert len(tokens) == 1
         assert "A" in tokens[0]
 
-    @pytest.mark.asyncio
     async def test_stream_fallback_to_process(self):
         """When LLM has no generate_stream, falls back to process()."""
         results = [_make_search_result("p1", 0.9, "content")]

@@ -45,7 +45,6 @@ class TestGlossaryRepository:
     def setup_method(self):
         self.maker, self.session = _make_session_maker()
 
-    @pytest.mark.asyncio
     async def test_save_new_term(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -56,7 +55,6 @@ class TestGlossaryRepository:
         self.session.add.assert_called_once()
         self.session.commit.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_save_update_existing(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -68,7 +66,6 @@ class TestGlossaryRepository:
         await repo.save({"kb_id": "kb1", "term": "API", "definition": "updated"})
         self.session.commit.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_get_by_id(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -95,7 +92,6 @@ class TestGlossaryRepository:
         assert result is not None
         assert result["term"] == "API"
 
-    @pytest.mark.asyncio
     async def test_get_by_id_not_found(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -105,7 +101,6 @@ class TestGlossaryRepository:
         result = await repo.get_by_id("nonexistent")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_delete_found(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -117,7 +112,6 @@ class TestGlossaryRepository:
         assert result is True
         self.session.delete.assert_awaited_once_with(model)
 
-    @pytest.mark.asyncio
     async def test_delete_not_found(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -127,7 +121,6 @@ class TestGlossaryRepository:
         result = await repo.delete("nonexistent")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_count_by_kb(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -139,7 +132,6 @@ class TestGlossaryRepository:
         count = await repo.count_by_kb("kb1")
         assert count == 42
 
-    @pytest.mark.asyncio
     async def test_bulk_delete(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -151,7 +143,6 @@ class TestGlossaryRepository:
         count = await repo.bulk_delete(["t1", "t2", "t3", "t4", "t5"])
         assert count == 5
 
-    @pytest.mark.asyncio
     async def test_bulk_delete_empty(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -159,7 +150,6 @@ class TestGlossaryRepository:
         count = await repo.bulk_delete([])
         assert count == 0
 
-    @pytest.mark.asyncio
     async def test_scope_filter_all(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -167,7 +157,6 @@ class TestGlossaryRepository:
         result = repo._scope_filter("all")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_scope_filter_specific_kb(self):
         from src.database.repositories.glossary import GlossaryRepository
 
@@ -184,7 +173,6 @@ class TestFeedbackRepository:
     def setup_method(self):
         self.maker, self.session = _make_session_maker()
 
-    @pytest.mark.asyncio
     async def test_save_new(self):
         from src.database.repositories.feedback import FeedbackRepository
 
@@ -194,7 +182,6 @@ class TestFeedbackRepository:
         await repo.save({"id": "f1", "entry_id": "e1", "kb_id": "kb1", "feedback_type": "upvote"})
         self.session.add.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_get_by_id(self):
         from src.database.repositories.feedback import FeedbackRepository
 
@@ -222,7 +209,6 @@ class TestFeedbackRepository:
         assert result is not None
         assert result["feedback_type"] == "upvote"
 
-    @pytest.mark.asyncio
     async def test_delete_found(self):
         from src.database.repositories.feedback import FeedbackRepository
 
@@ -233,7 +219,6 @@ class TestFeedbackRepository:
         result = await repo.delete("f1")
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_count(self):
         from src.database.repositories.feedback import FeedbackRepository
 
@@ -254,7 +239,6 @@ class TestDocumentOwnerRepository:
     def setup_method(self):
         self.maker, self.session = _make_session_maker()
 
-    @pytest.mark.asyncio
     async def test_save_new(self):
         from src.database.repositories.ownership import DocumentOwnerRepository
 
@@ -264,7 +248,6 @@ class TestDocumentOwnerRepository:
         await repo.save({"document_id": "d1", "kb_id": "kb1", "owner_user_id": "u1"})
         self.session.add.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_get_by_document(self):
         from src.database.repositories.ownership import DocumentOwnerRepository
 
@@ -285,7 +268,6 @@ class TestDocumentOwnerRepository:
         assert result is not None
         assert result["owner_user_id"] == "u1"
 
-    @pytest.mark.asyncio
     async def test_delete(self):
         from src.database.repositories.ownership import DocumentOwnerRepository
 
@@ -305,7 +287,6 @@ class TestTopicOwnerRepository:
     def setup_method(self):
         self.maker, self.session = _make_session_maker()
 
-    @pytest.mark.asyncio
     async def test_save_new(self):
         from src.database.repositories.ownership import TopicOwnerRepository
 
@@ -321,7 +302,6 @@ class TestTopicOwnerRepository:
         })
         self.session.add.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_delete_not_found(self):
         from src.database.repositories.ownership import TopicOwnerRepository
 
@@ -340,7 +320,6 @@ class TestErrorReportRepository:
     def setup_method(self):
         self.maker, self.session = _make_session_maker()
 
-    @pytest.mark.asyncio
     async def test_save_new(self):
         from src.database.repositories.ownership import ErrorReportRepository
 
@@ -356,7 +335,6 @@ class TestErrorReportRepository:
         })
         self.session.add.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_get_by_id(self):
         from src.database.repositories.ownership import ErrorReportRepository
 

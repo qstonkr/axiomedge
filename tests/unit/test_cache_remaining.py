@@ -13,7 +13,6 @@ import pytest
 # ===========================================================================
 
 class TestSearchCache:
-    @pytest.mark.asyncio
     async def test_get_hit(self):
         from src.cache.redis_cache import SearchCache
 
@@ -27,7 +26,6 @@ class TestSearchCache:
             assert result is not None
             assert result["results"] == [1, 2, 3]
 
-    @pytest.mark.asyncio
     async def test_get_miss(self):
         from src.cache.redis_cache import SearchCache
 
@@ -40,7 +38,6 @@ class TestSearchCache:
             result = await cache.get("test query", ["kb1"])
             assert result is None
 
-    @pytest.mark.asyncio
     async def test_get_error(self):
         from src.cache.redis_cache import SearchCache
 
@@ -53,7 +50,6 @@ class TestSearchCache:
             result = await cache.get("test", ["kb1"])
             assert result is None
 
-    @pytest.mark.asyncio
     async def test_set(self):
         from src.cache.redis_cache import SearchCache
 
@@ -65,7 +61,6 @@ class TestSearchCache:
             await cache.set("test query", ["kb1"], {"results": [1]})
             redis.setex.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_set_error(self):
         from src.cache.redis_cache import SearchCache
 
@@ -77,7 +72,6 @@ class TestSearchCache:
             cache = SearchCache(redis_url="redis://localhost:6379")
             await cache.set("test", ["kb1"], {"r": []})  # Should not raise
 
-    @pytest.mark.asyncio
     async def test_clear(self):
         from src.cache.redis_cache import SearchCache
 
@@ -96,7 +90,6 @@ class TestSearchCache:
             count = await cache.clear()
             assert count == 2
 
-    @pytest.mark.asyncio
     async def test_stats(self):
         from src.cache.redis_cache import SearchCache
 
@@ -114,7 +107,6 @@ class TestSearchCache:
             stats = await cache.stats()
             assert stats["key_count"] == 1
 
-    @pytest.mark.asyncio
     async def test_close(self):
         from src.cache.redis_cache import SearchCache
 
@@ -154,7 +146,6 @@ class TestSearchCache:
 # ===========================================================================
 
 class TestDedupCache:
-    @pytest.mark.asyncio
     async def test_exists_true(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -167,7 +158,6 @@ class TestDedupCache:
             result = await cache.exists("kb1", "hash123")
             assert result is True
 
-    @pytest.mark.asyncio
     async def test_exists_false(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -180,7 +170,6 @@ class TestDedupCache:
             result = await cache.exists("kb1", "hash123")
             assert result is False
 
-    @pytest.mark.asyncio
     async def test_exists_error(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -193,7 +182,6 @@ class TestDedupCache:
             result = await cache.exists("kb1", "hash123")
             assert result is False
 
-    @pytest.mark.asyncio
     async def test_add(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -205,7 +193,6 @@ class TestDedupCache:
             await cache.add("kb1", "hash123")
             redis.sadd.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_add_batch_empty(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -217,7 +204,6 @@ class TestDedupCache:
             await cache.add_batch("kb1", [])
             redis.sadd.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_add_batch(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -229,7 +215,6 @@ class TestDedupCache:
             await cache.add_batch("kb1", ["h1", "h2"])
             redis.sadd.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_clear(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -241,7 +226,6 @@ class TestDedupCache:
             await cache.clear("kb1")
             redis.delete.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_count(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -254,7 +238,6 @@ class TestDedupCache:
             result = await cache.count("kb1")
             assert result == 42
 
-    @pytest.mark.asyncio
     async def test_close(self):
         from src.cache.dedup_cache import DedupCache
 
@@ -266,7 +249,6 @@ class TestDedupCache:
             await cache.close()
             redis.aclose.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_stats(self):
         from src.cache.dedup_cache import DedupCache
 

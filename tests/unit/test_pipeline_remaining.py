@@ -246,7 +246,6 @@ class TestFreshnessRanker:
 # ===========================================================================
 
 class TestConflictDetector:
-    @pytest.mark.asyncio
     async def test_analyze_no_conflict(self):
         from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
@@ -256,7 +255,6 @@ class TestConflictDetector:
         assert result.doc_id_1 == "d1"
         assert result.doc_id_2 == "d2"
 
-    @pytest.mark.asyncio
     async def test_analyze_with_conflict(self):
         from src.pipeline.dedup.conflict_detector import ConflictDetector, ILLMClient
 
@@ -281,7 +279,6 @@ class TestConflictDetector:
         assert len(result.conflicts) == 1
         assert result.max_severity is not None
 
-    @pytest.mark.asyncio
     async def test_analyze_timeout(self):
         from src.pipeline.dedup.conflict_detector import ConflictDetector, ILLMClient
         import asyncio
@@ -296,7 +293,6 @@ class TestConflictDetector:
         result = await detector.analyze("d1", "A", "d2", "B")
         assert result.confidence == 0.0
 
-    @pytest.mark.asyncio
     async def test_analyze_batch(self):
         from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
@@ -368,13 +364,11 @@ class TestDedupResultTracker:
         tracker = DedupResultTracker(redis_client=None)
         assert tracker.enabled is False
 
-    @pytest.mark.asyncio
     async def test_track_result_disabled(self):
         from src.pipeline.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         await tracker.track_result(MagicMock(), "kb1")  # Should not raise
 
-    @pytest.mark.asyncio
     async def test_track_result_enabled(self):
         from src.pipeline.dedup.result_tracker import DedupResultTracker
         redis = AsyncMock()
@@ -393,27 +387,23 @@ class TestDedupResultTracker:
         await tracker.track_result(result, "kb1", doc_title="Test")
         redis.xadd.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_track_conflict_disabled(self):
         from src.pipeline.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         result = await tracker.track_conflict(MagicMock(), None, "kb1")
         assert result == ""
 
-    @pytest.mark.asyncio
     async def test_resolve_conflict_disabled(self):
         from src.pipeline.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         assert await tracker.resolve_conflict("c1", "keep_both") is False
 
-    @pytest.mark.asyncio
     async def test_get_stats_disabled(self):
         from src.pipeline.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         stats = await tracker.get_stats()
         assert stats["total_duplicates_found"] == 0
 
-    @pytest.mark.asyncio
     async def test_get_conflicts_disabled(self):
         from src.pipeline.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
@@ -431,19 +421,16 @@ class TestRedisDedupIndex:
         idx = RedisDedupIndex(redis_client=None)
         assert idx.enabled is False
 
-    @pytest.mark.asyncio
     async def test_contains_disabled(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.contains("kb1", "hash") is False
 
-    @pytest.mark.asyncio
     async def test_add_disabled(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.add("kb1", "hash") is False
 
-    @pytest.mark.asyncio
     async def test_add_enabled(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
@@ -456,7 +443,6 @@ class TestRedisDedupIndex:
         redis.sadd.assert_awaited_once()
         redis.expire.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_contains_enabled(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
@@ -465,13 +451,11 @@ class TestRedisDedupIndex:
 
         assert await idx.contains("kb1", "hash") is True
 
-    @pytest.mark.asyncio
     async def test_add_batch_empty(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.add_batch("kb1", []) == 0
 
-    @pytest.mark.asyncio
     async def test_clear(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
@@ -479,7 +463,6 @@ class TestRedisDedupIndex:
         result = await idx.clear("kb1")
         assert result is True
 
-    @pytest.mark.asyncio
     async def test_size(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
@@ -487,13 +470,11 @@ class TestRedisDedupIndex:
         idx = RedisDedupIndex(redis_client=redis)
         assert await idx.size("kb1") == 42
 
-    @pytest.mark.asyncio
     async def test_contains_doc_disabled(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.contains_doc("kb1", "hash") is False
 
-    @pytest.mark.asyncio
     async def test_add_doc(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
@@ -502,7 +483,6 @@ class TestRedisDedupIndex:
         idx = RedisDedupIndex(redis_client=redis)
         assert await idx.add_doc("kb1", "hash") is True
 
-    @pytest.mark.asyncio
     async def test_clear_docs(self):
         from src.pipeline.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()

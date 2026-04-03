@@ -177,7 +177,6 @@ class TestFormatContext:
 
 
 class TestGenerateResponse:
-    @pytest.mark.asyncio
     async def test_generate_response(self):
         client = OllamaClient(base_url="http://test:11434", model="test")
 
@@ -196,7 +195,6 @@ class TestGenerateResponse:
         assert result == "답변입니다."
         mock_http.post.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_generate_response_custom_system_prompt(self):
         client = OllamaClient(base_url="http://test:11434", model="test")
 
@@ -220,7 +218,6 @@ class TestGenerateResponse:
 
 
 class TestGenerate:
-    @pytest.mark.asyncio
     async def test_generate_basic(self):
         client = OllamaClient()
 
@@ -235,7 +232,6 @@ class TestGenerate:
         result = await client.generate("prompt text")
         assert result == "result"
 
-    @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self):
         client = OllamaClient()
 
@@ -252,7 +248,6 @@ class TestGenerate:
         call_json = mock_http.post.call_args[1]["json"]
         assert "sys" in call_json["prompt"]
 
-    @pytest.mark.asyncio
     async def test_generate_custom_params(self):
         client = OllamaClient()
 
@@ -276,7 +271,6 @@ class TestGenerate:
 
 
 class TestChat:
-    @pytest.mark.asyncio
     async def test_chat_basic(self):
         client = OllamaClient()
 
@@ -295,7 +289,6 @@ class TestChat:
         )
         assert result == "assistant reply"
 
-    @pytest.mark.asyncio
     async def test_chat_empty_message(self):
         client = OllamaClient()
 
@@ -317,13 +310,11 @@ class TestChat:
 
 
 class TestClassifyBatch:
-    @pytest.mark.asyncio
     async def test_empty_prompts(self):
         client = OllamaClient()
         result = await client.classify_batch([])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_batch(self):
         client = OllamaClient()
 
@@ -346,7 +337,6 @@ class TestClassifyBatch:
 
 
 class TestCheckHealth:
-    @pytest.mark.asyncio
     async def test_healthy(self):
         client = OllamaClient(model="test-model")
 
@@ -364,7 +354,6 @@ class TestCheckHealth:
         assert result["status"] == "healthy"
         assert result["primary_model_ready"] is True
 
-    @pytest.mark.asyncio
     async def test_unhealthy_status(self):
         client = OllamaClient()
 
@@ -378,7 +367,6 @@ class TestCheckHealth:
         result = await client.check_health()
         assert result["status"] == "unhealthy"
 
-    @pytest.mark.asyncio
     async def test_exception(self):
         client = OllamaClient()
 
@@ -390,7 +378,6 @@ class TestCheckHealth:
         assert result["status"] == "unhealthy"
         assert "connection refused" in result["error"]
 
-    @pytest.mark.asyncio
     async def test_model_partial_match(self):
         client = OllamaClient(model="exaone3.5")
 
@@ -414,7 +401,6 @@ class TestCheckHealth:
 
 
 class TestGenerateWithContext:
-    @pytest.mark.asyncio
     async def test_basic(self):
         client = OllamaClient()
 
@@ -436,7 +422,6 @@ class TestGenerateWithContext:
 
 
 class TestGetClient:
-    @pytest.mark.asyncio
     async def test_creates_client_on_first_call(self):
         client = OllamaClient()
         assert client._client is None
@@ -445,7 +430,6 @@ class TestGetClient:
         assert isinstance(http, httpx.AsyncClient)
         await client.close()
 
-    @pytest.mark.asyncio
     async def test_reuses_client(self):
         client = OllamaClient()
         c1 = await client._get_client()
@@ -460,25 +444,21 @@ class TestGetClient:
 
 
 class TestClose:
-    @pytest.mark.asyncio
     async def test_close_no_client(self):
         client = OllamaClient()
         await client.close()  # no error
 
-    @pytest.mark.asyncio
     async def test_close_with_client(self):
         client = OllamaClient()
         await client._get_client()
         await client.close()
         assert client._client is None
 
-    @pytest.mark.asyncio
     async def test_context_manager(self):
         async with OllamaClient() as client:
             assert isinstance(client, OllamaClient)
         assert client._client is None
 
-    @pytest.mark.asyncio
     async def test_double_close(self):
         client = OllamaClient()
         await client._get_client()

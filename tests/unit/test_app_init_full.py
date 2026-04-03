@@ -89,7 +89,6 @@ class TestGetState:
 # _init_cache (patches at source module level)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitCache:
     async def test_init_cache_creates_caches(self):
         from src.api.app import _init_cache
@@ -108,7 +107,6 @@ class TestInitCache:
 # _init_vectordb
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitVectorDB:
     async def test_init_vectordb_creates_search_engine(self):
         from src.api.app import _init_vectordb
@@ -136,7 +134,6 @@ class TestInitVectorDB:
 # _init_graph
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitGraph:
     async def test_init_graph_disabled(self):
         from src.api.app import _init_graph
@@ -185,7 +182,6 @@ class TestInitGraph:
 # _init_embedding
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitEmbedding:
     async def test_init_embedding_tei(self):
         from src.api.app import _init_embedding
@@ -224,7 +220,6 @@ class TestInitEmbedding:
 # _init_llm
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitLLM:
     async def test_init_llm_ollama(self):
         from src.api.app import _init_llm
@@ -262,7 +257,6 @@ class TestInitLLM:
 # _init_search_services
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitSearchServices:
     async def test_init_search_services_creates_pipeline(self):
         from src.api.app import _init_search_services
@@ -291,7 +285,6 @@ class TestInitSearchServices:
 # _shutdown_services
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestShutdownServices:
     async def test_shutdown_closes_connections(self):
         import src.api.app as app_mod
@@ -352,7 +345,6 @@ class TestShutdownServices:
 # _init_auth
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitAuth:
     async def test_init_auth_local_provider(self):
         from src.api.app import _init_auth
@@ -386,7 +378,6 @@ class TestInitAuth:
 # _init_database (integration-style: test error handling path)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestInitDatabase:
     async def test_init_database_retries_and_raises(self):
         from src.api.app import _init_database
@@ -406,7 +397,6 @@ class TestInitDatabase:
 # Lifespan
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
 class TestLifespan:
     async def test_lifespan_context_manager(self):
         from src.api.app import lifespan

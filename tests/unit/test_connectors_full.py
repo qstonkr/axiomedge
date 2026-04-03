@@ -51,26 +51,22 @@ class TestFileUploadConnector:
         connector = FileUploadConnector()
         assert connector.source_type == "file_upload"
 
-    @pytest.mark.asyncio
     async def test_health_check(self):
         connector = FileUploadConnector()
         assert await connector.health_check() is True
 
-    @pytest.mark.asyncio
     async def test_fetch_no_entry_point(self):
         connector = FileUploadConnector()
         result = await connector.fetch({})
         assert result.success is False
         assert "entry_point" in result.error
 
-    @pytest.mark.asyncio
     async def test_fetch_nonexistent_file(self):
         connector = FileUploadConnector()
         result = await connector.fetch({"entry_point": "/nonexistent/file.pdf"})
         assert result.success is False
         assert "Failed to read" in result.error
 
-    @pytest.mark.asyncio
     async def test_fetch_skips_unchanged(self):
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
             f.write("hello world test content for parsing")
@@ -88,7 +84,6 @@ class TestFileUploadConnector:
         assert result.success is True
         assert result.metadata.get("skipped") is True
 
-    @pytest.mark.asyncio
     async def test_fetch_success(self):
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
             f.write("This is test content for the file upload connector.")
@@ -104,7 +99,6 @@ class TestFileUploadConnector:
         assert len(result.documents) == 1
         assert result.documents[0].content == "Parsed content from file"
 
-    @pytest.mark.asyncio
     async def test_fetch_empty_parse(self):
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
             f.write("hello")
@@ -119,7 +113,6 @@ class TestFileUploadConnector:
         assert result.success is False
         assert "empty text" in result.error
 
-    @pytest.mark.asyncio
     async def test_fetch_with_config_options(self):
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False, mode="wb") as f:
             f.write(b"fake pdf")
@@ -144,7 +137,6 @@ class TestFileUploadConnector:
         assert doc.title == "My Doc"
         assert doc.author == "user1"
 
-    @pytest.mark.asyncio
     async def test_lazy_fetch_success(self):
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
             f.write("lazy content")
@@ -160,7 +152,6 @@ class TestFileUploadConnector:
 
         assert len(docs) == 1
 
-    @pytest.mark.asyncio
     async def test_lazy_fetch_failure(self):
         connector = FileUploadConnector()
         docs = []
@@ -168,7 +159,6 @@ class TestFileUploadConnector:
             docs.append(doc)
         assert len(docs) == 0
 
-    @pytest.mark.asyncio
     async def test_fetch_uses_file_uri(self):
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
             f.write("content")
@@ -179,7 +169,6 @@ class TestFileUploadConnector:
             result = await connector.fetch({"file_uri": path}, force=True)
         assert result.success is True
 
-    @pytest.mark.asyncio
     async def test_fetch_uses_file_path(self):
         with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
             f.write("content")

@@ -27,7 +27,6 @@ class TestAuthService:
         assert svc._roles is not None
         assert svc._activity is not None
 
-    @pytest.mark.asyncio
     async def test_close(self):
         from src.auth.service import AuthService
 
@@ -39,7 +38,6 @@ class TestAuthService:
             await svc.close()
             engine.dispose.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_delegates_sync_user(self):
         from src.auth.service import AuthService
 
@@ -52,7 +50,6 @@ class TestAuthService:
             result = await svc.sync_user_from_idp(MagicMock())
             assert result["id"] == "u1"
 
-    @pytest.mark.asyncio
     async def test_delegates_create_user(self):
         from src.auth.service import AuthService
 
@@ -65,7 +62,6 @@ class TestAuthService:
             result = await svc.create_user("a@b.com", "Alice")
             assert result["email"] == "a@b.com"
 
-    @pytest.mark.asyncio
     async def test_delegates_authenticate(self):
         from src.auth.service import AuthService
 
@@ -78,7 +74,6 @@ class TestAuthService:
             result = await svc.authenticate("a@b.com", "pass")
             assert result is not None
 
-    @pytest.mark.asyncio
     async def test_delegates_assign_role(self):
         from src.auth.service import AuthService
 
@@ -91,7 +86,6 @@ class TestAuthService:
             result = await svc.assign_role("u1", "admin")
             assert result["role"] == "admin"
 
-    @pytest.mark.asyncio
     async def test_delegates_log_activity(self):
         from src.auth.service import AuthService
 
@@ -103,7 +97,6 @@ class TestAuthService:
             await svc.log_activity("u1", "search", "search")
             svc._activity.log_activity.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_delegates_get_user(self):
         from src.auth.service import AuthService
 
@@ -116,7 +109,6 @@ class TestAuthService:
             result = await svc.get_user("u1")
             assert result["id"] == "u1"
 
-    @pytest.mark.asyncio
     async def test_delegates_list_users(self):
         from src.auth.service import AuthService
 
@@ -129,7 +121,6 @@ class TestAuthService:
             result = await svc.list_users()
             assert len(result) == 1
 
-    @pytest.mark.asyncio
     async def test_delegates_revoke_role(self):
         from src.auth.service import AuthService
 
@@ -142,7 +133,6 @@ class TestAuthService:
             result = await svc.revoke_role("u1", "admin")
             assert result is True
 
-    @pytest.mark.asyncio
     async def test_delegates_change_password(self):
         from src.auth.service import AuthService
 
@@ -234,7 +224,6 @@ class TestTokenStore:
         self.maker = MagicMock()
         self.maker.return_value = self.session
 
-    @pytest.mark.asyncio
     async def test_store_refresh_token(self):
         from src.auth.token_store import TokenStore
 
@@ -250,7 +239,6 @@ class TestTokenStore:
         self.session.add.assert_called_once()
         self.session.commit.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_validate_and_rotate_not_found(self):
         from src.auth.token_store import TokenStore
 
@@ -262,7 +250,6 @@ class TestTokenStore:
         result = await store.validate_and_rotate("jti1", "token123")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_validate_and_rotate_revoked(self):
         from src.auth.token_store import TokenStore
 
@@ -279,7 +266,6 @@ class TestTokenStore:
             result = await store.validate_and_rotate("jti1", "token123")
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_revoke_family(self):
         from src.auth.token_store import TokenStore
 
@@ -291,7 +277,6 @@ class TestTokenStore:
         count = await store.revoke_family("f1")
         assert count == 3
 
-    @pytest.mark.asyncio
     async def test_revoke_all_user_tokens(self):
         from src.auth.token_store import TokenStore
 
@@ -303,7 +288,6 @@ class TestTokenStore:
         count = await store.revoke_all_user_tokens("u1")
         assert count == 5
 
-    @pytest.mark.asyncio
     async def test_get_active_sessions(self):
         from src.auth.token_store import TokenStore
 
@@ -326,7 +310,6 @@ class TestTokenStore:
         assert len(sessions) == 1
         assert sessions[0]["jti"] == "jti1"
 
-    @pytest.mark.asyncio
     async def test_cleanup_expired(self):
         from src.auth.token_store import TokenStore
 

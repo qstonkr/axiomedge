@@ -79,7 +79,6 @@ class TestSageMakerLLMClient:
         assert result == "Test answer"
         mock_client.invoke_endpoint.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_invoke_async(self):
         with patch.object(self.client, "_invoke_sync", return_value="async answer"):
             result = await self.client._invoke(
@@ -87,7 +86,6 @@ class TestSageMakerLLMClient:
             )
         assert result == "async answer"
 
-    @pytest.mark.asyncio
     async def test_generate_response(self):
         with patch.object(self.client, "_invoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = "RAG answer"
@@ -98,14 +96,12 @@ class TestSageMakerLLMClient:
         assert result == "RAG answer"
         mock_invoke.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_generate(self):
         with patch.object(self.client, "_invoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = "Generated text"
             result = await self.client.generate("Write something")
         assert result == "Generated text"
 
-    @pytest.mark.asyncio
     async def test_generate_with_system_prompt(self):
         with patch.object(self.client, "_invoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = "answer"
@@ -113,7 +109,6 @@ class TestSageMakerLLMClient:
             call_args = mock_invoke.call_args[0][0]
             assert call_args[0]["role"] == "system"
 
-    @pytest.mark.asyncio
     async def test_chat(self):
         with patch.object(self.client, "_invoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = "Chat response"
@@ -124,12 +119,10 @@ class TestSageMakerLLMClient:
             result = await self.client.chat(messages)
         assert result == "Chat response"
 
-    @pytest.mark.asyncio
     async def test_classify_batch_empty(self):
         result = await self.client.classify_batch([])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_classify_batch(self):
         with patch.object(self.client, "generate", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = "category_a"
@@ -140,7 +133,6 @@ class TestSageMakerLLMClient:
         assert len(results) == 2
         assert all(r == "category_a" for r in results)
 
-    @pytest.mark.asyncio
     async def test_generate_response_stream(self):
         with patch.object(self.client, "generate_response", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = "Streaming fallback"
@@ -150,14 +142,12 @@ class TestSageMakerLLMClient:
         assert len(chunks) == 1
         assert chunks[0] == "Streaming fallback"
 
-    @pytest.mark.asyncio
     async def test_generate_with_context(self):
         with patch.object(self.client, "_invoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = "Context answer"
             result = await self.client.generate_with_context("query", "context text")
         assert result == "Context answer"
 
-    @pytest.mark.asyncio
     async def test_generate_stream(self):
         with patch.object(self.client, "generate_with_context", new_callable=AsyncMock) as mock_gen:
             mock_gen.return_value = "Stream fallback"
@@ -166,7 +156,6 @@ class TestSageMakerLLMClient:
                 chunks.append(chunk)
         assert chunks == ["Stream fallback"]
 
-    @pytest.mark.asyncio
     async def test_check_health_success(self):
         with patch("boto3.Session") as MockSession:
             session = MagicMock()
@@ -179,7 +168,6 @@ class TestSageMakerLLMClient:
         assert result["status"] == "healthy"
         assert result["backend"] == "sagemaker"
 
-    @pytest.mark.asyncio
     async def test_check_health_unhealthy(self):
         with patch("boto3.Session") as MockSession:
             session = MagicMock()
@@ -191,7 +179,6 @@ class TestSageMakerLLMClient:
             result = await self.client.check_health()
         assert result["status"] == "unhealthy"
 
-    @pytest.mark.asyncio
     async def test_check_health_error(self):
         with patch("boto3.Session") as MockSession:
             MockSession.side_effect = Exception("No credentials")

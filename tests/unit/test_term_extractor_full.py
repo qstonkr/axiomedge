@@ -355,7 +355,6 @@ class TestTermExtractorExtractPatterns:
 
 
 class TestTermExtractorExtractFromChunks:
-    @pytest.mark.asyncio
     async def test_regex_fallback_path(self):
         """When kiwi is unavailable, use regex patterns."""
         te = TermExtractor(min_occurrences=1)
@@ -371,14 +370,12 @@ class TestTermExtractorExtractFromChunks:
         term_names = [t.term.lower() for t in terms]
         assert any("graphrag" in n for n in term_names)
 
-    @pytest.mark.asyncio
     async def test_empty_chunks(self):
         te = TermExtractor(min_occurrences=1)
         te._kiwi_available = False
         terms = await te.extract_from_chunks([], kb_id="test")
         assert terms == []
 
-    @pytest.mark.asyncio
     async def test_min_occurrences_filter(self):
         te = TermExtractor(min_occurrences=3)
         te._kiwi_available = False
@@ -388,21 +385,18 @@ class TestTermExtractorExtractFromChunks:
 
 
 class TestTermExtractorSave:
-    @pytest.mark.asyncio
     async def test_save_no_repo(self):
         te = TermExtractor()
         terms = [ExtractedTerm(term="API", pattern_type="acronym")]
         saved = await te.save_extracted_terms(terms, kb_id="test")
         assert saved == 0
 
-    @pytest.mark.asyncio
     async def test_save_empty_terms(self):
         repo = MagicMock()
         te = TermExtractor(glossary_repo=repo)
         saved = await te.save_extracted_terms([], kb_id="test")
         assert saved == 0
 
-    @pytest.mark.asyncio
     async def test_save_with_repo(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(return_value=None)
@@ -414,7 +408,6 @@ class TestTermExtractorSave:
         assert saved == 1
         repo.save.assert_called_once()
 
-    @pytest.mark.asyncio
     async def test_save_skips_existing(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(return_value={"id": "existing"})
@@ -425,7 +418,6 @@ class TestTermExtractorSave:
         saved = await te.save_extracted_terms(terms, kb_id="test")
         assert saved == 0
 
-    @pytest.mark.asyncio
     async def test_save_handles_exception(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(return_value=None)
@@ -438,7 +430,6 @@ class TestTermExtractorSave:
 
 
 class TestTermExtractorDiscoverSynonyms:
-    @pytest.mark.asyncio
     async def test_parenthetical(self):
         te = TermExtractor()
         text = "K8s(쿠버네티스) 클러스터를 운영합니다."
@@ -447,7 +438,6 @@ class TestTermExtractorDiscoverSynonyms:
         assert len(result) >= 1
         assert any("쿠버네티스" in r[1] for r in result)
 
-    @pytest.mark.asyncio
     async def test_aka_pattern(self):
         te = TermExtractor()
         text = "데이터마트, 일명 DM으로 불립니다."
@@ -455,7 +445,6 @@ class TestTermExtractorDiscoverSynonyms:
         result = await te.discover_synonyms(text, known)
         assert len(result) >= 1
 
-    @pytest.mark.asyncio
     async def test_abbreviation_intro(self):
         te = TermExtractor()
         text = "Kubernetes(이하 K8s)를 사용합니다."
@@ -463,13 +452,11 @@ class TestTermExtractorDiscoverSynonyms:
         result = await te.discover_synonyms(text, known)
         assert len(result) >= 1
 
-    @pytest.mark.asyncio
     async def test_empty_text(self):
         te = TermExtractor()
         result = await te.discover_synonyms("", [])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_filters_code_artifacts(self):
         te = TermExtractor()
         text = "border-radius(CSS속성) 사용법"
@@ -477,7 +464,6 @@ class TestTermExtractorDiscoverSynonyms:
         # border-radius is a code artifact, should be filtered
         assert all("border-radius" not in r[0] for r in result)
 
-    @pytest.mark.asyncio
     async def test_no_self_synonym(self):
         te = TermExtractor()
         text = "API(API) 설명"
@@ -486,7 +472,6 @@ class TestTermExtractorDiscoverSynonyms:
 
 
 class TestTermExtractorSaveDiscoveredSynonyms:
-    @pytest.mark.asyncio
     async def test_no_repo(self):
         te = TermExtractor()
         saved = await te.save_discovered_synonyms(
@@ -494,7 +479,6 @@ class TestTermExtractorSaveDiscoveredSynonyms:
         )
         assert saved == 0
 
-    @pytest.mark.asyncio
     async def test_existing_term(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(return_value={
@@ -508,7 +492,6 @@ class TestTermExtractorSaveDiscoveredSynonyms:
         )
         assert saved == 1
 
-    @pytest.mark.asyncio
     async def test_new_term(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(return_value=None)
@@ -520,7 +503,6 @@ class TestTermExtractorSaveDiscoveredSynonyms:
         )
         assert saved == 1
 
-    @pytest.mark.asyncio
     async def test_exception_handling(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(side_effect=Exception("fail"))

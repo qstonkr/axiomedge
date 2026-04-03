@@ -36,7 +36,6 @@ class TestBasics:
     def test_source_type(self, connector: CrawlResultConnector):
         assert connector.source_type == "crawl_result"
 
-    @pytest.mark.asyncio
     async def test_health_check(self, connector: CrawlResultConnector):
         assert await connector.health_check() is True
 
@@ -267,7 +266,6 @@ class TestFingerprintPages:
 # ---------------------------------------------------------------------------
 
 class TestFetch:
-    @pytest.mark.asyncio
     async def test_fetch_json(self, connector: CrawlResultConnector, tmp_dir: Path):
         data = {
             "pages": [
@@ -293,7 +291,6 @@ class TestFetch:
         assert doc.title == "Test Page"
         assert doc.content == "Hello world"
 
-    @pytest.mark.asyncio
     async def test_fetch_jsonl(self, connector: CrawlResultConnector, tmp_dir: Path):
         lines = [
             json.dumps({
@@ -313,7 +310,6 @@ class TestFetch:
         assert result.success is True
         assert len(result.documents) == 1
 
-    @pytest.mark.asyncio
     async def test_fetch_no_files(self, connector: CrawlResultConnector, tmp_dir: Path):
         result = await connector.fetch(
             {"entry_point": str(tmp_dir / "empty"), "source": "all"}
@@ -321,7 +317,6 @@ class TestFetch:
         assert result.success is False
         assert "No crawl JSON files" in (result.error or "")
 
-    @pytest.mark.asyncio
     async def test_fetch_skips_unchanged(self, connector: CrawlResultConnector, tmp_dir: Path):
         data = {"pages": [{"page_id": "pg1", "content_text": "stable", "url": "", "version": 1}]}
         f = tmp_dir / "crawl_combined.json"
@@ -338,7 +333,6 @@ class TestFetch:
         assert result2.documents == []
         assert result2.metadata.get("skipped") is True
 
-    @pytest.mark.asyncio
     async def test_fetch_with_source_info(self, connector: CrawlResultConnector, tmp_dir: Path):
         data = {
             "source_info": {"name": "wiki"},
@@ -350,7 +344,6 @@ class TestFetch:
         result = await connector.fetch({"entry_point": str(tmp_dir), "source": "all"})
         assert result.success is True
 
-    @pytest.mark.asyncio
     async def test_fetch_empty_pages_skipped(self, connector: CrawlResultConnector, tmp_dir: Path):
         data = {"pages": [{"page_id": "pg1", "content_text": "", "url": "", "version": 1}]}
         f = tmp_dir / "crawl_combined.json"
@@ -361,7 +354,6 @@ class TestFetch:
         assert len(result.documents) == 0
         assert result.metadata.get("pages_empty") == 1
 
-    @pytest.mark.asyncio
     async def test_fetch_jsonl_with_pages_array(self, connector: CrawlResultConnector, tmp_dir: Path):
         line = json.dumps({
             "pages": [
@@ -376,7 +368,6 @@ class TestFetch:
         assert result.success is True
         assert len(result.documents) == 2
 
-    @pytest.mark.asyncio
     async def test_fetch_invalid_json(self, connector: CrawlResultConnector, tmp_dir: Path):
         f = tmp_dir / "crawl_bad.json"
         f.write_text("not valid json{{{")
@@ -384,7 +375,6 @@ class TestFetch:
         result = await connector.fetch({"entry_point": str(tmp_dir), "source": "bad"})
         assert result.success is False
 
-    @pytest.mark.asyncio
     async def test_fetch_with_author_fields(self, connector: CrawlResultConnector, tmp_dir: Path):
         data = {
             "pages": [{
@@ -410,7 +400,6 @@ class TestFetch:
 # ---------------------------------------------------------------------------
 
 class TestLazyFetch:
-    @pytest.mark.asyncio
     async def test_lazy_fetch_yields_docs(self, connector: CrawlResultConnector, tmp_dir: Path):
         data = {"pages": [{"page_id": "lf1", "content_text": "lazy", "url": "", "version": 1}]}
         f = tmp_dir / "crawl_combined.json"
@@ -421,7 +410,6 @@ class TestLazyFetch:
             docs.append(doc)
         assert len(docs) == 1
 
-    @pytest.mark.asyncio
     async def test_lazy_fetch_no_files(self, connector: CrawlResultConnector, tmp_dir: Path):
         docs = []
         async for doc in connector.lazy_fetch({"entry_point": str(tmp_dir / "empty"), "source": "all"}):

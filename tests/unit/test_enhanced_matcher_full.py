@@ -479,13 +479,11 @@ class TestL2RapidFuzz:
 
 
 class TestMatchSingle:
-    @pytest.mark.asyncio
     async def test_not_loaded_returns_new_term(self):
         m = _make_matcher()
         result = await m.match_enhanced(FakeTerm(term="anything"))
         assert result.zone == "NEW_TERM"
 
-    @pytest.mark.asyncio
     async def test_exact_match_returns_auto(self):
         m = _make_matcher(config=EnhancedMatcherConfig(
             enable_rapidfuzz=False, enable_dense_search=False, enable_cross_encoder=False
@@ -495,7 +493,6 @@ class TestMatchSingle:
         assert result.zone == "AUTO_MATCH"
         assert result.match_type == "exact"
 
-    @pytest.mark.asyncio
     async def test_no_match_returns_new_term(self):
         m = _make_matcher(config=EnhancedMatcherConfig(
             enable_rapidfuzz=False, enable_dense_search=False, enable_cross_encoder=False
@@ -504,7 +501,6 @@ class TestMatchSingle:
         result = await m.match_enhanced(FakeTerm(term="ZetaOmega"))
         assert result.zone == "NEW_TERM"
 
-    @pytest.mark.asyncio
     async def test_fused_rrf_result(self):
         """When no cross-encoder, uses fallback thresholds on channel scores."""
         m = _make_matcher(config=EnhancedMatcherConfig(
@@ -523,7 +519,6 @@ class TestMatchSingle:
 
 
 class TestMatchBatch:
-    @pytest.mark.asyncio
     async def test_empty_batch(self):
         m = _make_matcher(config=EnhancedMatcherConfig(
             enable_cross_encoder=False, enable_dense_search=False, enable_rapidfuzz=False,
@@ -532,7 +527,6 @@ class TestMatchBatch:
         results = await m.match_batch([])
         assert results == []
 
-    @pytest.mark.asyncio
     async def test_batch_with_exact_match(self):
         m = _make_matcher(config=EnhancedMatcherConfig(
             enable_cross_encoder=False, enable_dense_search=False, enable_rapidfuzz=False,
@@ -542,7 +536,6 @@ class TestMatchBatch:
         assert len(results) == 1
         assert results[0].zone == "AUTO_MATCH"
 
-    @pytest.mark.asyncio
     async def test_batch_disables_ce_for_large_batch(self):
         m = _make_matcher(config=EnhancedMatcherConfig(
             enable_cross_encoder=True, enable_dense_search=False, enable_rapidfuzz=False,
@@ -556,7 +549,6 @@ class TestMatchBatch:
         # _force_disable_ce should be reset after batch
         assert m._force_disable_ce is False
 
-    @pytest.mark.asyncio
     async def test_batch_disable_cross_encoder_flag(self):
         m = _make_matcher(config=EnhancedMatcherConfig(
             enable_cross_encoder=True, enable_dense_search=False, enable_rapidfuzz=False,
@@ -574,14 +566,12 @@ class TestMatchBatch:
 
 
 class TestL3CrossEncoder:
-    @pytest.mark.asyncio
     async def test_ce_disabled_returns_none(self):
         m = _make_matcher(config=EnhancedMatcherConfig(enable_cross_encoder=False))
         m.load_standard_terms([FakeTerm(term="Test")])
         result = await m._l3_cross_encoder_score("test", 0)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_ce_no_model_returns_none(self):
         m = _make_matcher()
         m.load_standard_terms([FakeTerm(term="Test")])
@@ -589,7 +579,6 @@ class TestL3CrossEncoder:
         result = await m._l3_cross_encoder_score("test", 0)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_ce_model_none_returns_none(self):
         m = _make_matcher()
         m.load_standard_terms([FakeTerm(term="Test")])
@@ -599,21 +588,18 @@ class TestL3CrossEncoder:
         result = await m._l3_cross_encoder_score("test", 0)
         assert result is None
 
-    @pytest.mark.asyncio
     async def test_ce_batch_disabled(self):
         m = _make_matcher(config=EnhancedMatcherConfig(enable_cross_encoder=False))
         m.load_standard_terms([FakeTerm(term="Test")])
         result = await m._l3_cross_encoder_batch("test", [0])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_ce_batch_no_cross_encoder(self):
         m = _make_matcher()
         m.load_standard_terms([FakeTerm(term="Test")])
         result = await m._l3_cross_encoder_batch("test", [0])
         assert result == []
 
-    @pytest.mark.asyncio
     async def test_ce_batch_model_none(self):
         m = _make_matcher()
         m.load_standard_terms([FakeTerm(term="Test")])

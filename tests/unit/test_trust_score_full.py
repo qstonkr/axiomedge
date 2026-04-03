@@ -240,7 +240,6 @@ class TestWilsonLowerBound:
 # ---------------------------------------------------------------------------
 
 class TestGetOrCreateScore:
-    @pytest.mark.asyncio
     async def test_returns_existing(self, service: TrustScoreService, mock_trust_repo):
         existing = {"entry_id": "e1", "kb_id": "kb1", "kts_score": 75.0}
         mock_trust_repo.get_by_entry = AsyncMock(return_value=existing)
@@ -249,7 +248,6 @@ class TestGetOrCreateScore:
         assert result["kts_score"] == 75.0
         mock_trust_repo.save.assert_not_awaited()
 
-    @pytest.mark.asyncio
     async def test_creates_new(self, service: TrustScoreService, mock_trust_repo):
         mock_trust_repo.get_by_entry = AsyncMock(return_value=None)
 
@@ -261,7 +259,6 @@ class TestGetOrCreateScore:
 
 
 class TestGetScore:
-    @pytest.mark.asyncio
     async def test_get_score(self, service: TrustScoreService, mock_trust_repo):
         mock_trust_repo.get_by_entry = AsyncMock(return_value={"kts_score": 50.0})
         result = await service.get_score("e1", "kb1")
@@ -269,7 +266,6 @@ class TestGetScore:
 
 
 class TestComputeKtsService:
-    @pytest.mark.asyncio
     async def test_recompute_with_feedback(self, service: TrustScoreService, mock_trust_repo, mock_feedback_repo):
         mock_trust_repo.get_by_entry = AsyncMock(return_value={
             "entry_id": "e1",
@@ -293,14 +289,12 @@ class TestComputeKtsService:
         mock_trust_repo.save.assert_awaited()
         mock_feedback_repo.get_votes_for_entry.assert_awaited()
 
-    @pytest.mark.asyncio
     async def test_recompute_creates_if_missing(self, service: TrustScoreService, mock_trust_repo):
         mock_trust_repo.get_by_entry = AsyncMock(return_value=None)
 
         result = await service.compute_kts("new_entry", "kb1")
         assert "kts_score" in result
 
-    @pytest.mark.asyncio
     async def test_recompute_feedback_error_handled(self, service: TrustScoreService, mock_trust_repo, mock_feedback_repo):
         mock_trust_repo.get_by_entry = AsyncMock(return_value={
             "entry_id": "e1",
@@ -324,7 +318,6 @@ class TestComputeKtsService:
 
 
 class TestBatchRecompute:
-    @pytest.mark.asyncio
     async def test_batch_recompute(self, service: TrustScoreService, mock_trust_repo, mock_feedback_repo):
         entries = [
             {
@@ -346,7 +339,6 @@ class TestBatchRecompute:
         count = await service.batch_recompute("kb1")
         assert count == 3
 
-    @pytest.mark.asyncio
     async def test_batch_recompute_partial_failure(self, service: TrustScoreService, mock_trust_repo, mock_feedback_repo):
         entries = [
             {"entry_id": "e1", "kb_id": "kb1"},
@@ -379,7 +371,6 @@ class TestBatchRecompute:
 
 
 class TestGetTopEntries:
-    @pytest.mark.asyncio
     async def test_get_top_entries(self, service: TrustScoreService, mock_trust_repo):
         entries = [
             {"entry_id": "e1", "kts_score": 80},
@@ -394,7 +385,6 @@ class TestGetTopEntries:
 
 
 class TestGetStaleEntries:
-    @pytest.mark.asyncio
     async def test_get_stale_entries(self, service: TrustScoreService, mock_trust_repo):
         mock_trust_repo.get_stale_entries = AsyncMock(return_value=[{"entry_id": "stale1"}])
         result = await service.get_stale_entries("kb1")
@@ -402,7 +392,6 @@ class TestGetStaleEntries:
 
 
 class TestGetNeedsReview:
-    @pytest.mark.asyncio
     async def test_get_needs_review(self, service: TrustScoreService, mock_trust_repo):
         mock_trust_repo.get_needs_review = AsyncMock(return_value=[{"entry_id": "review1"}])
         result = await service.get_needs_review("kb1")
@@ -410,7 +399,6 @@ class TestGetNeedsReview:
 
 
 class TestUpdateVote:
-    @pytest.mark.asyncio
     async def test_upvote(self, service: TrustScoreService, mock_trust_repo):
         existing = {
             "entry_id": "e1", "kb_id": "kb1",
@@ -427,7 +415,6 @@ class TestUpdateVote:
         assert result["upvotes"] == 6
         mock_trust_repo.save.assert_awaited()
 
-    @pytest.mark.asyncio
     async def test_downvote(self, service: TrustScoreService, mock_trust_repo):
         existing = {
             "entry_id": "e1", "kb_id": "kb1",
@@ -443,7 +430,6 @@ class TestUpdateVote:
         result = await service.update_vote("e1", "kb1", "downvote")
         assert result["downvotes"] == 2
 
-    @pytest.mark.asyncio
     async def test_vote_creates_if_missing(self, service: TrustScoreService, mock_trust_repo):
         mock_trust_repo.get_by_entry = AsyncMock(return_value=None)
 

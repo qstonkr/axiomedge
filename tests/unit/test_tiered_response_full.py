@@ -111,7 +111,6 @@ class TestTieredResponseDataclass:
 # ---------------------------------------------------------------------------
 
 class TestGenerateRouting:
-    @pytest.mark.asyncio
     async def test_chitchat(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(return_value="안녕하세요! 무엇을 도와드릴까요?")
         ctx = _make_context(query="안녕하세요")
@@ -121,7 +120,6 @@ class TestGenerateRouting:
         assert resp.source_type == "general"
         assert resp.confidence == 1.0
 
-    @pytest.mark.asyncio
     async def test_factual(self, generator: TieredResponseGenerator, mock_llm):
         ctx = _make_context()
         resp = await generator.generate(QueryType.FACTUAL, ctx)
@@ -129,7 +127,6 @@ class TestGenerateRouting:
         assert resp.source_type == "document"
         mock_llm.generate.assert_awaited_once()
 
-    @pytest.mark.asyncio
     async def test_analytical(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(return_value="[분석] 추론 내용 [1]")
         ctx = _make_context()
@@ -138,7 +135,6 @@ class TestGenerateRouting:
         assert resp.source_type == "inference"
         assert resp.disclaimer == TieredResponseGenerator.INFERENCE_DISCLAIMER
 
-    @pytest.mark.asyncio
     async def test_analytical_no_inference_tag(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(return_value="문서 기반 답변 [1]")
         ctx = _make_context()
@@ -146,7 +142,6 @@ class TestGenerateRouting:
         assert resp.source_type == "document"
         assert resp.disclaimer is None
 
-    @pytest.mark.asyncio
     async def test_advisory(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(return_value="[권장 사항] 이렇게 하세요 [1]")
         ctx = _make_context()
@@ -156,7 +151,6 @@ class TestGenerateRouting:
         assert resp.disclaimer == TieredResponseGenerator.GENERAL_KNOWLEDGE_DISCLAIMER
         assert len(resp.follow_up_suggestions) > 0
 
-    @pytest.mark.asyncio
     async def test_unknown_treated_as_factual(self, generator: TieredResponseGenerator, mock_llm):
         ctx = _make_context()
         resp = await generator.generate(QueryType.UNKNOWN, ctx)
@@ -168,7 +162,6 @@ class TestGenerateRouting:
 # ---------------------------------------------------------------------------
 
 class TestFactualNoContext:
-    @pytest.mark.asyncio
     async def test_no_relevant_context(self, generator: TieredResponseGenerator, mock_llm):
         ctx = _make_context(scores=[0.01, 0.02])
         resp = await generator.generate(QueryType.FACTUAL, ctx)
@@ -183,7 +176,6 @@ class TestFactualNoContext:
 # ---------------------------------------------------------------------------
 
 class TestErrorHandling:
-    @pytest.mark.asyncio
     async def test_factual_llm_error(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(side_effect=Exception("LLM failed"))
         ctx = _make_context()
@@ -192,14 +184,12 @@ class TestErrorHandling:
         assert resp.confidence == 0.0
         assert resp.disclaimer == TieredResponseGenerator.ERROR_DISCLAIMER
 
-    @pytest.mark.asyncio
     async def test_analytical_llm_error(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(side_effect=Exception("LLM failed"))
         ctx = _make_context()
         resp = await generator.generate(QueryType.ANALYTICAL, ctx)
         assert "오류" in resp.content
 
-    @pytest.mark.asyncio
     async def test_advisory_llm_error(self, generator: TieredResponseGenerator, mock_llm):
         mock_llm.generate = AsyncMock(side_effect=Exception("LLM failed"))
         ctx = _make_context()
@@ -328,7 +318,6 @@ class TestCalculateConfidence:
 # ---------------------------------------------------------------------------
 
 class TestNoOpGenerator:
-    @pytest.mark.asyncio
     async def test_noop_generate(self):
         gen = NoOpTieredResponseGenerator()
         ctx = _make_context()
@@ -338,7 +327,6 @@ class TestNoOpGenerator:
         assert resp.confidence == 1.0
         assert "[NoOp]" in (resp.disclaimer or "")
 
-    @pytest.mark.asyncio
     async def test_noop_all_query_types(self):
         gen = NoOpTieredResponseGenerator()
         ctx = _make_context()
