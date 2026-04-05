@@ -246,7 +246,7 @@ class TestGraphRAGExtractorParseResponse:
         assert result.relationship_count == 1
 
     def test_json_in_code_block(self):
-        content = '```json\n{"nodes": [{"id": "A", "type": "Person"}], "relationships": []}\n```'
+        content = '```json\n{"nodes": [{"id": "홍길동", "type": "Person"}], "relationships": []}\n```'
         result = self.ext._parse_response(content)
         assert result.node_count == 1
 
@@ -277,8 +277,8 @@ class TestGraphRAGExtractorParseResponse:
 
     def test_invalid_relationship_type_defaults(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}, {"id": "B", "type": "Team"}],
-            "relationships": [{"source": "A", "type": "INVALID_TYPE", "target": "B"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}, {"id": "B", "type": "Team"}],
+            "relationships": [{"source": "홍길동", "type": "INVALID_TYPE", "target": "B"}],
         })
         result = self.ext._parse_response(content)
         assert result.relationship_count == 1
@@ -287,23 +287,23 @@ class TestGraphRAGExtractorParseResponse:
     def test_dangling_reference(self):
         """Relationships referencing non-existent nodes should still be added with a warning."""
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}],
-            "relationships": [{"source": "A", "type": "MANAGES", "target": "NonExistent"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}],
+            "relationships": [{"source": "홍길동", "type": "MANAGES", "target": "NonExistent"}],
         })
         result = self.ext._parse_response(content)
         assert result.relationship_count == 1
 
     def test_empty_source_or_target_filtered(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}],
-            "relationships": [{"source": "", "type": "MANAGES", "target": "A"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}],
+            "relationships": [{"source": "", "type": "MANAGES", "target": "홍길동"}],
         })
         result = self.ext._parse_response(content)
         assert result.relationship_count == 0
 
     def test_node_properties_preserved(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person", "role": "manager"}],
+            "nodes": [{"id": "홍길동", "type": "Person", "role": "manager"}],
             "relationships": [],
         })
         result = self.ext._parse_response(content)
@@ -311,8 +311,8 @@ class TestGraphRAGExtractorParseResponse:
 
     def test_relationship_properties_preserved(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}, {"id": "B", "type": "Team"}],
-            "relationships": [{"source": "A", "type": "MEMBER_OF", "target": "B", "since": "2024"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}, {"id": "B", "type": "Team"}],
+            "relationships": [{"source": "홍길동", "type": "MEMBER_OF", "target": "B", "since": "2024"}],
         })
         result = self.ext._parse_response(content)
         assert result.relationships[0].properties.get("since") == "2024"
@@ -322,7 +322,7 @@ class TestGraphRAGExtractorExtract:
     def test_extract_success(self):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}],
             "relationships": [],
         })
         ext = GraphRAGExtractor(llm_client=mock_llm, neo4j_driver=MagicMock())

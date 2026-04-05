@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+import re
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
@@ -495,11 +498,6 @@ async def collection_stats(name: str):
 
 
 # ============================================================================
-# Config Weights - Hot Reload
-# ============================================================================
-
-
-# ============================================================================
 # Graph - Cleanup
 # ============================================================================
 
@@ -511,8 +509,6 @@ async def graph_cleanup(body: dict[str, Any] | None = None):
         apply (bool): False = dry run (default), True = apply fixes
         kb_id (str): Filter to a single KB
     """
-    import asyncio
-
     state = _get_state()
     graph = state.get("graph_repo")
 
@@ -559,7 +555,6 @@ async def graph_cleanup(body: dict[str, Any] | None = None):
 @router.post("/graph/cleanup/analyze")
 async def graph_cleanup_analyze(body: dict[str, Any] | None = None):
     """Analyze graph quality issues without applying fixes (always dry run)."""
-    import asyncio
 
     state = _get_state()
     graph = state.get("graph_repo")
@@ -598,6 +593,284 @@ async def graph_cleanup_analyze(body: dict[str, Any] | None = None):
             "tasks": [],
             "total_found": 0,
             "total_fixed": 0,
+        }
+
+
+# ============================================================================
+# Graph - AI Classification (LLM-based entity reclassification)
+# ============================================================================
+
+AI_CLASSIFY_PROMPT = """다음 엔티티 목록의 올바른 타입을 분류하세요.
+가능한 타입: Person, Store, System, Location, Team, Process, Product, Policy, Role, Event, Term, DELETE(삭제대상)
+
+각 엔티티에 대해 JSON 배열로 응답하세요:
+[{{"name": "엔티티명", "type": "올바른타입", "reason": "이유"}}]
+
+엔티티 목록:
+{entities}
+"""
+
+_KOREAN_NAME_RE = re.compile(r"^[가-힣]{2,4}$")
+_VALID_LABELS = {
+    "Person", "Store", "System", "Location", "Team",
+    "Process", "Product", "Policy", "Role", "Event", "Term",
+}
+
+
+def _fetch_ai_classify_candidates(
+    kb_id: str | None, limit: int,
+) -> list[dict[str, Any]]:
+    """Fetch misclassified/ambiguous nodes from Neo4j (sync, for asyncio.to_thread)."""
+    import os
+
+    from neo4j import GraphDatabase
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "")
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    auth = (user, password) if password else None
+    driver = GraphDatabase.driver(uri, auth=auth)
+
+    kb_clause = f" AND n.kb_id = '{kb_id}'" if kb_id else ""
+    candidates: list[dict[str, Any]] = []
+    half = limit // 2
+
+    try:
+        with driver.session(database=database) as session:
+            # 1. Person nodes that don't match Korean name pattern
+            q1 = (
+                "MATCH (n:Person) "
+                f"WHERE NOT n.name =~ '^[가-힣]{{2,4}}$'{kb_clause} "
+                "RETURN elementId(n) AS eid, n.name AS name, "
+                "'Person' AS current_label, n.kb_id AS kb_id "
+                f"LIMIT {half}"
+            )
+            result1 = session.run(q1)
+            for record in result1:
+                candidates.append(dict(record))
+
+            # 2. __Entity__-only nodes (no type label)
+            q2 = (
+                "MATCH (n:__Entity__) "
+                "WHERE size([l IN labels(n) WHERE l <> '__Entity__']) = 0 "
+                f"AND n.name IS NOT NULL{kb_clause} "
+                "RETURN elementId(n) AS eid, n.name AS name, "
+                "'__Entity__' AS current_label, n.kb_id AS kb_id "
+                f"LIMIT {limit - half}"
+            )
+            result2 = session.run(q2)
+            for record in result2:
+                candidates.append(dict(record))
+    finally:
+        driver.close()
+
+    return candidates[:limit]
+
+
+def _apply_ai_classifications(
+    classifications: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Apply LLM classification results to Neo4j (sync, for asyncio.to_thread)."""
+    import os
+
+    from neo4j import GraphDatabase
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "")
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    auth = (user, password) if password else None
+    driver = GraphDatabase.driver(uri, auth=auth)
+
+    stats = {"relabeled": 0, "deleted": 0, "skipped": 0, "errors": 0}
+
+    try:
+        with driver.session(database=database) as session:
+            for item in classifications:
+                eid = item.get("eid")
+                new_type = item.get("type", "").strip()
+                old_label = item.get("current_label", "")
+
+                if not eid or not new_type:
+                    stats["skipped"] += 1
+                    continue
+
+                try:
+                    if new_type == "DELETE":
+                        session.run(
+                            "MATCH (n) WHERE elementId(n) = $eid DETACH DELETE n",
+                            parameters={"eid": eid},
+                        )
+                        stats["deleted"] += 1
+                    elif new_type in _VALID_LABELS:
+                        if new_type == old_label:
+                            stats["skipped"] += 1
+                            continue
+                        # Remove old label (if not __Entity__) and set new label
+                        if old_label and old_label != "__Entity__":
+                            session.run(
+                                f"MATCH (n) WHERE elementId(n) = $eid "
+                                f"REMOVE n:{old_label} SET n:{new_type}",
+                                parameters={"eid": eid},
+                            )
+                        else:
+                            session.run(
+                                f"MATCH (n) WHERE elementId(n) = $eid SET n:{new_type}",
+                                parameters={"eid": eid},
+                            )
+                        stats["relabeled"] += 1
+                    else:
+                        stats["skipped"] += 1
+                except Exception as e:
+                    logger.warning("AI classify apply error for %s: %s", eid, e)
+                    stats["errors"] += 1
+    finally:
+        driver.close()
+
+    return stats
+
+
+def _parse_llm_json_response(text: str) -> list[dict[str, Any]]:
+    """Extract JSON array from LLM response text."""
+    # Try direct parse first
+    text = text.strip()
+    try:
+        result = json.loads(text)
+        if isinstance(result, list):
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting from markdown code block
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group(1).strip())
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding array in text
+    match = re.search(r"\[.*\]", text, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group(0))
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+    return []
+
+
+@router.post("/graph/cleanup/ai-classify")
+async def graph_ai_classify(body: dict[str, Any] | None = None):
+    """LLM-based entity reclassification using SageMaker EXAONE.
+
+    Body (all optional):
+        limit (int): Max nodes to process (default 200)
+        apply (bool): False = dry run (default), True = apply reclassification
+        kb_id (str): Filter to a single KB
+    """
+    state = _get_state()
+    llm = state.get("llm_client")
+
+    if not llm:
+        return {
+            "success": False,
+            "error": "LLM client not available",
+            "candidates": 0,
+            "classifications": [],
+            "stats": {},
+        }
+
+    body = body or {}
+    limit = min(max(body.get("limit", 200), 10), 500)
+    apply = body.get("apply", False)
+    kb_id = body.get("kb_id")
+
+    try:
+        # Step 1: Fetch candidates from Neo4j
+        candidates = await asyncio.to_thread(
+            _fetch_ai_classify_candidates, kb_id, limit,
+        )
+
+        if not candidates:
+            return {
+                "success": True,
+                "mode": "apply" if apply else "dry_run",
+                "candidates": 0,
+                "classifications": [],
+                "stats": {"relabeled": 0, "deleted": 0, "skipped": 0},
+            }
+
+        # Step 2: Batch candidates and call LLM
+        batch_size = 30
+        all_classifications: list[dict[str, Any]] = []
+
+        for i in range(0, len(candidates), batch_size):
+            batch = candidates[i : i + batch_size]
+            entity_lines = "\n".join(
+                f"- {c['name']} (현재: {c['current_label']})" for c in batch
+            )
+            prompt = AI_CLASSIFY_PROMPT.format(entities=entity_lines)
+
+            try:
+                response = await llm.generate(prompt, temperature=0.1, max_tokens=4096)
+                parsed = _parse_llm_json_response(response)
+
+                # Match LLM results back to candidates by name
+                name_to_candidate = {c["name"]: c for c in batch}
+                for item in parsed:
+                    name = item.get("name", "")
+                    candidate = name_to_candidate.get(name)
+                    if candidate:
+                        all_classifications.append({
+                            "eid": candidate["eid"],
+                            "name": name,
+                            "current_label": candidate["current_label"],
+                            "type": item.get("type", ""),
+                            "reason": item.get("reason", ""),
+                            "kb_id": candidate.get("kb_id"),
+                        })
+            except Exception as e:
+                logger.warning(
+                    "AI classify LLM batch %d failed: %s", i // batch_size, e,
+                )
+
+        # Step 3: Apply if requested
+        stats: dict[str, int] = {"relabeled": 0, "deleted": 0, "skipped": 0, "errors": 0}
+        if apply and all_classifications:
+            stats = await asyncio.to_thread(
+                _apply_ai_classifications, all_classifications,
+            )
+
+        return {
+            "success": True,
+            "mode": "apply" if apply else "dry_run",
+            "candidates": len(candidates),
+            "classifications": [
+                {
+                    "name": c["name"],
+                    "current_label": c["current_label"],
+                    "new_type": c["type"],
+                    "reason": c["reason"],
+                    "kb_id": c.get("kb_id"),
+                }
+                for c in all_classifications
+            ],
+            "stats": stats,
+        }
+    except Exception as e:
+        logger.warning("AI classify failed: %s", e)
+        return {
+            "success": False,
+            "error": str(e),
+            "candidates": 0,
+            "classifications": [],
+            "stats": {},
         }
 
 

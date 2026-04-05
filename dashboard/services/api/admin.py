@@ -99,6 +99,15 @@ def graph_cleanup_apply(kb_id: str | None = None) -> dict:
     return _post("/api/v1/admin/graph/cleanup", body, timeout=120)
 
 
+def graph_ai_classify(
+    limit: int = 200, kb_id: str | None = None, apply: bool = False,
+) -> dict:
+    body: dict[str, Any] = {"limit": limit, "apply": apply}
+    if kb_id:
+        body["kb_id"] = kb_id
+    return _post("/api/v1/admin/graph/cleanup/ai-classify", body, timeout=180)
+
+
 # ============================================================================
 # Embedding & Cache
 # ============================================================================

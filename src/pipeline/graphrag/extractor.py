@@ -44,6 +44,23 @@ _NON_PERSON_BLOCKLIST = frozenset({
     '매출', '정산', '비용', '수수료', '계약', '점포',
 })
 
+# Company/brand suffixes that should be Store, not Person
+_COMPANY_SUFFIXES = ('카드', '생명', '보험', '은행', '증권', '캐피탈', '파트너스', '자산운용')
+
+# Location suffix pattern: 2-4 Korean chars ending with geographic suffix
+_LOCATION_SUFFIX_RE = _re_mod.compile(r'^[가-힣]{2,4}[동구시도읍면로]$')
+
+# Team/org suffixes
+_TEAM_SUFFIXES = ('팀', '본부', '실', '부서', '센터', '사업부', '그룹', '파트')
+
+# Tech/tool names that should be System
+_SYSTEM_NAMES = frozenset({
+    '블록체인', '레디스', '카카오톡', '셀러툴', '라인웍스', '피그마',
+    '마이쇼핑', '티비허브', '암복화', '랜섬웨어', '팝빌', '인프라',
+    '클라우드', '방화벽', '백업', '모니터링', '포스', '포스기',
+    '네트워크', '와이파이',
+})
+
 # Platforms that should be System, not Store
 _PLATFORM_NAMES = frozenset({
     'G마켓', '11번가', '쿠팡', '위메프', '티몬', '옥션',
@@ -78,14 +95,55 @@ def _validate_entity(node_id: str, node_type: str) -> tuple[str | None, str]:
     if _REPEATED_SYLLABLE_RE.search(node_id):
         return None, node_type
 
-    # --- Person semantic validation ---
+    # --- Person type correction: reclassify before validation ---
     if node_type == "Person":
+        name = node_id.strip()
+
+        # Reclassify: company suffixes → Store
+        if any(name.endswith(s) for s in _COMPANY_SUFFIXES):
+            return node_id, "Store"
+
+        # Reclassify: location pattern → Location
+        if _LOCATION_SUFFIX_RE.match(name):
+            return node_id, "Location"
+
+        # Reclassify: tech/tool names → System
+        if name in _SYSTEM_NAMES:
+            return node_id, "System"
+
+        # Reclassify: team/org suffixes → Team
+        if name.endswith(_TEAM_SUFFIXES):
+            return node_id, "Team"
+
+        # --- Person semantic validation (skip invalid) ---
         if node_id in _NON_PERSON_BLOCKLIST:
             return None, node_type
         if len(node_id) > 15:
             return None, node_type
         if _DIGIT_UNDERSCORE_RE.search(node_id):
             return None, node_type
+
+        # Rule 1: Too short (<=2 chars)
+        if len(name) <= 2:
+            return None, node_type
+        # Rule 2: Role description, not a name
+        _role_suffixes = ("담당자", "관리자", "엔지니어", "개발자", "운영자", "리더", "매니저", "담당")
+        if name.endswith(_role_suffixes):
+            return None, node_type
+        # Rule 3: Bracket-wrapped
+        if name.startswith("[") or name.startswith("("):
+            return None, node_type
+        # Rule 4: Company name
+        if "(주)" in name or "(사)" in name:
+            return None, node_type
+        # Rule 5: Contains "미기재", "미명시", "미상", etc.
+        if any(ph in name for ph in ("미기재", "미명시", "미상", "이름 없", "확인 불가")):
+            return None, node_type
+        # Rule 6: Clean parenthetical — extract name before parenthesis
+        if "(" in name:
+            _paren_match = _re_mod.match(r"^([가-힣]{2,4})[A-Z]?\s*\(", name)
+            if _paren_match:
+                node_id = _paren_match.group(1)
 
     # --- Store type correction: platforms → System ---
     if node_type == "Store" and node_id in _PLATFORM_NAMES:
