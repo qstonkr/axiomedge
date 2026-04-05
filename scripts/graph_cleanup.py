@@ -34,6 +34,14 @@ PLACEHOLDER_NAMES = {
     "N/A", "n/a", "없음", "미정", "해당없음", "해당 없음",
     "미입력", "미확인", "확인불가", "알수없음", "알 수 없음",
     "-", "--", "---", "TBD", "tbd", "null", "NULL", "None",
+    # Long placeholders from LLM
+    "문서 작성자 또는 담당자 (명시되지 않음)",
+    "미상 (문서에서 특정 개인 이름 없음)",
+    "GS Retail 직원 (명시되지 않음)",
+    "GS Retail 직원 (추정)",
+    "GS Retail 직원 (추정 불가)",
+    "점포명 (구체적인 점포명이 문서에 명시되지 않음)",
+    "경영주 (주 손)", "OFC님", "B",
 }
 
 NON_PERSON_BLOCKLIST = {
@@ -43,10 +51,22 @@ NON_PERSON_BLOCKLIST = {
     "Kubernetes", "Docker", "AWS", "Azure", "GCP",
     "SageMaker", "Qdrant", "Neo4j", "PostgreSQL", "Redis", "Kafka",
     "Elasticsearch", "OpenSearch", "Kibana", "Zabbix", "Datadog",
-    # Generic non-person terms often misclassified
+    # Korean company/service names misclassified as Person
+    "피그마", "구글", "네이버", "카카오", "아마존", "마이크로소프트",
+    "깃허브", "쿠팡", "배민", "토스", "당근마켓",
+    # Geographic names misclassified as Person
+    "신월동", "강남", "서울", "부산", "제주", "논산", "수지",
+    "강서", "용산", "성남", "수원", "인천",
+    # Abstract concepts misclassified as Person
+    "리소스", "개인정보", "데이터", "시스템", "서버", "프로젝트",
+    "휴가", "요청", "권한", "설정", "보안", "인증",
+    "매출", "정산", "비용", "수수료", "계약", "점포",
+    "과금", "리턴", "로드", "큐빅", "올해말",
+    # Generic role terms (not specific persons)
+    "관리자", "운영자", "담당자", "담당 부서",
     "시스템", "서버", "클라이언트", "프로세스", "서비스",
     "모듈", "컴포넌트", "플랫폼", "애플리케이션", "앱",
-    "관리자", "운영자", "담당자", "담당 부서",
+    "법무법인", "외부인",
 }
 
 STORE_TO_SYSTEM_BLOCKLIST = {
@@ -56,17 +76,28 @@ STORE_TO_SYSTEM_BLOCKLIST = {
     "Kubernetes", "Docker", "SageMaker", "Qdrant", "Neo4j",
     "PostgreSQL", "Redis", "Kafka", "Elasticsearch", "OpenSearch",
     "Zabbix", "Datadog", "AWS", "Azure", "GCP",
+    # E-commerce platforms misclassified as Store
+    "G마켓", "11번가", "쿠팡", "아마존", "이베이", "알리바바",
+    "LF MALL", "E스토어-유토피아", "E스토어-이즈마인",
+    "(주)성운프라자", "(주)지에스리테일 홈쇼핑",
+    "CATV(방송)", "ELEVEN", "7-ELEVEN", "7-11",
+    "CVS", "JBP매장",
 }
 
 STORE_PRODUCT_REMOVE = {
     # Products wrongly labeled as Store — these should be removed entirely
     "iPhone", "iPad", "Galaxy", "MacBook", "Windows", "Linux",
     "Chrome", "Firefox", "Safari", "Edge",
+    # Korean food/product names misclassified as Store
+    "숫불김밥110G", "그릴비엔나140G", "후랑크소시지80",
+    "원스턴수퍼라이",
 }
 
 KB_ID_NORMALIZE = {
     "itops-general": "itops_general",
     "partner-talk": "partnertalk",
+    "a-ari": "a_ari",
+    "g-espa": "g_espa",
 }
 
 # OCR corruption patterns
@@ -92,26 +123,37 @@ def _run_query(session, cypher: str, params: dict | None = None) -> list[dict]:
 
 
 def task_remove_placeholder_persons(session, *, apply: bool, kb_id: str | None) -> dict:
-    """Remove Person nodes with placeholder names."""
+    """Remove Person nodes with placeholder names (exact + pattern match)."""
     names_list = list(PLACEHOLDER_NAMES)
     kb_clause = _kb_filter(kb_id)
 
+    # Exact match + pattern match for long placeholders
     count_q = (
-        f"MATCH (n:Person) WHERE n.name IN $names{kb_clause} RETURN count(n) AS cnt"
+        "MATCH (n:Person) WHERE "
+        f"(n.name IN $names OR n.name CONTAINS '명시되지' OR n.name CONTAINS '추정' "
+        f"OR n.name CONTAINS '확인불가' OR n.name CONTAINS '특정할 수 없' "
+        f"OR n.name STARTS WITH '문서 ' OR n.name STARTS WITH 'GS Retail 직원')"
+        f"{kb_clause} RETURN count(n) AS cnt"
     )
     count = _run_query(session, count_q, {"names": names_list})[0]["cnt"]
 
     samples_q = (
-        f"MATCH (n:Person) WHERE n.name IN $names{kb_clause} "
-        "RETURN n.name AS name, n.kb_id AS kb_id LIMIT 5"
+        "MATCH (n:Person) WHERE "
+        f"(n.name IN $names OR n.name CONTAINS '명시되지' OR n.name CONTAINS '추정' "
+        f"OR n.name CONTAINS '확인불가' OR n.name CONTAINS '특정할 수 없' "
+        f"OR n.name STARTS WITH '문서 ' OR n.name STARTS WITH 'GS Retail 직원')"
+        f"{kb_clause} RETURN n.name AS name, n.kb_id AS kb_id LIMIT 5"
     )
     samples = _run_query(session, samples_q, {"names": names_list})
 
     deleted = 0
     if apply and count > 0:
         delete_q = (
-            f"MATCH (n:Person) WHERE n.name IN $names{kb_clause} DETACH DELETE n "
-            "RETURN count(*) AS deleted"
+            "MATCH (n:Person) WHERE "
+            f"(n.name IN $names OR n.name CONTAINS '명시되지' OR n.name CONTAINS '추정' "
+            f"OR n.name CONTAINS '확인불가' OR n.name CONTAINS '특정할 수 없' "
+            f"OR n.name STARTS WITH '문서 ' OR n.name STARTS WITH 'GS Retail 직원')"
+            f"{kb_clause} DETACH DELETE n RETURN count(*) AS deleted"
         )
         deleted = _run_query(session, delete_q, {"names": names_list})[0]["deleted"]
         logger.info("Deleted %d placeholder Person nodes", deleted)
