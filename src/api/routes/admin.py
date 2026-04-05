@@ -499,6 +499,112 @@ async def collection_stats(name: str):
 # ============================================================================
 
 
+# ============================================================================
+# Graph - Cleanup
+# ============================================================================
+
+@router.post("/graph/cleanup")
+async def graph_cleanup(body: dict[str, Any] | None = None):
+    """Run graph quality cleanup: remove placeholders, reclassify mismatches, etc.
+
+    Body (all optional):
+        apply (bool): False = dry run (default), True = apply fixes
+        kb_id (str): Filter to a single KB
+    """
+    import asyncio
+
+    state = _get_state()
+    graph = state.get("graph_repo")
+
+    if not graph:
+        return {
+            "success": False,
+            "error": "Graph repository not available",
+            "tasks": [],
+            "total_found": 0,
+            "total_fixed": 0,
+        }
+
+    body = body or {}
+    apply = body.get("apply", False)
+    kb_id = body.get("kb_id")
+
+    try:
+        from scripts.graph_cleanup import run_cleanup
+
+        results = await asyncio.to_thread(run_cleanup, apply=apply, kb_id=kb_id)
+
+        total_found = sum(r.get("found", 0) for r in results)
+        total_fixed = sum(r.get("fixed", 0) for r in results)
+
+        return {
+            "success": True,
+            "mode": "apply" if apply else "dry_run",
+            "kb_id": kb_id,
+            "tasks": results,
+            "total_found": total_found,
+            "total_fixed": total_fixed,
+        }
+    except Exception as e:
+        logger.warning("Graph cleanup failed: %s", e)
+        return {
+            "success": False,
+            "error": str(e),
+            "tasks": [],
+            "total_found": 0,
+            "total_fixed": 0,
+        }
+
+
+@router.post("/graph/cleanup/analyze")
+async def graph_cleanup_analyze(body: dict[str, Any] | None = None):
+    """Analyze graph quality issues without applying fixes (always dry run)."""
+    import asyncio
+
+    state = _get_state()
+    graph = state.get("graph_repo")
+
+    if not graph:
+        return {
+            "success": False,
+            "error": "Graph repository not available",
+            "tasks": [],
+            "total_found": 0,
+            "total_fixed": 0,
+        }
+
+    kb_id = (body or {}).get("kb_id")
+
+    try:
+        from scripts.graph_cleanup import run_cleanup
+
+        results = await asyncio.to_thread(run_cleanup, apply=False, kb_id=kb_id)
+
+        total_found = sum(r.get("found", 0) for r in results)
+
+        return {
+            "success": True,
+            "mode": "dry_run",
+            "kb_id": kb_id,
+            "tasks": results,
+            "total_found": total_found,
+            "total_fixed": 0,
+        }
+    except Exception as e:
+        logger.warning("Graph cleanup analysis failed: %s", e)
+        return {
+            "success": False,
+            "error": str(e),
+            "tasks": [],
+            "total_found": 0,
+            "total_fixed": 0,
+        }
+
+
+# ============================================================================
+# Config Weights - Hot Reload
+# ============================================================================
+
 @router.post("/config/weights")
 async def get_config_weights():
     """Return current config weights."""

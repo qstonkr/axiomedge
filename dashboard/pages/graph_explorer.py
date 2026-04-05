@@ -19,8 +19,8 @@ render_sidebar(show_admin=True)
 st.title("🔗 지식 그래프")
 st.caption("지식 그래프의 엔티티, 관계, 전문가를 탐색하고 무결성을 검사합니다.")
 
-tab_search, tab_expert, tab_integrity = st.tabs(
-    ["그래프 검색", "전문가 찾기", "무결성 검사"]
+tab_search, tab_expert, tab_integrity, tab_cleanup = st.tabs(
+    ["그래프 검색", "전문가 찾기", "무결성 검사", "\U0001f9f9 그래프 정리"]
 )
 
 # =============================================================================
@@ -311,5 +311,133 @@ with tab_integrity:
             | 고아 노드 | 어떤 관계에도 연결되지 않은 단독 노드 |
             | 누락 관계 | 참조는 존재하지만 실제 관계가 없는 경우 |
             | 비일관성 | 양방향 관계 불일치, 타입 오류 등 |
+            """
+        )
+
+
+# =============================================================================
+# 탭 4: 그래프 정리
+# =============================================================================
+with tab_cleanup:
+    st.caption("그래프 품질 정리 -- 플레이스홀더, 오분류 노드, 테스트 데이터 등을 정리합니다.")
+
+    TASK_LABELS = {
+        "placeholder_persons": ("👤 플레이스홀더 Person", "명시되지 않음, 미상, unknown 등"),
+        "non_person_blocklist": ("🚫 Person 오분류", "시스템/플랫폼이 Person으로 분류된 경우"),
+        "store_reclassify": ("🏪 Store 오분류", "플랫폼→System, 제품→삭제"),
+        "normalize_kb_ids": ("🔗 KB ID 정규화", "하이픈→언더스코어 통일"),
+        "test_nodes": ("🧪 테스트 노드", "kb_id가 test로 시작하는 노드"),
+        "ocr_corrupted": ("📝 OCR 손상", "반복 문자, 낱자음/모음 (수동 확인 필요)"),
+    }
+
+    cleanup_col1, cleanup_col2 = st.columns([3, 1])
+    with cleanup_col2:
+        cleanup_kb = st.text_input(
+            "KB ID 필터 (선택)",
+            placeholder="전체 KB",
+            key="cleanup_kb_filter",
+        )
+
+    with cleanup_col1:
+        analyze_btn = st.button("분석 실행", key="cleanup_analyze_btn", type="primary")
+
+    if analyze_btn:
+        with st.spinner("그래프 품질 분석 중..."):
+            kb_val = cleanup_kb.strip() if cleanup_kb and cleanup_kb.strip() else None
+            analyze_result = api_client.graph_cleanup_analyze(kb_id=kb_val)
+
+        if api_failed(analyze_result):
+            st.warning("분석을 실행할 수 없습니다.")
+        elif not analyze_result.get("success"):
+            st.error(f"분석 실패: {analyze_result.get('error', '알 수 없는 오류')}")
+        else:
+            tasks = analyze_result.get("tasks", [])
+            total_found = analyze_result.get("total_found", 0)
+
+            # Store in session state for the apply button
+            st.session_state["cleanup_analysis"] = analyze_result
+
+            # Summary metrics
+            issue_tasks = [t for t in tasks if t.get("found", 0) > 0]
+            clean_tasks = [t for t in tasks if t.get("found", 0) == 0]
+
+            if total_found == 0:
+                st.success("정리할 이슈가 없습니다.")
+            else:
+                st.warning(f"{len(issue_tasks)}개 카테고리에서 총 {total_found}건의 이슈 발견")
+
+            # Task details
+            for task in tasks:
+                task_id = task.get("task", "")
+                found = task.get("found", 0)
+                samples = task.get("samples", [])
+                label_info = TASK_LABELS.get(task_id, (task_id, ""))
+                label, desc = label_info
+
+                if found > 0:
+                    with st.expander(f"{label}: {found}건", expanded=True):
+                        st.caption(desc)
+                        if samples:
+                            for s in samples:
+                                st.markdown(f"- `{s}`")
+                        if task.get("error"):
+                            st.error(task["error"])
+                else:
+                    st.markdown(f"- {label}: 이상 없음")
+
+    # Apply button (only show if analysis was done and issues found)
+    if st.session_state.get("cleanup_analysis"):
+        analysis = st.session_state["cleanup_analysis"]
+        total_found = analysis.get("total_found", 0)
+
+        if total_found > 0:
+            st.markdown("---")
+            st.warning(
+                f"총 {total_found}건의 이슈를 정리합니다. "
+                "OCR 손상 항목은 자동 수정되지 않습니다."
+            )
+
+            if st.button("정리 실행", key="cleanup_apply_btn", type="primary"):
+                with st.spinner("그래프 정리 실행 중..."):
+                    kb_val = analysis.get("kb_id")
+                    apply_result = api_client.graph_cleanup_apply(kb_id=kb_val)
+
+                if api_failed(apply_result):
+                    st.error("정리를 실행할 수 없습니다.")
+                elif not apply_result.get("success"):
+                    st.error(f"정리 실패: {apply_result.get('error', '알 수 없는 오류')}")
+                else:
+                    tasks = apply_result.get("tasks", [])
+                    total_fixed = apply_result.get("total_fixed", 0)
+
+                    st.success(f"정리 완료: {total_fixed}건 수정")
+
+                    for task in tasks:
+                        task_id = task.get("task", "")
+                        found = task.get("found", 0)
+                        fixed = task.get("fixed", 0)
+                        label_info = TASK_LABELS.get(task_id, (task_id, ""))
+                        label, _ = label_info
+
+                        if found > 0:
+                            if fixed > 0:
+                                st.markdown(f"- {label}: {found}건 중 **{fixed}건 수정**")
+                            else:
+                                st.markdown(f"- {label}: {found}건 발견 (수동 확인 필요)")
+
+                    # Clear analysis cache so user re-analyzes next time
+                    del st.session_state["cleanup_analysis"]
+
+    with st.expander("도움말: 그래프 정리 항목", expanded=False):
+        st.markdown(
+            """
+            | 항목 | 설명 | 자동 수정 |
+            |------|------|----------|
+            | 플레이스홀더 Person | "명시되지 않음", "미상" 등 의미 없는 Person 노드 | O |
+            | Person 오분류 | JIRA, Kubernetes 등 시스템이 Person으로 분류 | O |
+            | Store 오분류 | 플랫폼(→System)이나 제품이 Store로 분류 | O |
+            | KB ID 정규화 | itops-general → itops_general 등 | O |
+            | 테스트 노드 | kb_id가 test로 시작하는 노드 제거 | O |
+            | OCR 손상 | 반복 문자, 낱자음/모음 등 비정상 이름 | X (수동) |
             """
         )

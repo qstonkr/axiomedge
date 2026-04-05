@@ -60,6 +60,7 @@ from src.pipeline.ingestion_text import (  # noqa: E402
     clean_passage as _clean_passage,
     build_document_context_prefix as _build_document_context_prefix,
 )
+from src.pipeline.ocr_corrector import clean_chunk_text as _clean_chunk_text
 
 logger = logging.getLogger(__name__)
 
@@ -665,9 +666,11 @@ class IngestionPipeline:
             graphrag_stats: dict[str, Any] = {}
             if self.enable_graphrag and self.graphrag_extractor is not None:
                 try:
+                    # Clean OCR artifacts before GraphRAG extraction
+                    _graphrag_content = _clean_chunk_text(raw.content)
                     extraction_result = await asyncio.to_thread(
                         lambda: self.graphrag_extractor.extract(
-                            document=raw.content,
+                            document=_graphrag_content,
                             source_title=raw.title,
                             source_page_id=raw.doc_id,
                             source_updated_at=raw.updated_at.isoformat() if raw.updated_at else None,

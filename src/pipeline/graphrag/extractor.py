@@ -6,6 +6,7 @@ import concurrent.futures
 import json
 import logging
 import os
+import re as _re_mod
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +22,80 @@ from .prompts import (
 )
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Entity Validation Constants
+# =============================================================================
+
+# Placeholder / sentinel names that LLMs generate for unknown entities
+_PLACEHOLDER_VALUES = frozenset({
+    '명시되지 않음', '미상', 'unknown', 'unnamed', '이름없음',
+    '알 수 없음', 'none', 'n/a', '-', '?', '기타',
+    '정보없음', '불명', '미기재', '미입력', '없음',
+    '문서 작성자', '담당자', '해당 없음',
+})
+
+# Non-person entities that LLMs sometimes tag as Person
+_NON_PERSON_BLOCKLIST = frozenset({
+    '피그마', '구글', '깃허브', '아마존', '마이크로소프트', '네이버', '카카오',
+    '신월동', '강남', '서울', '부산', '제주', '논산', '수지',
+    '리소스', '개인정보', '데이터', '시스템', '서버', '프로젝트',
+    '휴가', '요청', '권한', '설정', '보안', '인증',
+    '매출', '정산', '비용', '수수료', '계약', '점포',
+})
+
+# Platforms that should be System, not Store
+_PLATFORM_NAMES = frozenset({
+    'G마켓', '11번가', '쿠팡', '위메프', '티몬', '옥션',
+    '네이버쇼핑', '카카오커머스', 'SSG닷컴',
+})
+
+# OCR corruption: lone jamo range
+_LONE_JAMO_RE = _re_mod.compile(r'[\u3131-\u3163]')
+# OCR corruption: 3+ repeated syllables (e.g., 가가가)
+_REPEATED_SYLLABLE_RE = _re_mod.compile(r'(.)\1{2,}')
+# Person name: digits or underscores
+_DIGIT_UNDERSCORE_RE = _re_mod.compile(r'[\d_]')
+# Product-like patterns: contains numbers+unit or specific food items
+_PRODUCT_PATTERN_RE = _re_mod.compile(r'\d+[GgMmLl]|김밥|라면|도시락|샌드위치|음료')
+
+
+def _validate_entity(node_id: str, node_type: str) -> tuple[str | None, str]:
+    """Validate and possibly reclassify an entity.
+
+    Returns:
+        (corrected_id, corrected_type) — corrected_id is None if entity should be skipped.
+    """
+    # --- Placeholder filter ---
+    if node_id.strip().lower() in _PLACEHOLDER_VALUES or node_id.strip() in _PLACEHOLDER_VALUES:
+        return None, node_type
+
+    # --- OCR corruption: lone jamo ---
+    if _LONE_JAMO_RE.search(node_id):
+        return None, node_type
+
+    # --- OCR corruption: 3+ repeated syllables ---
+    if _REPEATED_SYLLABLE_RE.search(node_id):
+        return None, node_type
+
+    # --- Person semantic validation ---
+    if node_type == "Person":
+        if node_id in _NON_PERSON_BLOCKLIST:
+            return None, node_type
+        if len(node_id) > 15:
+            return None, node_type
+        if _DIGIT_UNDERSCORE_RE.search(node_id):
+            return None, node_type
+
+    # --- Store type correction: platforms → System ---
+    if node_type == "Store" and node_id in _PLATFORM_NAMES:
+        return node_id, "System"
+
+    # --- Store type correction: product-like names → skip ---
+    if node_type == "Store" and _PRODUCT_PATTERN_RE.search(node_id):
+        return None, node_type
+
+    return node_id, node_type
 
 # Module-level shared executor for sync-in-async bridging (P2-5 perf fix)
 _SHARED_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -293,6 +368,19 @@ class GraphRAGExtractor:
                     continue
 
                 if node_id:  # 빈 ID 제외
+                    # Entity validation (placeholder, OCR corruption, semantic checks)
+                    validated_id, validated_type = _validate_entity(node_id, node_type)
+                    if validated_id is None:
+                        logger.debug("Entity filtered: id=%s, type=%s", node_id, node_type)
+                        continue
+                    # Apply corrections (e.g. platform Store → System)
+                    if validated_type != node_type:
+                        logger.info(
+                            "Entity reclassified: %s %s → %s", node_id, node_type, validated_type,
+                        )
+                    node_id = validated_id
+                    node_type = validated_type
+
                     node = GraphNode(
                         id=node_id,
                         type=node_type,
