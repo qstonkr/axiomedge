@@ -170,15 +170,15 @@ class TestParseResponse:
 
     def test_valid_json(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}],
-            "relationships": [{"source": "A", "type": "MANAGES", "target": "B"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}],
+            "relationships": [{"source": "홍길동", "type": "MANAGES", "target": "B"}],
         })
         result = self.extractor._parse_response(content)
         assert result.node_count == 1
         assert result.relationship_count == 1
 
     def test_json_in_markdown_block(self):
-        content = '```json\n{"nodes":[{"id":"A","type":"Person"}],"relationships":[]}\n```'
+        content = '```json\n{"nodes":[{"id":"홍길동","type":"Person"}],"relationships":[]}\n```'
         result = self.extractor._parse_response(content)
         assert result.node_count == 1
 
@@ -188,7 +188,7 @@ class TestParseResponse:
 
     def test_invalid_node_type(self):
         content = json.dumps({
-            "nodes": [{"id": "X", "type": "InvalidType"}, {"id": "Y", "type": "Person"}],
+            "nodes": [{"id": "X", "type": "InvalidType"}, {"id": "김영희", "type": "Person"}],
             "relationships": [],
         })
         result = self.extractor._parse_response(content)
@@ -196,7 +196,7 @@ class TestParseResponse:
 
     def test_empty_node_id_skipped(self):
         content = json.dumps({
-            "nodes": [{"id": "", "type": "Person"}, {"id": "A", "type": "Person"}],
+            "nodes": [{"id": "", "type": "Person"}, {"id": "홍길동", "type": "Person"}],
             "relationships": [],
         })
         result = self.extractor._parse_response(content)
@@ -204,31 +204,31 @@ class TestParseResponse:
 
     def test_invalid_relationship_type_defaults(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}, {"id": "B", "type": "Team"}],
-            "relationships": [{"source": "A", "type": "INVALID_REL", "target": "B"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}, {"id": "B", "type": "Team"}],
+            "relationships": [{"source": "홍길동", "type": "INVALID_REL", "target": "B"}],
         })
         result = self.extractor._parse_response(content)
         assert result.relationships[0].type == "RELATED_TO"
 
     def test_dangling_reference(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}],
-            "relationships": [{"source": "A", "type": "MANAGES", "target": "MISSING"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}],
+            "relationships": [{"source": "홍길동", "type": "MANAGES", "target": "MISSING"}],
         })
         result = self.extractor._parse_response(content)
         assert result.relationship_count == 1  # still added with warning
 
     def test_missing_source_target_skipped(self):
         content = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}],
-            "relationships": [{"source": "", "type": "MANAGES", "target": "A"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}],
+            "relationships": [{"source": "", "type": "MANAGES", "target": "홍길동"}],
         })
         result = self.extractor._parse_response(content)
         assert result.relationship_count == 0
 
     def test_malformed_json_repair(self):
         """Broken JSON should attempt repair."""
-        content = '{"nodes":[{"id":"A","type":"Person"}],"relationships":[]'  # missing closing brace
+        content = '{"nodes":[{"id":"홍길동","type":"Person"}],"relationships":[]'  # missing closing brace
         result = self.extractor._parse_response(content)
         # json_repair should fix it
         assert result.node_count >= 0  # shouldn't crash
@@ -483,8 +483,8 @@ class TestBatchProcessor:
     def test_process_documents_success(self):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}, {"id": "B", "type": "Team"}],
-            "relationships": [{"source": "A", "type": "MEMBER_OF", "target": "B"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}, {"id": "B", "type": "Team"}],
+            "relationships": [{"source": "홍길동", "type": "MEMBER_OF", "target": "B"}],
         })
         extractor = GraphRAGExtractor(llm_client=mock_llm)
         processor = GraphRAGBatchProcessor(extractor=extractor)
@@ -533,8 +533,8 @@ class TestBatchProcessor:
     def test_save_to_neo4j_called(self):
         mock_llm = MagicMock()
         mock_llm.invoke.return_value = json.dumps({
-            "nodes": [{"id": "A", "type": "Person"}, {"id": "B", "type": "Team"}],
-            "relationships": [{"source": "A", "type": "MEMBER_OF", "target": "B"}],
+            "nodes": [{"id": "홍길동", "type": "Person"}, {"id": "B", "type": "Team"}],
+            "relationships": [{"source": "홍길동", "type": "MEMBER_OF", "target": "B"}],
         })
         mock_driver = MagicMock()
         mock_session = MagicMock()

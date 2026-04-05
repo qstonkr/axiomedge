@@ -334,6 +334,144 @@ def task_remove_test_nodes(session, *, apply: bool, kb_id: str | None) -> dict:
     }
 
 
+def task_pattern_cleanup_persons(session, *, apply: bool, kb_id: str | None) -> dict:
+    """Pattern-based cleanup of Person nodes (short names, roles, brackets, etc.)."""
+    kb_clause = _kb_filter(kb_id)
+    total_found = 0
+    total_fixed = 0
+    all_samples: list[str] = []
+
+    sub_rules: list[dict] = [
+        {
+            "label": "short_name",
+            "desc": "이름 2자 이하",
+            "match": f"MATCH (n:Person) WHERE size(n.name) <= 2{kb_clause}",
+            "action": "delete",
+        },
+        {
+            "label": "role_suffix",
+            "desc": "역할/직급 설명 (담당자, 관리자 등)",
+            "match": (
+                f"MATCH (n:Person) WHERE "
+                f"(n.name ENDS WITH '담당자' OR n.name ENDS WITH '관리자' "
+                f"OR n.name ENDS WITH '엔지니어' OR n.name ENDS WITH '개발자' "
+                f"OR n.name ENDS WITH '운영자' OR n.name ENDS WITH '리더' "
+                f"OR n.name ENDS WITH '매니저' OR n.name ENDS WITH '담당'){kb_clause}"
+            ),
+            "action": "delete",
+        },
+        {
+            "label": "bracket_wrapped",
+            "desc": "괄호로 시작하는 이름",
+            "match": f"MATCH (n:Person) WHERE n.name STARTS WITH '['{kb_clause}",
+            "action": "delete",
+        },
+        {
+            "label": "company_name",
+            "desc": "회사명 ((주)/(사) 포함)",
+            "match": (
+                f"MATCH (n:Person) WHERE "
+                f"(n.name CONTAINS '(주)' OR n.name CONTAINS '(사)'){kb_clause}"
+            ),
+            "action": "relabel",  # Remove Person label, keep __Entity__
+        },
+        {
+            "label": "server_infra",
+            "desc": "서버/시스템 이름 (서버 또는 시스템으로 끝남)",
+            "match": (
+                f"MATCH (n:Person) WHERE "
+                f"(n.name ENDS WITH '서버' OR n.name ENDS WITH '시스템'){kb_clause}"
+            ),
+            "action": "relabel",
+        },
+        {
+            "label": "paren_org",
+            "desc": "이름(팀명) → 이름만 추출",
+            "match": (
+                f"MATCH (n:Person) WHERE n.name =~ '.*[가-힣]{{2,4}}\\\\(.+\\\\).*'{kb_clause}"
+            ),
+            "action": "clean_paren",
+        },
+        {
+            "label": "unknown_placeholder",
+            "desc": "미기재/미상/미명시 등 포함",
+            "match": (
+                f"MATCH (n:Person) WHERE "
+                f"(n.name CONTAINS '미기재' OR n.name CONTAINS '미상' "
+                f"OR n.name CONTAINS '미명시'){kb_clause}"
+            ),
+            "action": "delete",
+        },
+    ]
+
+    for rule in sub_rules:
+        # Count
+        count_q = f"{rule['match']} RETURN count(n) AS cnt"
+        count = _run_query(session, count_q)[0]["cnt"]
+        total_found += count
+
+        # Samples
+        samples_q = f"{rule['match']} RETURN n.name AS name LIMIT 3"
+        samples = _run_query(session, samples_q)
+        for s in samples:
+            all_samples.append(f"[{rule['label']}] {s['name']}")
+
+        if apply and count > 0:
+            if rule["action"] == "delete":
+                action_q = f"{rule['match']} DETACH DELETE n RETURN count(*) AS fixed"
+                fixed = _run_query(session, action_q)[0]["fixed"]
+                total_fixed += fixed
+                logger.info("Pattern %s: deleted %d", rule["label"], fixed)
+            elif rule["action"] == "relabel":
+                action_q = (
+                    f"{rule['match']} REMOVE n:Person RETURN count(*) AS fixed"
+                )
+                fixed = _run_query(session, action_q)[0]["fixed"]
+                total_fixed += fixed
+                logger.info("Pattern %s: relabeled %d", rule["label"], fixed)
+            elif rule["action"] == "clean_paren":
+                # Extract Korean name before parenthesis
+                action_q = (
+                    f"{rule['match']} "
+                    "WITH n, apoc.text.regexGroups(n.name, '([가-힣]{2,4})\\\\(') AS groups "
+                    "WHERE size(groups) > 0 AND size(groups[0]) > 1 "
+                    "SET n.name = groups[0][1] "
+                    "RETURN count(*) AS fixed"
+                )
+                try:
+                    fixed = _run_query(session, action_q)[0]["fixed"]
+                    total_fixed += fixed
+                    logger.info("Pattern %s: cleaned %d", rule["label"], fixed)
+                except Exception:
+                    # Fallback without APOC: use Python-side regex
+                    fetch_q = (
+                        f"{rule['match']} RETURN id(n) AS nid, n.name AS name"
+                    )
+                    rows = _run_query(session, fetch_q)
+                    cleaned = 0
+                    for row in rows:
+                        m = re.match(r"^([가-힣]{2,4})\s*\(", row["name"])
+                        if m:
+                            update_q = (
+                                "MATCH (n) WHERE id(n) = $nid SET n.name = $new_name"
+                            )
+                            _run_query(
+                                session, update_q,
+                                {"nid": row["nid"], "new_name": m.group(1)},
+                            )
+                            cleaned += 1
+                    total_fixed += cleaned
+                    logger.info("Pattern %s: cleaned %d (fallback)", rule["label"], cleaned)
+
+    return {
+        "task": "pattern_cleanup_persons",
+        "description": "패턴 기반 Person 노드 정리 (단축명, 역할, 괄호 등)",
+        "found": total_found,
+        "samples": all_samples[:10],
+        "fixed": total_fixed,
+    }
+
+
 def task_find_ocr_corrupted(session, *, apply: bool, kb_id: str | None) -> dict:
     """Find OCR-corrupted entity names (report only, never auto-fix)."""
     kb_clause = _kb_filter(kb_id)
@@ -376,13 +514,339 @@ def task_find_ocr_corrupted(session, *, apply: bool, kb_id: str | None) -> dict:
 
 
 # ============================================================================
+# Reclassification — comprehensive type correction
+# ============================================================================
+
+# Company/brand suffixes that indicate Store, not Person
+_COMPANY_SUFFIXES = ("카드", "생명", "보험", "은행", "증권", "캐피탈", "파트너스", "자산운용")
+_COMPANY_EXACT_NAMES = {
+    "흥국생명", "신한카드", "이니시스", "한화생명", "삼성생명", "교보생명",
+    "KB손해보험", "DB손해보험", "메리츠화재", "하나은행", "국민은행",
+    "우리은행", "신한은행", "농협은행", "기업은행", "산업은행",
+    "한국투자증권", "미래에셋증권", "NH투자증권", "삼성증권",
+    "현대캐피탈", "롯데캐피탈", "KB캐피탈",
+}
+
+# Tech/tool names that should be System
+_SYSTEM_NAMES = {
+    "블록체인", "레디스", "카카오톡", "셀러툴", "라인웍스", "피그마",
+    "마이쇼핑", "티비허브", "암복화", "랜섬웨어", "팝빌", "인프라",
+    "클라우드", "방화벽", "백업", "모니터링", "포스", "포스기", "POS",
+    "VPN", "VDI", "ERP", "CRM", "SAP", "MDM", "DLP", "NAC",
+    "Active Directory", "AD", "LDAP", "SSO", "MFA", "OTP",
+    "네트워크", "와이파이", "WiFi", "LAN", "WAN",
+}
+
+# Location pattern: 2-4 Korean chars ending with location suffixes
+_LOCATION_SUFFIX_RE = re.compile(r"^[가-힣]{2,4}[동구시도읍면로]$")
+
+# Team/org pattern: ending with team suffixes
+_TEAM_SUFFIXES = ("팀", "본부", "실", "부서", "센터", "사업부", "그룹", "파트")
+
+# Placeholder patterns for Team nodes
+_TEAM_PLACEHOLDER_PATTERNS = (
+    "유관부서", "명시되지", "해당 문서", "작성자 또는", "(명시되지 않음)",
+)
+
+# Placeholder patterns for Store nodes (to delete)
+_STORE_PLACEHOLDER_NAMES = {
+    "점포명 (구체적인 점포명이 문서에 명시되지 않음)",
+    "점포명 (구체적인...명시되지 않음)",
+}
+
+
+def _safe_set_label(session, node_eid: str, new_label: str) -> bool:
+    """Set label on node, skip if constraint conflict."""
+    try:
+        session.run(
+            f"MATCH (n) WHERE elementId(n) = $eid SET n:{new_label}",
+            parameters={"eid": node_eid},
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _reclassify_nodes(
+    session,
+    *,
+    apply: bool,
+    kb_id: str | None,
+    match_cypher: str,
+    old_label: str,
+    new_label: str | None,
+    action: str,  # "relabel" | "delete"
+    rule_name: str,
+    params: dict | None = None,
+) -> dict:
+    """Generic reclassification helper. Returns {found, samples, fixed}."""
+    kb_clause = _kb_filter(kb_id)
+    full_match = f"{match_cypher}{kb_clause}"
+    p = params or {}
+
+    count_q = f"{full_match} RETURN count(n) AS cnt"
+    count = _run_query(session, count_q, p)[0]["cnt"]
+
+    samples_q = f"{full_match} RETURN n.name AS name LIMIT 5"
+    samples = _run_query(session, samples_q, p)
+
+    fixed = 0
+    if apply and count > 0:
+        if action == "delete":
+            action_q = f"{full_match} DETACH DELETE n RETURN count(*) AS fixed"
+            fixed = _run_query(session, action_q, p)[0]["fixed"]
+            logger.info("[%s] Deleted %d nodes", rule_name, fixed)
+        elif action == "relabel" and new_label:
+            # Use elementId-based safe relabel to avoid constraint conflicts
+            fetch_q = (
+                f"{full_match} RETURN elementId(n) AS eid, n.name AS name"
+            )
+            rows = _run_query(session, fetch_q, p)
+            for row in rows:
+                # Remove old label, set new label
+                try:
+                    session.run(
+                        f"MATCH (n) WHERE elementId(n) = $eid "
+                        f"REMOVE n:{old_label} SET n:{new_label}",
+                        parameters={"eid": row["eid"]},
+                    )
+                    fixed += 1
+                except Exception:
+                    if _safe_set_label(session, row["eid"], new_label):
+                        fixed += 1
+            logger.info("[%s] Relabeled %d → %s", rule_name, fixed, new_label)
+
+    return {
+        "found": count,
+        "samples": [s["name"] for s in samples],
+        "fixed": fixed,
+    }
+
+
+def task_reclassify_all(session, *, apply: bool, kb_id: str | None) -> dict:
+    """Comprehensive reclassification: correct entity type labels instead of deleting."""
+    total_found = 0
+    total_fixed = 0
+    all_samples: list[str] = []
+
+    sub_results: list[tuple[str, dict]] = []
+
+    # ------------------------------------------------------------------
+    # A. Person → correct type
+    # ------------------------------------------------------------------
+
+    # A1. Person → Store (company/brand suffixes)
+    suffix_conditions = " OR ".join(
+        f"n.name ENDS WITH '{s}'" for s in _COMPANY_SUFFIXES
+    )
+    company_names = list(_COMPANY_EXACT_NAMES)
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            f"MATCH (n:Person) WHERE ({suffix_conditions}) OR n.name IN $names"
+        ),
+        old_label="Person", new_label="Store", action="relabel",
+        rule_name="A1_person_to_store",
+        params={"names": company_names},
+    )
+    sub_results.append(("Person→Store (회사/브랜드)", r))
+
+    # A2. Person → System (tech/tools)
+    system_names = list(_SYSTEM_NAMES)
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher="MATCH (n:Person) WHERE n.name IN $names",
+        old_label="Person", new_label="System", action="relabel",
+        rule_name="A2_person_to_system",
+        params={"names": system_names},
+    )
+    sub_results.append(("Person→System (기술/도구)", r))
+
+    # A3. Person → Location (geographic suffix pattern)
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:Person) WHERE n.name =~ '^[가-힣]{2,4}[동구시도읍면로]$'"
+        ),
+        old_label="Person", new_label="Location", action="relabel",
+        rule_name="A3_person_to_location",
+    )
+    sub_results.append(("Person→Location (지역명)", r))
+
+    # A4. Person → Team (team/org suffix)
+    team_conditions = " OR ".join(
+        f"n.name ENDS WITH '{s}'" for s in _TEAM_SUFFIXES
+    )
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=f"MATCH (n:Person) WHERE {team_conditions}",
+        old_label="Person", new_label="Team", action="relabel",
+        rule_name="A4_person_to_team",
+    )
+    sub_results.append(("Person→Team (팀/부서)", r))
+
+    # ------------------------------------------------------------------
+    # B. Store → cleanup
+    # ------------------------------------------------------------------
+
+    # B1. Store placeholder names → delete
+    store_ph_names = list(_STORE_PLACEHOLDER_NAMES)
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:Store) WHERE n.name IN $names "
+            "OR n.name CONTAINS '명시되지 않음'"
+        ),
+        old_label="Store", new_label=None, action="delete",
+        rule_name="B1_store_placeholder",
+        params={"names": store_ph_names},
+    )
+    sub_results.append(("Store 플레이스홀더 삭제", r))
+
+    # ------------------------------------------------------------------
+    # C. System → correct type
+    # ------------------------------------------------------------------
+
+    # C1. System names that are actually Store (e.g., "CU 포항긱스점")
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:System) WHERE n.name =~ '.*[점포]$' "
+            "AND NOT n.name ENDS WITH '시스템' AND NOT n.name ENDS WITH '서버'"
+        ),
+        old_label="System", new_label="Store", action="relabel",
+        rule_name="C1_system_to_store",
+    )
+    sub_results.append(("System→Store (점포명)", r))
+
+    # C2. System names that are actually Document
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:System) WHERE n.name CONTAINS 'FAQ' "
+            "OR n.name CONTAINS '사례집' OR n.name CONTAINS '매뉴얼' "
+            "OR n.name CONTAINS '가이드'"
+        ),
+        old_label="System", new_label="Document", action="relabel",
+        rule_name="C2_system_to_document",
+    )
+    sub_results.append(("System→Document (문서명)", r))
+
+    # C3. System names that are actually Location (e.g., "경쟁점건물")
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:System) WHERE n.name ENDS WITH '건물' "
+            "OR n.name ENDS WITH '부지'"
+        ),
+        old_label="System", new_label="Location", action="relabel",
+        rule_name="C3_system_to_location",
+    )
+    sub_results.append(("System→Location (건물/부지)", r))
+
+    # ------------------------------------------------------------------
+    # D. Team → cleanup placeholders
+    # ------------------------------------------------------------------
+    ph_conditions = " OR ".join(
+        f"n.name CONTAINS '{p}'" for p in _TEAM_PLACEHOLDER_PATTERNS
+    )
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=f"MATCH (n:Team) WHERE {ph_conditions}",
+        old_label="Team", new_label=None, action="delete",
+        rule_name="D1_team_placeholder",
+    )
+    sub_results.append(("Team 플레이스홀더 삭제", r))
+
+    # ------------------------------------------------------------------
+    # E. __Entity__ only → reclassify (nodes with no type label)
+    # ------------------------------------------------------------------
+
+    # E1. __Entity__ → Store (company suffixes)
+    e_suffix_conditions = " OR ".join(
+        f"n.name ENDS WITH '{s}'" for s in _COMPANY_SUFFIXES
+    )
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            f"MATCH (n:__Entity__) WHERE size([l IN labels(n) "
+            f"WHERE l <> '__Entity__']) = 0 AND ({e_suffix_conditions})"
+        ),
+        old_label="__Entity__", new_label="Store", action="relabel",
+        rule_name="E1_entity_to_store",
+    )
+    sub_results.append(("__Entity__→Store (회사명)", r))
+
+    # E2. __Entity__ → System (tech names)
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:__Entity__) WHERE size([l IN labels(n) "
+            "WHERE l <> '__Entity__']) = 0 AND n.name IN $names"
+        ),
+        old_label="__Entity__", new_label="System", action="relabel",
+        rule_name="E2_entity_to_system",
+        params={"names": system_names},
+    )
+    sub_results.append(("__Entity__→System (기술명)", r))
+
+    # E3. __Entity__ → Location (geographic pattern)
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            "MATCH (n:__Entity__) WHERE size([l IN labels(n) "
+            "WHERE l <> '__Entity__']) = 0 "
+            "AND n.name =~ '^[가-힣]{2,4}[동구시도읍면로]$'"
+        ),
+        old_label="__Entity__", new_label="Location", action="relabel",
+        rule_name="E3_entity_to_location",
+    )
+    sub_results.append(("__Entity__→Location (지역명)", r))
+
+    # E4. __Entity__ → Team (team suffixes)
+    e_team_conditions = " OR ".join(
+        f"n.name ENDS WITH '{s}'" for s in _TEAM_SUFFIXES
+    )
+    r = _reclassify_nodes(
+        session, apply=apply, kb_id=kb_id,
+        match_cypher=(
+            f"MATCH (n:__Entity__) WHERE size([l IN labels(n) "
+            f"WHERE l <> '__Entity__']) = 0 AND ({e_team_conditions})"
+        ),
+        old_label="__Entity__", new_label="Team", action="relabel",
+        rule_name="E4_entity_to_team",
+    )
+    sub_results.append(("__Entity__→Team (팀/부서)", r))
+
+    # ------------------------------------------------------------------
+    # Aggregate results
+    # ------------------------------------------------------------------
+    for label, r in sub_results:
+        total_found += r["found"]
+        total_fixed += r["fixed"]
+        if r["found"] > 0:
+            for s in r["samples"][:3]:
+                all_samples.append(f"[{label}] {s}")
+
+    return {
+        "task": "reclassify_all",
+        "description": "전체 엔티티 타입 재분류 (삭제 대신 올바른 라벨 부여)",
+        "found": total_found,
+        "samples": all_samples[:15],
+        "fixed": total_fixed,
+    }
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
 ALL_TASKS = [
     task_remove_placeholder_persons,
     task_remove_non_person,
+    task_pattern_cleanup_persons,
     task_reclassify_store,
+    task_reclassify_all,
     task_normalize_kb_ids,
     task_remove_test_nodes,
     task_find_ocr_corrupted,

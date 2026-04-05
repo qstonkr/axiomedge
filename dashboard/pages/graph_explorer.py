@@ -428,6 +428,88 @@ with tab_cleanup:
                     # Clear analysis cache so user re-analyzes next time
                     del st.session_state["cleanup_analysis"]
 
+    # -----------------------------------------------------------------
+    # AI 자동 분류 (LLM-based)
+    # -----------------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🤖 AI 자동 분류")
+    st.caption("EXAONE LLM을 사용하여 미분류/오분류 노드의 올바른 타입을 자동 판별합니다")
+
+    ai_col1, ai_col2 = st.columns(2)
+    with ai_col1:
+        ai_limit = st.number_input(
+            "처리 건수", min_value=10, max_value=500, value=100, key="ai_classify_limit",
+        )
+    with ai_col2:
+        ai_kb = st.text_input("KB ID (선택)", placeholder="전체", key="ai_classify_kb")
+
+    ai_preview_btn = st.button("🤖 AI 분류 분석 (미리보기)", key="ai_classify_preview_btn")
+    if ai_preview_btn:
+        with st.spinner("LLM으로 엔티티 분류 중... (30초~2분 소요)"):
+            kb_val = ai_kb.strip() if ai_kb and ai_kb.strip() else None
+            ai_result = api_client.graph_ai_classify(
+                limit=ai_limit, kb_id=kb_val, apply=False,
+            )
+
+        if api_failed(ai_result):
+            st.warning("AI 분류를 실행할 수 없습니다.")
+        elif not ai_result.get("success"):
+            st.error(f"AI 분류 실패: {ai_result.get('error', '알 수 없는 오류')}")
+        else:
+            classifications = ai_result.get("classifications", [])
+            st.session_state["ai_classify_result"] = ai_result
+
+            if not classifications:
+                st.success("분류할 대상이 없습니다.")
+            else:
+                st.info(
+                    f"후보 {ai_result.get('candidates', 0)}건 중 "
+                    f"{len(classifications)}건 분류 완료"
+                )
+
+                import pandas as pd
+                df = pd.DataFrame([
+                    {
+                        "이름": c["name"],
+                        "현재 타입": c["current_label"],
+                        "제안 타입": c["new_type"],
+                        "사유": c["reason"],
+                        "KB": c.get("kb_id", ""),
+                    }
+                    for c in classifications
+                ])
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # Apply button
+    if st.session_state.get("ai_classify_result"):
+        ai_res = st.session_state["ai_classify_result"]
+        cls_count = len(ai_res.get("classifications", []))
+
+        if cls_count > 0:
+            if st.button("🤖 AI 분류 적용", type="primary", key="ai_classify_apply_btn"):
+                with st.spinner("AI 분류 결과 적용 중..."):
+                    kb_val = ai_res.get("kb_id")
+                    apply_result = api_client.graph_ai_classify(
+                        limit=ai_limit, kb_id=kb_val, apply=True,
+                    )
+
+                if api_failed(apply_result):
+                    st.error("AI 분류 적용에 실패했습니다.")
+                elif not apply_result.get("success"):
+                    st.error(f"적용 실패: {apply_result.get('error', '알 수 없는 오류')}")
+                else:
+                    stats = apply_result.get("stats", {})
+                    st.success(
+                        f"AI 분류 적용 완료: "
+                        f"재분류 {stats.get('relabeled', 0)}건, "
+                        f"삭제 {stats.get('deleted', 0)}건, "
+                        f"건너뜀 {stats.get('skipped', 0)}건"
+                    )
+                    if stats.get("errors", 0) > 0:
+                        st.warning(f"오류 {stats['errors']}건 발생")
+
+                    del st.session_state["ai_classify_result"]
+
     with st.expander("도움말: 그래프 정리 항목", expanded=False):
         st.markdown(
             """
@@ -439,5 +521,6 @@ with tab_cleanup:
             | KB ID 정규화 | itops-general → itops_general 등 | O |
             | 테스트 노드 | kb_id가 test로 시작하는 노드 제거 | O |
             | OCR 손상 | 반복 문자, 낱자음/모음 등 비정상 이름 | X (수동) |
+            | AI 자동 분류 | LLM으로 미분류/오분류 노드 타입 판별 | O (확인 후) |
             """
         )
