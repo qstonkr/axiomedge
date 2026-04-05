@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge-api
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    app: knowledge-api
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app: knowledge-api
+  template:
+    metadata:
+      labels:
+        app: knowledge-api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.api.port }}
+              name: http
+          env:
+            {{- range $key, $value := .Values.api.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: DATABASE_URL
+          volumeMounts:
+            - name: bge-model
+              mountPath: /models/bge-m3
+              readOnly: true
+            - name: pipeline-data
+              mountPath: /data/pipeline
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.api.port }}
+            initialDelaySeconds: {{ .Values.api.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.api.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.api.port }}
+            initialDelaySeconds: {{ .Values.api.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.api.probes.readiness.periodSeconds }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.api.port }}
+            initialDelaySeconds: {{ .Values.api.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.api.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.api.probes.startup.failureThreshold }}
+      volumes:
+        - name: bge-model
+          persistentVolumeClaim:
+            claimName: bge-model-pvc
+        - name: pipeline-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bge-model-pvc
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  storageClassName: {{ .Values.storageClassName }}
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.api.bgeModelStorage }}

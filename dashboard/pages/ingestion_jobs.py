@@ -10,7 +10,6 @@ import streamlit as st
 st.set_page_config(page_title="인제스천 작업", page_icon="📥", layout="wide")
 
 
-import pandas as pd
 
 from components.constants import PIPELINE_STEPS, PIPELINE_STEP_LABELS, STEP_STATUS_ICONS
 from components.sidebar import hide_default_nav, render_sidebar

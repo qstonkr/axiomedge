@@ -49,7 +49,7 @@ with tab_status:
         selected_kb = st.selectbox("KB 선택", list(kb_options.keys()), key="lifecycle_kb")
         kb_id = kb_options[selected_kb]
 
-        result = api_client._request("GET", f"/api/v1/admin/kb/{kb_id}/lifecycle")
+        result = api_client.get_kb_lifecycle(kb_id)
 
         if api_failed(result):
             st.warning("데이터를 불러올 수 없습니다.")
@@ -140,11 +140,7 @@ with tab_archive:
         kb_id2 = kb_options[selected_kb2]
 
         # Try lifecycle endpoint with upcoming_archive filter
-        result = api_client._request(
-            "GET",
-            f"/api/v1/admin/kb/{kb_id2}/lifecycle",
-            params={"filter": "upcoming_archive"},
-        )
+        result = api_client.get_kb_lifecycle(kb_id2, filter="upcoming_archive")
 
         if api_failed(result):
             st.warning("데이터를 불러올 수 없습니다.")
@@ -190,11 +186,7 @@ with tab_transitions:
         selected_kb3 = st.selectbox("KB 선택", list(kb_options.keys()), key="transitions_kb")
         kb_id3 = kb_options[selected_kb3]
 
-        result = api_client._request(
-            "GET",
-            f"/api/v1/admin/kb/{kb_id3}/lifecycle",
-            params={"filter": "transitions"},
-        )
+        result = api_client.get_kb_lifecycle(kb_id3, filter="transitions")
 
         if api_failed(result):
             st.warning("데이터를 불러올 수 없습니다.")

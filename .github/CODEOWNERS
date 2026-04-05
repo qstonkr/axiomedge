@@ -1,0 +1,61 @@
+# CODEOWNERS — 담당 영역별 리뷰어 지정
+# PR 시 해당 영역 변경이 있으면 자동으로 리뷰 요청
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ============================================================
+# 검색/RAG 도메인
+# ============================================================
+src/search/                     @search-owner
+src/llm/                        @search-owner
+src/embedding/                  @search-owner
+src/vectordb/                   @search-owner
+
+# ============================================================
+# 파이프라인/인제스트 도메인
+# ============================================================
+src/pipeline/                   @pipeline-owner
+src/connectors/                 @pipeline-owner
+src/nlp/                        @pipeline-owner
+cli/                            @pipeline-owner
+
+# ============================================================
+# 그래프 도메인
+# ============================================================
+src/graph/                      @search-owner
+
+# ============================================================
+# 인증/보안 도메인
+# ============================================================
+src/auth/                       @security-owner
+
+# ============================================================
+# 프론트엔드 도메인
+# ============================================================
+dashboard/                      @frontend-owner
+
+# ============================================================
+# 인프라/운영
+# ============================================================
+k8s/                            @infra-owner
+helm/                           @infra-owner
+docker/                         @infra-owner
+.github/                        @infra-owner
+Dockerfile                      @infra-owner
+docker-compose.yml              @infra-owner
+
+# ============================================================
+# 공통 (모든 리뷰어 승인 필요)
+# ============================================================
+src/api/routes/                 @search-owner @pipeline-owner
+src/api/app.py                  @search-owner @pipeline-owner
+src/config.py                   @search-owner @pipeline-owner @infra-owner
+src/config_weights.py           @search-owner @pipeline-owner
+src/database/                   @search-owner @pipeline-owner
+src/domain/                     @search-owner @pipeline-owner
+
+# ============================================================
+# 테스트/문서 (변경 자유, 리뷰 선택)
+# ============================================================
+tests/                          @search-owner @pipeline-owner
+docs/                           @infra-owner
+scripts/                        @pipeline-owner

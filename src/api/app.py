@@ -250,8 +250,8 @@ async def _init_cache(state: AppState) -> None:
                 os.getenv("REDIS_URL", _DEFAULT_REDIS_URL),
                 decode_responses=True,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to create idempotency Redis client: %s", e)
         state["idempotency_cache"] = IdempotencyCache(
             redis_client=_idemp_redis,
             ttl_seconds=cache_cfg.idempotency_ttl_seconds,
@@ -291,8 +291,8 @@ async def _init_dedup(state: AppState) -> None:
                     base_url=_s.ollama.base_url,
                     model=_s.ollama.model,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to create stage4 LLM client for dedup: %s", e)
 
         dedup_pipeline = DedupPipeline(
             bloom_filter=bloom,
@@ -310,8 +310,8 @@ async def _init_dedup(state: AppState) -> None:
             import redis.asyncio as aioredis
             _redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
             redis_client = aioredis.from_url(_redis_url, decode_responses=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to create dedup Redis client: %s", e)
         state["dedup_result_tracker"] = DedupResultTracker(redis_client=redis_client)
         state["redis_dedup_index"] = RedisDedupIndex(redis_client=redis_client)
 
@@ -414,16 +414,21 @@ async def _init_embedding(state: AppState, settings) -> None:
     embedder = None
 
     # 1st: HuggingFace TEI (dedicated embedding server, fastest)
-    try:
-        from src.embedding.tei_provider import TEIEmbeddingProvider
+    # USE_CLOUD_EMBEDDING=false → skip TEI, fall back to local Ollama/ONNX
+    use_cloud = os.getenv("USE_CLOUD_EMBEDDING", "true").lower() in ("true", "1", "yes")
+    if use_cloud:
+        try:
+            from src.embedding.tei_provider import TEIEmbeddingProvider
 
-        tei_url = os.getenv("BGE_TEI_URL", "http://localhost:8080")
-        tei_embedder = TEIEmbeddingProvider(base_url=tei_url)
-        if tei_embedder.is_ready():
-            embedder = tei_embedder
-            logger.info("TEI embedding initialized (dedicated server): %s", tei_url)
-    except Exception as e:
-        logger.debug("TEI embedding not available: %s", e)
+            tei_url = os.getenv("BGE_TEI_URL", "http://localhost:8080")
+            tei_embedder = TEIEmbeddingProvider(base_url=tei_url)
+            if tei_embedder.is_ready():
+                embedder = tei_embedder
+                logger.info("TEI embedding initialized (cloud): %s", tei_url)
+        except Exception as e:
+            logger.debug("TEI embedding not available: %s", e)
+    else:
+        logger.info("Cloud embedding disabled (USE_CLOUD_EMBEDDING=false), using local")
 
     # 2nd: Ollama (Metal GPU on Apple Silicon)
     if embedder is None:
@@ -728,8 +733,8 @@ async def _shutdown_services():
             try:
                 await cache.close()
                 logger.info("Closed %s", key)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Error closing %s: %s", key, e)
 
     # Close L2 semantic cache Redis connection
     multi_cache = _state.get("multi_layer_cache")
@@ -738,32 +743,32 @@ async def _shutdown_services():
             if hasattr(multi_cache._l2, "close"):
                 await multi_cache._l2.close()
             logger.info("Closed multi_layer_cache L2")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error closing multi_layer_cache L2: %s", e)
 
     # 2. Qdrant
     if "qdrant_provider" in _state:
         try:
             await _state["qdrant_provider"].close()
             logger.info("Closed Qdrant")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error closing Qdrant: %s", e)
 
     # 3. Neo4j
     if "neo4j" in _state:
         try:
             await _state["neo4j"].close()
             logger.info("Closed Neo4j")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error closing Neo4j: %s", e)
 
     # 4. PostgreSQL (kb_registry has its own engine)
     if "kb_registry" in _state:
         try:
             await _state["kb_registry"].shutdown()
             logger.info("Closed KB registry")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error closing KB registry: %s", e)
 
     # 5. Auth
     auth_svc = _state.get("auth_service")
@@ -771,8 +776,8 @@ async def _shutdown_services():
         try:
             await auth_svc.close()
             logger.info("Closed Auth service")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Error closing Auth service: %s", e)
 
     logger.info("Shutdown complete")
 

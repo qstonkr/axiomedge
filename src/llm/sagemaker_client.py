@@ -61,7 +61,11 @@ class SageMakerLLMClient:
             profile_name=self._config.profile,
             region_name=self._config.region,
         )
-        return session.client("sagemaker-runtime")
+        from botocore.config import Config
+        return session.client(
+            "sagemaker-runtime",
+            config=Config(read_timeout=180, connect_timeout=30, retries={"max_attempts": 2}),
+        )
 
     def _invoke_sync(
         self,

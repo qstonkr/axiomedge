@@ -205,4 +205,4 @@ class AuthService:
             )
             logger.info("Default internal admin user created (admin@knowledge.local)")
         except ValueError:
-            pass
+            logger.debug("Default admin user already exists, skipping creation")

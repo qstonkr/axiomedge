@@ -586,11 +586,12 @@ with tab_l1:
                 with m2:
                     st.metric("기타 문서", f"{etc_count:,}건")
                 with m3:
-                    color = "inverse" if etc_ratio > 0.15 else "normal"
+                    from components.constants import ETC_RATIO_WARN
+                    color = "inverse" if etc_ratio > ETC_RATIO_WARN else "normal"
                     st.metric(
                         "기타 비율",
                         f"{etc_ratio:.1%}",
-                        delta=f"{'초과' if etc_ratio > 0.15 else 'OK'} (임계 15%)",
+                        delta=f"{'초과' if etc_ratio > ETC_RATIO_WARN else 'OK'} (임계 {ETC_RATIO_WARN:.0%})",
                         delta_color=color,
                     )
 

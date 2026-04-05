@@ -51,11 +51,7 @@ with tab_search:
             st.warning("검색어를 입력해주세요.")
         else:
             with st.spinner("그래프 검색 중..."):
-                result = api_client._request(
-                    "POST",
-                    "/api/v1/admin/graph/search",
-                    json_body={"query": entity_query.strip(), "max_hops": max_hops},
-                )
+                result = api_client.graph_search(entity_query.strip(), max_hops=max_hops)
 
             if api_failed(result):
                 st.warning("데이터를 불러올 수 없습니다.")
@@ -201,11 +197,7 @@ with tab_expert:
             st.warning("주제 키워드를 입력해주세요.")
         else:
             with st.spinner("전문가 검색 중..."):
-                result = api_client._request(
-                    "GET",
-                    "/api/v1/admin/graph/experts",
-                    params={"topic": topic_query.strip()},
-                )
+                result = api_client.graph_experts_search(topic_query.strip())
 
             if api_failed(result):
                 st.warning("데이터를 불러올 수 없습니다.")
@@ -254,10 +246,7 @@ with tab_integrity:
 
     if st.button("무결성 검사 실행", key="graph_integrity_btn", type="primary"):
         with st.spinner("무결성 검사 진행 중..."):
-            result = api_client._request(
-                "POST",
-                "/api/v1/admin/graph/integrity/check",
-            )
+            result = api_client.graph_integrity_check()
 
         if api_failed(result):
             st.warning("데이터를 불러올 수 없습니다.")

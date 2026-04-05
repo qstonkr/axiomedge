@@ -258,8 +258,8 @@ def require_kb_access(min_level: str = "reader") -> Callable:
             if kb_registry:
                 try:
                     kb_info = await kb_registry.get_kb(kb_id) or {}
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to fetch KB info for ABAC check: %s", e)
 
             ctx = ABACContext(
                 subject={

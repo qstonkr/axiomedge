@@ -29,7 +29,7 @@ tab_stats, tab_blocked = st.tabs(["게이트 현황", "거부/보류 문서"])
 # 탭 1: 게이트 현황
 # =============================================================================
 with tab_stats:
-    result = api_client._request("GET", "/api/v1/admin/pipeline/gates/stats")
+    result = api_client.get_pipeline_gates_stats()
 
     if api_failed(result):
         st.warning("데이터를 불러올 수 없습니다.")
@@ -60,9 +60,10 @@ with tab_stats:
         if total > 0:
             pass_rate = passed / total
             st.progress(min(pass_rate, 1.0), text=f"통과율: {pass_rate:.1%}")
-            if pass_rate >= 0.9:
+            from components.constants import PASS_RATE_GOOD, PASS_RATE_WARN
+            if pass_rate >= PASS_RATE_GOOD:
                 st.success(f"통과율 양호: {pass_rate:.1%}")
-            elif pass_rate >= 0.7:
+            elif pass_rate >= PASS_RATE_WARN:
                 st.warning(f"통과율 보통: {pass_rate:.1%}")
             else:
                 st.error(f"통과율 낮음: {pass_rate:.1%}")
@@ -89,7 +90,8 @@ with tab_stats:
                     with gcol2:
                         st.metric("검사", f"{gate_total:,}건", label_visibility="collapsed")
                     with gcol3:
-                        if fail_rate > 0.1:
+                        from components.constants import GATE_FAIL_RATE_WARN
+                        if fail_rate > GATE_FAIL_RATE_WARN:
                             st.metric("실패율", f"{fail_rate:.1%}", delta="주의", delta_color="inverse")
                         else:
                             st.metric("실패율", f"{fail_rate:.1%}")
@@ -116,7 +118,7 @@ with tab_stats:
 # 탭 2: 거부/보류 문서
 # =============================================================================
 with tab_blocked:
-    blocked_result = api_client._request("GET", "/api/v1/admin/pipeline/gates/blocked")
+    blocked_result = api_client.get_pipeline_gates_blocked()
 
     if api_failed(blocked_result):
         st.warning("데이터를 불러올 수 없습니다.")

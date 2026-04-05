@@ -32,7 +32,7 @@ init_logging()
 if "trace_id" not in st.session_state:
     st.session_state.trace_id = get_trace_id()
 
-from components.constants import TIER_ICONS
+from components.constants import TIER_ICONS  # noqa: F401
 from components.sidebar import hide_default_nav, render_sidebar
 from services import api_client
 from services.api_client import api_failed
@@ -47,62 +47,31 @@ render_sidebar(user_role="admin")
 
 
 # =============================================================================
-# Main: Search UI (renders immediately without API dependency)
+# Main: Home Page
 # =============================================================================
 
-st.markdown("""
-<div style="text-align: center; padding: 2rem 0;">
-    <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔍 지식 검색</h1>
+st.markdown(
+    """
+<div style="text-align: center; padding: 2rem 0 1rem 0;">
+    <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">📚 GS리테일 지식 검색</h1>
     <p style="color: #666; font-size: 1.1rem;">궁금한 것을 검색하세요. 담당자도 찾을 수 있어요.</p>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-col1, col2, col3 = st.columns([1, 3, 1])
+# -- Large centered search input --
+col_l, col_c, col_r = st.columns([1, 3, 1])
 
-with col2:
+with col_c:
     query = st.text_input(
         "검색어를 입력하세요",
-        placeholder="예: K8s 배포 담당자, 데이터마트 문서, AWS 가이드...",
+        placeholder="예: 점포 운영 절차, 정산 프로세스, 담당자 찾기...",
         label_visibility="collapsed",
         key="main_search",
     )
 
-    # Search group selection
-    groups_result = api_client._request("GET", "/api/v1/search-groups")
-    groups = groups_result.get("groups", []) if not api_failed(groups_result) else []
-
-    if groups:
-        group_options = {g.get("name", ""): g for g in groups}
-        # Find default group
-        default_idx = 0
-        for i, g in enumerate(groups):
-            if g.get("is_default"):
-                default_idx = i
-                break
-
-        gcol1, gcol2 = st.columns([3, 1])
-        with gcol1:
-            selected_group_name = st.selectbox(
-                "검색 그룹",
-                options=list(group_options.keys()),
-                index=default_idx,
-                key="main_search_group",
-                label_visibility="collapsed",
-            )
-        with gcol2:
-            selected_group = group_options.get(selected_group_name, {})
-            kb_count = len(selected_group.get("kb_ids", []))
-            st.caption(f"KB {kb_count}개")
-
-        if selected_group.get("description"):
-            st.caption(f"ℹ️ {selected_group['description']}")
-
-        # Store selected group for chat page
-        st.session_state.search_group_name = selected_group_name
-        st.session_state.search_kb_ids = selected_group.get("kb_ids", [])
-
-    btn_col1, btn_col2, btn_col3 = st.columns(3)
-
+    btn_col1, btn_col2 = st.columns(2)
     with btn_col1:
         if st.button("🔍 검색", type="primary", use_container_width=True):
             if query:
@@ -110,71 +79,82 @@ with col2:
                 st.switch_page("pages/chat.py")
             else:
                 st.warning("검색어를 입력해주세요.")
-
     with btn_col2:
         if st.button("👤 담당자 찾기", use_container_width=True):
             if query:
                 st.session_state.owner_query = query
             st.switch_page("pages/find_owner.py")
 
-    with btn_col3:
-        if st.button("📝 오류 신고", use_container_width=True):
-            st.switch_page("pages/error_report.py")
+# -- Suggested query buttons --
+st.markdown("")
+suggested_queries = ["점포 운영 절차", "정산 프로세스", "분쟁 조정 방법", "주간보고 내용", "상품 등록 방법"]
+sq_cols = st.columns(len(suggested_queries))
+for i, sq in enumerate(suggested_queries):
+    with sq_cols[i]:
+        if st.button(sq, key=f"sq_{i}", use_container_width=True):
+            st.session_state.pending_query = sq
+            st.switch_page("pages/chat.py")
 
 st.markdown("---")
 
 # =============================================================================
-# KB List (API dependent sections below)
+# Search group cards (side by side)
+# =============================================================================
+
+groups_result = api_client.list_search_groups()
+groups = groups_result.get("groups", []) if not api_failed(groups_result) else []
+
+# Define the two featured search engines
+_hbu_group = {
+    "name": "HBU검색엔진",
+    "desc": "IT운영, 파트너스톡",
+    "kb_count": 3,
+    "group_data": None,
+}
+_pbu_group = {
+    "name": "PBU검색엔진",
+    "desc": "편의점 운영, 분쟁조정, G-ESPA",
+    "kb_count": 3,
+    "group_data": None,
+}
+
+# Try to match with actual groups from API
+for g in groups:
+    gname = g.get("name", "")
+    if "HBU" in gname.upper() or "hbu" in gname.lower():
+        _hbu_group["group_data"] = g
+        _hbu_group["kb_count"] = len(g.get("kb_ids", []))
+    elif "PBU" in gname.upper() or "pbu" in gname.lower():
+        _pbu_group["group_data"] = g
+        _pbu_group["kb_count"] = len(g.get("kb_ids", []))
+
+card_col1, card_col2 = st.columns(2)
+
+for col, grp in [(card_col1, _hbu_group), (card_col2, _pbu_group)]:
+    with col:
+        with st.container(border=True):
+            st.markdown(f"**🔎 {grp['name']}**")
+            st.caption(f"{grp['desc']} | {grp['kb_count']}개 KB")
+            if st.button(
+                "검색하기",
+                key=f"grp_search_{grp['name']}",
+                use_container_width=True,
+            ):
+                gd = grp["group_data"]
+                if gd:
+                    st.session_state.search_group_name = gd.get("name")
+                    st.session_state.search_kb_ids = gd.get("kb_ids", [])
+                    st.session_state["_active_group_name"] = gd.get("name")
+                st.switch_page("pages/chat.py")
+
+st.markdown("---")
+
+# =============================================================================
+# Recent activity summary
 # =============================================================================
 
 kbs_result = api_client.list_kbs()
 api_ok = not api_failed(kbs_result)
-
-st.markdown("### 📚 지식 베이스")
-st.caption("등록된 지식 베이스 목록입니다.")
-
-if api_ok:
-    kb_items = kbs_result.get("items", kbs_result.get("kbs", []))
-    if kb_items:
-        cols = st.columns(3)
-        for i, kb in enumerate(kb_items[:6]):
-            with cols[i % 3]:
-                tier = kb.get("tier", "-")
-                icon = TIER_ICONS.get(tier, "📁")
-
-                with st.container(border=True):
-                    name = kb.get("name", kb.get("id", "-"))
-                    st.markdown(f"**{icon} {name}**")
-                    doc_count = kb.get("document_count", 0)
-                    st.caption(f"{tier} | {doc_count:,}개 문서")
-
-                    kb_id = kb.get("kb_id", kb.get("id", ""))
-                    if st.button("📂 열기", key=f"kb_open_{i}", use_container_width=True):
-                        st.session_state.search_kb_ids = [kb_id]
-                        st.session_state.search_group_name = None
-                        st.session_state.pop("_active_group_name", None)
-                        st.switch_page("pages/chat.py")
-    else:
-        st.info("등록된 KB가 없습니다.")
-else:
-    from services import config as _cfg
-
-    st.error(
-        "API 서버에 연결할 수 없습니다.\n\n"
-        f"**API URL:** `{_cfg.DASHBOARD_API_URL}`\n\n"
-        "FastAPI 서버가 실행 중인지 확인해주세요: `make api`"
-    )
-    if st.button("🔄 재시도", key="retry_home"):
-        st.cache_data.clear()
-        st.rerun()
-
-
-st.markdown("---")
-
-# =============================================================================
-# Summary metrics
-# =============================================================================
-st.markdown("### 📊 지식 현황")
 
 if api_ok:
     agg_result = api_client.get_kb_aggregation()
@@ -188,7 +168,9 @@ if api_ok:
             "total_kbs": kbs_result.get("total", len(kb_items)),
             "total_documents": total_doc_count,
             "avg_quality_score": 0,
-            "active_kbs": len([kb for kb in kb_items if kb.get("status", "active") == "active"]),
+            "active_kbs": len(
+                [kb for kb in kb_items if kb.get("status", "active") == "active"]
+            ),
         }
 
     total_docs = agg.get("total_documents", 0)
@@ -202,35 +184,47 @@ if api_ok:
     avg_quality = agg.get("avg_quality_score", 0)
     active_kbs = agg.get("active_kbs", total_kbs)
 
+    st.markdown("### 📊 지식 현황")
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.metric("전체 문서", f"{total_docs:,}개", help="총 문서 수")
     with col2:
-        quality_display = f"{avg_quality:.0%}" if isinstance(avg_quality, float) and avg_quality <= 1 else str(avg_quality)
+        quality_display = (
+            f"{avg_quality:.0%}"
+            if isinstance(avg_quality, float) and avg_quality <= 1
+            else str(avg_quality)
+        )
         st.metric("평균 품질", quality_display, help="전체 문서의 평균 품질 점수")
     with col3:
         st.metric("KB 수", f"{total_kbs}개", help="등록된 Knowledge Base 수")
     with col4:
         st.metric("활성 KB", f"{active_kbs}개", help="현재 활성 상태인 KB 수")
-
-    with st.sidebar:
-        st.markdown("---")
-        st.markdown("### 📊 현황")
-        st.metric("KB", f"{total_kbs:,}개")
-        st.metric("문서", f"{total_docs:,}개")
 else:
-    st.warning("API에 연결할 수 없어 현황을 표시할 수 없습니다.")
+    from services import config as _cfg
+
+    st.error(
+        "API 서버에 연결할 수 없습니다.\n\n"
+        f"**API URL:** `{_cfg.DASHBOARD_API_URL}`\n\n"
+        "FastAPI 서버가 실행 중인지 확인해주세요: `make api`"
+    )
+    if st.button("🔄 재시도", key="retry_home"):
+        st.cache_data.clear()
+        st.rerun()
 
 
 # =============================================================================
 # Health check in sidebar
 # =============================================================================
 
+
 @st.cache_data(ttl=60)
 def _cached_health() -> dict:
     from services.health import check_health
+
     return check_health()
+
 
 with st.sidebar:
     st.markdown("---")
@@ -239,7 +233,9 @@ with st.sidebar:
     _api_ok = _health.get("checks", {}).get("api", False)
     _neo4j_ok = _health.get("checks", {}).get("neo4j", False)
 
-    _status_icon = {"healthy": "OK", "degraded": "DEGRADED", "unhealthy": "UNREACHABLE"}.get(_status, "UNKNOWN")
+    _status_icon = {"healthy": "OK", "degraded": "DEGRADED", "unhealthy": "UNREACHABLE"}.get(
+        _status, "UNKNOWN"
+    )
     _api_label = "OK" if _api_ok else "FAIL"
     _neo4j_label = "OK" if _neo4j_ok else "-"
 

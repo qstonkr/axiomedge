@@ -59,7 +59,7 @@ def _status_badge(status: str) -> str:
 # =============================================================================
 # Job List
 # =============================================================================
-jobs_result = api_client._request("GET", "/api/v1/jobs")
+jobs_result = api_client.list_jobs()
 
 if api_failed(jobs_result):
     st.error("Job 목록을 불러올 수 없습니다. API 서버를 확인해주세요.")
@@ -118,9 +118,7 @@ else:
                 with col_action:
                     if status.lower() == "processing":
                         if st.button("⛔ 중지", key=f"job_cancel_{job_id}", use_container_width=True):
-                            cancel_result = api_client._request(
-                                "POST", f"/api/v1/jobs/{job_id}/cancel"
-                            )
+                            cancel_result = api_client.cancel_job(job_id)
                             if not api_failed(cancel_result):
                                 st.toast(f"Job {job_id} 취소 요청 완료")
                                 st.rerun()
@@ -133,7 +131,7 @@ else:
 
             # Job detail (expandable)
             if st.session_state.get(f"_show_job_{job_id}", False):
-                detail_result = api_client._request("GET", f"/api/v1/jobs/{job_id}")
+                detail_result = api_client.get_job(job_id)
                 if not api_failed(detail_result):
                     with st.expander(f"Job {job_id} 상세", expanded=True):
                         detail_col1, detail_col2 = st.columns(2)

@@ -29,6 +29,11 @@ API_TIMEOUT = _safe_int("API_TIMEOUT", 600)  # 10분 (OCR 포함 대용량 인�
 API_SEARCH_TIMEOUT = _safe_int("API_SEARCH_TIMEOUT", 120)
 API_RETRY_COUNT = _safe_int("API_RETRY_COUNT", 1)  # Simplified for local
 
+# --- Streamlit cache TTL constants (seconds) ---
+CACHE_TTL_SHORT = 30    # Frequently changing data (metrics, jobs)
+CACHE_TTL_MEDIUM = 120  # Semi-static data (KB list, glossary)
+CACHE_TTL_LONG = 300    # Rarely changing data (search groups, config)
+
 # --- Qdrant (Vector DB) ---
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 

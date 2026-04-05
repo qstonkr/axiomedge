@@ -25,7 +25,7 @@ st.title("📋 나의 활동")
 # =============================================================================
 st.subheader("활동 요약")
 
-summary_result = api_client._request("GET", "/api/v1/auth/my-activities/summary")
+summary_result = api_client.get_my_activities_summary()
 
 if not api_failed(summary_result):
     col1, col2, col3, col4 = st.columns(4)
@@ -102,9 +102,7 @@ if date_from:
 if date_to:
     params["date_to"] = str(date_to)
 
-activities_result = api_client._request(
-    "GET", "/api/v1/auth/my-activities", params=params
-)
+activities_result = api_client.get_my_activities(**params)
 
 if api_failed(activities_result):
     st.error("활동 목록을 불러올 수 없습니다.")

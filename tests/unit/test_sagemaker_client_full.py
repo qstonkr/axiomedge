@@ -62,7 +62,9 @@ class TestSageMakerLLMClient:
                 profile_name="test",
                 region_name="ap-northeast-2",
             )
-            session.client.assert_called_once_with("sagemaker-runtime")
+            session.client.assert_called_once()
+            call_args = session.client.call_args
+            assert call_args[0][0] == "sagemaker-runtime"
 
     def test_invoke_sync(self):
         mock_client = MagicMock()

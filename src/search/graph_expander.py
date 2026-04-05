@@ -433,8 +433,8 @@ class GraphSearchExpander:
                                     doc = row.get("doc", "")
                                     if doc:
                                         entity_doc_names.add(doc)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.debug("Entity doc name lookup failed: %s", e)
 
                     logger.info(
                         "Entity expansion: %d entities found, %d doc names extracted",

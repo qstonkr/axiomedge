@@ -456,8 +456,8 @@ class OllamaClient:
                 loop.create_task(client.aclose())
             else:
                 asyncio.run(client.aclose())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to close httpx client during __del__: %s", e)
 
 
 # Convenience alias for backward compatibility

@@ -102,15 +102,15 @@ class IngestionRunRepository(BaseRepository):
         if model.errors:
             try:
                 errors = json.loads(model.errors)
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug("Failed to parse ingestion run errors JSON: %s", e)
 
         metadata: dict[str, Any] = {}
         if model.run_metadata:
             try:
                 metadata = json.loads(model.run_metadata)
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug("Failed to parse ingestion run metadata JSON: %s", e)
 
         return {
             "id": model.id,

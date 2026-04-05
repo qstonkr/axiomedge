@@ -7,7 +7,7 @@ Architecture: Dashboard -> POST /api/v1/search/hub -> FederatedSearchService
 2-phase search: 1) 문서 검색 (빠름) 2) AI 답변 생성 (선택)
 
 Created: 2026-02-20
-Updated: 2026-03-14 - 2-phase 검색, 검색 모드 선택, 검색 시간 최적화, 세션 영속성
+Updated: 2026-04-04 - 검색 설정을 메인 영역 상단 바로 이동, 추천 검색어, multiselect
 """
 
 import time
@@ -91,133 +91,9 @@ _try_restore_session()
 
 
 # ---------------------------------------------------------------------------
-# 사이드바: KB 선택 및 모드
+# 사이드바: 세션 관리만
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("---")
-    st.subheader("검색 설정")
-
-    # 검색 모드 선택
-    search_mode = st.radio(
-        "검색 모드",
-        ["AI 답변", "빠른 검색"],
-        index=0,
-        help="**AI 답변**: EXAONE 3.5가 문서 기반 답변 생성 (10~30초)\n\n"
-             "**빠른 검색**: 관련 문서만 표시 (1~3초)",
-        key="search_mode_radio",
-    )
-
-    # ================================================================
-    # 검색 범위 선택 (그룹 기반 + 개별 KB 선택)
-    # ================================================================
-    st.markdown("**🔍 검색 범위**")
-    # Use KB IDs from main page if set (e.g. KB card "열기")
-    # Persist in _direct_kb_ids so it survives Streamlit reruns
-    if "search_kb_ids" in st.session_state:
-        st.session_state["_direct_kb_ids"] = st.session_state.pop("search_kb_ids")
-        st.session_state.pop("_active_group_name", None)
-        st.session_state.pop("search_group_name", None)
-
-    _direct_kb_ids = st.session_state.get("_direct_kb_ids", [])
-    selected_kb_ids: list[str] = list(_direct_kb_ids)
-    selected_group_id: str | None = None
-
-    # 검색 그룹 + KB 목록 로드 (must be before name resolution)
-    groups_result = api_client._request("GET", "/api/v1/search-groups")
-    groups_list = []
-    if not api_failed(groups_result):
-        groups_list = groups_result.get("groups", [])
-
-    kbs_result = api_client.get_searchable_kbs()
-    kbs_list = []
-    if not api_failed(kbs_result):
-        kbs_list = kbs_result.get("kbs", kbs_result.get("items", []))
-
-    if _direct_kb_ids:
-        _dkb_names = []
-        for _dkid in _direct_kb_ids:
-            _dm = next((k for k in kbs_list if k.get("kb_id") == _dkid or k.get("id") == _dkid), None)
-            _dkb_names.append(_dm.get("name", _dkid) if _dm else _dkid)
-        st.info(f"🔍 {', '.join(_dkb_names)} 에서 검색합니다.  "
-                f"[전체 검색으로 전환하려면 그룹을 선택하세요]")
-
-    # 선택 모드: 그룹 / 직접 선택
-    scope_mode = st.radio(
-        "범위 설정",
-        options=["그룹 선택", "직접 선택"],
-        horizontal=True,
-        key="scope_mode_radio",
-        label_visibility="collapsed",
-    )
-
-    if scope_mode == "그룹 선택" and not _direct_kb_ids:
-        # 그룹 드롭다운 (skip if KB card set direct KBs)
-        if groups_list:
-            group_names = ["전체"] + [g["name"] for g in groups_list]
-            group_desc = {g["name"]: g.get("description", "") for g in groups_list}
-            group_desc["전체"] = "모든 KB에서 검색"
-
-            # Use group selected from main page if available
-            _default_group = st.session_state.get("search_group_name", "전체")
-            _default_idx = group_names.index(_default_group) if _default_group in group_names else 0
-
-            selected_name = st.selectbox(
-                "검색 그룹",
-                options=group_names,
-                index=_default_idx,
-                key="search_group_select",
-                help="관리자가 설정한 검색 그룹 또는 전체",
-            )
-
-            if selected_name != "전체":
-                matched = [g for g in groups_list if g["name"] == selected_name]
-                if matched:
-                    selected_group_id = matched[0]["id"]
-                    group_kb_ids = matched[0].get("kb_ids", [])
-                    selected_kb_ids = group_kb_ids
-                    # Clear direct KB selection when group is chosen
-                    st.session_state.pop("_direct_kb_ids", None)
-                    st.session_state["_active_group_name"] = selected_name
-                    desc = group_desc.get(selected_name, "")
-                    if desc:
-                        st.caption(f"📋 {desc}")
-                    _gkb_names = []
-                    for _gkid in group_kb_ids:
-                        _gm = next((k for k in kbs_list if k.get("kb_id") == _gkid or k.get("id") == _gkid), None)
-                        _gkb_names.append(_gm.get("name", _gkid) if _gm else _gkid)
-                    st.caption(f"KB {len(group_kb_ids)}개: {', '.join(_gkb_names)}")
-            else:
-                st.session_state["_active_group_name"] = None
-            # "전체" 선택 시 selected_kb_ids는 빈 리스트 (= 전체 검색)
-        else:
-            st.info("검색 그룹이 없습니다. 전체 KB에서 검색합니다.")
-
-    else:
-        # 직접 KB 선택 (기존 체크박스 방식)
-        if kbs_list:
-            kb_id_list = [kb.get("kb_id", kb.get("id", "")) for kb in kbs_list]
-
-            for _kid in kb_id_list:
-                if f"kb_cb_{_kid}" not in st.session_state:
-                    st.session_state[f"kb_cb_{_kid}"] = True
-
-            def _sync_all_cb():
-                val = st.session_state.get("kb_select_all", True)
-                for _kid in kb_id_list:
-                    st.session_state[f"kb_cb_{_kid}"] = val
-
-            st.checkbox(
-                "전체 선택", value=True, key="kb_select_all", on_change=_sync_all_cb,
-            )
-
-            for kb in kbs_list:
-                kb_name = kb.get("name", kb.get("kb_id", ""))
-                kb_id = kb.get("kb_id", kb.get("id", ""))
-                if st.checkbox(kb_name, key=f"kb_cb_{kb_id}"):
-                    selected_kb_ids.append(kb_id)
-        else:
-            st.warning("KB 목록을 불러올 수 없습니다.")
-
     st.markdown("---")
 
     # ------------------------------------------------------------------
@@ -275,6 +151,32 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------------------------
+# 검색 그룹 + KB 데이터 로드 (메인 영역 상단 바에서 사용)
+# ---------------------------------------------------------------------------
+# Use KB IDs from main page if set (e.g. KB card "열기")
+# Persist in _direct_kb_ids so it survives Streamlit reruns
+if "search_kb_ids" in st.session_state:
+    st.session_state["_direct_kb_ids"] = st.session_state.pop("search_kb_ids")
+    st.session_state.pop("_active_group_name", None)
+    st.session_state.pop("search_group_name", None)
+
+_direct_kb_ids = st.session_state.get("_direct_kb_ids", [])
+selected_kb_ids: list[str] = list(_direct_kb_ids)
+selected_group_id: str | None = None
+
+# 검색 그룹 + KB 목록 로드
+groups_result = api_client.list_search_groups()
+groups_list = []
+if not api_failed(groups_result):
+    groups_list = groups_result.get("groups", [])
+
+kbs_result = api_client.get_searchable_kbs()
+kbs_list = []
+if not api_failed(kbs_result):
+    kbs_list = kbs_result.get("kbs", kbs_result.get("items", []))
+
+
+# ---------------------------------------------------------------------------
 # 메인 영역
 # ---------------------------------------------------------------------------
 # Dynamic title based on search scope (group name > KB name > default)
@@ -286,15 +188,127 @@ if _group:
 elif _direct:
     _kb_names = []
     for _kid in _direct:
-        _matched_kb = next((k for k in kbs_list if k.get("kb_id") == _kid or k.get("id") == _kid), None)
+        _matched_kb = next(
+            (k for k in kbs_list if k.get("kb_id") == _kid or k.get("id") == _kid),
+            None,
+        )
         _kb_names.append(_matched_kb.get("name", _kid) if _matched_kb else _kid)
     _scope_name = ", ".join(_kb_names)
 if _scope_name:
     st.title(f"💬 {_scope_name} 지식 검색")
 else:
     st.title("💬 지식 검색")
+
+# ---------------------------------------------------------------------------
+# 메인 영역 상단 바: 검색 범위 + 모드
+# ---------------------------------------------------------------------------
+
+# Build scope options: "전체", group names, separator, individual KBs
+_scope_options: list[str] = ["전체"]
+_group_name_to_id: dict[str, str] = {}
+_group_name_to_kb_ids: dict[str, list[str]] = {}
+for g in groups_list:
+    gname = g["name"]
+    _scope_options.append(gname)
+    _group_name_to_id[gname] = g["id"]
+    _group_name_to_kb_ids[gname] = g.get("kb_ids", [])
+
+_SEPARATOR = "── 직접 선택 ──"
+_scope_options.append(_SEPARATOR)
+
+_kb_id_list = [kb.get("kb_id", kb.get("id", "")) for kb in kbs_list]
+_kb_name_map: dict[str, str] = {}
+for kb in kbs_list:
+    kid = kb.get("kb_id", kb.get("id", ""))
+    kname = kb.get("name", kid)
+    _kb_name_map[kid] = kname
+
+col_scope, col_mode = st.columns([4, 2])
+
+with col_scope:
+    # Determine default index
+    _default_scope = "전체"
+    if _direct_kb_ids:
+        # Direct KB selection active — show "직접 선택" as default
+        _default_scope = _SEPARATOR
+    elif st.session_state.get("_active_group_name"):
+        _ag = st.session_state["_active_group_name"]
+        if _ag in _scope_options:
+            _default_scope = _ag
+    _default_idx = (
+        _scope_options.index(_default_scope)
+        if _default_scope in _scope_options
+        else 0
+    )
+
+    scope_selection = st.selectbox(
+        "검색 범위",
+        options=_scope_options,
+        index=_default_idx,
+        key="scope_select_main",
+        label_visibility="collapsed",
+    )
+
+with col_mode:
+    search_mode = st.radio(
+        "모드",
+        ["AI 답변", "빠른 검색"],
+        horizontal=True,
+        key="search_mode_radio",
+        label_visibility="collapsed",
+    )
+
+# Process scope selection
+if scope_selection == _SEPARATOR:
+    # Show multiselect for individual KB selection
+    _ms_options = _kb_id_list
+    _ms_format = lambda kid: _kb_name_map.get(kid, kid)  # noqa: E731
+
+    # Default: use _direct_kb_ids if set, otherwise all
+    _ms_default = list(_direct_kb_ids) if _direct_kb_ids else list(_kb_id_list)
+    # Filter defaults to only valid options
+    _ms_default = [k for k in _ms_default if k in _kb_id_list]
+
+    selected_kb_ids = st.multiselect(
+        "KB 선택",
+        options=_ms_options,
+        default=_ms_default,
+        format_func=_ms_format,
+        key="kb_multiselect_main",
+    )
+    st.session_state["_direct_kb_ids"] = selected_kb_ids
+    st.session_state.pop("_active_group_name", None)
+
+elif scope_selection == "전체":
+    selected_kb_ids = []
+    st.session_state.pop("_direct_kb_ids", None)
+    st.session_state["_active_group_name"] = None
+
+elif scope_selection in _group_name_to_id:
+    # Group selected
+    selected_group_id = _group_name_to_id[scope_selection]
+    selected_kb_ids = _group_name_to_kb_ids.get(scope_selection, [])
+    st.session_state.pop("_direct_kb_ids", None)
+    st.session_state["_active_group_name"] = scope_selection
+    # Show group KB info
+    _gkb_names = [_kb_name_map.get(k, k) for k in selected_kb_ids]
+    st.caption(f"KB {len(selected_kb_ids)}개: {', '.join(_gkb_names)}")
+
 mode_label = "EXAONE 3.5" if search_mode == "AI 답변" else "문서 검색"
 st.caption(f"Hub Search API를 통해 지식을 검색하고 {mode_label}가 답변합니다.")
+
+# ---------------------------------------------------------------------------
+# 추천 검색어 (채팅이 비어 있을 때)
+# ---------------------------------------------------------------------------
+if not st.session_state.get("chat_messages"):
+    st.markdown("##### 💡 이런 것을 검색해보세요")
+    _sug_cols = st.columns(4)
+    _suggestions = ["점포 운영 절차", "정산 프로세스", "분쟁 조정 방법", "주간보고 내용"]
+    for _si, _sq in enumerate(_suggestions):
+        with _sug_cols[_si]:
+            if st.button(_sq, use_container_width=True, key=f"suggest_{_si}"):
+                st.session_state.pending_query = _sq
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +338,9 @@ def _render_answer_metadata(meta: dict, msg_id: str) -> None:
                 rerank_score = src.get("rerank_score", src.get("composite_score", 0))
 
                 st.markdown(f"**{title}**")
-                trust_detail = conf_badge if trust_score == 0 else f"{conf_badge} ({trust_score:.2f})"
+                trust_detail = (
+                    conf_badge if trust_score == 0 else f"{conf_badge} ({trust_score:.2f})"
+                )
                 st.caption(
                     f"{tier_badge} | 신뢰도: {trust_detail} | "
                     f"{trans_badge} | Rerank: {rerank_score:.3f}"
@@ -644,7 +660,9 @@ def _execute_ai_search(query: str) -> None:
         result = api_client.hub_search_answer(
             query,
             kb_ids=selected_kb_ids or None,
-            group_name=st.session_state.get("_active_group_name") if not selected_kb_ids else None,
+            group_name=(
+                st.session_state.get("_active_group_name") if not selected_kb_ids else None
+            ),
             mode="agentic",
         )
         duration_ms = round((time.monotonic() - t0) * 1000, 1)

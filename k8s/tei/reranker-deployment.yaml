@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bge-reranker
+  namespace: knowledge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bge-reranker
+  template:
+    metadata:
+      labels:
+        app: bge-reranker
+    spec:
+      serviceAccountName: bge-m3-sa
+      initContainers:
+        - name: model-download
+          image: amazon/aws-cli:2.22.35
+          command:
+            - sh
+            - -c
+            - |
+              aws s3 sync s3://oreo-dev-ml-artifacts/models/bge-reranker-v2-m3/hub /data \
+                --region ap-northeast-2
+          volumeMounts:
+            - name: model-data
+              mountPath: /data
+      containers:
+        - name: tei
+          image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
+          args:
+            - --model-id
+            - BAAI/bge-reranker-v2-m3
+            - --port
+            - "8080"
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              value: ""
+          volumeMounts:
+            - name: model-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2000m"
+            limits:
+              memory: "6Gi"
+              cpu: "4000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+      volumes:
+        - name: model-data
+          emptyDir:
+            sizeLimit: 6Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bge-reranker
+  namespace: knowledge
+spec:
+  selector:
+    app: bge-reranker
+  ports:
+    - port: 8081
+      targetPort: 8080
+      name: http

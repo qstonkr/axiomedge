@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 import pandas as pd
 
 from components.sidebar import render_sidebar
+from components.constants import DEDUP
 from services import api_client
 from services.api_client import api_failed
 
@@ -65,13 +66,13 @@ with tab_dedup:
             {
                 "key": "minhash_lsh",
                 "name": "Stage 2: MinHash LSH",
-                "threshold": "Jaccard >= 0.80",
+                "threshold": f"Jaccard >= {DEDUP.near_duplicate_threshold:.2f}",
                 "description": "Jaccard 유사도 기반 후보 쌍 추출",
             },
             {
                 "key": "semhash",
                 "name": "Stage 3: SemHash",
-                "threshold": "Cosine >= 0.90",
+                "threshold": f"Cosine >= {DEDUP.semantic_duplicate_threshold:.2f}",
                 "description": "의미적 유사도 기반 중복 확인",
             },
             {

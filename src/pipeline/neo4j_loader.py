@@ -46,7 +46,7 @@ class Neo4jConfig:
 
     uri: str = "bolt://localhost:7687"
     user: str = "neo4j"
-    password: str = "password"
+    password: str = ""
     database: str = "neo4j"
 
 
@@ -56,6 +56,8 @@ class Neo4jKnowledgeLoader:
     def __init__(self, config: Neo4jConfig):
         self.config = config
         self._driver = None
+        if not config.password:
+            logger.warning("Neo4jConfig.password is empty — connection may fail")
 
     async def connect(self) -> None:
         """Neo4j 연결."""

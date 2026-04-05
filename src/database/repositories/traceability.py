@@ -127,15 +127,15 @@ class ProvenanceRepository(BaseRepository):
         if model.extraction_metadata:
             try:
                 extraction_meta = json.loads(model.extraction_metadata)
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug("Failed to parse extraction_metadata JSON: %s", e)
 
         contributors: list[str] = []
         if model.contributors:
             try:
                 contributors = json.loads(model.contributors)
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug("Failed to parse contributors JSON: %s", e)
 
         return {
             "id": model.id,

@@ -61,9 +61,17 @@ async def create_feedback(body: dict[str, Any]):
     feedback_id = body.get("id") or str(uuid.uuid4())
     if repo:
         try:
-            feedback_data = dict(body)
-            feedback_data.setdefault("id", feedback_id)
-            feedback_data.setdefault("status", "pending")
+            feedback_data = {
+                "id": feedback_id,
+                "entry_id": body.get("entry_id", body.get("document_id", "unknown")),
+                "kb_id": body.get("kb_id", "default"),
+                "user_id": body.get("user_id", body.get("reporter", "anonymous")),
+                "feedback_type": body.get("feedback_type", body.get("type", "general")),
+                "status": body.get("status", "pending"),
+                "description": body.get("description", body.get("content", "")),
+                "error_category": body.get("error_category"),
+                "suggested_content": body.get("suggested_content"),
+            }
             await repo.save(feedback_data)
             return {"success": True, "feedback_id": feedback_id, "message": "Feedback recorded"}
         except Exception as e:
@@ -241,9 +249,16 @@ async def create_error_report(body: dict[str, Any]):
     report_id = body.get("id") or str(uuid.uuid4())
     if repo:
         try:
-            report_data = dict(body)
-            report_data.setdefault("id", report_id)
-            report_data.setdefault("status", "pending")
+            report_data = {
+                "id": report_id,
+                "document_id": body.get("document_id", body.get("message_id", "unknown")),
+                "kb_id": body.get("kb_id", body.get("kb", "default")),
+                "error_type": body.get("error_type", body.get("type", "incorrect_answer")),
+                "description": body.get("description", body.get("title", body.get("content", ""))),
+                "reporter_user_id": body.get("reporter_user_id", body.get("reporter", body.get("session_id", "anonymous"))),
+                "status": body.get("status", "pending"),
+                "priority": body.get("priority", "medium"),
+            }
             await repo.save(report_data)
             return {"success": True, "report_id": report_id, "message": "Error reported"}
         except Exception as e:

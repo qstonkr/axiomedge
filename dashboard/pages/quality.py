@@ -54,14 +54,8 @@ with tab_quality:
                 # ── KTS 6-Signal 레이더 차트 (trust score 데이터 있을 때) ──
                 st.subheader("KTS 6-Signal 레이더 차트")
 
-                SIGNALS = {
-                    "accuracy": {"label": "정확도", "weight": 0.25, "field": "hallucination_score"},
-                    "source_credibility": {"label": "출처 신뢰도", "weight": 0.20, "field": "source_credibility"},
-                    "freshness": {"label": "신선도", "weight": 0.20, "field": "freshness_score"},
-                    "consistency": {"label": "일관성", "weight": 0.15, "field": "consistency_score"},
-                    "usage_feedback": {"label": "사용자 피드백", "weight": 0.10, "field": "usage_score"},
-                    "expert_validation": {"label": "전문가 검증", "weight": 0.10, "field": "user_validation_score"},
-                }
+                from components.constants import KTS_SIGNALS
+                SIGNALS = KTS_SIGNALS
 
                 scores: dict[str, float] = {}
                 for key, sig in SIGNALS.items():
@@ -242,10 +236,11 @@ with tab_quality:
                     )
                     st.plotly_chart(fig_fresh, use_container_width=True)
 
+                    from components.constants import FRESHNESS_GOOD_PCT, FRESHNESS_WARN_PCT
                     fresh_pct = (age_buckets["< 7일"] + age_buckets["7-30일"]) / len(dates) * 100 if dates else 0
-                    if fresh_pct >= 70:
+                    if fresh_pct >= FRESHNESS_GOOD_PCT:
                         st.success(f"신선도 양호: 30일 이내 문서 {fresh_pct:.0f}%")
-                    elif fresh_pct >= 40:
+                    elif fresh_pct >= FRESHNESS_WARN_PCT:
                         st.warning(f"신선도 보통: 30일 이내 문서 {fresh_pct:.0f}%")
                     else:
                         st.error(f"신선도 낮음: 30일 이내 문서 {fresh_pct:.0f}%")
@@ -291,9 +286,11 @@ with tab_rag:
             completeness = latest.get("avg_completeness", 0)
             overall = (faithfulness + relevancy + completeness) / 3
 
+            from components.constants import CONFIDENCE as _conf
+
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                threshold_ok = faithfulness >= 0.65
+                threshold_ok = faithfulness >= _conf.quality_gate_faithfulness
                 st.metric(
                     "Faithfulness",
                     f"{faithfulness:.3f}",
@@ -310,7 +307,7 @@ with tab_rag:
             # Quality gate
             st.markdown("---")
             st.markdown("#### Quality Gate")
-            gate_threshold = 0.65
+            gate_threshold = _conf.quality_gate_faithfulness
             st.markdown(f"- **Faithfulness 임계값**: `>= {gate_threshold}`")
             if faithfulness >= gate_threshold:
                 st.success(f"Quality Gate 통과: Faithfulness {faithfulness:.3f} >= {gate_threshold}")
@@ -454,13 +451,10 @@ with tab_kts:
                 if not api_failed(trust_for_signal):
                     signal_items = trust_for_signal.get("items", trust_for_signal.get("scores", []))
                     if signal_items:
+                        from components.constants import KTS_SIGNALS as _SIG
                         SIGNAL_FIELDS = {
-                            "accuracy": ("정확도 (0.25)", "hallucination_score"),
-                            "source_credibility": ("출처 신뢰도 (0.20)", "source_credibility"),
-                            "freshness": ("신선도 (0.20)", "freshness_score"),
-                            "consistency": ("일관성 (0.15)", "consistency_score"),
-                            "usage_feedback": ("사용자 피드백 (0.10)", "usage_score"),
-                            "expert_validation": ("전문가 검증 (0.10)", "user_validation_score"),
+                            k: (f"{v['label']} ({v['weight']:.2f})", v["field"])
+                            for k, v in _SIG.items()
                         }
                         for sig_key, (sig_label, field_name) in SIGNAL_FIELDS.items():
                             vals = [item.get(field_name, 0) for item in signal_items if isinstance(item, dict)]
@@ -506,9 +500,10 @@ with tab_transparency:
         st.markdown("#### 출처 커버리지 게이지")
         st.progress(min(source_coverage_rate, 1.0))
 
-        if source_coverage_rate >= 0.8:
+        from components.constants import SOURCE_COVERAGE_GOOD, SOURCE_COVERAGE_WARN
+        if source_coverage_rate >= SOURCE_COVERAGE_GOOD:
             st.success(f"커버리지 양호: {source_coverage_rate:.1%}")
-        elif source_coverage_rate >= 0.5:
+        elif source_coverage_rate >= SOURCE_COVERAGE_WARN:
             st.warning(f"커버리지 보통: {source_coverage_rate:.1%}")
         elif total_citations > 0:
             st.error(f"커버리지 낮음: {source_coverage_rate:.1%}")

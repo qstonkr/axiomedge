@@ -44,57 +44,32 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
 
 from src.auth.dependencies import get_current_user, require_permission
 from src.auth.providers import AuthUser
 
+# Import helpers and re-export for backward compatibility
+from src.api.routes.auth_helpers import (  # noqa: F401 — re-exports
+    ChangePasswordRequest,
+    CreateUserRequest,
+    LoginRequest,
+    RegisterRequest,
+    UpdateUserRequest,
+    _AUTH_NOT_INIT,
+    _REFRESH_PATH,
+    _USER_NOT_FOUND,
+    _filter_activities_by_date,
+    _get_auth_service,
+    _get_state,
+    _is_cookie_secure,
+    build_login_tokens,
+    rotate_refresh_token,
+    set_auth_cookies,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth & Permissions"])
-
-_AUTH_NOT_INIT = "Auth service not initialized"
-_REFRESH_PATH = "/api/v1/auth/refresh"
-_USER_NOT_FOUND = "User not found"
-
-
-def _get_auth_service():
-    from src.api.app import _get_state
-    return _get_state().get("auth_service")
-
-
-def _get_state():
-    from src.api.app import _get_state
-    return _get_state()
-
-
-def _is_cookie_secure() -> bool:
-    """Determine cookie Secure flag from config (handles reverse proxy correctly)."""
-    import os
-    return os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
-
-
-# =============================================================================
-# Request/Response Models
-# =============================================================================
-
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    display_name: str
-    department: str | None = None
-    organization_id: str | None = None
-
-
-class ChangePasswordRequest(BaseModel):
-    old_password: str
-    new_password: str
 
 
 # =============================================================================
@@ -127,57 +102,22 @@ async def login(body: LoginRequest, request: Request, response: Response):
     if not jwt_service:
         raise HTTPException(status_code=503, detail="JWT service not initialized (AUTH_PROVIDER=internal required)")
 
-    roles_list = await auth_service.get_user_roles(user["id"])
-    role_names = [r["role"] for r in roles_list]
-    permissions = sorted(rbac.get_effective_permissions(roles_list)) if rbac else []
-
-    token_pair = jwt_service.create_token_pair(
-        user_id=user["id"],
-        email=user["email"],
-        roles=role_names,
-        permissions=permissions,
-        display_name=user.get("display_name", ""),
+    result = await build_login_tokens(
+        auth_service=auth_service,
+        jwt_service=jwt_service,
+        token_store=token_store,
+        rbac=rbac,
+        user=user,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent", "")[:500],
     )
 
-    # Store refresh token in DB
-    if token_store:
-        refresh_claims = jwt_service.decode_refresh_token(token_pair.refresh_token)
-        await token_store.store_refresh_token(
-            jti=refresh_claims["jti"],
-            user_id=user["id"],
-            family_id=refresh_claims["family_id"],
-            rotation_count=0,
-            token_raw=token_pair.refresh_token,
-            expires_at=token_pair.refresh_expires_at,
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent", "")[:500],
-        )
-
-    # Set HttpOnly cookies
-    is_secure = _is_cookie_secure()
-    response.set_cookie(
-        key="access_token",
-        value=token_pair.access_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=jwt_service.access_expire_seconds,
-        path="/",
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=token_pair.refresh_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=jwt_service.refresh_expire_seconds,
-        path=_REFRESH_PATH,
-    )
+    set_auth_cookies(response, jwt_service, result["token_pair"].access_token, result["token_pair"].refresh_token)
 
     return {
         "success": True,
         "user": user,
-        "roles": role_names,
+        "roles": result["role_names"],
         "token_type": "Bearer",
         "expires_in": jwt_service.access_expire_seconds,
     }
@@ -207,8 +147,8 @@ async def refresh_token(request: Request, response: Response):
         try:
             body = await request.json()
             refresh_token_raw = body.get("refresh_token", "")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to parse refresh token from request body: %s", e)
 
     if not refresh_token_raw:
         raise HTTPException(status_code=401, detail="Missing refresh token")
@@ -229,57 +169,16 @@ async def refresh_token(request: Request, response: Response):
         await token_store.revoke_family(claims["family_id"])
         raise HTTPException(status_code=401, detail="Refresh token revoked")
 
-    # Get fresh user roles/permissions
-    user_id = claims["sub"]
-    roles_list = await auth_service.get_user_roles(user_id) if auth_service else []
-    role_names = [r["role"] for r in roles_list]
-    permissions = sorted(rbac.get_effective_permissions(roles_list)) if rbac else []
-
-    user_info = await auth_service.get_user(user_id) if auth_service else {}
-    email = user_info.get("email", "") if user_info else ""
-    display_name = user_info.get("display_name", "") if user_info else ""
-
-    new_pair = jwt_service.create_token_pair(
-        user_id=user_id,
-        email=email,
-        roles=role_names,
-        permissions=permissions,
-        family_id=claims["family_id"],
-        rotation_count=claims.get("rotation_count", 0) + 1,
-        display_name=display_name,
+    result = await rotate_refresh_token(
+        jwt_service=jwt_service,
+        token_store=token_store,
+        auth_service=auth_service,
+        rbac=rbac,
+        claims=claims,
     )
 
-    # Store new refresh token
-    if token_store:
-        new_refresh_claims = jwt_service.decode_refresh_token(new_pair.refresh_token)
-        await token_store.store_refresh_token(
-            jti=new_refresh_claims["jti"],
-            user_id=user_id,
-            family_id=claims["family_id"],
-            rotation_count=claims.get("rotation_count", 0) + 1,
-            token_raw=new_pair.refresh_token,
-            expires_at=new_pair.refresh_expires_at,
-        )
-
-    is_secure = _is_cookie_secure()
-    response.set_cookie(
-        key="access_token",
-        value=new_pair.access_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=jwt_service.access_expire_seconds,
-        path="/",
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=new_pair.refresh_token,
-        httponly=True,
-        secure=is_secure,
-        samesite="lax",
-        max_age=jwt_service.refresh_expire_seconds,
-        path=_REFRESH_PATH,
-    )
+    new_pair = result["new_pair"]
+    set_auth_cookies(response, jwt_service, new_pair.access_token, new_pair.refresh_token)
 
     return {
         "success": True,
@@ -426,14 +325,6 @@ async def list_users(
     return {"users": users, "total": len(users)}
 
 
-class CreateUserRequest(BaseModel):
-    email: str
-    display_name: str
-    department: str | None = None
-    organization_id: str | None = None
-    role: str = "viewer"
-
-
 @router.post(
     "/users",
     responses={
@@ -461,13 +352,6 @@ async def create_user(
         return {"success": True, **result}
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
-
-
-class UpdateUserRequest(BaseModel):
-    display_name: str | None = None
-    department: str | None = None
-    organization_id: str | None = None
-    is_active: bool | None = None
 
 
 @router.put(
@@ -707,27 +591,6 @@ async def remove_kb_permission(
 # =============================================================================
 # My Activities ("나의 활동")
 # =============================================================================
-
-
-def _filter_activities_by_date(
-    activities: list[dict], date_from: str | None, date_to: str | None,
-) -> list[dict]:
-    """Filter activity records by date range."""
-    filtered = []
-    for act in activities:
-        created = act.get("created_at", act.get("timestamp", ""))
-        if not created:
-            continue
-        try:
-            act_date = str(created)[:10]  # YYYY-MM-DD
-            if date_from and act_date < date_from:
-                continue
-            if date_to and act_date > date_to:
-                continue
-            filtered.append(act)
-        except (ValueError, TypeError):
-            filtered.append(act)
-    return filtered
 
 
 @router.get("/my-activities")

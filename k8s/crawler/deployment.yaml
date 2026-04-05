@@ -1,0 +1,187 @@
+# Crawler/Ingestion Jobs — run only when triggered, terminate on completion.
+#
+# Usage:
+#   1. On-demand (single KB):
+#      kubectl create job crawl-g-espa --from=job/crawl-template \
+#        -- python -m cli.ingest --kb-id g-espa --source /data/sources/g-espa
+#
+#   2. Scheduled (CronJob):
+#      Runs every Monday 2AM, processes all KBs in parallel.
+#
+#   3. API-triggered:
+#      API Pod calls POST /api/v1/knowledge/ingest → creates a K8s Job via API.
+---
+# PVC for pipeline data (JSONL checkpoints, crawl results) — persists across jobs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: crawler-pipeline-pvc
+  namespace: knowledge
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+# CronJob: scheduled full crawl (all KBs)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scheduled-crawl
+  namespace: knowledge
+spec:
+  schedule: "0 2 * * 1"  # Every Monday 2AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      parallelism: 3        # 3 KBs in parallel
+      completions: 6        # 6 total KBs
+      completionMode: Indexed
+      backoffLimit: 2
+      activeDeadlineSeconds: 7200  # 2h timeout
+      template:
+        metadata:
+          labels:
+            app: crawler
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: crawler
+              image: knowledge-local:latest
+              command:
+                - sh
+                - -c
+                - |
+                  # Map JOB_COMPLETION_INDEX to KB
+                  KBS=(a-ari drp g-espa partnertalk hax itops_general)
+                  KB=${KBS[$JOB_COMPLETION_INDEX]}
+                  echo "Processing KB: $KB (index=$JOB_COMPLETION_INDEX)"
+                  python -m cli.crawl --source /data/sources/$KB --output /data/pipeline/$KB/crawl_results
+                  python -m cli.ingest --kb-id $KB --source /data/pipeline/$KB/crawl_results
+              env: &crawler-env
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: DATABASE_URL
+                - name: QDRANT_URL
+                  value: http://qdrant.knowledge.svc:6333
+                - name: NEO4J_URI
+                  value: bolt://neo4j.knowledge.svc:7687
+                - name: NEO4J_AUTH
+                  value: "none"
+                - name: REDIS_URL
+                  value: redis://redis.knowledge.svc:6379
+                - name: BGE_TEI_URL
+                  value: http://bge-m3.knowledge.svc:80
+                - name: USE_CLOUD_EMBEDDING
+                  value: "true"
+                - name: PADDLEOCR_API_URL
+                  value: http://paddleocr.knowledge.svc:8866/ocr
+                - name: KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR
+                  value: /data/pipeline
+                - name: KNOWLEDGE_PIPELINE_MAX_WORKERS
+                  value: "4"
+                - name: USE_SAGEMAKER_LLM
+                  value: "true"
+                - name: SAGEMAKER_ENDPOINT_NAME
+                  value: oreo-exaone-dev
+                - name: SAGEMAKER_REGION
+                  value: ap-northeast-2
+              resources:
+                requests:
+                  memory: "2Gi"
+                  cpu: "2000m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "4000m"
+              volumeMounts:
+                - name: pipeline-data
+                  mountPath: /data/pipeline
+                - name: source-data
+                  mountPath: /data/sources
+          volumes:
+            - name: pipeline-data
+              persistentVolumeClaim:
+                claimName: crawler-pipeline-pvc
+            - name: source-data
+              emptyDir: {}
+---
+# On-demand Job template: single KB ingest
+# Usage: kubectl create job crawl-myKB-$(date +%s) --from=cronjob/ondemand-ingest
+# Then override args: --kb-id <KB> --source <path>
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ondemand-ingest
+  namespace: knowledge
+spec:
+  schedule: "0 0 30 2 *"  # Feb 30 = never runs automatically
+  suspend: true            # Disabled by default, only for manual job creation
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600  # 1h timeout
+      template:
+        metadata:
+          labels:
+            app: crawler
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: ingest
+              image: knowledge-local:latest
+              command:
+                - python
+                - -m
+                - cli.ingest
+              args:
+                - --kb-id
+                - "$(KB_ID)"
+                - --source
+                - "$(SOURCE_DIR)"
+              env:
+                - name: KB_ID
+                  value: ""      # Override when creating job
+                - name: SOURCE_DIR
+                  value: ""      # Override when creating job
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: DATABASE_URL
+                - name: QDRANT_URL
+                  value: http://qdrant.knowledge.svc:6333
+                - name: NEO4J_URI
+                  value: bolt://neo4j.knowledge.svc:7687
+                - name: NEO4J_AUTH
+                  value: "none"
+                - name: REDIS_URL
+                  value: redis://redis.knowledge.svc:6379
+                - name: BGE_TEI_URL
+                  value: http://bge-m3.knowledge.svc:80
+                - name: USE_CLOUD_EMBEDDING
+                  value: "true"
+                - name: PADDLEOCR_API_URL
+                  value: http://paddleocr.knowledge.svc:8866/ocr
+                - name: KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR
+                  value: /data/pipeline
+                - name: KNOWLEDGE_PIPELINE_MAX_WORKERS
+                  value: "4"
+              resources:
+                requests:
+                  memory: "2Gi"
+                  cpu: "2000m"
+                limits:
+                  memory: "4Gi"
+                  cpu: "4000m"
+              volumeMounts:
+                - name: pipeline-data
+                  mountPath: /data/pipeline
+          volumes:
+            - name: pipeline-data
+              persistentVolumeClaim:
+                claimName: crawler-pipeline-pvc

@@ -26,7 +26,7 @@ tab_users, tab_kb_perms, tab_abac = st.tabs(["사용자 관리", "KB 권한", "A
 with tab_users:
     st.subheader("사용자 목록")
 
-    users_result = api_client._request("GET", "/api/v1/auth/users")
+    users_result = api_client.list_auth_users()
 
     if api_failed(users_result):
         st.error("사용자 목록을 불러올 수 없습니다.")
@@ -68,17 +68,13 @@ with tab_users:
                 if not reg_email or not reg_name:
                     st.error("이메일과 이름은 필수입니다.")
                 else:
-                    result = api_client._request(
-                        "POST",
-                        "/api/v1/auth/users",
-                        json_body={
+                    result = api_client.create_auth_user({
                             "email": reg_email,
                             "display_name": reg_name,
                             "department": reg_dept or None,
                             "organization_id": reg_org or None,
                             "role": reg_role,
-                        },
-                    )
+                    })
                     if api_failed(result):
                         st.error(f"등록 실패: {result.get('detail', '알 수 없는 오류')}")
                     else:
@@ -102,10 +98,8 @@ with tab_users:
             submitted = st.form_submit_button("역할 할당", type="primary")
 
             if submitted and user_id_input:
-                result = api_client._request(
-                    "POST",
-                    f"/api/v1/auth/users/{user_id_input}/roles",
-                    json_body={"role": role_select},
+                result = api_client.assign_user_role(
+                    user_id_input, {"role": role_select}
                 )
                 if api_failed(result):
                     st.error("역할 할당에 실패했습니다.")
@@ -138,9 +132,7 @@ with tab_kb_perms:
         )
 
         if selected_kb:
-            perms_result = api_client._request(
-                "GET", f"/api/v1/auth/kb/{selected_kb}/permissions"
-            )
+            perms_result = api_client.get_kb_permissions(selected_kb)
 
             if api_failed(perms_result):
                 st.warning("권한 정보를 불러올 수 없습니다.")
@@ -171,10 +163,9 @@ with tab_kb_perms:
                     add_level = st.selectbox("권한", ["reader", "contributor", "manager", "owner"], key="add_perm_level")
                     if st.form_submit_button("추가", type="primary"):
                         if add_user:
-                            res = api_client._request(
-                                "POST",
-                                f"/api/v1/auth/kb/{selected_kb}/permissions",
-                                json_body={"user_id": add_user, "permission_level": add_level},
+                            res = api_client.add_kb_permission(
+                                selected_kb,
+                                {"user_id": add_user, "permission_level": add_level},
                             )
                             if api_failed(res):
                                 st.error("권한 추가 실패.")
@@ -188,9 +179,8 @@ with tab_kb_perms:
                     rm_user = st.text_input("사용자 ID", key="rm_perm_user")
                     if st.form_submit_button("삭제"):
                         if rm_user:
-                            res = api_client._request(
-                                "DELETE",
-                                f"/api/v1/auth/kb/{selected_kb}/permissions/{rm_user}",
+                            res = api_client.remove_kb_permission(
+                                selected_kb, rm_user
                             )
                             if api_failed(res):
                                 st.error("권한 삭제 실패.")
@@ -206,7 +196,7 @@ with tab_kb_perms:
 with tab_abac:
     st.subheader("ABAC 정책 관리")
 
-    policies_result = api_client._request("GET", "/api/v1/auth/abac/policies")
+    policies_result = api_client.list_abac_policies()
 
     if api_failed(policies_result):
         st.error("정책 목록을 불러올 수 없습니다.")
@@ -240,17 +230,13 @@ with tab_abac:
 
         if st.form_submit_button("정책 생성", type="primary"):
             if policy_name:
-                res = api_client._request(
-                    "POST",
-                    "/api/v1/auth/abac/policies",
-                    json_body={
+                res = api_client.create_abac_policy({
                         "name": policy_name,
                         "description": policy_desc,
                         "effect": policy_effect,
                         "resource": policy_resource,
                         "action": policy_action,
-                    },
-                )
+                })
                 if api_failed(res):
                     st.error("정책 생성 실패.")
                 else:
@@ -267,9 +253,7 @@ with tab_abac:
         del_policy_id = st.text_input("삭제할 정책 ID")
         if st.form_submit_button("삭제"):
             if del_policy_id:
-                res = api_client._request(
-                    "DELETE", f"/api/v1/auth/abac/policies/{del_policy_id}"
-                )
+                res = api_client.delete_abac_policy(del_policy_id)
                 if api_failed(res):
                     st.error("정책 삭제 실패.")
                 else:

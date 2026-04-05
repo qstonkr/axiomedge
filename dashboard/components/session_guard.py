@@ -5,7 +5,6 @@ No-op: no OAuth2 session to expire.
 
 from __future__ import annotations
 
-import streamlit as st
 
 
 def record_auth_success() -> None:

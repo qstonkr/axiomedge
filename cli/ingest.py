@@ -1,15 +1,20 @@
-"""CLI: Ingest documents into knowledge base.
+"""CLI: Ingest documents into knowledge base with incremental support.
+
+Supports incremental ingestion: skips already-ingested documents by checking
+content_hash against Qdrant metadata. Only new/changed documents are processed.
 
 Usage:
     python -m cli.ingest --source ./docs/ --kb-id my-kb
     python -m cli.ingest --file report.pdf --kb-id my-kb
     python -m cli.ingest --crawl-dir ./crawl_results/ --kb-id confluence-kb
+    python -m cli.ingest --source ./docs/ --kb-id my-kb --force  # Force re-ingest all
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import logging
 import os
 import sys
@@ -76,6 +81,60 @@ async def _init_services():
     return embedder, sparse_embedder, store, cm, graph_repo, provider
 
 
+async def _get_ingested_hashes(kb_id: str, provider) -> set[str]:
+    """Get content hashes of already-ingested documents from Qdrant."""
+    import httpx
+
+    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    collection = f"kb_{kb_id.replace('-', '_')}"
+    hashes: set[str] = set()
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Check if collection exists
+            resp = await client.get(f"{qdrant_url}/collections/{collection}")
+            if resp.status_code != 200:
+                return hashes
+
+            # Scroll through all points to collect source_uri hashes
+            offset = None
+            while True:
+                body: dict[str, Any] = {
+                    "limit": 100,
+                    "with_payload": {"include": ["content_hash", "source_uri"]},
+                    "with_vector": False,
+                }
+                if offset:
+                    body["offset"] = offset
+
+                resp = await client.post(
+                    f"{qdrant_url}/collections/{collection}/points/scroll",
+                    json=body,
+                )
+                if resp.status_code != 200:
+                    break
+
+                data = resp.json().get("result", {})
+                points = data.get("points", [])
+                if not points:
+                    break
+
+                for pt in points:
+                    pay = pt.get("payload", {})
+                    h = pay.get("content_hash", "")
+                    if h:
+                        hashes.add(h)
+
+                offset = data.get("next_page_offset")
+                if not offset:
+                    break
+
+    except Exception as e:
+        logger.warning("Could not fetch ingested hashes: %s", e)
+
+    return hashes
+
+
 async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
     embedder, sparse_embedder, store, cm, graph_repo, provider = await _init_services()
 
@@ -83,13 +142,33 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
     from src.pipeline.document_parser import parse_file_enhanced
     from src.pipeline.ingestion import IngestionPipeline
 
-    pipeline = IngestionPipeline(embedder=embedder, sparse_embedder=sparse_embedder, vector_store=store, graph_store=graph_repo)
+    pipeline = IngestionPipeline(
+        embedder=embedder, sparse_embedder=sparse_embedder,
+        vector_store=store, graph_store=graph_repo,
+    )
+
+    # Get already-ingested hashes for incremental mode
+    ingested_hashes: set[str] = set()
+    if not force:
+        ingested_hashes = await _get_ingested_hashes(kb_id, provider)
+        if ingested_hashes:
+            logger.info("Incremental mode: %d documents already ingested", len(ingested_hashes))
 
     total_docs = 0
     total_chunks = 0
+    skipped = 0
+
     for root, _dirs, files in os.walk(source_dir):
-        for fname in files:
+        for fname in sorted(files):
             fpath = os.path.join(root, fname)
+
+            # Incremental: check content hash
+            if not force and ingested_hashes:
+                file_hash = hashlib.sha256(open(fpath, "rb").read()).hexdigest()[:32]
+                if file_hash in ingested_hashes:
+                    skipped += 1
+                    continue
+
             result = parse_file_enhanced(fpath)
             text = result.full_text if hasattr(result, 'full_text') else str(result)
             if not text:
@@ -104,7 +183,11 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
             total_docs += 1
             total_chunks += result.chunks_stored
 
-    logger.info("Ingestion complete: %d docs, %d chunks", total_docs, total_chunks)
+    mode = "FORCE" if force else "INCREMENTAL"
+    logger.info(
+        "[%s] Ingestion complete: %d docs ingested, %d chunks, %d skipped",
+        mode, total_docs, total_chunks, skipped,
+    )
     await provider.close()
 
 
@@ -115,7 +198,10 @@ async def ingest_file(file_path: str, kb_id: str):
     from src.pipeline.document_parser import parse_file_enhanced
     from src.pipeline.ingestion import IngestionPipeline
 
-    pipeline = IngestionPipeline(embedder=embedder, sparse_embedder=sparse_embedder, vector_store=store, graph_store=graph_repo)
+    pipeline = IngestionPipeline(
+        embedder=embedder, sparse_embedder=sparse_embedder,
+        vector_store=store, graph_store=graph_repo,
+    )
 
     result = parse_file_enhanced(file_path)
     text = result.full_text if hasattr(result, 'full_text') else str(result)
@@ -137,7 +223,7 @@ async def ingest_file(file_path: str, kb_id: str):
     await provider.close()
 
 
-async def ingest_crawl(crawl_dir: str, kb_id: str):
+async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False):
     embedder, sparse_embedder, store, cm, graph_repo, provider = await _init_services()
 
     from src.connectors.crawl_result import CrawlResultConnector
@@ -151,14 +237,38 @@ async def ingest_crawl(crawl_dir: str, kb_id: str):
         await provider.close()
         return
 
-    pipeline = IngestionPipeline(embedder=embedder, sparse_embedder=sparse_embedder, vector_store=store, graph_store=graph_repo)
+    pipeline = IngestionPipeline(
+        embedder=embedder, sparse_embedder=sparse_embedder,
+        vector_store=store, graph_store=graph_repo,
+    )
+
+    # Get already-ingested hashes for incremental mode
+    ingested_hashes: set[str] = set()
+    if not force:
+        ingested_hashes = await _get_ingested_hashes(kb_id, provider)
 
     total_chunks = 0
+    skipped = 0
+    ingested = 0
     for doc in result.documents:
+        # Incremental: skip if content hash already exists
+        if not force and ingested_hashes:
+            doc_hash = hashlib.sha256(
+                doc.content.lower().strip().encode()
+            ).hexdigest()[:32]
+            if doc_hash in ingested_hashes:
+                skipped += 1
+                continue
+
         r = await pipeline.ingest(doc, collection_name=kb_id)
         total_chunks += r.chunks_stored
+        ingested += 1
 
-    logger.info("Crawl ingestion complete: %d docs, %d chunks", len(result.documents), total_chunks)
+    mode = "FORCE" if force else "INCREMENTAL"
+    logger.info(
+        "[%s] Crawl ingestion complete: %d/%d docs ingested, %d chunks, %d skipped",
+        mode, ingested, len(result.documents), total_chunks, skipped,
+    )
     await provider.close()
 
 
@@ -168,7 +278,7 @@ def main():
     parser.add_argument("--file", help="Single file to ingest")
     parser.add_argument("--crawl-dir", help="Crawl results directory (JSON/JSONL)")
     parser.add_argument("--kb-id", default="knowledge", help="Knowledge base ID")
-    parser.add_argument("--force", action="store_true", help="Force rebuild")
+    parser.add_argument("--force", action="store_true", help="Force re-ingest all (skip incremental check)")
 
     args = parser.parse_args()
 
@@ -177,7 +287,7 @@ def main():
     elif args.file:
         asyncio.run(ingest_file(args.file, args.kb_id))
     elif args.crawl_dir:
-        asyncio.run(ingest_crawl(args.crawl_dir, args.kb_id))
+        asyncio.run(ingest_crawl(args.crawl_dir, args.kb_id, args.force))
     else:
         parser.print_help()
 

@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: knowledge-dashboard
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    app: knowledge-dashboard
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.dashboard.serviceType }}
+  selector:
+    app: knowledge-dashboard
+  ports:
+    - port: {{ .Values.dashboard.port }}
+      targetPort: {{ .Values.dashboard.port }}
+      {{- if eq .Values.dashboard.serviceType "NodePort" }}
+      nodePort: {{ .Values.dashboard.nodePort }}
+      {{- end }}
+      name: http
