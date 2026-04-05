@@ -309,6 +309,16 @@ if not st.session_state.get("chat_messages"):
             if st.button(_sq, use_container_width=True, key=f"suggest_{_si}"):
                 st.session_state.pending_query = _sq
                 st.rerun()
+else:
+    # 대화 중에도 추천 질문 표시 (접이식)
+    with st.expander("💡 추천 질문", expanded=False):
+        _sug_cols2 = st.columns(4)
+        _suggestions2 = ["점포 운영 절차", "정산 프로세스", "분쟁 조정 방법", "주간보고 내용"]
+        for _si2, _sq2 in enumerate(_suggestions2):
+            with _sug_cols2[_si2]:
+                if st.button(_sq2, use_container_width=True, key=f"suggest_more_{_si2}"):
+                    st.session_state.pending_query = _sq2
+                    st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -739,6 +749,7 @@ if pending:
     try:
         validated_pending = validate_query(pending, max_length=500)
         _execute_search(validated_pending)
+        st.rerun()  # 메시지 렌더링 갱신
     except ValueError:
         pass  # Silently ignore invalid pending queries
 
@@ -751,5 +762,6 @@ if user_input:
     try:
         validated = validate_query(user_input, max_length=500)
         _execute_search(validated)
+        st.rerun()  # 메시지 렌더링 갱신
     except ValueError:
         st.warning("검색어를 입력해주세요.")
