@@ -120,8 +120,8 @@ class FreshnessRanker:
             if len(updated_at) >= 10:
                 update_date = datetime.fromisoformat(updated_at[:10])
                 return (datetime.now() - update_date).days
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as e:
+            logger.debug("Failed to parse updated_at date: %s", e)
 
         return None
 

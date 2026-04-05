@@ -28,9 +28,7 @@ with tab_weights:
     st.caption("검색 결과의 리랭킹에 사용되는 가중치를 조절합니다.")
 
     # Load current weights
-    weights_result = api_client._request(
-        "POST", "/api/v1/admin/config/weights", json_body={"action": "read"}
-    )
+    weights_result = api_client.get_config_weights()
 
     if api_failed(weights_result):
         st.warning("현재 가중치를 불러올 수 없습니다. 기본값을 표시합니다.")
@@ -101,11 +99,7 @@ with tab_weights:
                 "reranker.base_weight": base_score_weight,
                 "reranker.source_weight": source_weight,
             }
-            update_result = api_client._request(
-                "PUT",
-                "/api/v1/admin/config/weights",
-                json_body=new_weights,
-            )
+            update_result = api_client.update_config_weights(new_weights)
             if api_failed(update_result):
                 st.error("가중치 저장에 실패했습니다.")
             else:
@@ -170,9 +164,7 @@ with tab_reset:
     st.warning("이 작업은 현재 설정된 검색 가중치를 모두 기본값으로 되돌립니다.")
 
     if st.button("가중치 초기화", type="primary"):
-        reset_result = api_client._request(
-            "POST", "/api/v1/admin/config/weights/reset"
-        )
+        reset_result = api_client.reset_config_weights()
         if api_failed(reset_result):
             st.error("리셋에 실패했습니다.")
         else:

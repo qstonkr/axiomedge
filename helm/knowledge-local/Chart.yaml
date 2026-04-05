@@ -1,0 +1,12 @@
+apiVersion: v2
+name: knowledge-local
+description: Knowledge Local - Local-first knowledge management system with RAG capabilities
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - knowledge-management
+  - rag
+  - search
+maintainers:
+  - name: GS Team

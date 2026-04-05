@@ -22,7 +22,8 @@ def _env_float(key: str, default: float) -> float:
         try:
             return float(raw)
         except ValueError:
-            pass
+            import logging
+            logging.getLogger(__name__).warning("Invalid float for %s=%r, using default %s", key, raw, default)
     return default
 
 
@@ -32,7 +33,8 @@ def _env_int(key: str, default: int) -> int:
         try:
             return int(raw)
         except ValueError:
-            pass
+            import logging
+            logging.getLogger(__name__).warning("Invalid int for %s=%r, using default %s", key, raw, default)
     return default
 
 

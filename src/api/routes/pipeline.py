@@ -69,8 +69,8 @@ async def get_pipeline_metrics():
                     try:
                         diff = (completed - started).total_seconds()
                         durations.append(diff)
-                    except (TypeError, AttributeError):
-                        pass
+                    except (TypeError, AttributeError) as e:
+                        logger.debug("Duration calculation failed: %s", e)
             avg_duration = sum(durations) / len(durations) if durations else 0
 
             return {

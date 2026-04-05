@@ -309,8 +309,8 @@ class GraphNormalizer:
         try:
             parsed = json.loads(json_str)
             return self._extract_fields(parsed)
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.debug("Initial JSON parse failed, attempting repair: %s", e)
 
         # Second attempt: repair with json-repair library
         try:

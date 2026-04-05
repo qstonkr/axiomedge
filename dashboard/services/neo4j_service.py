@@ -6,11 +6,14 @@ Created: 2026-02-04 (Sprint 10)
 Updated: 2026-03-14 - Configurable query timeout via NEO4J_QUERY_TIMEOUT
 """
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
 
 from services import config as app_config
+
+logger = logging.getLogger(__name__)
 
 try:
     from neo4j import AsyncGraphDatabase, AsyncDriver
@@ -81,7 +84,7 @@ class Neo4jConfig:
 
     uri: str = "bolt://localhost:7687"
     user: str = "neo4j"
-    password: str = "password"
+    password: str = ""
     database: str = "knowledge-graph"
 
 
@@ -137,6 +140,11 @@ class Neo4jService:
         """Neo4j 연결."""
         if AsyncGraphDatabase is None:
             return
+
+        if not self.config.password:
+            logger.warning(
+                "Neo4j password is empty. Set NEO4J_PASSWORD env var for production use."
+            )
 
         self._driver = AsyncGraphDatabase.driver(
             self.config.uri,

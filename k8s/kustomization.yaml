@@ -5,6 +5,7 @@ namespace: knowledge
 
 resources:
   - namespace.yaml
+  - postgres/secret.yaml
   - postgres/deployment.yaml
   - qdrant/deployment.yaml
   - neo4j/deployment.yaml
@@ -14,4 +15,6 @@ resources:
   - api/deployment.yaml
   - api/hpa.yaml
   - tei/deployment.yaml
+  - tei/reranker-deployment.yaml
+  - crawler/deployment.yaml
   - dashboard/deployment.yaml

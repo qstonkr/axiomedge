@@ -30,16 +30,19 @@ SEARCH_DELAY_MIN = float(os.getenv("EVAL_SEARCH_DELAY_MIN", "0.5"))
 SEARCH_DELAY_MAX = float(os.getenv("EVAL_SEARCH_DELAY_MAX", "10.0"))
 SEARCH_DELAY_TARGET_MS = float(os.getenv("EVAL_SEARCH_TARGET_MS", "5000"))  # target response time
 
-JUDGE_PROMPT = """당신은 RAG 평가 봇입니다. 반드시 JSON만 출력하세요. 설명, 마크다운, 줄바꿈 없이 한 줄 JSON만 출력합니다.
+JUDGE_PROMPT = """당신은 RAG 시스템의 답변 품질을 평가하는 봇입니다. 반드시 JSON만 출력하세요. 설명, 마크다운, 줄바꿈 없이 한 줄 JSON만 출력합니다.
 
 질문: {question}
-기대 답변: {expected}
-실제 답변: {actual}
+기대 답변 (정답): {expected}
+실제 답변 (평가 대상): {actual}
+검색된 문서 청크 (RAG 컨텍스트): {context}
 
-각 항목을 0.0~1.0으로 평가:
-faithfulness=실제답변이 근거있는가, relevancy=질문에 답하는가, completeness=핵심정보 포함하는가
+각 항목을 0.0~1.0으로 채점합니다:
+- faithfulness: 실제 답변이 검색된 청크에 근거하는가? 청크에 있는 사실을 정확히 인용하면 1.0. 청크에 없는 내용을 지어냈으면 0.0. 기대 답변과 표현이 달라도 청크에 근거하면 높은 점수.
+- relevancy: 질문에 대한 답변인가? (0.0=무관, 1.0=정확히 답변)
+- completeness: 기대 답변의 핵심 정보를 빠짐없이 포함하는가? 청크에 정보가 있는데 실제 답변에서 누락하면 감점. (0.0=핵심 누락, 1.0=모두 포함)
 
-출력: {{"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}}"""
+출력: {{"faithfulness": 0.5, "relevancy": 0.5, "completeness": 0.5}}"""
 
 
 def _get_db_url() -> str:
@@ -78,7 +81,7 @@ def search_and_answer(question: str, kb_ids: list[str]) -> dict:
             "top_k": 5,
             "kb_ids": kb_ids,
             "include_answer": True,
-        }, headers=_get_auth_headers(), timeout=120)
+        }, headers=_get_auth_headers(), timeout=600)
         if resp.status_code == 200:
             return resp.json()
         if resp.status_code == 401:
@@ -98,10 +101,22 @@ def _get_or_refresh_sm_client(force_refresh: bool = False):
     return _sm_client
 
 
-def judge_answer(question: str, expected: str, actual: str, retry: int = 2) -> dict | None:
-    """LLM judge: compare expected vs actual answer. Returns None only on SSO expiry."""
+def judge_answer(question: str, expected: str, actual: str, chunks: list | None = None, retry: int = 2) -> dict | None:
+    """LLM judge: compare expected vs actual answer with context. Returns None only on SSO expiry."""
     endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
-    prompt = JUDGE_PROMPT.format(question=question, expected=expected, actual=actual or "(답변 없음)")
+    # Build context from retrieved chunks (max 3, truncated)
+    context_str = "(검색 결과 없음)"
+    if chunks:
+        ctx_parts = []
+        for idx, c in enumerate(chunks[:3], 1):
+            doc = c.get("document_name", "문서")
+            content = (c.get("content", "") or "")[:300]
+            ctx_parts.append(f"[{idx}] {doc}: {content}")
+        context_str = "\n".join(ctx_parts)
+    prompt = JUDGE_PROMPT.format(
+        question=question, expected=expected,
+        actual=actual or "(답변 없음)", context=context_str,
+    )
 
     for attempt in range(retry + 1):
         try:
@@ -226,7 +241,7 @@ async def async_main(kb_ids: list[str]):
 
     engine = create_async_engine(_get_db_url())
     try:
-        eval_id = str(uuid.uuid4())[:8]
+        eval_id = os.getenv("EVAL_ID") or str(uuid.uuid4())[:8]
         logger.info(f"Evaluation ID: {eval_id}")
 
         golden_set = await load_golden_set(engine)
@@ -259,7 +274,15 @@ async def async_main(kb_ids: list[str]):
         skipped = 0
         batch_to_save: list[dict] = []
 
+        # Batch cooldown: sleep between every N items to let the server recover
+        BATCH_COOLDOWN_SIZE = int(os.getenv("EVAL_BATCH_COOLDOWN_SIZE", "10"))
+        BATCH_COOLDOWN_SEC = float(os.getenv("EVAL_BATCH_COOLDOWN_SEC", "15"))
+
         for i, gs in enumerate(golden_set):
+            logger.info(
+                f"[{i+1}/{len(golden_set)}] START kb={gs['kb_id']} q={gs['question'][:60]}"
+            )
+
             # Search with retry on timeout
             actual_answer = ""
             search_time = 0.0
@@ -270,6 +293,11 @@ async def async_main(kb_ids: list[str]):
                     search_result = search_and_answer(gs["question"], [gs["kb_id"]])
                     search_time = (time.time() - t0) * 1000
                     actual_answer = search_result.get("answer") or ""
+                    logger.info(
+                        f"[{i+1}] SEARCH done: {search_time:.0f}ms, "
+                        f"answer_len={len(actual_answer)}, "
+                        f"chunks={len(search_result.get('chunks', []))}"
+                    )
                     break
                 except Exception as e:
                     if attempt == 0:
@@ -288,7 +316,7 @@ async def async_main(kb_ids: list[str]):
 
             if not actual_answer:
                 skipped += 1
-                logger.debug(f"Skipped (no answer): {gs['question'][:50]}")
+                logger.info(f"[{i+1}] SKIPPED (no answer)")
 
             # Extract CRAG evaluation from search metadata
             meta = search_result.get("metadata", {})
@@ -304,11 +332,19 @@ async def async_main(kb_ids: list[str]):
                 retrieved_docs = {c.get("document_name", "") for c in chunks}
                 recall_hit = any(source_doc in d for d in retrieved_docs)
 
-            scores = judge_answer(gs["question"], gs["expected"], actual_answer)
+            t_judge = time.time()
+            scores = judge_answer(gs["question"], gs["expected"], actual_answer, chunks=chunks)
+            judge_time = (time.time() - t_judge) * 1000
             if scores is None:
                 skipped += 1
-                logger.warning(f"Skipped (judge failed): {gs['question'][:50]}")
+                logger.warning(f"[{i+1}] SKIPPED (judge failed, SSO expired?)")
                 continue
+            logger.info(
+                f"[{i+1}] JUDGE done: {judge_time:.0f}ms, "
+                f"F={scores['faithfulness']:.2f} R={scores['relevancy']:.2f} C={scores['completeness']:.2f} "
+                f"recall={'HIT' if recall_hit else 'MISS'}"
+                f"{f' crag={crag_action}({crag_confidence:.2f})' if crag_action else ''}"
+            )
 
             result = {
                 "kb_id": gs["kb_id"],
@@ -333,7 +369,9 @@ async def async_main(kb_ids: list[str]):
 
             # Save every 10 results (crash-safe incremental save)
             if len(batch_to_save) >= 10:
+                t_save = time.time()
                 await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", batch_to_save)
+                logger.info(f"[{i+1}] DB SAVE done: {(time.time()-t_save)*1000:.0f}ms, batch={len(batch_to_save)}")
                 batch_to_save = []
 
             if (i + 1) % 10 == 0:
@@ -347,6 +385,13 @@ async def async_main(kb_ids: list[str]):
                     f"C={scores_sum['completeness']/n:.3f} | "
                     f"CRAG-OK={crag_ok}/{n} Recall={recall_ok}/{n}"
                 )
+
+            # Batch cooldown: give the server breathing room every N items
+            if (i + 1) % BATCH_COOLDOWN_SIZE == 0 and (i + 1) < len(golden_set):
+                logger.info(
+                    f"=== BATCH COOLDOWN: sleeping {BATCH_COOLDOWN_SEC}s after {i+1} items ==="
+                )
+                time.sleep(BATCH_COOLDOWN_SEC)
 
         # Save remaining batch
         if batch_to_save:
@@ -378,19 +423,19 @@ async def async_main(kb_ids: list[str]):
 
         logger.info(f"\n{'='*60}")
         logger.info(f"EVALUATION COMPLETE: {eval_id}")
-        logger.info(f"  --- LLM Judge ---")
+        logger.info("  --- LLM Judge ---")
         logger.info(f"  Faithfulness:  {metrics['faithfulness']:.3f}")
         logger.info(f"  Relevancy:     {metrics['answer_relevancy']:.3f}")
         logger.info(f"  Completeness:  {metrics['completeness']:.3f}")
         logger.info(f"  Overall:       {metrics['overall_score']:.3f}")
-        logger.info(f"  --- CRAG (Retrieval Quality) ---")
+        logger.info("  --- CRAG (Retrieval Quality) ---")
         logger.info(f"  Correct:       {crag_correct}/{crag_total} ({crag_correct/crag_total:.0%})")
         logger.info(f"  Ambiguous:     {crag_ambiguous}/{crag_total} ({crag_ambiguous/crag_total:.0%})")
         logger.info(f"  Incorrect:     {crag_incorrect}/{crag_total} ({crag_incorrect/crag_total:.0%})")
         logger.info(f"  Avg Confidence:{avg_crag_conf:.3f}")
-        logger.info(f"  --- Recall ---")
+        logger.info("  --- Recall ---")
         logger.info(f"  Source Recall:  {recall_hits}/{recall_total} ({recall_rate:.0%})")
-        logger.info(f"  --- Performance ---")
+        logger.info("  --- Performance ---")
         logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
         logger.info(f"  Questions:     {metrics['total_questions']}")
         logger.info(f"{'='*60}")

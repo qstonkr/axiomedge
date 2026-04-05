@@ -121,16 +121,16 @@ async def get_dedup_stats():
         try:
             metrics = pipeline.get_metrics()
             pipeline_metrics = metrics.to_dict()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get pipeline metrics: %s", e)
 
     # Redis-persisted stats
     tracker_stats: dict[str, Any] = {}
     if tracker is not None:
         try:
             tracker_stats = await tracker.get_stats()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get tracker stats: %s", e)
 
     return {
         "total_duplicates_found": tracker_stats.get("total_duplicates_found", 0),
@@ -316,7 +316,6 @@ async def list_evaluation_history(
 async def get_transparency_stats():
     """Get transparency stats from Qdrant metadata + PostgreSQL."""
     import httpx
-    from sqlalchemy import text
 
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -374,14 +373,11 @@ async def get_transparency_stats():
 
     # Document owners from PostgreSQL
     doc_owner_count = 0
-    try:
-        session_factory = state.get("session_factory")
-        if session_factory:
-            async with session_factory() as session:
-                r = await session.execute(text("SELECT count(*) FROM document_owners"))
-                doc_owner_count = r.scalar() or 0
-    except Exception:
-        pass
+    session_factory = state.get("session_factory")
+    if session_factory:
+        from src.api.routes.quality_helpers import query_document_owner_count
+
+        doc_owner_count = await query_document_owner_count(session_factory)
 
     # Calculate transparency score (0-1)
     source_coverage = with_source / total_documents if total_documents > 0 else 0
@@ -648,10 +644,11 @@ async def get_vectorstore_stats():
                     count = await store.count(name)
                     total_points += count
                     collection_stats.append({"name": name, "points": count})
-                except Exception:
+                except Exception as e:
+                    logger.debug("Failed to count points for collection %s: %s", name, e)
                     collection_stats.append({"name": name, "points": 0})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get Qdrant collection stats: %s", e)
 
     return {
         "total_points": total_points,
@@ -723,58 +720,9 @@ async def list_golden_set(
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
     """List golden set Q&A pairs."""
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy import text
+    from src.api.routes.quality_helpers import query_golden_set
 
-    from src.config import get_settings
-    engine = create_async_engine(get_settings().database.database_url)
-    try:
-        async with engine.begin() as conn:
-            conditions = []
-            params: dict[str, Any] = {
-                "limit": page_size,
-                "offset": (page - 1) * page_size,
-            }
-            if kb_id:
-                conditions.append("kb_id = :kb_id")
-                params["kb_id"] = kb_id
-            if status:
-                conditions.append("status = :status")
-                params["status"] = status
-
-            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-            count_row = await conn.execute(
-                text(f"SELECT count(*) FROM rag_golden_set {where}"), params
-            )
-            total = count_row.scalar() or 0
-
-            rows = await conn.execute(
-                text(
-                    f"SELECT id, kb_id, question, expected_answer, source_document, "
-                    f"status, created_at "
-                    f"FROM rag_golden_set {where} "
-                    f"ORDER BY kb_id, created_at "
-                    f"LIMIT :limit OFFSET :offset"
-                ),
-                params,
-            )
-            items = [
-                {
-                    "id": str(r[0]),
-                    "kb_id": r[1],
-                    "question": r[2],
-                    "expected_answer": r[3],
-                    "source_document": r[4],
-                    "status": r[5],
-                    "created_at": r[6].isoformat() if r[6] else None,
-                }
-                for r in rows.fetchall()
-            ]
-    finally:
-        await engine.dispose()
-
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    return await query_golden_set(kb_id=kb_id, status=status, page=page, page_size=page_size)
 
 
 @router.patch(
@@ -783,47 +731,20 @@ async def list_golden_set(
 )
 async def update_golden_set_item(item_id: str, body: dict[str, Any]):
     """Update golden set item (status, question, expected_answer)."""
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy import text
+    from src.api.routes.quality_helpers import update_golden_set
 
-    allowed = {"status", "question", "expected_answer"}
-    updates = {k: v for k, v in body.items() if k in allowed}
-    if not updates:
-        raise HTTPException(status_code=400, detail="No valid fields to update")
-
-    set_clause = ", ".join(f"{k} = :{k}" for k in updates)
-    updates["id"] = item_id
-
-    from src.config import get_settings
-    engine = create_async_engine(get_settings().database.database_url)
     try:
-        async with engine.begin() as conn:
-            await conn.execute(
-                text(f"UPDATE rag_golden_set SET {set_clause} WHERE id = :id"), updates
-            )
-    finally:
-        await engine.dispose()
-
-    return {"ok": True, "id": item_id}
+        return await update_golden_set(item_id, body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/golden-set/{item_id}")
 async def delete_golden_set_item(item_id: str):
     """Delete a golden set item."""
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy import text
+    from src.api.routes.quality_helpers import delete_golden_set
 
-    from src.config import get_settings
-    engine = create_async_engine(get_settings().database.database_url)
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(
-                text("DELETE FROM rag_golden_set WHERE id = :id"), {"id": item_id}
-            )
-    finally:
-        await engine.dispose()
-
-    return {"ok": True, "id": item_id}
+    return await delete_golden_set(item_id)
 
 
 @router.get("/eval-results")
@@ -834,136 +755,14 @@ async def list_eval_results(
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
     """List evaluation results."""
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy import text
+    from src.api.routes.quality_helpers import query_eval_results
 
-    from src.config import get_settings
-    engine = create_async_engine(get_settings().database.database_url)
-    try:
-        async with engine.begin() as conn:
-            # Check table exists
-            check = await conn.execute(
-                text(
-                    "SELECT EXISTS (SELECT FROM information_schema.tables "
-                    "WHERE table_name = 'rag_eval_results')"
-                )
-            )
-            if not check.scalar():
-                return {"items": [], "total": 0, "page": page, "page_size": page_size}
-
-            conditions = []
-            params: dict[str, Any] = {
-                "limit": page_size,
-                "offset": (page - 1) * page_size,
-            }
-            if eval_id:
-                conditions.append("eval_id = :eval_id")
-                params["eval_id"] = eval_id
-            if kb_id:
-                conditions.append("kb_id = :kb_id")
-                params["kb_id"] = kb_id
-
-            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-            count_row = await conn.execute(
-                text(f"SELECT count(*) FROM rag_eval_results {where}"), params
-            )
-            total = count_row.scalar() or 0
-
-            rows = await conn.execute(
-                text(
-                    f"SELECT id, eval_id, kb_id, golden_set_id, question, "
-                    f"expected_answer, actual_answer, faithfulness, relevancy, "
-                    f"completeness, search_time_ms, created_at, "
-                    f"crag_action, crag_confidence, recall_hit "
-                    f"FROM rag_eval_results {where} "
-                    f"ORDER BY created_at DESC "
-                    f"LIMIT :limit OFFSET :offset"
-                ),
-                params,
-            )
-            items = [
-                {
-                    "id": str(r[0]),
-                    "eval_id": r[1],
-                    "kb_id": r[2],
-                    "golden_set_id": str(r[3]) if r[3] else None,
-                    "question": r[4],
-                    "expected_answer": r[5],
-                    "actual_answer": r[6],
-                    "faithfulness": r[7],
-                    "relevancy": r[8],
-                    "completeness": r[9],
-                    "search_time_ms": r[10],
-                    "created_at": r[11].isoformat() if r[11] else None,
-                    "crag_action": r[12] or "",
-                    "crag_confidence": float(r[13]) if r[13] else 0.0,
-                    "recall_hit": bool(r[14]) if r[14] is not None else None,
-                }
-                for r in rows.fetchall()
-            ]
-    finally:
-        await engine.dispose()
-
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    return await query_eval_results(eval_id=eval_id, kb_id=kb_id, page=page, page_size=page_size)
 
 
 @router.get("/eval-results/summary")
 async def eval_results_summary():
     """Get summary of all evaluation runs."""
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy import text
+    from src.api.routes.quality_helpers import query_eval_results_summary
 
-    from src.config import get_settings
-    engine = create_async_engine(get_settings().database.database_url)
-    try:
-        async with engine.begin() as conn:
-            check = await conn.execute(
-                text(
-                    "SELECT EXISTS (SELECT FROM information_schema.tables "
-                    "WHERE table_name = 'rag_eval_results')"
-                )
-            )
-            if not check.scalar():
-                return {"runs": []}
-
-            rows = await conn.execute(
-                text(
-                    "SELECT eval_id, kb_id, count(*) as cnt, "
-                    "round(avg(faithfulness)::numeric, 3) as avg_f, "
-                    "round(avg(relevancy)::numeric, 3) as avg_r, "
-                    "round(avg(completeness)::numeric, 3) as avg_c, "
-                    "round(avg(search_time_ms)::numeric, 1) as avg_time, "
-                    "min(created_at) as started_at, "
-                    "round(avg(crag_confidence)::numeric, 3) as avg_crag_conf, "
-                    "count(CASE WHEN crag_action = 'correct' THEN 1 END) as crag_correct, "
-                    "count(CASE WHEN crag_action = 'ambiguous' THEN 1 END) as crag_ambiguous, "
-                    "count(CASE WHEN crag_action = 'incorrect' THEN 1 END) as crag_incorrect, "
-                    "count(CASE WHEN recall_hit = TRUE THEN 1 END) as recall_hits "
-                    "FROM rag_eval_results "
-                    "GROUP BY eval_id, kb_id "
-                    "ORDER BY started_at DESC"
-                )
-            )
-            runs = [
-                {
-                    "eval_id": r[0],
-                    "kb_id": r[1],
-                    "count": r[2],
-                    "avg_faithfulness": float(r[3]) if r[3] else 0,
-                    "avg_relevancy": float(r[4]) if r[4] else 0,
-                    "avg_completeness": float(r[5]) if r[5] else 0,
-                    "avg_search_time_ms": float(r[6]) if r[6] else 0,
-                    "started_at": r[7].isoformat() if r[7] else None,
-                    "avg_crag_confidence": float(r[8]) if r[8] else 0,
-                    "crag_correct": r[9] or 0,
-                    "crag_ambiguous": r[10] or 0,
-                    "crag_incorrect": r[11] or 0,
-                    "recall_hits": r[12] or 0,
-                }
-                for r in rows.fetchall()
-            ]
-    finally:
-        await engine.dispose()
-
-    return {"runs": runs}
+    return await query_eval_results_summary()

@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bge-m3
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    app: bge-m3
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.tei.replicas }}
+  selector:
+    matchLabels:
+      app: bge-m3
+  template:
+    metadata:
+      labels:
+        app: bge-m3
+    spec:
+      {{- if .Values.tei.modelDownload.enabled }}
+      serviceAccountName: {{ .Values.tei.modelDownload.serviceAccountName }}
+      initContainers:
+        - name: model-download
+          image: amazon/aws-cli:2.22.35
+          command:
+            - sh
+            - -c
+            - |
+              aws s3 sync s3://{{ .Values.tei.modelDownload.s3Bucket }} /data \
+                --region {{ .Values.tei.modelDownload.region }}
+          volumeMounts:
+            - name: model-data
+              mountPath: /data
+      {{- end }}
+      containers:
+        - name: tei
+          image: "{{ .Values.tei.image.repository }}:{{ .Values.tei.image.tag }}"
+          args:
+            - --model-id
+            - {{ .Values.tei.modelId }}
+            - --port
+            - {{ .Values.tei.port | quote }}
+            - --max-batch-tokens
+            - {{ .Values.tei.maxBatchTokens | quote }}
+          ports:
+            - containerPort: {{ .Values.tei.port }}
+              name: http
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              value: ""
+          volumeMounts:
+            - name: model-data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.tei.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.tei.port }}
+            initialDelaySeconds: {{ .Values.tei.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.tei.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.tei.port }}
+            initialDelaySeconds: {{ .Values.tei.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.tei.probes.readiness.periodSeconds }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.tei.port }}
+            failureThreshold: {{ .Values.tei.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.tei.probes.startup.periodSeconds }}
+      volumes:
+        - name: model-data
+          persistentVolumeClaim:
+            claimName: bge-m3-model-pvc
+{{- if .Values.tei.modelDownload.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.tei.modelDownload.serviceAccountName }}
+  namespace: {{ include "knowledge-local.namespace" . }}
+  {{- if .Values.tei.modelDownload.iamRoleArn }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.tei.modelDownload.iamRoleArn }}
+  {{- end }}
+  labels:
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bge-m3-model-pvc
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  storageClassName: {{ .Values.storageClassName }}
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.tei.modelStorage }}

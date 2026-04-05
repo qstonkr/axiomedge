@@ -90,7 +90,7 @@ services:
   bge-m3:
     # NOTE: x86_64 only - uses Rosetta emulation on Apple Silicon (slower)
     # For Mac, Ollama embedding is faster. TEI is optimal on Linux amd64.
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     platform: linux/amd64
     ports:
       - "8080:80"

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bge-m3
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    app: bge-m3
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: bge-m3
+  ports:
+    - port: {{ .Values.tei.servicePort }}
+      targetPort: {{ .Values.tei.port }}
+      name: http

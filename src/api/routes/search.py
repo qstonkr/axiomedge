@@ -283,8 +283,8 @@ async def hub_search(request: HubSearchRequest):
                 _dense_w = weights.hybrid_search.procedure_dense_weight
                 _sparse_w = weights.hybrid_search.procedure_sparse_weight
             # factual/general: keep default balance
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Query type weight adjustment failed: %s", e)
 
     # Date-containing queries: boost sparse for document_name/morphemes matching
     import re as _re_dq
@@ -415,169 +415,40 @@ async def hub_search(request: HubSearchRequest):
                                     "_keyword_fallback": True,
                                 })
                 logger.info("Keyword fallback: injected chunks for '%s'", _kw_primary)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Keyword fallback search failed: %s", e)
 
     # 4.35. Specific identifier search: numbers, JIRA keys, codes, store names
-    # These are high-precision identifiers that vector search often misses
-    import re as _re_id
-    _identifiers = []
-    # Numbers with commas (금액: 6,720,009)
-    _identifiers.extend(_re_id.findall(r"\d{1,3}(?:,\d{3})+", display_query))
-    # JIRA keys (GRIT-12345, HANGBOT-999)
-    _identifiers.extend(_re_id.findall(r"[A-Z]+-\d{3,}", display_query))
-    # Store codes (VL820, VI664)
-    _identifiers.extend(_re_id.findall(r"[A-Z]{2}\d{3}", display_query))
-    # Error codes (E-4001)
-    _identifiers.extend(_re_id.findall(r"E-\d{4}", display_query))
+    from src.api.routes.search_helpers import identifier_search
 
-    if _identifiers and all_chunks:
-        _existing_ids = {c.get("chunk_id", "") for c in all_chunks}
-        try:
-            import httpx as _hx_id
-            _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
-            async with _hx_id.AsyncClient(timeout=3.0) as _id_client:
-                for ident in _identifiers[:3]:  # Max 3 identifiers
-                    for coll in collections:
-                        _coll_name = f"kb_{coll.replace('-', '_')}"
-                        resp = await _id_client.post(
-                            f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
-                            json={
-                                "limit": 3,
-                                "with_payload": True,
-                                "with_vector": False,
-                                "filter": {"must": [
-                                    {"key": "content", "match": {"text": ident}},
-                                ]},
-                            },
-                        )
-                        if resp.status_code == 200:
-                            for pt in resp.json().get("result", {}).get("points", []):
-                                pid = str(pt["id"])
-                                if pid not in _existing_ids:
-                                    pay = pt.get("payload", {})
-                                    all_chunks.append({
-                                        "chunk_id": pid,
-                                        "content": pay.get("content", ""),
-                                        "score": 0.6,
-                                        "kb_id": coll,
-                                        "document_name": pay.get("document_name", ""),
-                                        "source_uri": pay.get("source_uri", ""),
-                                        "metadata": pay,
-                                        "_identifier_match": True,
-                                    })
-                                    _existing_ids.add(pid)
-            if _identifiers:
-                _id_count = sum(1 for c in all_chunks if c.get("_identifier_match"))
-                if _id_count:
-                    logger.info("Identifier search: %s → %d chunks injected", _identifiers[:3], _id_count)
-        except Exception:
-            pass
+    _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    all_chunks = await identifier_search(display_query, all_chunks, collections, _qdrant_url)
 
     # 4.4. Smart candidate selection: keyword-match priority + KB diversity
-    # Instead of purely score-based cutoff, ensure keyword-matching chunks
-    # from ALL KBs are included in the reranking pool.
+    from src.api.routes.search_helpers import keyword_boost, document_diversity
+
     _query_tokens = _extract_query_keywords(display_query)
     _pool_size = effective_top_k * weights.search.rerank_pool_multiplier
 
-    if _query_tokens and len(collections) > 1:
-        # Separate keyword-matched vs unmatched chunks
-        keyword_chunks: list[dict] = []
-        other_chunks: list[dict] = []
-        for chunk in all_chunks:
-            content_lower = chunk.get("content", "").lower()
-            matched = sum(1 for t in _query_tokens if t in content_lower)
-            if matched > 0:
-                ratio = matched / len(_query_tokens)
-                chunk["score"] = chunk.get("score", 0) + weights.search.keyword_boost_weight * ratio
-                chunk["_keyword_matched"] = True
-                keyword_chunks.append(chunk)
-            else:
-                other_chunks.append(chunk)
-
-        # Keyword chunks first (sorted by score), then fill with other chunks
-        keyword_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-        other_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-        all_chunks = keyword_chunks + other_chunks
-        all_chunks = all_chunks[:_pool_size]
-        logger.info(
-            "Keyword selection: %d keyword-matched + %d other = %d pool",
-            len(keyword_chunks), min(len(other_chunks), _pool_size - len(keyword_chunks)), len(all_chunks),
-        )
-    else:
-        # Single KB or no keywords: standard score-based cutoff with keyword boost
-        for chunk in all_chunks:
-            if _query_tokens:
-                content_lower = chunk.get("content", "").lower()
-                matched = sum(1 for t in _query_tokens if t in content_lower)
-                if matched > 0:
-                    chunk["score"] = chunk.get("score", 0) + 0.3 * (matched / len(_query_tokens))
-        all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-        all_chunks = all_chunks[:_pool_size]
+    all_chunks = keyword_boost(
+        all_chunks, _query_tokens, collections, _pool_size,
+        weights.search.keyword_boost_weight,
+    )
 
     # 4.42. Document diversity: prevent single document from dominating Top-K
-    # Max N chunks per document, push excess to the back of the pool
-    _MAX_CHUNKS_PER_DOC = 5
-    _doc_counts: dict[str, int] = {}
-    _diverse_chunks: list[dict] = []
-    _overflow: list[dict] = []
-    for chunk in all_chunks:
-        dn = chunk.get("document_name", "")
-        _doc_counts[dn] = _doc_counts.get(dn, 0) + 1
-        if _doc_counts[dn] <= _MAX_CHUNKS_PER_DOC:
-            _diverse_chunks.append(chunk)
-        else:
-            _overflow.append(chunk)
-    all_chunks = (_diverse_chunks + _overflow)[:_pool_size]
+    all_chunks = document_diversity(all_chunks, _pool_size)
 
-    # 4.45. Date-filtered search: if query contains a date, do a supplementary
-    # Qdrant scroll with doc_date filter to catch date-specific documents that
-    # the vector search may have missed.
-    import re as _re_date
-    _date_match = _re_date.search(r"(20\d{2})년\s*(\d{1,2})월", display_query)
-    if not _date_match:
-        _date_match = _re_date.search(r"(20\d{2})[_\-](0[1-9]|1[0-2])", display_query)
-    if _date_match:
-        _q_date = f"{_date_match.group(1)}-{int(_date_match.group(2)):02d}"
-        _existing_docs = {c.get("document_name", "") for c in all_chunks}
-        try:
-            import httpx as _hx_date
-            _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
-            async with _hx_date.AsyncClient(timeout=3.0) as _dc:
-                for coll in collections:
-                    _coll_name = f"kb_{coll.replace('-', '_')}"
-                    resp = await _dc.post(
-                        f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
-                        json={
-                            "limit": 5,
-                            "with_payload": True,
-                            "with_vector": False,
-                            "filter": {"must": [{"key": "doc_date", "match": {"value": _q_date}}]},
-                        },
-                    )
-                    if resp.status_code == 200:
-                        for pt in resp.json().get("result", {}).get("points", []):
-                            pay = pt.get("payload", {})
-                            dn = pay.get("document_name", "")
-                            if dn and dn not in _existing_docs:
-                                all_chunks.append({
-                                    "chunk_id": str(pt["id"]),
-                                    "content": pay.get("content", ""),
-                                    "document_name": dn,
-                                    "source_uri": pay.get("source_uri", ""),
-                                    "metadata": pay,
-                                    "score": 0.6,
-                                    "kb_id": coll,
-                                    "_date_filtered": True,
-                                })
-                                _existing_docs.add(dn)
-            logger.info("Date-filtered search: doc_date=%s, injected %d chunks",
-                        _q_date, sum(1 for c in all_chunks if c.get("_date_filtered")))
-        except Exception:
-            pass
+    # 4.45. Date-filtered search
+    from src.api.routes.search_helpers import date_filter_search, week_name_search
 
-        all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-        all_chunks = all_chunks[:_pool_size]
+    all_chunks = await date_filter_search(
+        display_query, all_chunks, collections, _qdrant_url, _pool_size,
+    )
+
+    # 4.46. Week-specific document_name search for weekly report KBs.
+    all_chunks = await week_name_search(
+        display_query, all_chunks, collections, _qdrant_url, _pool_size,
+    )
 
     # 4.5. Passage cleaning - normalize text before reranking
     all_chunks = clean_chunks(all_chunks)
@@ -594,8 +465,15 @@ async def hub_search(request: HubSearchRequest):
 
     # 5. CompositeReranker - rerank results with weighted fusion
     rerank_applied = False
+    search_chunks: list[SearchChunk] = []
     composite_reranker = state.get("composite_reranker")
     if composite_reranker and all_chunks:
+        # Propagate _week_matched flag into metadata so it survives SearchChunk conversion
+        for _c in all_chunks:
+            if _c.get("_week_matched"):
+                _meta = _c.get("metadata") or {}
+                _meta["_week_matched"] = True
+                _c["metadata"] = _meta
         search_chunks = [
             SearchChunk(
                 chunk_id=c.get("chunk_id", ""),
@@ -636,118 +514,52 @@ async def hub_search(request: HubSearchRequest):
     # Trim to final top_k after reranking
     all_chunks = all_chunks[: effective_top_k]
 
+    # 5.1. Post-rerank guarantee: ensure at least 1 _week_matched chunk survives.
+    # The composite reranker may push week-matched chunks out of top-k because
+    # weekly docs are structurally similar (low model-score differentiation).
+    _has_week_in_final = any(
+        c.get("_week_matched") or (c.get("metadata") or {}).get("_week_matched")
+        for c in all_chunks
+    )
+    if not _has_week_in_final and rerank_applied and search_chunks:
+        # Check the pre-trim pool (search_chunks) for any week-matched chunk
+        _week_candidates = [
+            sc for sc in search_chunks
+            if (sc.metadata or {}).get("_week_matched")
+        ]
+        if _week_candidates:
+            _best_wk = max(_week_candidates, key=lambda sc: sc.score)
+            # Replace the lowest-scoring chunk in final results
+            all_chunks[-1] = {
+                "chunk_id": _best_wk.chunk_id,
+                "content": _best_wk.content,
+                "score": _best_wk.score,
+                "rerank_score": _best_wk.score,
+                "kb_id": _best_wk.kb_id,
+                "document_name": _best_wk.document_name,
+                "source_uri": (_best_wk.metadata or {}).get("source_uri", ""),
+                "updated_at": (_best_wk.metadata or {}).get("last_modified")
+                or (_best_wk.metadata or {}).get("updated_at"),
+                "is_stale": bool((_best_wk.metadata or {}).get("is_stale", False)),
+                "metadata": _best_wk.metadata or {},
+                "_week_matched": True,
+            }
+            logger.info(
+                "Week-match guarantee: pinned doc '%s' into final top-k",
+                _best_wk.document_name,
+            )
+
     # 6. Graph Expansion - enrich results with structurally related content
     #    Must run BEFORE answer generation so expanded chunks are included in the answer.
     graph_expander = state.get("graph_expander")
     logger.info("Graph expander: %s, chunks: %d", type(graph_expander).__name__ if graph_expander else "None", len(all_chunks))
 
     if graph_expander and all_chunks:
-        try:
-            # Graph expansion with timeout (max 3s to avoid blocking search)
-            if hasattr(graph_expander, "expand_with_entities"):
-                expansion = await asyncio.wait_for(
-                    graph_expander.expand_with_entities(
-                        display_query, all_chunks, scope_kb_ids=collections,
-                    ),
-                    timeout=5.0,
-                )
-            else:
-                expansion = await asyncio.wait_for(
-                    graph_expander.expand(
-                        display_query, all_chunks, scope_kb_ids=collections,
-                    ),
-                    timeout=5.0,
-                )
-            logger.info(
-                "Graph expansion: %d URIs, %d related, URIs=%s",
-                len(expansion.expanded_source_uris), expansion.graph_related_count,
-                list(expansion.expanded_source_uris)[:5],
-            )
-            if expansion.expanded_source_uris:
-                # Boost existing chunks that match graph expansion
-                all_chunks = graph_expander.boost_chunks(
-                    all_chunks, expansion.expanded_source_uris
-                )
+        from src.api.routes.search_helpers import graph_expansion
 
-                # Inject graph-found documents NOT already in results
-                # Match by both document_name and source_uri for compatibility
-                import unicodedata as _uc
-                existing_docs = set()
-                for c in all_chunks:
-                    dn = c.get("document_name", "")
-                    su = c.get("source_uri", "")
-                    if dn:
-                        existing_docs.add(_uc.normalize("NFC", dn))
-                    if su:
-                        existing_docs.add(_uc.normalize("NFC", su))
-                new_docs = {
-                    d for d in expansion.expanded_source_uris
-                    if _uc.normalize("NFC", d) not in existing_docs
-                }
-                logger.info("Graph injection: existing=%d, new=%d, new_docs=%s",
-                            len(existing_docs), len(new_docs), list(new_docs)[:3])
-                if new_docs:
-                    import httpx as _hx
-                    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
-                    async with _hx.AsyncClient(timeout=3.0) as _qc:
-                        for doc_name in list(new_docs)[:5]:
-                            for coll in collections:
-                                try:
-                                    coll_name = f"kb_{coll.replace('-', '_')}"
-                                    dn_nfd = _uc.normalize("NFD", doc_name)
-                                    # Try document_name match (NFC → NFD fallback)
-                                    # Then source_uri match as last resort
-                                    _match_filters = [
-                                        {"must": [{"key": "document_name", "match": {"value": doc_name}}]},
-                                        {"must": [{"key": "document_name", "match": {"value": dn_nfd}}]},
-                                        {"must": [{"key": "source_uri", "match": {"text": doc_name}}]},
-                                    ]
-                                    resp = None
-                                    for _filt in _match_filters:
-                                        resp = await _qc.post(
-                                            f"{qdrant_url}/collections/{coll_name}/points/scroll",
-                                            json={
-                                                "limit": 2,
-                                                "with_payload": True,
-                                                "with_vector": False,
-                                                "filter": _filt,
-                                            },
-                                        )
-                                        if resp.status_code == 200:
-                                            pts = resp.json().get("result", {}).get("points", [])
-                                            if pts:
-                                                break
-                                    if resp and resp.status_code == 200:
-                                        points = resp.json().get("result", {}).get("points", [])
-                                        for pt in points:
-                                            pay = pt.get("payload", {})
-                                            # Dynamic score: boost if document name matches query keywords
-                                            _inject_score = 0.35
-                                            _dn = pay.get("document_name", "").lower()
-                                            _q_lower = display_query.lower()
-                                            _q_words = [w for w in _q_lower.split() if len(w) >= 2]
-                                            _match_count = sum(1 for w in _q_words if w in _dn)
-                                            if _match_count >= 2:
-                                                _inject_score = 0.75  # Strong match
-                                            elif _match_count == 1:
-                                                _inject_score = 0.55  # Partial match
-                                            all_chunks.append({
-                                                "content": pay.get("content", ""),
-                                                "document_name": pay.get("document_name", ""),
-                                                "source_uri": pay.get("source_uri", ""),
-                                                "metadata": pay,
-                                                "score": _inject_score,
-                                                "graph_injected": True,
-                                                "graph_boosted": True,
-                                            })
-                                except Exception:
-                                    pass
-
-                all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-        except asyncio.TimeoutError:
-            logger.warning("Graph expansion timed out (5s), skipping")
-        except Exception as e:
-            logger.warning("Graph expansion failed in search route: %s", e)
+        all_chunks = await graph_expansion(
+            display_query, all_chunks, collections, graph_expander, _qdrant_url,
+        )
 
     # 7. CRAG Evaluation - assess retrieval quality before answer generation
     crag_evaluation = None
@@ -957,14 +769,14 @@ async def hub_search(request: HubSearchRequest):
                     metadata={"kb_ids": collections},
                     kb_ids=collections, top_k=effective_top_k,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to write multi-layer cache: %s", e)
 
         if search_cache:
             try:
                 await search_cache.set(query, collections, _response_dict, effective_top_k)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to write search cache: %s", e)
 
     return response
 
@@ -979,7 +791,12 @@ async def list_searchable_kbs():
 
     try:
         names = await collections.get_existing_collection_names()
-        return {"kbs": [{"kb_id": n, "name": n} for n in names]}
+        # Strip "kb_" prefix from collection names to get logical kb_id
+        kbs = []
+        for n in names:
+            kb_id = n[3:].replace("_", "-") if n.startswith("kb_") else n
+            kbs.append({"kb_id": kb_id, "name": kb_id, "collection": n})
+        return {"kbs": kbs}
     except Exception as e:
         logger.warning("KB list failed: %s", e)
         return {"kbs": []}

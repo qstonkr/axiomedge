@@ -435,8 +435,8 @@ class Neo4jGraphRepository:
             results.extend(await self._client.execute_query(
                 cypher_docs, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Owner search path 1 (document_owner) failed: %s", e)
 
         # Path 2: GraphRAG entity connection
         cypher_entity = """
@@ -458,8 +458,8 @@ class Neo4jGraphRepository:
             results.extend(await self._client.execute_query(
                 cypher_entity, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Owner search path 2 (entity_expert) failed: %s", e)
 
         # Path 3: Person directly connected to matching entity (GraphRAG)
         cypher_direct = """
@@ -477,8 +477,8 @@ class Neo4jGraphRepository:
             results.extend(await self._client.execute_query(
                 cypher_direct, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Owner search path 3 (direct_connection) failed: %s", e)
 
         # Deduplicate by person name, merge counts
         merged: dict[str, dict] = {}

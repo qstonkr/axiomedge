@@ -38,12 +38,13 @@ async def rag_query(body: dict[str, Any]):
     query = body.get("query", "")
     mode = body.get("mode", "classic")
     kb_ids = body.get("kb_ids")
+    kb_id_single = body.get("kb_id")
 
     if rag:
         try:
             from src.search.rag_pipeline import RAGRequest
 
-            kb_id = kb_ids[0] if kb_ids else None
+            kb_id = kb_ids[0] if kb_ids else kb_id_single
             result = await rag.process(RAGRequest(query=query, kb_id=kb_id))
             return result.to_dict()
         except Exception as e:
@@ -288,8 +289,8 @@ async def _process_files(
                 try:
                     await _search_cache.clear()
                     logger.info("Search cache cleared after ingest for kb=%s", effective_kb_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to clear search cache after ingest: %s", e)
         except Exception as _count_err:
             logger.warning("KB count update failed: %s", _count_err)
 

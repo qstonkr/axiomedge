@@ -88,8 +88,8 @@ class QdrantCollectionManager:
                 aliases_resp = await client.get_aliases()
                 for alias in aliases_resp.aliases:
                     names.add(alias.alias_name)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to fetch Qdrant aliases: %s", e)
             self._collection_exists_cache = names
             self._collection_cache_ts = now
             return set(self._collection_exists_cache)

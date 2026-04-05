@@ -32,10 +32,34 @@ _loading = False  # True while background load is in progress
 _load_attempted = False  # True after first load attempt (success or fail)
 _executor = ThreadPoolExecutor(max_workers=1)
 
+# Cloud TEI reranker
+RERANKER_TEI_URL = os.getenv("RERANKER_TEI_URL", "")
+_use_cloud_reranker = (
+    os.getenv("USE_CLOUD_EMBEDDING", "true").lower() in ("true", "1", "yes")
+    and bool(RERANKER_TEI_URL)
+)
+_tei_client = None
+
+
+def _get_tei_client():
+    """Lazy-init httpx client for TEI reranker."""
+    global _tei_client
+    if _tei_client is None:
+        import httpx
+        _tei_client = httpx.Client(timeout=60.0)
+    return _tei_client
+
 
 def _load_model_sync():
     """Load cross-encoder model. Called only from background thread."""
     global _model, _loading, _load_attempted
+
+    if _use_cloud_reranker:
+        # Cloud mode — no local model needed
+        _load_attempted = True
+        logger.info("Reranker using cloud TEI: %s", RERANKER_TEI_URL)
+        return
+
     _loading = True
     try:
         # Force offline mode — use cached model, skip HuggingFace version check
@@ -89,17 +113,56 @@ def _sigmoid(x: float, temperature: float = 3.0) -> float:
     return 1.0 / (1.0 + math.exp(-clamped))
 
 
+def _rerank_via_tei(
+    query: str,
+    chunks: list[dict[str, Any]],
+    top_k: int,
+    score_key: str,
+) -> list[dict[str, Any]]:
+    """Rerank via cloud TEI /rerank endpoint."""
+    texts = [chunk.get("content", "")[:CROSS_ENCODER_MAX_LENGTH] for chunk in chunks]
+    client = _get_tei_client()
+    resp = client.post(
+        f"{RERANKER_TEI_URL}/rerank",
+        json={"query": query, "texts": texts, "truncate": True},
+    )
+    resp.raise_for_status()
+    results = resp.json()
+
+    for item in results:
+        idx = item["index"]
+        score = _sigmoid(item["score"])
+        chunks[idx][score_key] = score
+        if "metadata" not in chunks[idx]:
+            chunks[idx]["metadata"] = {}
+        chunks[idx]["metadata"]["cross_encoder_score"] = score
+
+    chunks.sort(key=lambda c: c.get(score_key, 0), reverse=True)
+    return chunks[:top_k]
+
+
 def rerank_with_cross_encoder(
     query: str,
     chunks: list[dict[str, Any]],
     top_k: int = 10,
     score_key: str = "cross_encoder_score",
 ) -> list[dict[str, Any]]:
-    """Rerank chunks using cross-encoder model.
+    """Rerank chunks using cross-encoder model (cloud TEI or local).
 
     If model is still loading (warmup), returns chunks unchanged (no blocking).
     """
-    if _model is None or not chunks:
+    if not chunks:
+        return chunks[:top_k]
+
+    # Cloud TEI reranker
+    if _use_cloud_reranker:
+        try:
+            return _rerank_via_tei(query, chunks, top_k, score_key)
+        except Exception as e:
+            logger.warning("Cloud reranker failed, fallback to local: %s", e)
+
+    # Local cross-encoder
+    if _model is None:
         return chunks[:top_k]
 
     pairs = [[query, chunk.get("content", "")[:CROSS_ENCODER_MAX_LENGTH]] for chunk in chunks]

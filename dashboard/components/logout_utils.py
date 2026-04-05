@@ -3,7 +3,6 @@
 No-op: no OAuth2 session to log out of.
 """
 
-import streamlit as st
 
 
 def render_logout_button() -> None:

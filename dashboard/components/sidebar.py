@@ -1,4 +1,4 @@
-"""4-Group Persona-Based Sidebar (Local version)
+"""5-Group Persona-Based Sidebar (Local version)
 
 All pages visible (admin mode), no session expiry warnings.
 """
@@ -16,76 +16,90 @@ def hide_default_nav():
     )
 
 
-def render_sidebar(show_admin: bool = False, user_role: str | None = None):
-    """Custom Korean sidebar rendering (4-group persona-based).
+def render_sidebar(show_admin: bool = False, user_role: str | None = None):  # noqa: ARG001
+    """Custom Korean sidebar rendering (5-group persona-based).
 
     All pages are visible for local development (admin mode).
+    ``user_role`` is accepted for oreo-ecosystem interface compatibility but
+    ignored — local mode always runs as admin.
     """
     hide_default_nav()
-    user_role = "admin"  # Always admin for local
 
     with st.sidebar:
-        st.title("지식 관리 시스템")
-        st.caption("Knowledge Dashboard (Local)")
-
-        st.markdown("---")
+        st.title("📚 KH 지식검색")
 
         ff = get_feature_flags()
 
-        # -- Group 1: All users --
-        st.page_link("app.py", label="🏠 홈")
+        # -- Group 1: Main (no expander) --
         if ff.chat_enabled:
             active_group = st.session_state.get("_active_group_name")
             group_label = f"💬 지식 검색 [{active_group}]" if active_group else "💬 지식 검색"
             st.page_link("pages/chat.py", label=group_label)
         st.page_link("pages/find_owner.py", label="👤 담당자 찾기")
-        st.page_link("pages/error_report.py", label="🚨 오류 신고")
 
+        st.markdown("---")
+
+        # -- Group 2: 나의 활동 --
+        with st.expander("나의 활동", expanded=False):
+            st.page_link("pages/my_feedback.py", label="📝 피드백/오류 신고")
+            st.page_link("pages/my_documents.py", label="📄 내 담당 문서")
+            st.page_link("pages/search_history.py", label="🕐 검색 이력")
+
+        # -- Group 3: 콘텐츠 관리 --
+        if ff.admin_enabled:
+            with st.expander("콘텐츠 관리", expanded=show_admin):
+                st.page_link("pages/dashboard.py", label="📊 KB 현황")
+                st.page_link("pages/search_groups.py", label="📂 검색 그룹")
+                st.page_link("pages/owners.py", label="👥 담당자 관리")
+                st.page_link("pages/doc_lifecycle.py", label="📋 문서 라이프사이클")
+                st.page_link("pages/data_sources.py", label="📁 데이터 소스")
+
+        # -- Group 4: 품질/평가 --
+        if ff.admin_enabled:
+            with st.expander("품질/평가", expanded=False):
+                st.page_link("pages/quality.py", label="📈 품질 관리")
+                st.page_link("pages/golden_set.py", label="🎯 골든 셋 관리")
+                st.page_link("pages/glossary.py", label="📖 용어집")
+                st.page_link("pages/conflicts.py", label="⚠️ 충돌/중복")
+                st.page_link("pages/verification.py", label="✅ 검증 관리")
+                st.page_link("pages/graph_explorer.py", label="🔗 지식 그래프")
+
+        # -- Group 5: 시스템 운영 --
+        if ff.operations_enabled:
+            with st.expander("시스템 운영", expanded=False):
+                st.page_link("pages/ingestion_jobs.py", label="📥 인제스천 작업")
+                st.page_link("pages/job_monitor.py", label="⚙️ Job Monitor")
+                st.page_link("pages/config_weights.py", label="⚖️ Config Weights")
+                st.page_link("pages/ingestion_gate.py", label="🚦 인제스천 게이트")
+                st.page_link("pages/auth_management.py", label="🔐 Auth/RBAC")
+
+        st.markdown("---")
+
+        # -- New conversation button --
         if ff.chat_enabled:
             if st.button("🔄 새 대화", use_container_width=True):
                 import uuid
+
                 st.session_state.chat_session_id = str(uuid.uuid4())
                 st.session_state.chat_messages = []
                 st.session_state.feedback_submitted = {}
                 st.session_state.show_error_report = None
                 st.switch_page("pages/chat.py")
 
-        st.markdown("---")
-
-        # -- Group 2: My Activity --
-        with st.expander("📋 나의 활동", expanded=False):
-            st.page_link("pages/my_feedback.py", label="📝 내 피드백")
-            st.page_link("pages/my_documents.py", label="📄 내 담당 문서")
-            st.page_link("pages/search_history.py", label="🕐 검색 이력")
-            st.page_link("pages/my_activities.py", label="📋 나의 활동")
-
-        # -- Group 3: Knowledge Management (always visible for local) --
-        if ff.admin_enabled:
-            with st.expander("📚 지식 관리", expanded=show_admin):
-                st.page_link("pages/dashboard.py", label="📊 KB 현황")
-                st.page_link("pages/search_groups.py", label="📂 검색 그룹")
-                st.page_link("pages/quality.py", label="📈 품질 관리")
-                st.page_link("pages/golden_set.py", label="🎯 골든 셋 관리")
-                st.page_link("pages/glossary.py", label="📖 용어집")
-                st.page_link("pages/owners.py", label="👥 담당자 관리")
-                st.page_link("pages/conflicts.py", label="⚠️ 충돌 / 중복")
-                st.page_link("pages/verification.py", label="✅ 검증 관리")
-                st.page_link("pages/graph_explorer.py", label="🔗 지식 그래프")
-                st.page_link("pages/doc_lifecycle.py", label="📋 문서 라이프사이클")
-
-        # -- Group 4: System Operations (always visible for local) --
-        if ff.operations_enabled:
-            with st.expander("⚙️ 시스템 운영", expanded=False):
-                st.page_link("pages/ingestion_jobs.py", label="📥 인제스천 작업")
-                st.page_link("pages/data_sources.py", label="📁 데이터 소스")
-                st.page_link("pages/job_monitor.py", label="⚙️ Job Monitor")
-                st.page_link("pages/config_weights.py", label="⚖️ Config Weights")
-                st.page_link("pages/ingestion_gate.py", label="🚦 인제스천 게이트")
-                st.page_link("pages/auth_management.py", label="🔐 Auth / RBAC")
+        # -- 이전 대화 (placeholder for session list from chat.py) --
+        with st.expander("이전 대화", expanded=False):
+            st.caption("대화 이력이 여기에 표시됩니다.")
 
         st.markdown("---")
-        if st.button("🗑️ 캐시 전체 삭제", use_container_width=True, help="UI 캐시 + 서버 검색 캐시 모두 삭제"):
+
+        # -- Cache clear --
+        if st.button(
+            "🗑️ 캐시 전체 삭제",
+            use_container_width=True,
+            help="UI 캐시 + 서버 검색 캐시 모두 삭제",
+        ):
             from services import api_client
+
             # 1. 서버 검색 캐시 (Redis)
             api_client.clear_search_cache()
             # 2. Streamlit 서버 메모리 캐시
@@ -94,9 +108,10 @@ def render_sidebar(show_admin: bool = False, user_role: str | None = None):
             st.toast("모든 캐시가 삭제되었습니다.")
             st.rerun()
 
-        # 모델 정보 표시 (detect actual backend from env)
+        # -- LLM / Embed info at bottom --
         st.markdown("---")
         import os
+
         _use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
         if _use_sagemaker:
             _llm_model = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")

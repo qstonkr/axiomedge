@@ -78,8 +78,8 @@ class OCRWithCoords:
                         ))
                     logger.debug("Extracted %d OCR boxes with coordinates", len(boxes))
                     return boxes
-        except (AttributeError, TypeError):
-            pass
+        except (AttributeError, TypeError) as e:
+            logger.debug("PaddleOCR v3 format extraction failed, trying legacy: %s", e)
 
         # Legacy format: [[box, (text, score)], ...]
         return self._extract_legacy(result)

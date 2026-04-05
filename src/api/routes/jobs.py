@@ -12,8 +12,12 @@ import os
 import uuid
 from datetime import datetime, timezone
 
+import logging
+
 import redis.asyncio as aioredis
 from fastapi import APIRouter, HTTPException
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
 
@@ -115,8 +119,8 @@ def _deserialize(raw: dict) -> dict:
         if int_field in job:
             try:
                 job[int_field] = int(job[int_field])
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.debug("Failed to parse int field %s: %s", int_field, e)
     if "errors" in job:
         try:
             job["errors"] = json.loads(job["errors"])

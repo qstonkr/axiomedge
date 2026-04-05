@@ -3,6 +3,9 @@
 Detects OCR artifacts (broken jamo, meaningless repetitions, garbled syllables)
 and corrects them using the local LLM (EXAONE via Ollama).
 
+Also provides domain-dictionary-based correction for OCR misreads that
+produce valid Korean syllables (e.g., "얼업활설화" → "영업활성화").
+
 Adapted from oreo-ecosystem ocr_noise_detector.py + fix_ocr_chunks.py.
 
 Usage:
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+from difflib import SequenceMatcher
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,193 @@ _REPEAT_RE = re.compile(r"(.)\1{3,}")
 _NOISE_SYLLABLES = re.compile(
     r"[륙곰슨묻릉룬륨름륵몽룸뭬늘믄뉘녈][어은을룸름릉늙류늘는근]"
 )
+
+
+# ---------------------------------------------------------------------------
+# Domain dictionary for OCR misread correction
+# OCR often produces valid but wrong Korean syllables (e.g., 영→얼, 성→설)
+# These corrections are applied deterministically without LLM.
+# ---------------------------------------------------------------------------
+
+_DOMAIN_TERMS: list[str] = [
+    # GS리테일 도메인 용어
+    "영업활성화", "장려금", "공헌이익", "가맹점", "경영주", "폐점", "양수도",
+    "매출신장", "일매출", "총매출", "객단가", "접객", "점포개선",
+    "재계약", "월정액", "정산금", "위약금", "수수료",
+    "상권분석", "경쟁점", "진열개선", "카테고리", "중분류",
+    "브랜드전환", "리뉴얼", "시설점검", "협력사", "파트너",
+    "손익계산서", "계정과목", "세금계산서", "전자전표",
+    # IT 도메인 용어
+    "배포목록", "시스템", "프로젝트", "데이터베이스", "서버",
+    "인증심사", "취약점", "보안환경", "모의해킹",
+    # 추가 GS리테일 용어
+    "특별영업", "영업장려", "가맹수수료", "인테리어", "점포코드",
+    "경쟁분석", "고객설문", "상품구색", "편의점", "매출분석",
+    "배달서비스", "택배수수료", "보증보험", "사업자등록",
+    # 추가 IT 용어
+    "인터페이스", "프로그램", "스프린트", "대시보드", "모니터링",
+    "아키텍처", "클라우드", "컨테이너", "쿠버네티스", "마이크로서비스",
+]
+
+
+# ---------------------------------------------------------------------------
+# OCR post-processing: clean common OCR artifacts in chunk text
+# These are deterministic, fast, and safe to apply to existing chunks.
+# ---------------------------------------------------------------------------
+
+def clean_ocr_spacing(text: str) -> str:
+    """Fix broken Korean word spacing from OCR syllable splitting.
+
+    Merges isolated single-syllable Hangul characters back together.
+    E.g., "형 열 및 및 나" → "형열 및 및 나"
+    """
+    if not text:
+        return text
+    # Merge sequences of single Korean syllables separated by spaces
+    # Pattern: 가 나 다 → 가나다 (3+ consecutive single chars)
+    result = re.sub(
+        r"(?<=[가-힣])\s(?=[가-힣](?:\s[가-힣]){2,})",
+        "", text,
+    )
+    return result
+
+
+def clean_ocr_numbers(text: str) -> str:
+    """Fix corrupted comma-separated numbers from OCR.
+
+    E.g., "159,0008" → "159,000", "95,8409" → "95,840"
+    """
+    if not text:
+        return text
+    # Fix numbers where OCR added an extra digit after a comma group
+    result = re.sub(r"(\d{1,3}(?:,\d{3})+)\d(?!\d)", r"\1", text)
+    return result
+
+
+def dedup_ocr_sections(text: str) -> str:
+    """Remove duplicate OCR extraction sections.
+
+    When both [Page N OCR] and [Image N OCR] extract the same content,
+    keep only the first occurrence.
+    """
+    if not text or "[OCR]" not in text:
+        return text
+
+    # Split by OCR tags
+    sections = re.split(r"(\[(?:Page|Image|Slide)\s+\d+\s+OCR\])", text)
+    seen_content: set[str] = set()
+    result_parts: list[str] = []
+
+    i = 0
+    while i < len(sections):
+        part = sections[i]
+        if re.match(r"\[(?:Page|Image|Slide)\s+\d+\s+OCR\]", part):
+            # This is a tag — check if next section's content is duplicate
+            content = sections[i + 1] if i + 1 < len(sections) else ""
+            content_key = re.sub(r"\s+", "", content)[:200]  # normalize for comparison
+            if content_key and content_key in seen_content:
+                i += 2  # skip tag + content (duplicate)
+                continue
+            if content_key:
+                seen_content.add(content_key)
+            result_parts.append(part)
+            if i + 1 < len(sections):
+                result_parts.append(sections[i + 1])
+            i += 2
+        else:
+            result_parts.append(part)
+            i += 1
+
+    return "".join(result_parts)
+
+
+def clean_chunk_text(text: str) -> str:
+    """Apply all OCR cleaning passes to chunk text.
+
+    Safe for batch processing — deterministic, no LLM needed.
+    """
+    if not text:
+        return text
+    text = dedup_ocr_sections(text)
+    text = clean_ocr_spacing(text)
+    text = clean_ocr_numbers(text)
+    text = _correct_with_domain_dict(text)
+    return text
+
+
+_CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+
+
+def _get_choseong(text: str) -> str:
+    """Extract Korean initial consonants (초성) from text."""
+    result = []
+    for ch in text:
+        code = ord(ch) - 0xAC00
+        if 0 <= code < 11172:
+            result.append(_CHOSEONG[code // 588])
+    return "".join(result)
+
+
+def _correct_with_domain_dict(text: str) -> str:
+    """Correct OCR misreads using domain dictionary.
+
+    Two-tier matching:
+    1. High similarity (≥0.75): direct character-level match
+    2. Choseong match + moderate similarity (≥0.5): catches OCR errors
+       that preserve consonant structure (e.g., 얼업활설화 → 영업활성화)
+
+    Args:
+        text: Input text potentially containing OCR misreads.
+
+    Returns:
+        Text with domain term corrections applied.
+    """
+    if not text:
+        return text
+
+    corrections_made = 0
+    result = text
+
+    # Extract Korean tokens (2-8 chars)
+    tokens = re.findall(r"[가-힣]{2,8}", text)
+    seen: set[str] = set()
+
+    for token in tokens:
+        if token in seen or token in _DOMAIN_TERMS:
+            continue
+        seen.add(token)
+
+        best_term = ""
+        best_score = 0.0
+        for term in _DOMAIN_TERMS:
+            if abs(len(token) - len(term)) > 1:
+                continue
+            ratio = SequenceMatcher(None, token, term).ratio()
+
+            # Tier 1: high char similarity
+            if ratio >= 0.75:
+                score = ratio
+            # Tier 2: choseong match + moderate similarity
+            elif ratio >= 0.5 and len(token) == len(term):
+                if _get_choseong(token) == _get_choseong(term):
+                    score = ratio + 0.3  # boost for choseong match
+                else:
+                    continue
+            else:
+                continue
+
+            if score > best_score:
+                best_score = score
+                best_term = term
+
+        if best_term:
+            result = result.replace(token, best_term)
+            corrections_made += 1
+            logger.debug("OCR domain fix: '%s' → '%s' (score=%.2f)", token, best_term, best_score)
+
+    if corrections_made:
+        logger.info("OCR domain corrections: %d terms fixed", corrections_made)
+    return result
 
 
 def noise_score(text: str) -> float:
@@ -74,7 +265,11 @@ OCR 오류로 인해 한글이 깨지거나 의미없는 문자가 섞여 있습
 
 
 async def correct_ocr_text(text: str, ollama_client) -> str:
-    """Correct OCR noise using LLM (EXAONE via Ollama).
+    """Correct OCR noise using domain dictionary + LLM (EXAONE via Ollama).
+
+    Two-stage correction:
+    1. Domain dictionary: fast, deterministic fix for known term misreads
+    2. LLM: handles remaining noise (broken jamo, garbled text)
 
     Args:
         text: OCR-extracted text with potential noise.
@@ -83,7 +278,13 @@ async def correct_ocr_text(text: str, ollama_client) -> str:
     Returns:
         Corrected text, or original if correction fails or is too short.
     """
-    if not text or not needs_correction(text):
+    if not text:
+        return text
+
+    # Stage 1: Domain dictionary correction (always applied, no threshold)
+    text = _correct_with_domain_dict(text)
+
+    if not needs_correction(text):
         return text
 
     score_before = noise_score(text)

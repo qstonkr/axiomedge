@@ -63,12 +63,12 @@ def quantize():
     source_size = source_model.stat().st_size
     ratio = (1 - output_size / source_size) * 100
 
-    print(f"\n완료!")
+    print("\n완료!")
     print(f"  FP32: {source_size / 1e9:.1f} GB")
     print(f"  INT8: {output_size / 1e9:.1f} GB ({ratio:.0f}% 감소)")
-    print(f"\n.env에 추가:")
+    print("\n.env에 추가:")
     print(f"  KNOWLEDGE_BGE_ONNX_MODEL_PATH={output_dir}")
-    print(f"  KNOWLEDGE_BGE_ONNX_FILE_NAME=model_quantized.onnx")
+    print("  KNOWLEDGE_BGE_ONNX_FILE_NAME=model_quantized.onnx")
 
 
 if __name__ == "__main__":

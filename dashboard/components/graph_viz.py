@@ -1,5 +1,9 @@
 """Graph Visualization Component
 
+# DEPRECATED: This module is only imported by graph_viz_v2.py for shared constants
+# (NodeType, NODE_COLORS, NODE_SHAPES, GraphNode, GraphEdge).
+# New code should import from graph_viz_v2.py directly.
+
 PyVis 기반 지식 그래프 렌더링.
 
 Created: 2026-02-04 (Sprint 10)

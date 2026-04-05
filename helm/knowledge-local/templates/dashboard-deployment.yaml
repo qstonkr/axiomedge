@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge-dashboard
+  namespace: {{ include "knowledge-local.namespace" . }}
+  labels:
+    app: knowledge-dashboard
+    {{- include "knowledge-local.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      app: knowledge-dashboard
+  template:
+    metadata:
+      labels:
+        app: knowledge-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uv", "run", "streamlit", "run", "dashboard/app.py",
+                    "--server.port", "{{ .Values.dashboard.port }}", "--server.address", "0.0.0.0"]
+          ports:
+            - containerPort: {{ .Values.dashboard.port }}
+              name: http
+          env:
+            {{- range $key, $value := .Values.dashboard.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.dashboard.probes.liveness.path }}
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: {{ .Values.dashboard.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.dashboard.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.dashboard.probes.readiness.path }}
+              port: {{ .Values.dashboard.port }}
+            initialDelaySeconds: {{ .Values.dashboard.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.dashboard.probes.readiness.periodSeconds }}

@@ -34,17 +34,28 @@ spec:
             - name: KNOWLEDGE_BGE_ONNX_MODEL_PATH
               value: "/models/bge-m3"
             - name: DATABASE_URL
-              value: "postgresql+asyncpg://knowledge:knowledge@postgres.knowledge.svc:5432/knowledge_db"
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: DATABASE_URL
             - name: REDIS_URL
               value: "redis://redis.knowledge.svc:6379"
             - name: PADDLEOCR_API_URL
               value: "http://paddleocr.knowledge.svc:8866/ocr"
             - name: BGE_TEI_URL
               value: "http://bge-m3.knowledge.svc:80"
+            - name: RERANKER_TEI_URL
+              value: "http://bge-reranker.knowledge.svc:8081"
+            - name: USE_CLOUD_EMBEDDING
+              value: "true"
+            - name: KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR
+              value: "/data/pipeline"
           volumeMounts:
             - name: bge-model
               mountPath: /models/bge-m3
               readOnly: true
+            - name: pipeline-data
+              mountPath: /data/pipeline
           resources:
             requests:
               memory: "1Gi"
@@ -64,10 +75,19 @@ spec:
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
       volumes:
         - name: bge-model
           persistentVolumeClaim:
             claimName: bge-model-pvc
+        - name: pipeline-data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

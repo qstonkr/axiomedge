@@ -90,8 +90,14 @@ def render_quality_metrics(
         overall: 종합 점수 (None이면 가중 평균 계산)
     """
     if overall is None:
-        # RAGAS 가중치: Faithfulness 50%, Relevancy 30%, Precision 20%
-        overall = faithfulness * 0.5 + relevancy * 0.3 + precision * 0.2
+        from components.constants import (
+            RAGAS_FAITHFULNESS_WEIGHT,
+            RAGAS_RELEVANCY_WEIGHT,
+            RAGAS_PRECISION_WEIGHT,
+        )
+        overall = (faithfulness * RAGAS_FAITHFULNESS_WEIGHT
+                   + relevancy * RAGAS_RELEVANCY_WEIGHT
+                   + precision * RAGAS_PRECISION_WEIGHT)
 
     metrics = [
         MetricData(
@@ -171,13 +177,15 @@ def get_confidence_badge(score: float) -> str:
     Returns:
         신뢰도 배지 문자열
     """
+    from components.constants import CONFIDENCE
+
     if score == 0:
         return "➖ 미산정"
-    elif score >= 0.85:
+    elif score >= CONFIDENCE.high:
         return "🟢 High"
-    elif score >= 0.70:
+    elif score >= CONFIDENCE.medium:
         return "🟡 Medium"
-    elif score >= 0.50:
+    elif score >= CONFIDENCE.low:
         return "🟠 Low"
     else:
         return "🔴 Uncertain"

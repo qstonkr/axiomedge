@@ -258,6 +258,22 @@ class CompositeReranker:
                     matched = sum(1 for t in query_tokens if t in content_lower)
                     keyword_bonus = 0.1 * (matched / len(query_tokens))  # max +0.1
 
+            # Entity name bonus: boost chunks whose document_name contains
+            # store/person names mentioned in the query (e.g. 논산퍼스트점, 유성욱M)
+            entity_bonus = 0.0
+            if query:
+                import re as _re_ent
+                doc_name = ((chunk.metadata or {}).get("document_name", "") or "").lower()
+                if doc_name:
+                    # Store names (XXX점)
+                    stores = _re_ent.findall(r"[\w가-힣]+점", query)
+                    # Person names (XXM)
+                    persons = _re_ent.findall(r"[가-힣]{2,4}M", query)
+                    for ent in stores + persons:
+                        if ent.lower() in doc_name:
+                            entity_bonus = 0.12  # significant but not dominant
+                            break
+
             composite_score = (
                 (normalized_model_score * self._model_weight)
                 + (normalized_base_score * self._base_weight)
@@ -265,6 +281,7 @@ class CompositeReranker:
                 + position_prior
                 + graph_distance_bonus
                 + keyword_bonus
+                + entity_bonus
             )
             weighted_chunks.append(
                 (

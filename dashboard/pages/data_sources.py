@@ -10,7 +10,6 @@ import streamlit as st
 st.set_page_config(page_title="데이터소스 관리", page_icon="📁", layout="wide")
 
 
-import pandas as pd
 
 from components.sidebar import hide_default_nav, render_sidebar
 from services import api_client

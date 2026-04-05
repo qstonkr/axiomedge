@@ -1,0 +1,26 @@
+Knowledge Local has been deployed to namespace "{{ include "knowledge-local.namespace" . }}".
+
+=== Services ===
+
+  API:       http://knowledge-api.{{ include "knowledge-local.namespace" . }}.svc:{{ .Values.api.port }}
+  Dashboard: http://knowledge-dashboard.{{ include "knowledge-local.namespace" . }}.svc:{{ .Values.dashboard.port }}
+  TEI:       http://bge-m3.{{ include "knowledge-local.namespace" . }}.svc:{{ .Values.tei.servicePort }}
+
+{{- if eq .Values.dashboard.serviceType "NodePort" }}
+
+  Dashboard NodePort: http://<node-ip>:{{ .Values.dashboard.nodePort }}
+{{- end }}
+
+=== Prerequisites ===
+
+  The following services must be running in the "{{ include "knowledge-local.namespace" . }}" namespace:
+    - PostgreSQL (postgres.{{ include "knowledge-local.namespace" . }}.svc:5432)
+    - Qdrant     (qdrant.{{ include "knowledge-local.namespace" . }}.svc:6333)
+    - Neo4j      (neo4j.{{ include "knowledge-local.namespace" . }}.svc:7687)
+    - Redis      (redis.{{ include "knowledge-local.namespace" . }}.svc:6379)
+    - Ollama     (ollama.{{ include "knowledge-local.namespace" . }}.svc:11434)
+
+=== Quick Check ===
+
+  kubectl get pods -n {{ include "knowledge-local.namespace" . }}
+  kubectl logs -n {{ include "knowledge-local.namespace" . }} -l app=knowledge-api --tail=50

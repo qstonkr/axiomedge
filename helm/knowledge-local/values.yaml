@@ -1,0 +1,153 @@
+# Default values for knowledge-local
+# Supports both k3s (local) and EKS (cloud) environments.
+
+namespace: knowledge
+
+# -- Container image settings
+image:
+  repository: knowledge-local
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# -- Storage class: "local-path" for k3s, "gp3" / "gp2" for EKS
+storageClassName: local-path
+
+# =============================================================================
+# API
+# =============================================================================
+api:
+  replicas: 1
+  port: 8000
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  # -- Volume sizes
+  bgeModelStorage: 5Gi
+  pipelineDataEmptyDir: true  # uses emptyDir; set false + PVC if persistent needed
+
+  # -- Environment (service URLs)
+  env:
+    QDRANT_URL: "http://qdrant.knowledge.svc:6333"
+    NEO4J_URI: "bolt://neo4j.knowledge.svc:7687"
+    NEO4J_AUTH: "none"
+    OLLAMA_BASE_URL: "http://ollama.knowledge.svc:11434"
+    OLLAMA_MODEL: "exaone3.5:7.8b"
+    KNOWLEDGE_BGE_ONNX_MODEL_PATH: "/models/bge-m3"
+    REDIS_URL: "redis://redis.knowledge.svc:6379"
+    PADDLEOCR_API_URL: "http://paddleocr.knowledge.svc:8866/ocr"
+    BGE_TEI_URL: "http://bge-m3.knowledge.svc:80"
+    RERANKER_TEI_URL: "http://bge-reranker.knowledge.svc:8081"
+    USE_CLOUD_EMBEDDING: "true"
+    KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR: "/data/pipeline"
+
+  # -- HPA settings
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilization: 70
+
+  # -- Probes
+  probes:
+    liveness:
+      initialDelaySeconds: 15
+      periodSeconds: 30
+    readiness:
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    startup:
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      failureThreshold: 12
+
+# =============================================================================
+# Dashboard (Streamlit)
+# =============================================================================
+dashboard:
+  replicas: 1
+  port: 8501
+  serviceType: NodePort
+  nodePort: 30501
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  env:
+    DASHBOARD_API_URL: "http://knowledge-api.knowledge.svc:8000"
+    NEO4J_URI: "bolt://neo4j.knowledge.svc:7687"
+    NEO4J_AUTH: "none"
+    QDRANT_URL: "http://qdrant.knowledge.svc:6333"
+
+  probes:
+    liveness:
+      path: /_stcore/health
+      initialDelaySeconds: 15
+      periodSeconds: 30
+    readiness:
+      path: /
+      initialDelaySeconds: 10
+      periodSeconds: 10
+
+# =============================================================================
+# TEI - BGE-M3 Embedding Server
+# =============================================================================
+tei:
+  replicas: 1
+  port: 8080
+  servicePort: 80
+
+  image:
+    repository: ghcr.io/huggingface/text-embeddings-inference
+    tag: cpu-1.9.3
+
+  modelId: BAAI/bge-m3
+  maxBatchTokens: "16384"
+  modelStorage: 10Gi
+
+  # -- S3 model download (EKS only)
+  modelDownload:
+    enabled: true
+    s3Bucket: "oreo-dev-ml-artifacts/models/bge-m3/hub"
+    region: "ap-northeast-2"
+    serviceAccountName: bge-m3-sa
+    iamRoleArn: ""  # Set for EKS: arn:aws:iam::xxx:role/bge-m3-s3-read-role
+
+  resources:
+    requests:
+      memory: "8Gi"
+      cpu: "2000m"
+    limits:
+      memory: "10Gi"
+      cpu: "4000m"
+
+  probes:
+    liveness:
+      initialDelaySeconds: 120
+      periodSeconds: 30
+    readiness:
+      initialDelaySeconds: 120
+      periodSeconds: 10
+    startup:
+      failureThreshold: 30
+      periodSeconds: 10
+
+# =============================================================================
+# PostgreSQL Secret
+# =============================================================================
+postgres:
+  user: knowledge
+  password: knowledge
+  database: knowledge_db
+  host: postgres.knowledge.svc
+  port: 5432

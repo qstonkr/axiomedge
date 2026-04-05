@@ -212,8 +212,8 @@ async def admin_kb_aggregation():
             kbs = await kb_registry.list_all()
             total_kbs = len(kbs)
             total_documents = sum(kb.get("document_count", 0) for kb in kbs)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to get KB registry stats: %s", e)
 
     # Get chunk counts from Qdrant
     if collections and store:
@@ -226,10 +226,10 @@ async def admin_kb_aggregation():
                 kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
                 try:
                     total_chunks += await store.count(kb_id)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as e:
+                    logger.debug("Chunk count failed for %s: %s", kb_id, e)
+        except Exception as e:
+            logger.debug("Failed to get Qdrant collection names: %s", e)
 
     # Calculate avg quality score from Qdrant metadata
     avg_quality_score = 0.0
@@ -254,8 +254,8 @@ async def admin_kb_aggregation():
                                 quality_count += 1
             if quality_count > 0:
                 avg_quality_score = round(quality_sum / quality_count, 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to calculate avg quality score: %s", e)
 
     return {
         "total_kbs": total_kbs,
@@ -313,8 +313,8 @@ async def admin_get_kb(kb_id: str):
     if store:
         try:
             chunk_count = await store.count(kb_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Chunk count failed for %s: %s", kb_id, e)
 
     return {
         "kb_id": kb_id,
@@ -372,8 +372,8 @@ async def admin_kb_stats(kb_id: str):
     if store:
         try:
             chunk_count = await store.count(kb_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Chunk count failed for KB stats %s: %s", kb_id, e)
 
     return {
         "kb_id": kb_id,
