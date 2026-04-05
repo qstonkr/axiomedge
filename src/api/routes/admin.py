@@ -688,47 +688,47 @@ def _apply_ai_classifications(
     try:
         with driver.session(database=database) as session:
             for item in classifications:
-                eid = item.get("eid")
-                new_type = item.get("type", "").strip()
-                old_label = item.get("current_label", "")
-
-                if not eid or not new_type:
-                    stats["skipped"] += 1
-                    continue
-
-                try:
-                    if new_type == "DELETE":
-                        session.run(
-                            "MATCH (n) WHERE elementId(n) = $eid DETACH DELETE n",
-                            parameters={"eid": eid},
-                        )
-                        stats["deleted"] += 1
-                    elif new_type in _VALID_LABELS:
-                        if new_type == old_label:
-                            stats["skipped"] += 1
-                            continue
-                        # Remove old label (if not __Entity__) and set new label
-                        if old_label and old_label != "__Entity__":
-                            session.run(
-                                f"MATCH (n) WHERE elementId(n) = $eid "
-                                f"REMOVE n:{old_label} SET n:{new_type}",
-                                parameters={"eid": eid},
-                            )
-                        else:
-                            session.run(
-                                f"MATCH (n) WHERE elementId(n) = $eid SET n:{new_type}",
-                                parameters={"eid": eid},
-                            )
-                        stats["relabeled"] += 1
-                    else:
-                        stats["skipped"] += 1
-                except Exception as e:
-                    logger.warning("AI classify apply error for %s: %s", eid, e)
-                    stats["errors"] += 1
+                _apply_single_classification(session, item, stats)
     finally:
         driver.close()
 
     return stats
+
+
+def _apply_single_classification(
+    session: Any,
+    item: dict[str, Any],
+    stats: dict[str, int],
+) -> None:
+    """Apply a single classification result to Neo4j."""
+    eid = item.get("eid")
+    new_type = item.get("type", "").strip()
+    old_label = item.get("current_label", "")
+
+    if not eid or not new_type:
+        stats["skipped"] += 1
+        return
+
+    try:
+        if new_type == "DELETE":
+            session.run(
+                "MATCH (n) WHERE elementId(n) = $eid DETACH DELETE n",
+                parameters={"eid": eid},
+            )
+            stats["deleted"] += 1
+        elif new_type not in _VALID_LABELS or new_type == old_label:
+            stats["skipped"] += 1
+        else:
+            # Remove old label (if not __Entity__) and set new label
+            remove_clause = f"REMOVE n:{old_label} " if old_label and old_label != "__Entity__" else ""
+            session.run(
+                f"MATCH (n) WHERE elementId(n) = $eid {remove_clause}SET n:{new_type}",
+                parameters={"eid": eid},
+            )
+            stats["relabeled"] += 1
+    except Exception as e:
+        logger.warning("AI classify apply error for %s: %s", eid, e)
+        stats["errors"] += 1
 
 
 def _parse_llm_json_response(text: str) -> list[dict[str, Any]]:
@@ -765,6 +765,51 @@ def _parse_llm_json_response(text: str) -> list[dict[str, Any]]:
     return []
 
 
+def _resolve_llm_client(state: dict[str, Any]) -> Any | None:
+    """Resolve LLM client from state or SageMaker fallback."""
+    llm = state.get("llm_client")
+    if llm:
+        return llm
+    import os
+    if os.getenv("USE_SAGEMAKER_LLM", "false").lower() not in ("true", "1"):
+        return None
+    try:
+        from src.llm.sagemaker_client import SageMakerLLMClient
+        logger.info("AI classify: using SageMaker LLM (fallback)")
+        return SageMakerLLMClient()
+    except Exception as e:
+        logger.warning("SageMaker LLM init failed: %s", e)
+        return None
+
+
+async def _classify_batch(
+    llm: Any, batch: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Classify a single batch of candidates using LLM."""
+    entity_lines = "\n".join(
+        f"- {c['name']} (현재: {c['current_label']})" for c in batch
+    )
+    prompt = AI_CLASSIFY_PROMPT.format(entities=entity_lines)
+    response = await llm.generate(prompt, temperature=0.1, max_tokens=4096)
+    parsed = _parse_llm_json_response(response)
+
+    name_to_candidate = {c["name"]: c for c in batch}
+    results: list[dict[str, Any]] = []
+    for item in parsed:
+        name = item.get("name", "")
+        candidate = name_to_candidate.get(name)
+        if candidate:
+            results.append({
+                "eid": candidate["eid"],
+                "name": name,
+                "current_label": candidate["current_label"],
+                "type": item.get("type", ""),
+                "reason": item.get("reason", ""),
+                "kb_id": candidate.get("kb_id"),
+            })
+    return results
+
+
 @router.post("/graph/cleanup/ai-classify")
 async def graph_ai_classify(body: dict[str, Any] | None = None):
     """LLM-based entity reclassification using SageMaker EXAONE.
@@ -774,20 +819,7 @@ async def graph_ai_classify(body: dict[str, Any] | None = None):
         apply (bool): False = dry run (default), True = apply reclassification
         kb_id (str): Filter to a single KB
     """
-    state = _get_state()
-    llm = state.get("llm_client")
-
-    # Fallback to SageMaker if local LLM not available
-    if not llm:
-        import os
-        if os.getenv("USE_SAGEMAKER_LLM", "false").lower() in ("true", "1"):
-            try:
-                from src.llm.sagemaker_client import SageMakerLLMClient
-                llm = SageMakerLLMClient()
-                logger.info("AI classify: using SageMaker LLM (fallback)")
-            except Exception as e:
-                logger.warning("SageMaker LLM init failed: %s", e)
-
+    llm = _resolve_llm_client(_get_state())
     if not llm:
         return {
             "success": False,
@@ -799,17 +831,15 @@ async def graph_ai_classify(body: dict[str, Any] | None = None):
 
     body = body or {}
     limit = body.get("limit", 200)
-    if limit != 0:  # 0 = all
+    if limit != 0:
         limit = min(max(limit, 10), 10000)
     apply = body.get("apply", False)
     kb_id = body.get("kb_id")
 
     try:
-        # Step 1: Fetch candidates from Neo4j
         candidates = await asyncio.to_thread(
             _fetch_ai_classify_candidates, kb_id, limit,
         )
-
         if not candidates:
             return {
                 "success": True,
@@ -819,41 +849,15 @@ async def graph_ai_classify(body: dict[str, Any] | None = None):
                 "stats": {"relabeled": 0, "deleted": 0, "skipped": 0},
             }
 
-        # Step 2: Batch candidates and call LLM
         batch_size = 30
         all_classifications: list[dict[str, Any]] = []
-
         for i in range(0, len(candidates), batch_size):
-            batch = candidates[i : i + batch_size]
-            entity_lines = "\n".join(
-                f"- {c['name']} (현재: {c['current_label']})" for c in batch
-            )
-            prompt = AI_CLASSIFY_PROMPT.format(entities=entity_lines)
-
             try:
-                response = await llm.generate(prompt, temperature=0.1, max_tokens=4096)
-                parsed = _parse_llm_json_response(response)
-
-                # Match LLM results back to candidates by name
-                name_to_candidate = {c["name"]: c for c in batch}
-                for item in parsed:
-                    name = item.get("name", "")
-                    candidate = name_to_candidate.get(name)
-                    if candidate:
-                        all_classifications.append({
-                            "eid": candidate["eid"],
-                            "name": name,
-                            "current_label": candidate["current_label"],
-                            "type": item.get("type", ""),
-                            "reason": item.get("reason", ""),
-                            "kb_id": candidate.get("kb_id"),
-                        })
+                batch_result = await _classify_batch(llm, candidates[i : i + batch_size])
+                all_classifications.extend(batch_result)
             except Exception as e:
-                logger.warning(
-                    "AI classify LLM batch %d failed: %s", i // batch_size, e,
-                )
+                logger.warning("AI classify LLM batch %d failed: %s", i // batch_size, e)
 
-        # Step 3: Apply if requested
         stats: dict[str, int] = {"relabeled": 0, "deleted": 0, "skipped": 0, "errors": 0}
         if apply and all_classifications:
             stats = await asyncio.to_thread(

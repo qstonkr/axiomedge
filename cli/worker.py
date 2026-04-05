@@ -121,6 +121,12 @@ def create_app(mode: str = "api") -> FastAPI:
         lifespan=lifespan,
     )
 
+    _register_routes(application, mode)
+
+    if mode == "api":
+        from src.auth.middleware import AuthMiddleware
+        application.add_middleware(AuthMiddleware)
+
     cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
     application.add_middleware(
         CORSMiddleware,
@@ -129,12 +135,6 @@ def create_app(mode: str = "api") -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    _register_routes(application, mode)
-
-    if mode == "api":
-        from src.auth.middleware import AuthMiddleware
-        application.add_middleware(AuthMiddleware)
 
     return application
 

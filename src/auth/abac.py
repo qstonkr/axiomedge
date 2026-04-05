@@ -161,41 +161,35 @@ class ABACEngine:
     def _check_operator(self, value: Any, operator_value: dict[str, Any]) -> bool:
         """Check a single operator condition."""
         for op, expected in operator_value.items():
-            if op == "eq":
-                if value != expected:
-                    return False
-            elif op == "neq":
-                if value == expected:
-                    return False
-            elif op == "in":
-                if value not in expected:
-                    return False
-            elif op == "not_in":
-                if value in expected:
-                    return False
-            elif op == "contains":
-                if not isinstance(value, str) or expected not in value:
-                    return False
-            elif op == "starts_with":
-                if not isinstance(value, str) or not value.startswith(expected):
-                    return False
-            elif op == "between":
-                if len(expected) != 2:
-                    return False
-                if value is None or not (expected[0] <= value <= expected[1]):
-                    return False
-            elif op == "exists":
-                if expected and value is None:
-                    return False
-                if not expected and value is not None:
-                    return False
-            elif op == "regex":
-                if not isinstance(value, str) or not re.match(expected, value):
-                    return False
-            else:
-                logger.warning("Unknown ABAC operator: %s", op)
+            if not self._check_single_op(op, value, expected):
                 return False
         return True
+
+    @staticmethod
+    def _check_single_op(op: str, value: Any, expected: Any) -> bool:
+        """Evaluate a single operator against value and expected."""
+        if op == "eq":
+            return value == expected
+        if op == "neq":
+            return value != expected
+        if op == "in":
+            return value in expected
+        if op == "not_in":
+            return value not in expected
+        if op == "contains":
+            return isinstance(value, str) and expected in value
+        if op == "starts_with":
+            return isinstance(value, str) and value.startswith(expected)
+        if op == "between":
+            return len(expected) == 2 and value is not None and expected[0] <= value <= expected[1]
+        if op == "exists":
+            if expected:
+                return value is not None
+            return value is None
+        if op == "regex":
+            return isinstance(value, str) and bool(re.match(expected, value))
+        logger.warning("Unknown ABAC operator: %s", op)
+        return False
 
 
 # =============================================================================

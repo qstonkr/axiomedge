@@ -222,6 +222,94 @@ class TermSimilarityMatcher:
 
         return [idx for idx, _ in filtered[: self._MAX_CANDIDATES]]
 
+    def _match_exact(self, candidate: str) -> SimilarityMatchResult | None:
+        """Step 1-2: Exact match and particle-stripped match."""
+        normalized = TermNormalizer.normalize_for_comparison(candidate)
+        if normalized in self._normalized_lookup:
+            return SimilarityMatchResult(
+                is_matched=True,
+                matched_standard_term=self._normalized_lookup[normalized],
+                match_type="exact",
+                similarity_score=1.0,
+            )
+
+        stripped = _strip_particles(candidate)
+        if stripped != candidate:
+            normalized_stripped = TermNormalizer.normalize_for_comparison(stripped)
+            if normalized_stripped in self._normalized_lookup:
+                return SimilarityMatchResult(
+                    is_matched=True,
+                    matched_standard_term=self._normalized_lookup[normalized_stripped],
+                    match_type="particle_stripped",
+                    similarity_score=0.98,
+                )
+        return None
+
+    def _check_jaccard(
+        self, pc: _PrecomputedStd, candidate_ngrams: set[str], best: SimilarityMatchResult,
+    ) -> SimilarityMatchResult:
+        """Step 3: 3-gram Jaccard similarity check."""
+        jaccard = self._jaccard_from_sets(candidate_ngrams, pc.ngrams)
+        if pc.ngrams_ko:
+            jaccard = max(jaccard, self._jaccard_from_sets(candidate_ngrams, pc.ngrams_ko))
+        if jaccard >= self._jaccard_threshold and jaccard > best.similarity_score:
+            return SimilarityMatchResult(
+                is_matched=True, matched_standard_term=pc.term,
+                match_type="jaccard", similarity_score=round(jaccard, 4),
+            )
+        return best
+
+    def _check_levenshtein(
+        self, pc: _PrecomputedStd, normalized: str, best: SimilarityMatchResult,
+    ) -> SimilarityMatchResult:
+        """Step 4: Normalized Levenshtein (short terms only)."""
+        if len(normalized) >= 30:
+            return best
+        lev_targets = [pc.normalized]
+        if pc.normalized_ko:
+            lev_targets.append(pc.normalized_ko)
+        for lev_target in lev_targets:
+            if len(lev_target) >= 30:
+                continue
+            lev = self._scorer._normalized_levenshtein(normalized, lev_target)
+            if lev >= self._levenshtein_threshold and lev > best.similarity_score:
+                best = SimilarityMatchResult(
+                    is_matched=True, matched_standard_term=pc.term,
+                    match_type="levenshtein", similarity_score=round(lev, 4),
+                )
+        return best
+
+    def _check_token_overlap(
+        self, pc: _PrecomputedStd, candidate_tokens: set[str], best: SimilarityMatchResult,
+    ) -> SimilarityMatchResult:
+        """Step 5: Token overlap ratio."""
+        if not candidate_tokens or not pc.tokens:
+            return best
+        union = len(candidate_tokens | pc.tokens)
+        if union <= 0:
+            return best
+        overlap = len(candidate_tokens & pc.tokens) / union
+        if overlap >= self._token_overlap_threshold and overlap > best.similarity_score:
+            return SimilarityMatchResult(
+                is_matched=True, matched_standard_term=pc.term,
+                match_type="token_overlap", similarity_score=round(overlap, 4),
+            )
+        return best
+
+    def _match_candidate_against_standard(
+        self,
+        pc: _PrecomputedStd,
+        normalized: str,
+        candidate_ngrams: set[str],
+        candidate_tokens: set[str],
+        best: SimilarityMatchResult,
+    ) -> SimilarityMatchResult:
+        """Steps 3-5: Compare a candidate against a single standard term."""
+        best = self._check_jaccard(pc, candidate_ngrams, best)
+        best = self._check_levenshtein(pc, normalized, best)
+        best = self._check_token_overlap(pc, candidate_tokens, best)
+        return best
+
     def match(self, candidate: str) -> SimilarityMatchResult:
         """단일 용어 매칭 (5단계 cascade).
 
@@ -237,29 +325,11 @@ class TermSimilarityMatcher:
         if not candidate or not self._normalized_lookup:
             return SimilarityMatchResult(is_matched=False)
 
-        # Step 1: 정규화 후 Exact Match
+        exact = self._match_exact(candidate)
+        if exact is not None:
+            return exact
+
         normalized = TermNormalizer.normalize_for_comparison(candidate)
-        if normalized in self._normalized_lookup:
-            return SimilarityMatchResult(
-                is_matched=True,
-                matched_standard_term=self._normalized_lookup[normalized],
-                match_type="exact",
-                similarity_score=1.0,
-            )
-
-        # Step 2: 한국어 조사 제거 후 매칭
-        stripped = _strip_particles(candidate)
-        if stripped != candidate:
-            normalized_stripped = TermNormalizer.normalize_for_comparison(stripped)
-            if normalized_stripped in self._normalized_lookup:
-                return SimilarityMatchResult(
-                    is_matched=True,
-                    matched_standard_term=self._normalized_lookup[normalized_stripped],
-                    match_type="particle_stripped",
-                    similarity_score=0.98,
-                )
-
-        # Step 3-5: n-gram 역색인으로 후보군 축소 후 매칭
         candidate_ngrams = self._scorer._ngrams(normalized)
         candidate_indices = self._get_candidates(candidate_ngrams)
 
@@ -267,57 +337,12 @@ class TermSimilarityMatcher:
             return SimilarityMatchResult(is_matched=False)
 
         candidate_tokens = _tokenize(candidate)
-        best_result = SimilarityMatchResult(is_matched=False)
-
+        best = SimilarityMatchResult(is_matched=False)
         for idx in candidate_indices:
-            pc = self._precomputed[idx]
-
-            # Step 3: 3-gram Jaccard (사전 계산된 n-gram 사용)
-            jaccard = self._jaccard_from_sets(candidate_ngrams, pc.ngrams)
-            if pc.ngrams_ko:
-                jaccard_ko = self._jaccard_from_sets(candidate_ngrams, pc.ngrams_ko)
-                jaccard = max(jaccard, jaccard_ko)
-
-            if jaccard >= self._jaccard_threshold and jaccard > best_result.similarity_score:
-                best_result = SimilarityMatchResult(
-                    is_matched=True,
-                    matched_standard_term=pc.term,
-                    match_type="jaccard",
-                    similarity_score=round(jaccard, 4),
-                )
-
-            # Step 4: Normalized Levenshtein (짧은 용어만)
-            if len(normalized) < 30:
-                lev_targets = [pc.normalized]
-                if pc.normalized_ko:
-                    lev_targets.append(pc.normalized_ko)
-
-                for lev_target in lev_targets:
-                    if len(lev_target) < 30:
-                        lev = self._scorer._normalized_levenshtein(normalized, lev_target)
-                        if lev >= self._levenshtein_threshold and lev > best_result.similarity_score:
-                            best_result = SimilarityMatchResult(
-                                is_matched=True,
-                                matched_standard_term=pc.term,
-                                match_type="levenshtein",
-                                similarity_score=round(lev, 4),
-                            )
-
-            # Step 5: 토큰 중복 비율 (사전 계산된 토큰 사용)
-            if candidate_tokens and pc.tokens:
-                intersection = len(candidate_tokens & pc.tokens)
-                union = len(candidate_tokens | pc.tokens)
-                if union > 0:
-                    overlap = intersection / union
-                    if overlap >= self._token_overlap_threshold and overlap > best_result.similarity_score:
-                        best_result = SimilarityMatchResult(
-                            is_matched=True,
-                            matched_standard_term=pc.term,
-                            match_type="token_overlap",
-                            similarity_score=round(overlap, 4),
-                        )
-
-        return best_result
+            best = self._match_candidate_against_standard(
+                self._precomputed[idx], normalized, candidate_ngrams, candidate_tokens, best,
+            )
+        return best
 
     @staticmethod
     def _jaccard_from_sets(a: set[str], b: set[str]) -> float:

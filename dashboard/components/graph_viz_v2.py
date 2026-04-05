@@ -89,12 +89,35 @@ EDGE_COLORS: dict[str, str] = {
 _DEFAULT_EDGE_COLOR = "#90A4AE"
 
 
+def _node_border_style(
+    node_id: str,
+    base_size: int,
+    selected_id: str | None,
+    path_ids: set[str],
+    highlight_ids: set[str],
+    expanded_ids: set[str],
+    search_ids: set[str],
+) -> tuple[int, str | None, int]:
+    """Return (border_width, border_color, adjusted_size) based on node state."""
+    if node_id == selected_id:
+        return 5, "#FFD700", max(base_size, 40)
+    if node_id in path_ids:
+        return 4, "#FF1744", max(base_size, 30)
+    if node_id in highlight_ids:
+        return 4, "#FF9100", max(base_size, 30)
+    if node_id in expanded_ids:
+        return 4, "#00E5FF", max(base_size, 35)
+    if node_id in search_ids:
+        return 5, "#FFD700", base_size
+    return 2, None, base_size
+
+
 def render_knowledge_graph_v2(
     nodes: list[GraphNode],
     edges: list[GraphEdge],
     height: int = 600,
     bgcolor: str = "#1a1a2e",
-    font_color: str = "white",
+    _font_color: str = "white",
     expanded_ids: set[str] | None = None,
     selected_id: str | None = None,
     path_node_ids: set[str] | None = None,
@@ -131,29 +154,9 @@ def render_knowledge_graph_v2(
         base_size = min(50, max(15, 15 + degree * 3))
 
         bg_color = NODE_COLORS_V2.get(node.node_type, "#888888")
-        border_width = 2
-        border_color = None
-
-        # State-based styling (priority: selected > path > highlight > expanded > search)
-        if node.id == selected_id:
-            base_size = max(base_size, 40)
-            border_width = 5
-            border_color = "#FFD700"
-        elif node.id in _path:
-            base_size = max(base_size, 30)
-            border_width = 4
-            border_color = "#FF1744"
-        elif node.id in _highlight:
-            base_size = max(base_size, 30)
-            border_width = 4
-            border_color = "#FF9100"
-        elif node.id in _expanded:
-            base_size = max(base_size, 35)
-            border_width = 4
-            border_color = "#00E5FF"
-        elif node.id in _search:
-            border_width = 5
-            border_color = "#FFD700"  # gold glow for search matches
+        border_width, border_color, base_size = _node_border_style(
+            node.id, base_size, selected_id, _path, _highlight, _expanded, _search,
+        )
 
         node_data: dict[str, Any] = {
             "id": node.id,

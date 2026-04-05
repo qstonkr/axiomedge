@@ -220,7 +220,8 @@ class TestQueryCandidates:
         err.status_code = 500
         client.query_points = AsyncMock(side_effect=err)
 
-        with pytest.raises(ValueError, match="server error"):
+        from src.vectordb.search import QdrantServerError
+        with pytest.raises(QdrantServerError):
             await engine.query_candidates(
                 kb_id="test",
                 dense_vector=[0.1] * 1024,

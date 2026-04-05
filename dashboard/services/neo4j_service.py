@@ -136,7 +136,7 @@ class Neo4jService:
         self.config = config
         self._driver: Any = None
 
-    async def connect(self) -> None:
+    def connect(self) -> None:
         """Neo4j 연결."""
         if AsyncGraphDatabase is None:
             return
@@ -158,7 +158,7 @@ class Neo4jService:
 
     async def __aenter__(self) -> "Neo4jService":
         """비동기 컨텍스트 매니저 진입."""
-        await self.connect()
+        self.connect()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -328,6 +328,41 @@ class Neo4jService:
             "total_edges": sum(r["count"] for r in edge_counts),
         }
 
+    @staticmethod
+    def _parse_node(
+        node, node_types: list[str] | None, nodes_map: dict[str, GraphNode],
+    ) -> None:
+        """Parse a single node record into nodes_map if it passes type filter."""
+        if not node:
+            return
+        node_id = node.get("id") or str(node.id)
+        node_type = list(node.labels)[0] if node.labels else "Unknown"
+        if node_types and node_type not in node_types:
+            return
+        if node_id in nodes_map:
+            return
+        nodes_map[node_id] = GraphNode(
+            id=node_id,
+            label=node.get("name") or node.get("title") or node_id,
+            node_type=node_type,
+            properties=dict(node),
+        )
+
+    @staticmethod
+    def _parse_edge(record: dict) -> GraphEdge | None:
+        """Parse a single edge record, returning None if incomplete."""
+        rel = record.get("rel")
+        start = record.get("start")
+        end = record.get("end")
+        if not (rel and start and end):
+            return None
+        return GraphEdge(
+            source=start.get("id") or str(start.id),
+            target=end.get("id") or str(end.id),
+            relation_type=rel.type,
+            properties=dict(rel),
+        )
+
     def _parse_graph_data(
         self,
         records: list[dict],
@@ -338,43 +373,21 @@ class Neo4jService:
         edges: list[GraphEdge] = []
 
         for record in records:
-            node = record.get("node")
-            if node:
-                node_id = node.get("id") or str(node.id)
-                node_type = list(node.labels)[0] if node.labels else "Unknown"
-
-                if node_types and node_type not in node_types:
-                    continue
-
-                if node_id not in nodes_map:
-                    nodes_map[node_id] = GraphNode(
-                        id=node_id,
-                        label=node.get("name") or node.get("title") or node_id,
-                        node_type=node_type,
-                        properties=dict(node),
-                    )
-
-            rel = record.get("rel")
-            start = record.get("start")
-            end = record.get("end")
-            if rel and start and end:
-                edges.append(GraphEdge(
-                    source=start.get("id") or str(start.id),
-                    target=end.get("id") or str(end.id),
-                    relation_type=rel.type,
-                    properties=dict(rel),
-                ))
+            self._parse_node(record.get("node"), node_types, nodes_map)
+            edge = self._parse_edge(record)
+            if edge:
+                edges.append(edge)
 
         return GraphData(
             nodes=list(nodes_map.values()),
             edges=edges,
         )
 
-    def _get_empty_graph_data(self, query: str) -> GraphData:
+    def _get_empty_graph_data(self, _query: str) -> GraphData:
         """Neo4j 미연결 시 빈 그래프 데이터 반환."""
         return GraphData(nodes=[], edges=[])
 
-    def _get_empty_experts(self, topic: str) -> list[dict[str, Any]]:
+    def _get_empty_experts(self, _topic: str) -> list[dict[str, Any]]:
         """Neo4j 미연결 시 빈 전문가 목록 반환."""
         return []
 

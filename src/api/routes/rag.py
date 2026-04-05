@@ -235,6 +235,32 @@ async def _stage2_ingest_from_jsonl(
     return total_docs, total_chunks, errors
 
 
+async def _update_kb_and_invalidate_cache(effective_kb_id: str, total_docs: int, total_chunks: int) -> None:
+    """Update KB registry counts and invalidate search caches after ingest."""
+    from src.api.app import _get_state
+
+    kb_registry = _get_state().get("kb_registry")
+    if kb_registry:
+        await kb_registry.update_counts(effective_kb_id, total_docs, total_chunks)
+
+    _multi_cache = _get_state().get("multi_layer_cache")
+    _search_cache = _get_state().get("search_cache")
+    if _multi_cache and hasattr(_multi_cache, "invalidate_by_kb"):
+        try:
+            await _multi_cache.invalidate_by_kb(effective_kb_id)
+            logger.info("Multi-layer cache invalidated for kb=%s", effective_kb_id)
+            return
+        except Exception:
+            pass  # Fall through to search_cache clear
+
+    if _search_cache:
+        try:
+            await _search_cache.clear()
+            logger.info("Search cache cleared after ingest for kb=%s", effective_kb_id)
+        except Exception as e:
+            logger.debug("Failed to clear search cache after ingest: %s", e)
+
+
 async def _process_files(
     job_id: str,
     file_paths: list[tuple[str, str]],
@@ -266,31 +292,9 @@ async def _process_files(
     metrics_inc("ingest_documents", total_docs)
     metrics_inc("ingest_chunks", total_chunks)
 
-    # Update KB registry counts
     if total_docs > 0:
         try:
-            from src.api.app import _get_state
-            kb_registry = _get_state().get("kb_registry")
-            if kb_registry:
-                await kb_registry.update_counts(effective_kb_id, total_docs, total_chunks)
-
-            # Issue 5: Invalidate search cache after ingest (KB-selective if possible)
-            _multi_cache = _get_state().get("multi_layer_cache")
-            _search_cache = _get_state().get("search_cache")
-            if _multi_cache and hasattr(_multi_cache, "invalidate_by_kb"):
-                try:
-                    await _multi_cache.invalidate_by_kb(effective_kb_id)
-                    logger.info("Multi-layer cache invalidated for kb=%s", effective_kb_id)
-                except Exception:
-                    # Fallback to full clear
-                    if _search_cache:
-                        await _search_cache.clear()
-            elif _search_cache:
-                try:
-                    await _search_cache.clear()
-                    logger.info("Search cache cleared after ingest for kb=%s", effective_kb_id)
-                except Exception as e:
-                    logger.debug("Failed to clear search cache after ingest: %s", e)
+            await _update_kb_and_invalidate_cache(effective_kb_id, total_docs, total_chunks)
         except Exception as _count_err:
             logger.warning("KB count update failed: %s", _count_err)
 
@@ -312,6 +316,63 @@ async def _process_files(
     if save_dir:
         import shutil as _shutil
         _shutil.rmtree(save_dir, ignore_errors=True)
+
+
+async def _ensure_qdrant_collection(state, kb_id: str) -> None:
+    """Ensure Qdrant collection exists, falling back to REST API if needed."""
+    collections = state.get("qdrant_collections")
+    if not collections:
+        return
+    try:
+        await collections.ensure_collection(kb_id)
+    except Exception as _coll_err:
+        logger.warning("ensure_collection via SDK failed: %s, trying REST", _coll_err)
+        await _create_collection_via_rest(collections, kb_id)
+
+
+async def _create_collection_via_rest(collections, kb_id: str) -> None:
+    """Create Qdrant collection via REST API as SDK fallback."""
+    import os
+    import httpx as _httpx
+    from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
+    from src.config_weights import weights as _cw
+
+    _embed_dim = _cw.embedding.dimension
+    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    coll_name = collections.get_collection_name(kb_id)
+    async with _httpx.AsyncClient() as _client:
+        resp = await _client.put(
+            f"{qdrant_url}/collections/{coll_name}",
+            json={
+                "vectors": {_dense_name: {"size": _embed_dim, "distance": "Cosine"}},
+                "sparse_vectors": {_sparse_name: {}},
+            },
+            timeout=30,
+        )
+        if resp.status_code in (200, 409):
+            logger.info("Collection %s created via REST API", coll_name)
+        else:
+            logger.error("Collection creation failed: %s", resp.text)
+
+
+async def _auto_register_kb(
+    state, kb_id: str, kb_name: str | None, tier: str | None
+) -> None:
+    """Register KB in database if it doesn't already exist."""
+    kb_registry = state.get("kb_registry")
+    if not kb_registry:
+        return
+    try:
+        existing = await kb_registry.get_kb(kb_id)
+        if not existing:
+            await kb_registry.create_kb({
+                "id": kb_id,
+                "name": kb_name or kb_id,
+                "tier": tier or "global",
+                "status": "active",
+            })
+    except Exception as e:
+        logger.warning("KB registry auto-create failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -359,49 +420,10 @@ async def upload_and_ingest(
     from src.pipeline.ingestion import IngestionPipeline
 
     # Ensure Qdrant collection exists before ingestion
-    collections = state.get("qdrant_collections")
-    if collections:
-        try:
-            await collections.ensure_collection(effective_kb_id)
-        except Exception as _coll_err:
-            # Fallback: create via REST API if SDK version mismatch
-            logger.warning("ensure_collection via SDK failed: %s, trying REST", _coll_err)
-            import httpx as _httpx
-            from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
-            from src.config_weights import weights as _cw
-            _embed_dim = _cw.embedding.dimension
-            qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-            coll_name = collections.get_collection_name(effective_kb_id)
-            async with _httpx.AsyncClient() as _client:
-                resp = await _client.put(
-                    f"{qdrant_url}/collections/{coll_name}",
-                    json={
-                        "vectors": {
-                            _dense_name: {"size": _embed_dim, "distance": "Cosine"},
-                        },
-                        "sparse_vectors": {_sparse_name: {}},
-                    },
-                    timeout=30,
-                )
-                if resp.status_code in (200, 409):
-                    logger.info("Collection %s created via REST API", coll_name)
-                else:
-                    logger.error("Collection creation failed: %s", resp.text)
+    await _ensure_qdrant_collection(state, effective_kb_id)
 
     # Register KB in database if not exists
-    kb_registry = state.get("kb_registry")
-    if kb_registry:
-        try:
-            existing = await kb_registry.get_kb(effective_kb_id)
-            if not existing:
-                await kb_registry.create_kb({
-                    "id": effective_kb_id,
-                    "name": kb_name or effective_kb_id,
-                    "tier": tier or "global",
-                    "status": "active",
-                })
-        except Exception as e:
-            logger.warning("KB registry auto-create failed: %s", e)
+    await _auto_register_kb(state, effective_kb_id, kb_name, tier)
 
     # Sparse embedder for hybrid search (same pattern as ingest.py)
     from src.api.routes.ingest import _OnnxSparseEmbedder
@@ -423,15 +445,17 @@ async def upload_and_ingest(
 
     # Save uploads to disk before responding (UploadFile closes after response)
     import tempfile as _tmpmod
-    save_dir = _tmpmod.mkdtemp(prefix="ingest_")
+    save_dir = await asyncio.to_thread(_tmpmod.mkdtemp, prefix="ingest_")
     file_paths: list[tuple[str, str]] = []  # (original_name, saved_path)
     for uf in upload_files:
         fname = getattr(uf, "filename", None) or "uploaded_file"
         suffix = os.path.splitext(fname)[1]
-        tmp_fd, tmp_path = _tmpmod.mkstemp(suffix=suffix, dir=save_dir)
+        tmp_fd, tmp_path = await asyncio.to_thread(
+            _tmpmod.mkstemp, suffix=suffix, dir=save_dir,
+        )
         content = await uf.read()
-        os.write(tmp_fd, content)
-        os.close(tmp_fd)
+        await asyncio.to_thread(os.write, tmp_fd, content)
+        await asyncio.to_thread(os.close, tmp_fd)
         file_paths.append((fname, tmp_path))
 
     # Create job and process in background (keep reference to avoid GC)
@@ -502,7 +526,7 @@ def _attach_reingest_callbacks(task, job_id: str, kb_id: str, state) -> None:
 
     def _safe_finalize_callback(t: asyncio.Task) -> None:
         try:
-            finalize_task = asyncio.ensure_future(_finalize(t))
+            finalize_task = asyncio.create_task(_finalize(t))
             bg: set = state.setdefault("_background_tasks", set())
             bg.add(finalize_task)
             finalize_task.add_done_callback(bg.discard)

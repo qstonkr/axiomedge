@@ -325,72 +325,65 @@ else:
 # 유틸리티 함수 (메시지 렌더링 전에 정의)
 # ---------------------------------------------------------------------------
 
-def _render_answer_metadata(meta: dict, msg_id: str) -> None:
-    """답변 메타데이터 (티어 배지, 신뢰도, 투명성, 리랭킹 점수 등) 렌더링."""
-    # 소스 정보
-    sources = meta.get("sources", [])
-    if sources:
-        with st.expander(f"📚 소스 문서 ({len(sources)}건)", expanded=False):
-            for src in sources:
-                tier = src.get("tier", src.get("kb_tier", "-"))
-                tier_badge = f"{TIER_ICONS.get(tier, '')} {tier}"
+def _render_source_item(src: dict) -> None:
+    """Render a single source document item in the sources expander."""
+    tier = src.get("tier", src.get("kb_tier", "-"))
+    tier_badge = f"{TIER_ICONS.get(tier, '')} {tier}"
 
-                trust_score = src.get("trust_score", src.get("kts_score", 0))
-                conf_badge = get_confidence_badge(trust_score)
+    trust_score = src.get("trust_score", src.get("kts_score", 0))
+    conf_badge = get_confidence_badge(trust_score)
 
-                # TransparencyFormatter 레이블
-                transparency = src.get("transparency_label", src.get("source_type", "-"))
-                trans_icons = {"Document": "📄", "Inference": "🤖", "General": "💡"}
-                trans_badge = f"{trans_icons.get(transparency, '📄')} {transparency}"
+    transparency = src.get("transparency_label", src.get("source_type", "-"))
+    trans_icons = {"Document": "📄", "Inference": "🤖", "General": "💡"}
+    trans_badge = f"{trans_icons.get(transparency, '📄')} {transparency}"
 
-                title = src.get("title", src.get("document_title", "-"))
-                url = src.get("url", src.get("source_url", ""))
-                rerank_score = src.get("rerank_score", src.get("composite_score", 0))
+    title = src.get("title", src.get("document_title", "-"))
+    url = src.get("url", src.get("source_url", ""))
+    rerank_score = src.get("rerank_score", src.get("composite_score", 0))
 
-                st.markdown(f"**{title}**")
-                trust_detail = (
-                    conf_badge if trust_score == 0 else f"{conf_badge} ({trust_score:.2f})"
-                )
-                st.caption(
-                    f"{tier_badge} | 신뢰도: {trust_detail} | "
-                    f"{trans_badge} | Rerank: {rerank_score:.3f}"
-                )
+    st.markdown(f"**{title}**")
+    trust_detail = conf_badge if trust_score == 0 else f"{conf_badge} ({trust_score:.2f})"
+    st.caption(
+        f"{tier_badge} | 신뢰도: {trust_detail} | "
+        f"{trans_badge} | Rerank: {rerank_score:.3f}"
+    )
 
-                # 최신성 경고
-                is_stale = src.get("is_stale", False)
-                freshness_warning = src.get("freshness_warning", "")
-                days_since = src.get("days_since_update")
+    warning_parts = _build_freshness_warnings(src)
+    if warning_parts:
+        st.caption(" | ".join(warning_parts))
 
-                warning_parts: list[str] = []
-                if is_stale:
-                    warning_parts.append("⚠️ 오래된 문서")
-                if days_since is not None:
-                    warning_parts.append(f"📅 {days_since}일 전 업데이트")
-                elif src.get("updated_at"):
-                    warning_parts.append(f"📅 {src['updated_at']}")
-                if freshness_warning:
-                    warning_parts.append(freshness_warning)
+    if url:
+        st.markdown(f"[원본 보기]({url})")
+    st.markdown("---")
 
-                if warning_parts:
-                    st.caption(" | ".join(warning_parts))
 
-                if url:
-                    st.markdown(f"[원본 보기]({url})")
-                st.markdown("---")
+def _build_freshness_warnings(src: dict) -> list[str]:
+    """Build freshness warning parts for a source document."""
+    parts: list[str] = []
+    if src.get("is_stale", False):
+        parts.append("⚠️ 오래된 문서")
+    days_since = src.get("days_since_update")
+    if days_since is not None:
+        parts.append(f"📅 {days_since}일 전 업데이트")
+    elif src.get("updated_at"):
+        parts.append(f"📅 {src['updated_at']}")
+    freshness_warning = src.get("freshness_warning", "")
+    if freshness_warning:
+        parts.append(freshness_warning)
+    return parts
 
-    # ConfidenceLevel 배지
+
+def _render_meta_signals(meta: dict) -> None:
+    """Render confidence, rerank, expansion, and other signal badges."""
     confidence_level = meta.get("confidence_level", meta.get("confidence", ""))
     if confidence_level:
         level_badges = {
-            "HIGH": "🟢 HIGH",
-            "MEDIUM": "🟡 MEDIUM",
-            "LOW": "🟠 LOW",
-            "UNCERTAIN": "🔴 UNCERTAIN",
+            "HIGH": "🟢 HIGH", "MEDIUM": "🟡 MEDIUM",
+            "LOW": "🟠 LOW", "UNCERTAIN": "🔴 UNCERTAIN",
         }
         badge = level_badges.get(str(confidence_level).upper(), str(confidence_level))
         st.caption(f"답변 신뢰도: {badge}")
 
-    # Composite Reranking Score 분해
     rerank_breakdown = meta.get("rerank_breakdown", meta.get("composite_rerank", {}))
     if rerank_breakdown:
         with st.expander("📊 Composite Reranking 점수 분해", expanded=False):
@@ -405,28 +398,38 @@ def _render_answer_metadata(meta: dict, msg_id: str) -> None:
                 with cols[i]:
                     st.metric(label, f"{score:.3f}")
 
-    # Query Expansion 표시
     expanded_terms = meta.get("expanded_terms", meta.get("query_expansion", []))
     if expanded_terms:
         st.caption(f"🔍 쿼리 확장: {', '.join(expanded_terms)}")
 
-    # Working Memory Probe 히트
-    wm_hit = meta.get("working_memory_hit", meta.get("wm_probe_hit", False))
-    if wm_hit:
+    if meta.get("working_memory_hit", meta.get("wm_probe_hit", False)):
         st.caption("🧠 Working Memory Probe 히트")
 
-    # 쿼리 자동 교정 (P2)
     corrected_query = meta.get("corrected_query", "")
     original_query = meta.get("original_query", "")
     if corrected_query and original_query and corrected_query != original_query:
         st.caption(f"🔄 검색어 자동 교정: {original_query} → {corrected_query}")
 
-    # Disclaimer 경고문 (P1)
+
+def _render_conflict_expander(conflict) -> None:
+    """Render cross-KB conflict details in an expander."""
+    with st.expander("⚠️ KB 간 정보 충돌 감지", expanded=False):
+        if isinstance(conflict, dict):
+            for key, val in conflict.items():
+                st.markdown(f"- **{key}**: {val}")
+        elif isinstance(conflict, list):
+            for item in conflict:
+                st.markdown(f"- {item}")
+        else:
+            st.markdown(str(conflict))
+
+
+def _render_quality_signals(meta: dict) -> None:
+    """Render disclaimer, quality gate, cross-KB conflict, and CRAG signals."""
     disclaimer = meta.get("disclaimer", "")
     if disclaimer:
         st.warning(disclaimer)
 
-    # Quality Gate (P1)
     quality_gate = meta.get("quality_gate_passed")
     if quality_gate is not None:
         if quality_gate:
@@ -434,25 +437,26 @@ def _render_answer_metadata(meta: dict, msg_id: str) -> None:
         else:
             st.caption("⚠️ 답변 품질 검증 미통과 — 내용을 직접 확인하세요")
 
-    # Cross-KB Conflict (P1)
     conflict = meta.get("cross_kb_conflict")
     if conflict:
-        with st.expander("⚠️ KB 간 정보 충돌 감지", expanded=False):
-            if isinstance(conflict, dict):
-                for key, val in conflict.items():
-                    st.markdown(f"- **{key}**: {val}")
-            elif isinstance(conflict, list):
-                for item in conflict:
-                    st.markdown(f"- {item}")
-            else:
-                st.markdown(str(conflict))
+        _render_conflict_expander(conflict)
 
-    # CRAG 반복 횟수 (P2)
     crag_history = meta.get("crag_action_history", [])
     if crag_history:
         st.caption(f"🔁 CRAG 검증: {len(crag_history)}회 반복")
 
-    # 오류 신고 바로가기
+
+def _render_answer_metadata(meta: dict, msg_id: str) -> None:
+    """답변 메타데이터 (티어 배지, 신뢰도, 투명성, 리랭킹 점수 등) 렌더링."""
+    sources = meta.get("sources", [])
+    if sources:
+        with st.expander(f"📚 소스 문서 ({len(sources)}건)", expanded=False):
+            for src in sources:
+                _render_source_item(src)
+
+    _render_meta_signals(meta)
+    _render_quality_signals(meta)
+
     if msg_id:
         if st.button("🚨 오류 신고", key=f"error_report_{msg_id}", type="secondary"):
             st.session_state.show_error_report = msg_id

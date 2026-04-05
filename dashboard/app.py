@@ -13,6 +13,8 @@ import logging
 from dotenv import load_dotenv
 import streamlit as st
 
+_PAGE_CHAT = "pages/chat.py"
+
 load_dotenv()
 
 # =============================================================================
@@ -43,7 +45,7 @@ hide_default_nav()
 _app_logger = logging.getLogger(__name__)
 
 # No auth gate needed for local - render sidebar directly
-render_sidebar(user_role="admin")
+render_sidebar(_user_role="admin")
 
 
 # =============================================================================
@@ -76,7 +78,7 @@ with col_c:
         if st.button("🔍 검색", type="primary", use_container_width=True):
             if query:
                 st.session_state.pending_query = query
-                st.switch_page("pages/chat.py")
+                st.switch_page(_PAGE_CHAT)
             else:
                 st.warning("검색어를 입력해주세요.")
     with btn_col2:
@@ -93,7 +95,7 @@ for i, sq in enumerate(suggested_queries):
     with sq_cols[i]:
         if st.button(sq, key=f"sq_{i}", use_container_width=True):
             st.session_state.pending_query = sq
-            st.switch_page("pages/chat.py")
+            st.switch_page(_PAGE_CHAT)
 
 st.markdown("---")
 
@@ -145,7 +147,7 @@ for col, grp in [(card_col1, _hbu_group), (card_col2, _pbu_group)]:
                     st.session_state.search_group_name = gd.get("name")
                     st.session_state.search_kb_ids = gd.get("kb_ids", [])
                     st.session_state["_active_group_name"] = gd.get("name")
-                st.switch_page("pages/chat.py")
+                st.switch_page(_PAGE_CHAT)
 
 st.markdown("---")
 

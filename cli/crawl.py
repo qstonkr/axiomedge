@@ -44,6 +44,53 @@ def _save_crawl_state(output_dir: Path, state: dict[str, str]) -> None:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
+_TEXT_EXTENSIONS = {".txt", ".md", ".json", ".yaml", ".yml"}
+
+
+def _read_text_content(path: Path) -> str:
+    """Read text content from a file, trying UTF-8 then EUC-KR."""
+    if path.suffix.lower() not in _TEXT_EXTENSIONS:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            return path.read_text(encoding="euc-kr")
+        except Exception:
+            return f"[Binary file: {path.name}]"
+
+
+def _build_doc(path: Path, source: Path, content_hash: str) -> dict:
+    """Build a crawl result document dict for a single file."""
+    rel_path = str(path.relative_to(source))
+    stat = path.stat()
+    return {
+        "doc_id": content_hash[:16],
+        "title": path.name,
+        "content": _read_text_content(path),
+        "source_uri": str(path.absolute()),
+        "author": "",
+        "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        "content_hash": content_hash,
+        "metadata": {
+            "file_name": path.name,
+            "file_size": stat.st_size,
+            "file_extension": path.suffix.lower(),
+            "relative_path": rel_path,
+            "crawl_source": "local_filesystem",
+        },
+    }
+
+
+def _log_deleted_files(full: bool, prev_state: dict, new_state: dict) -> None:
+    """Log files that were deleted since last crawl."""
+    if full or not prev_state:
+        return
+    deleted = set(prev_state.keys()) - set(new_state.keys())
+    if deleted:
+        logger.info("Detected %d deleted files: %s", len(deleted), list(deleted)[:5])
+
+
 def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
     """Crawl files from source directory and write crawl results.
 
@@ -58,7 +105,6 @@ def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
         logger.error("Source directory not found: %s", source_dir)
         return
 
-    # Load previous state for incremental detection
     prev_state = {} if full else _load_crawl_state(output)
     new_state: dict[str, str] = {}
 
@@ -71,45 +117,14 @@ def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
             continue
 
         rel_path = str(path.relative_to(source))
-        stat = path.stat()
         content_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-
-        # Track state for next run
         new_state[rel_path] = content_hash
 
-        # Incremental: skip if hash unchanged
         if not full and prev_state.get(rel_path) == content_hash:
             skipped += 1
             continue
 
-        # For text files, read content directly
-        content = ""
-        if path.suffix.lower() in {".txt", ".md", ".json", ".yaml", ".yml"}:
-            try:
-                content = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                try:
-                    content = path.read_text(encoding="euc-kr")
-                except Exception:
-                    content = f"[Binary file: {path.name}]"
-
-        doc = {
-            "doc_id": content_hash[:16],
-            "title": path.name,
-            "content": content,
-            "source_uri": str(path.absolute()),
-            "author": "",
-            "updated_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-            "content_hash": content_hash,
-            "metadata": {
-                "file_name": path.name,
-                "file_size": stat.st_size,
-                "file_extension": path.suffix.lower(),
-                "relative_path": rel_path,
-                "crawl_source": "local_filesystem",
-            },
-        }
-        results.append(doc)
+        results.append(_build_doc(path, source, content_hash))
 
     # Write as JSONL
     output_file = output / "crawl_results.jsonl"
@@ -117,7 +132,6 @@ def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
         for doc in results:
             f.write(json.dumps(doc, ensure_ascii=False) + "\n")
 
-    # Save state for next incremental run
     _save_crawl_state(output, new_state)
 
     mode = "FULL" if full else "INCREMENTAL"
@@ -126,11 +140,7 @@ def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
         mode, len(results), skipped, source_dir, output_file,
     )
 
-    # Also detect deleted files
-    if not full and prev_state:
-        deleted = set(prev_state.keys()) - set(new_state.keys())
-        if deleted:
-            logger.info("Detected %d deleted files: %s", len(deleted), list(deleted)[:5])
+    _log_deleted_files(full, prev_state, new_state)
 
 
 def main():

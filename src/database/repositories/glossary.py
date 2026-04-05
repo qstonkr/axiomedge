@@ -39,6 +39,36 @@ class GlossaryRepository(BaseRepository):
             )
         return None
 
+    @staticmethod
+    def _json_list_fields() -> tuple[str, ...]:
+        return ("synonyms", "abbreviations", "related_terms", "source_kb_ids")
+
+    @classmethod
+    def _update_existing_term(
+        cls, existing: GlossaryTermModel, term_data: dict[str, Any], now: datetime,
+    ) -> None:
+        """Apply term_data fields to an existing model instance."""
+        for key, value in term_data.items():
+            if key in cls._json_list_fields():
+                setattr(existing, key, json.dumps(value if isinstance(value, list) else []))
+            elif hasattr(existing, key):
+                setattr(existing, key, value)
+        existing.updated_at = now
+
+    @classmethod
+    def _build_new_term(
+        cls, term_data: dict[str, Any], now: datetime,
+    ) -> GlossaryTermModel:
+        """Create a new GlossaryTermModel from term_data."""
+        model_data = dict(term_data)
+        for field in cls._json_list_fields():
+            if field in model_data:
+                val = model_data[field]
+                model_data[field] = json.dumps(val if isinstance(val, list) else [])
+        model_data.setdefault("created_at", now)
+        model_data.setdefault("updated_at", now)
+        return GlossaryTermModel(**model_data)
+
     async def save(self, term_data: dict[str, Any]) -> None:
         """Save a term (upsert by kb_id + term, case-insensitive)."""
         async with await self._get_session() as session:
@@ -55,22 +85,9 @@ class GlossaryRepository(BaseRepository):
                 now = _utc_now()
 
                 if existing:
-                    for key, value in term_data.items():
-                        if key in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
-                            setattr(existing, key, json.dumps(value if isinstance(value, list) else []))
-                        elif hasattr(existing, key):
-                            setattr(existing, key, value)
-                    existing.updated_at = now
+                    self._update_existing_term(existing, term_data, now)
                 else:
-                    model_data = dict(term_data)
-                    for field in ("synonyms", "abbreviations", "related_terms", "source_kb_ids"):
-                        if field in model_data:
-                            val = model_data[field]
-                            model_data[field] = json.dumps(val if isinstance(val, list) else [])
-                    model_data.setdefault("created_at", now)
-                    model_data.setdefault("updated_at", now)
-                    model = GlossaryTermModel(**model_data)
-                    session.add(model)
+                    session.add(self._build_new_term(term_data, now))
 
                 await session.commit()
             except SQLAlchemyError as e:

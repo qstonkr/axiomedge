@@ -70,12 +70,43 @@ def update_payload(client: httpx.Client, collection: str, point_id: str, new_con
     return True
 
 
+def _log_dry_run_sample(cleaned_count: int, doc_name: str, content: str, new_content: str):
+    """Log a dry-run sample if within the first 5 cleaned chunks."""
+    if cleaned_count > 5:
+        return
+    reduction = len(content) - len(new_content)
+    logger.info(f"[DRY] {doc_name[:30]} | -{reduction} chars")
+    logger.info(f"  BEFORE: {content[:100]}")
+    logger.info(f"  AFTER:  {new_content[:100]}")
+
+
+def _process_chunk(
+    client: httpx.Client, collection: str, point: dict, dry_run: bool, cleaned_count: int
+) -> tuple[bool, bool]:
+    """Process a single chunk. Returns (was_cleaned, had_error)."""
+    content = point.get("payload", {}).get("content", "")
+    if not content:
+        return False, False
+
+    new_content = clean_chunk_text(content)
+    if new_content == content:
+        return False, False
+
+    doc_name = point.get("payload", {}).get("document_name", "")
+    if dry_run:
+        _log_dry_run_sample(cleaned_count + 1, doc_name, content, new_content)
+        return True, False
+
+    pid = str(point["id"])
+    had_error = not update_payload(client, collection, pid, new_content)
+    return True, had_error
+
+
 def process_kb(kb_id: str, dry_run: bool = False):
     """Process all chunks in a KB."""
     collection = get_collection_name(kb_id)
     client = httpx.Client(timeout=30.0)
 
-    # Check collection exists
     resp = client.get(f"{QDRANT_URL}/collections/{collection}")
     if resp.status_code != 200:
         logger.warning(f"Collection {collection} not found, skipping")
@@ -89,28 +120,11 @@ def process_kb(kb_id: str, dry_run: bool = False):
 
     for point in scroll_all_points(client, collection):
         total += 1
-        pid = str(point["id"])
-        content = point.get("payload", {}).get("content", "")
-        doc_name = point.get("payload", {}).get("document_name", "")
-
-        if not content:
-            continue
-
-        # Apply cleaning
-        new_content = clean_chunk_text(content)
-
-        if new_content != content:
+        was_cleaned, had_error = _process_chunk(client, collection, point, dry_run, cleaned)
+        if was_cleaned:
             cleaned += 1
-            reduction = len(content) - len(new_content)
-
-            if dry_run:
-                if cleaned <= 5:  # Show first 5 examples
-                    logger.info(f"[DRY] {doc_name[:30]} | -{reduction} chars")
-                    logger.info(f"  BEFORE: {content[:100]}")
-                    logger.info(f"  AFTER:  {new_content[:100]}")
-            else:
-                if not update_payload(client, collection, pid, new_content):
-                    errors += 1
+        if had_error:
+            errors += 1
 
         if total % 500 == 0:
             logger.info(f"  ... {total} chunks processed, {cleaned} cleaned")

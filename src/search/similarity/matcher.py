@@ -69,6 +69,69 @@ class EnhancedSimilarityMatcher:
     # Initialization
     # =========================================================================
 
+    def _register_l1_lookups(
+        self, t: Any, normalized: str, normalized_ko: str,
+    ) -> int:
+        """Register L1 exact/synonym lookups for a term. Returns collision count."""
+        collisions = 0
+        if normalized:
+            self._normalized_lookup[normalized] = t
+        if normalized_ko:
+            self._normalized_lookup.setdefault(normalized_ko, t)
+
+        if not self._config.enable_synonym_expansion:
+            return collisions
+
+        alias_sources = [
+            *getattr(t, 'synonyms', []),
+            *getattr(t, 'abbreviations', []),
+        ]
+        pm = getattr(t, 'physical_meaning', None)
+        if pm:
+            alias_sources.append(pm)
+
+        for alias in alias_sources:
+            alias_norm = TermNormalizer.normalize_for_comparison(alias)
+            if alias_norm:
+                if alias_norm in self._normalized_lookup:
+                    collisions += 1
+                else:
+                    self._normalized_lookup[alias_norm] = t
+
+        return collisions
+
+    def _register_term_for_l2(
+        self, t: Any, normalized: str, normalized_ko: str, term_idx: int,
+    ) -> None:
+        """Register a TERM-type entry for L2 similarity matching."""
+        ngrams = self._scorer._ngrams(normalized)
+        ngrams_ko = self._scorer._ngrams(normalized_ko) if normalized_ko else set()
+
+        match_text = t.term
+        if t.term_ko:
+            match_text += " " + t.term_ko
+
+        self._precomputed.append(_PrecomputedStd(
+            term=t,
+            normalized=normalized,
+            normalized_ko=normalized_ko,
+            ngrams=ngrams,
+            ngrams_ko=ngrams_ko,
+            match_text=match_text,
+        ))
+
+        for ng in ngrams | ngrams_ko:
+            if ng not in self._ngram_index:
+                self._ngram_index[ng] = []
+            self._ngram_index[ng].append(term_idx)
+
+        if self._config.enable_rapidfuzz:
+            self._rf_choices.append(normalized)
+            self._rf_idx_map.append(term_idx)
+            if normalized_ko:
+                self._rf_choices.append(normalized_ko)
+                self._rf_idx_map.append(term_idx)
+
     def load_standard_terms(
         self,
         terms: list[Any],
@@ -96,7 +159,7 @@ class EnhancedSimilarityMatcher:
 
         collision_count = 0
         word_count = 0
-        term_idx = 0  # precomputed index (TERM 타입만)
+        term_idx = 0
 
         for t in terms:
             normalized = TermNormalizer.normalize_for_comparison(t.term)
@@ -104,85 +167,22 @@ class EnhancedSimilarityMatcher:
             if t.term_ko:
                 normalized_ko = TermNormalizer.normalize_for_comparison(t.term_ko)
 
-            # Determine if WORD type
             if get_term_type is not None:
                 is_word = get_term_type(t) == "WORD"
             else:
                 is_word = getattr(t, 'term_type', None) == "WORD"
 
-            # L1: 기본 lookup (양쪽 모두)
-            if normalized:
-                self._normalized_lookup[normalized] = t
-            if normalized_ko:
-                self._normalized_lookup.setdefault(normalized_ko, t)
-
-            # L1 확장: synonyms, abbreviations, physical_meaning
-            if self._config.enable_synonym_expansion:
-                for syn in getattr(t, 'synonyms', []):
-                    syn_norm = TermNormalizer.normalize_for_comparison(syn)
-                    if syn_norm:
-                        if syn_norm in self._normalized_lookup:
-                            collision_count += 1
-                        else:
-                            self._normalized_lookup[syn_norm] = t
-
-                for abbr in getattr(t, 'abbreviations', []):
-                    abbr_norm = TermNormalizer.normalize_for_comparison(abbr)
-                    if abbr_norm:
-                        if abbr_norm in self._normalized_lookup:
-                            collision_count += 1
-                        else:
-                            self._normalized_lookup[abbr_norm] = t
-
-                pm = getattr(t, 'physical_meaning', None)
-                if pm:
-                    pm_norm = TermNormalizer.normalize_for_comparison(pm)
-                    if pm_norm:
-                        if pm_norm in self._normalized_lookup:
-                            collision_count += 1
-                        else:
-                            self._normalized_lookup[pm_norm] = t
+            collision_count += self._register_l1_lookups(t, normalized, normalized_ko)
 
             if is_word:
-                # WORD: _word_lookup에만 추가 (L1.5 morpheme용)
                 word_count += 1
                 if normalized:
                     self._word_lookup[normalized] = t
                 if normalized_ko:
                     self._word_lookup.setdefault(normalized_ko, t)
-                continue  # WORD는 L2 precomputed/ngram/rf에 추가하지 않음
+                continue
 
-            # TERM: L2 유사도 매칭용 사전 계산
-            ngrams = self._scorer._ngrams(normalized)
-            ngrams_ko = self._scorer._ngrams(normalized_ko) if normalized_ko else set()
-
-            match_text = t.term
-            if t.term_ko:
-                match_text += " " + t.term_ko
-
-            self._precomputed.append(_PrecomputedStd(
-                term=t,
-                normalized=normalized,
-                normalized_ko=normalized_ko,
-                ngrams=ngrams,
-                ngrams_ko=ngrams_ko,
-                match_text=match_text,
-            ))
-
-            # L2 Sparse: n-gram 역색인
-            for ng in ngrams | ngrams_ko:
-                if ng not in self._ngram_index:
-                    self._ngram_index[ng] = []
-                self._ngram_index[ng].append(term_idx)
-
-            # L2 Edit: RapidFuzz 리스트
-            if self._config.enable_rapidfuzz:
-                self._rf_choices.append(normalized)
-                self._rf_idx_map.append(term_idx)
-                if normalized_ko:
-                    self._rf_choices.append(normalized_ko)
-                    self._rf_idx_map.append(term_idx)
-
+            self._register_term_for_l2(t, normalized, normalized_ko, term_idx)
             term_idx += 1
 
         self._loaded = True
@@ -567,114 +567,105 @@ class EnhancedSimilarityMatcher:
         """
         return await self._match_single(term)
 
-    async def _match_single(
+    @staticmethod
+    def _merge_channel_results(
+        primary: list[tuple[int, float]],
+        secondary: list[tuple[int, float]],
+        top_k: int = 50,
+    ) -> list[tuple[int, float]]:
+        """Merge two channel result lists, keeping max score per index."""
+        merged: dict[int, float] = {}
+        for idx, score in primary + secondary:
+            if idx not in merged or score > merged[idx]:
+                merged[idx] = score
+        return sorted(merged.items(), key=lambda x: x[1], reverse=True)[:top_k]
+
+    def _l2_retrieve_all_channels(
         self,
         term: Any,
-        ce_top_k: int = 50,
-        dense_override: list[tuple[int, float]] | None = None,
-    ) -> MatchDecision:
-        """내부 매칭 구현 (배치 최적화 파라미터 지원).
-
-        Args:
-            term: 매칭 대상 용어 (.term, .term_ko, .definition 속성 필요)
-            ce_top_k: Cross-Encoder에 보낼 후보 수 (graceful degradation)
-            dense_override: 배치에서 사전 계산된 dense 결과 (배치 최적화)
-        """
-        if not self._loaded or not self._normalized_lookup:
-            return MatchDecision(zone="NEW_TERM")
-
-        # --- L1: Exact Match ---
-        for candidate_str in [term.term, getattr(term, 'term_ko', None)]:
-            if not candidate_str:
-                continue
-            l1 = self._l1_exact_match(candidate_str)
-            if l1 is not None:
-                return l1
-
-        # --- L1.5: Morpheme Decomposition (enrichment, no early exit) ---
-        morpheme_info = self._l1_5_morpheme_decompose(term)
-
-        # --- L2: Multi-Channel Retrieval ---
-        query_text = term.term
+        dense_override: list[tuple[int, float]] | None,
+    ) -> tuple[list[tuple[int, float]], list[tuple[int, float]], list[tuple[int, float]], str]:
+        """Run all L2 retrieval channels. Returns (edit, sparse, dense, query_text)."""
         term_ko = getattr(term, 'term_ko', None)
-        if term_ko:
-            query_text += " " + term_ko
+        query_text = term.term + (" " + term_ko if term_ko else "")
 
-        # S_edit (RapidFuzz)
         edit_results = self._l2_rapidfuzz(term.term)
         if term_ko:
-            edit_ko = self._l2_rapidfuzz(term_ko)
-            merged: dict[int, float] = {}
-            for idx, score in edit_results + edit_ko:
-                if idx not in merged or score > merged[idx]:
-                    merged[idx] = score
-            edit_results = sorted(merged.items(), key=lambda x: x[1], reverse=True)[:50]
+            edit_results = self._merge_channel_results(edit_results, self._l2_rapidfuzz(term_ko))
 
-        # S_sparse (n-gram Jaccard)
         sparse_results = self._l2_sparse(term.term)
         if term_ko:
-            sparse_ko = self._l2_sparse(term_ko)
-            merged_sp: dict[int, float] = {}
-            for idx, score in sparse_results + sparse_ko:
-                if idx not in merged_sp or score > merged_sp[idx]:
-                    merged_sp[idx] = score
-            sparse_results = sorted(merged_sp.items(), key=lambda x: x[1], reverse=True)[:50]
+            sparse_results = self._merge_channel_results(
+                sparse_results, self._l2_sparse(term_ko),
+            )
 
-        # S_dense (BGE-M3 ONNX) -- config flag 기반
         dense_results: list[tuple[int, float]] = []
         if dense_override is not None:
             dense_results = dense_override
         elif self._config.enable_dense_search and self._dense_index is not None:
             dense_results = self._dense_index.search(query_text, top_k=50)
 
-        # RRF Fusion
-        fused = self._l2_fuse(edit_results, sparse_results, dense_results, top_k=50)
+        return edit_results, sparse_results, dense_results, query_text
 
-        if not fused:
-            return MatchDecision(zone="NEW_TERM", matched_morphemes=morpheme_info)
+    async def _l3_rerank_fused(
+        self,
+        term: Any,
+        fused: list[tuple[int, float]],
+        edit_results: list[tuple[int, float]],
+        sparse_results: list[tuple[int, float]],
+        dense_results: list[tuple[int, float]],
+        morpheme_info: list[tuple[str, Any]],
+        ce_top_k: int,
+    ) -> MatchDecision | None:
+        """Try L3 cross-encoder reranking. Returns None if unavailable."""
+        if not (self._config.enable_cross_encoder and not self._force_disable_ce):
+            return None
 
-        # --- L3: Cross-Encoder Rerank (config flag + graceful degradation) ---
-        use_ce = self._config.enable_cross_encoder and not self._force_disable_ce
-        if use_ce:
-            ce_query = term.term
-            if term_ko:
-                ce_query += " " + term_ko
-            definition = getattr(term, 'definition', None)
-            if definition:
-                ce_query += " " + definition[:100]
+        term_ko = getattr(term, 'term_ko', None)
+        ce_query = term.term
+        if term_ko:
+            ce_query += " " + term_ko
+        definition = getattr(term, 'definition', None)
+        if definition:
+            ce_query += " " + definition[:100]
 
-            ce_indices = [idx for idx, _ in fused[:ce_top_k]]
-            ce_results = await self._l3_cross_encoder_batch(ce_query, ce_indices, top_k=10)
+        ce_indices = [idx for idx, _ in fused[:ce_top_k]]
+        ce_results = await self._l3_cross_encoder_batch(ce_query, ce_indices, top_k=10)
+        if not ce_results:
+            return None
 
-            if ce_results:
-                best_idx, best_score = ce_results[0]
-                pc = self._precomputed[best_idx]
-                zone = self._decide_zone(best_score)
+        best_idx, best_score = ce_results[0]
+        pc = self._precomputed[best_idx]
+        zone = self._decide_zone(best_score)
 
-                ch_scores = self._collect_channel_scores(
-                    best_idx, edit_results, sparse_results, dense_results
-                )
-                ch_scores["cross_encoder"] = best_score
+        ch_scores = self._collect_channel_scores(best_idx, edit_results, sparse_results, dense_results)
+        ch_scores["cross_encoder"] = best_score
 
-                return MatchDecision(
-                    zone=zone,
-                    matched_term=pc.term if zone != "NEW_TERM" else None,
-                    score=best_score,
-                    match_type="cross_encoder",
-                    channel_scores=ch_scores,
-                    matched_morphemes=morpheme_info,
-                )
+        return MatchDecision(
+            zone=zone,
+            matched_term=pc.term if zone != "NEW_TERM" else None,
+            score=best_score,
+            match_type="cross_encoder",
+            channel_scores=ch_scores,
+            matched_morphemes=morpheme_info,
+        )
 
-        # L3 비활성 또는 실패 시: RRF 점수 기반 판정
+    def _decide_zone_from_rrf(
+        self,
+        term: Any,
+        fused: list[tuple[int, float]],
+        edit_results: list[tuple[int, float]],
+        sparse_results: list[tuple[int, float]],
+        dense_results: list[tuple[int, float]],
+        morpheme_info: list[tuple[str, Any]],
+    ) -> MatchDecision:
+        """Fallback zone decision from RRF scores (no cross-encoder)."""
         best_idx, _best_rrf = fused[0]
         pc = self._precomputed[best_idx]
 
-        ch_scores = self._collect_channel_scores(
-            best_idx, edit_results, sparse_results, dense_results
-        )
+        ch_scores = self._collect_channel_scores(best_idx, edit_results, sparse_results, dense_results)
         max_channel_score = max(ch_scores.values()) if ch_scores else 0.0
 
-        # Cross-Encoder 없이는 보수적 판정 — SSOT: config_weights.SimilarityThresholds
         if max_channel_score >= _w.similarity.fallback_auto_match:
             zone = "AUTO_MATCH"
         elif max_channel_score >= _w.similarity.fallback_review:
@@ -682,8 +673,7 @@ class EnhancedSimilarityMatcher:
         else:
             zone = "NEW_TERM"
 
-        # 길이 비율 가드: 짧은 표준 용어가 긴 PENDING에 AUTO_MATCH되는 것 방지
-        # RapidFuzz 페널티를 우회하는 채널(Jaccard/Dense)에서 나온 경우도 차단
+        # Length ratio guard
         if zone == "AUTO_MATCH":
             pending_text = term.term or ""
             std_ko = getattr(pc.term, 'term_ko', '') or ""
@@ -699,6 +689,48 @@ class EnhancedSimilarityMatcher:
             match_type="rrf_fusion",
             channel_scores=ch_scores,
             matched_morphemes=morpheme_info,
+        )
+
+    async def _match_single(
+        self,
+        term: Any,
+        ce_top_k: int = 50,
+        dense_override: list[tuple[int, float]] | None = None,
+    ) -> MatchDecision:
+        """내부 매칭 구현 (배치 최적화 파라미터 지원)."""
+        if not self._loaded or not self._normalized_lookup:
+            return MatchDecision(zone="NEW_TERM")
+
+        # L1: Exact Match
+        for candidate_str in [term.term, getattr(term, 'term_ko', None)]:
+            if not candidate_str:
+                continue
+            l1 = self._l1_exact_match(candidate_str)
+            if l1 is not None:
+                return l1
+
+        # L1.5: Morpheme Decomposition (enrichment, no early exit)
+        morpheme_info = self._l1_5_morpheme_decompose(term)
+
+        # L2: Multi-Channel Retrieval + RRF Fusion
+        edit_results, sparse_results, dense_results, _ = self._l2_retrieve_all_channels(
+            term, dense_override,
+        )
+        fused = self._l2_fuse(edit_results, sparse_results, dense_results, top_k=50)
+
+        if not fused:
+            return MatchDecision(zone="NEW_TERM", matched_morphemes=morpheme_info)
+
+        # L3: Cross-Encoder Rerank
+        l3_result = await self._l3_rerank_fused(
+            term, fused, edit_results, sparse_results, dense_results, morpheme_info, ce_top_k,
+        )
+        if l3_result is not None:
+            return l3_result
+
+        # Fallback: RRF score-based decision
+        return self._decide_zone_from_rrf(
+            term, fused, edit_results, sparse_results, dense_results, morpheme_info,
         )
 
     @staticmethod
@@ -724,49 +756,38 @@ class EnhancedSimilarityMatcher:
                 break
         return ch
 
-    async def match_batch(
-        self, terms: list[Any], *, disable_cross_encoder: bool = False,
-    ) -> list[MatchDecision]:
-        """배치 매칭 (PENDING 전체).
-
-        Graceful Degradation (설계서 4.3.2):
-        - PENDING <= 3,000건: 전체 파이프라인 (L1->L2->L3)
-        - 3,000 < PENDING <= 10,000건: L3 Cross-Encoder Top-K를 10으로 축소
-        - PENDING > 10,000건: L3 비활성, L2 RRF 점수로 직접 판정
-
-        Args:
-            terms: 매칭할 용어 리스트 (.term, .term_ko 속성 필요)
-            disable_cross_encoder: True이면 L3 Cross-Encoder를 강제 비활성화
-        """
-        # 외부에서 CE 비활성화 요청 시 즉시 적용
+    def _resolve_ce_config(
+        self, terms: list[Any], disable_cross_encoder: bool,
+    ) -> int:
+        """Determine cross-encoder top-k based on batch size (graceful degradation)."""
         if disable_cross_encoder:
             self._force_disable_ce = True
-            ce_top_k = 0
-        else:
-            # Graceful degradation 설정
-            pending_count = len(terms)
-            ce_top_k = 50
+            return 0
 
-            if pending_count > _w.similarity.reduced_ce_max_terms:
-                logger.warning(
-                    "Large batch (%d), disabling Cross-Encoder for timeout protection",
-                    pending_count,
-                )
-                self._force_disable_ce = True
-            elif pending_count > _w.similarity.full_pipeline_max_terms:
-                logger.info(
-                    "Medium batch (%d), reducing Cross-Encoder Top-K to 10",
-                    pending_count,
-                )
-                ce_top_k = 10
-                self._force_disable_ce = False
-            else:
-                self._force_disable_ce = False
+        pending_count = len(terms)
+        if pending_count > _w.similarity.reduced_ce_max_terms:
+            logger.warning(
+                "Large batch (%d), disabling Cross-Encoder for timeout protection",
+                pending_count,
+            )
+            self._force_disable_ce = True
+            return 0
 
-        # Dense 배치 최적화 (설계서 4.3.1)
-        dense_batch_results: dict[int, list[tuple[int, float]]] | None = None
+        if pending_count > _w.similarity.full_pipeline_max_terms:
+            logger.info(
+                "Medium batch (%d), reducing Cross-Encoder Top-K to 10",
+                pending_count,
+            )
+            self._force_disable_ce = False
+            return 10
 
-        # L1 미매칭 PENDING 수집 (dense용)
+        self._force_disable_ce = False
+        return 50
+
+    def _collect_l1_unmatched(
+        self, terms: list[Any],
+    ) -> tuple[list[int], list[str]]:
+        """Collect indices and query texts for terms not matched by L1."""
         l1_unmatched_indices: list[int] = []
         l1_unmatched_texts: list[str] = []
         for i, term in enumerate(terms):
@@ -783,33 +804,127 @@ class EnhancedSimilarityMatcher:
                     query += " " + term_ko
                 l1_unmatched_indices.append(i)
                 l1_unmatched_texts.append(query)
+        return l1_unmatched_indices, l1_unmatched_texts
 
-        if self._config.enable_dense_search and l1_unmatched_texts:
-            if self._dense_index is not None:
-                # 기존 방식: 사전 구축된 full dense index 사용
-                batch_dense = self._dense_index.search_batch(
-                    l1_unmatched_texts, top_k=50
-                )
-                dense_batch_results = {}
-                for j, idx in enumerate(l1_unmatched_indices):
-                    dense_batch_results[idx] = batch_dense[j]
+    def _prepare_dense_batch(
+        self,
+        terms: list[Any],
+        l1_unmatched_indices: list[int],
+        l1_unmatched_texts: list[str],
+    ) -> dict[int, list[tuple[int, float]]] | None:
+        """Pre-compute dense results for L1-unmatched terms."""
+        if not self._config.enable_dense_search or not l1_unmatched_texts:
+            return None
 
-            elif self._embedding_adapter is not None:
-                # On-demand mini dense: edit/sparse 후보만 임베딩
-                dense_batch_results = self._build_mini_dense(
-                    terms, l1_unmatched_indices, l1_unmatched_texts,
-                )
+        if self._dense_index is not None:
+            batch_dense = self._dense_index.search_batch(l1_unmatched_texts, top_k=50)
+            return {idx: batch_dense[j] for j, idx in enumerate(l1_unmatched_indices)}
+
+        if self._embedding_adapter is not None:
+            return self._build_mini_dense(terms, l1_unmatched_indices, l1_unmatched_texts)
+
+        return None
+
+    async def match_batch(
+        self, terms: list[Any], *, disable_cross_encoder: bool = False,
+    ) -> list[MatchDecision]:
+        """배치 매칭 (PENDING 전체).
+
+        Graceful Degradation (설계서 4.3.2):
+        - PENDING <= 3,000건: 전체 파이프라인 (L1->L2->L3)
+        - 3,000 < PENDING <= 10,000건: L3 Cross-Encoder Top-K를 10으로 축소
+        - PENDING > 10,000건: L3 비활성, L2 RRF 점수로 직접 판정
+        """
+        ce_top_k = self._resolve_ce_config(terms, disable_cross_encoder)
+        l1_unmatched_indices, l1_unmatched_texts = self._collect_l1_unmatched(terms)
+        dense_batch_results = self._prepare_dense_batch(
+            terms, l1_unmatched_indices, l1_unmatched_texts,
+        )
 
         results: list[MatchDecision] = []
         for i, term in enumerate(terms):
-            # 배치 dense 결과 주입
             override_dense = dense_batch_results.get(i) if dense_batch_results else None
             decision = await self._match_single(term, ce_top_k=ce_top_k, dense_override=override_dense)
             results.append(decision)
 
-        # cleanup
         self._force_disable_ce = False
         return results
+
+    def _rapidfuzz_candidates(
+        self, search_str: str, rf_process: Any, fuzz: Any,
+    ) -> list[int]:
+        """Get candidate indices via RapidFuzz edit-distance search."""
+        if not self._config.enable_rapidfuzz or not self._rf_choices:
+            return []
+        normalized = TermNormalizer.normalize_for_comparison(search_str)
+        if not normalized:
+            return []
+        try:
+            results = rf_process.extract(
+                normalized, self._rf_choices,
+                scorer=fuzz.WRatio, score_cutoff=60, limit=10,
+            )
+            return [self._rf_idx_map[choice_idx] for _, _, choice_idx in results]
+        except Exception as e:
+            logger.debug("RapidFuzz extraction failed: %s", e)
+            return []
+
+    def _collect_mini_dense_candidates(
+        self, terms: list[Any], l1_unmatched_indices: list[int],
+    ) -> set[int]:
+        """Collect candidate standard term indices from edit/sparse channels."""
+        try:
+            from rapidfuzz import fuzz, process as rf_process
+        except ImportError:
+            return set()
+
+        all_candidate_indices: set[int] = set()
+        for i in l1_unmatched_indices:
+            term = terms[i]
+            for search_str in [term.term, getattr(term, 'term_ko', None)]:
+                if not search_str:
+                    continue
+                all_candidate_indices.update(
+                    self._rapidfuzz_candidates(search_str, rf_process, fuzz),
+                )
+                for idx, _ in self._l2_sparse(search_str, top_k=10):
+                    all_candidate_indices.add(idx)
+        return all_candidate_indices
+
+    def _build_and_search_mini_index(
+        self,
+        candidate_list: list[int],
+        l1_unmatched_indices: list[int],
+        l1_unmatched_texts: list[str],
+    ) -> dict[int, list[tuple[int, float]]] | None:
+        """Build mini dense index from candidates and search pending terms."""
+        from src.search.dense_term_index import DenseTermIndex
+
+        mini_pcs = [self._precomputed[idx] for idx in candidate_list]
+        mini_index = DenseTermIndex(self._embedding_adapter)
+        mini_index.build(mini_pcs, batch_size=50)
+
+        if not mini_index.is_ready:
+            logger.warning("Mini dense index build failed (not ready)")
+            return None
+
+        batch_results = mini_index.search_batch(
+            l1_unmatched_texts, top_k=50, batch_size=50,
+        )
+
+        dense_batch_results: dict[int, list[tuple[int, float]]] = {}
+        for j, orig_term_idx in enumerate(l1_unmatched_indices):
+            remapped = [
+                (candidate_list[mini_idx], score)
+                for mini_idx, score in batch_results[j]
+            ]
+            dense_batch_results[orig_term_idx] = remapped
+
+        logger.info(
+            "Mini dense search complete: %d pending terms, %d candidate terms",
+            len(l1_unmatched_texts), len(candidate_list),
+        )
+        return dense_batch_results
 
     def _build_mini_dense(
         self,
@@ -817,89 +932,24 @@ class EnhancedSimilarityMatcher:
         l1_unmatched_indices: list[int],
         l1_unmatched_texts: list[str],
     ) -> dict[int, list[tuple[int, float]]] | None:
-        """On-demand mini dense: edit/sparse 후보 standard terms만 임베딩.
-
-        54K 전체 표준 용어를 임베딩하는 대신,
-        edit/sparse 채널에서 이미 찾은 후보 (~500-2000개)만 mini index로 구축.
-        50 pending x (edit top-50 + sparse top-50) 후보 -> 중복 제거 -> 1000-3000개.
-        batch_size=50 기준 20-60 배치 = 수초 내 완료.
-        """
+        """On-demand mini dense: edit/sparse 후보 standard terms만 임베딩."""
         if not self._embedding_adapter:
             return None
 
-        try:
-            from rapidfuzz import fuzz, process as rf_process
-        except ImportError:
-            return None
-
-        # Phase 1: L1-unmatched 용어의 edit/sparse 후보 indices 수집
-        all_candidate_indices: set[int] = set()
-        for i in l1_unmatched_indices:
-            term = terms[i]
-            # Quick edit candidate collection (top-10 per term for speed)
-            for search_str in [term.term, getattr(term, 'term_ko', None)]:
-                if search_str and self._config.enable_rapidfuzz and self._rf_choices:
-                    normalized = TermNormalizer.normalize_for_comparison(search_str)
-                    if normalized:
-                        try:
-                            results = rf_process.extract(
-                                normalized, self._rf_choices,
-                                scorer=fuzz.WRatio, score_cutoff=60, limit=10,
-                            )
-                            for _, _, choice_idx in results:
-                                all_candidate_indices.add(self._rf_idx_map[choice_idx])
-                        except Exception as e:
-                            logger.debug("RapidFuzz extraction failed: %s", e)
-
-            # Quick sparse candidate collection (top-10 per term for speed)
-            for search_str in [term.term, getattr(term, 'term_ko', None)]:
-                if search_str:
-                    sparse_res = self._l2_sparse(search_str, top_k=10)
-                    for idx, _ in sparse_res:
-                        all_candidate_indices.add(idx)
-
+        all_candidate_indices = self._collect_mini_dense_candidates(terms, l1_unmatched_indices)
         if not all_candidate_indices:
             return None
 
-        # Phase 2: 후보 standard terms만으로 mini dense index 구축
         candidate_list = sorted(all_candidate_indices)
-        mini_pcs = [self._precomputed[idx] for idx in candidate_list]
-
         logger.info(
             "Building mini dense index: %d candidates from edit/sparse (vs %d total standard)",
             len(candidate_list), len(self._precomputed),
         )
 
         try:
-            from src.search.dense_term_index import DenseTermIndex
-
-            mini_index = DenseTermIndex(self._embedding_adapter)
-            mini_index.build(mini_pcs, batch_size=50)
-
-            if not mini_index.is_ready:
-                logger.warning("Mini dense index build failed (not ready)")
-                return None
-
-            # Phase 3: pending terms를 mini index에서 검색
-            batch_results = mini_index.search_batch(
-                l1_unmatched_texts, top_k=50, batch_size=50,
+            return self._build_and_search_mini_index(
+                candidate_list, l1_unmatched_indices, l1_unmatched_texts,
             )
-
-            # Index remap: mini index (0-based) -> original precomputed index
-            dense_batch_results: dict[int, list[tuple[int, float]]] = {}
-            for j, orig_term_idx in enumerate(l1_unmatched_indices):
-                remapped = [
-                    (candidate_list[mini_idx], score)
-                    for mini_idx, score in batch_results[j]
-                ]
-                dense_batch_results[orig_term_idx] = remapped
-
-            logger.info(
-                "Mini dense search complete: %d pending terms, %d candidate terms",
-                len(l1_unmatched_texts), len(candidate_list),
-            )
-            return dense_batch_results
-
         except Exception as e:
             logger.warning("Mini dense index build/search failed: %s", e)
             return None

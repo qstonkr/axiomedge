@@ -15,6 +15,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["Pipeline"])
 
 
+def _compute_duration(started: Any, completed: Any) -> float | None:
+    """Compute duration in seconds between started and completed timestamps."""
+    if not started or not completed:
+        return None
+    from datetime import datetime
+    if isinstance(started, str):
+        started = datetime.fromisoformat(started)
+    if isinstance(completed, str):
+        completed = datetime.fromisoformat(completed)
+    try:
+        return (completed - started).total_seconds()
+    except (TypeError, AttributeError) as e:
+        logger.debug("Duration calculation failed: %s", e)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/pipeline/status
 # ---------------------------------------------------------------------------
@@ -45,47 +61,38 @@ async def get_pipeline_status():
 @router.get("/pipeline/metrics")
 async def get_pipeline_metrics():
     """Get pipeline metrics."""
-    state = _get_state()
-    repo = state.get("ingestion_run_repo")
-    if repo:
-        try:
-            runs = await repo.list_recent(limit=1000)
-            total_runs = len(runs)
-            successful = [r for r in runs if r.get("status") == "completed"]
-            failed = [r for r in runs if r.get("status") == "failed"]
-            total_docs = sum(r.get("documents_ingested", 0) for r in runs)
-            total_chunks = sum(r.get("chunks_stored", 0) for r in runs)
-
-            durations = []
-            for r in successful:
-                started = r.get("started_at")
-                completed = r.get("completed_at")
-                if started and completed:
-                    from datetime import datetime
-                    if isinstance(started, str):
-                        started = datetime.fromisoformat(started)
-                    if isinstance(completed, str):
-                        completed = datetime.fromisoformat(completed)
-                    try:
-                        diff = (completed - started).total_seconds()
-                        durations.append(diff)
-                    except (TypeError, AttributeError) as e:
-                        logger.debug("Duration calculation failed: %s", e)
-            avg_duration = sum(durations) / len(durations) if durations else 0
-
-            return {
-                "total_runs": total_runs,
-                "successful_runs": len(successful),
-                "failed_runs": len(failed),
-                "average_duration_seconds": round(avg_duration, 1),
-                "total_documents_processed": total_docs,
-                "total_chunks_created": total_chunks,
-            }
-        except Exception as e:
-            logger.warning("Pipeline metrics query failed: %s", e)
-    return {
+    empty = {
         "total_runs": 0, "successful_runs": 0, "failed_runs": 0,
         "average_duration_seconds": 0, "total_documents_processed": 0, "total_chunks_created": 0,
+    }
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if not repo:
+        return empty
+
+    try:
+        runs = await repo.list_recent(limit=1000)
+    except Exception as e:
+        logger.warning("Pipeline metrics query failed: %s", e)
+        return empty
+
+    successful = [r for r in runs if r.get("status") == "completed"]
+    failed = [r for r in runs if r.get("status") == "failed"]
+
+    durations = []
+    for r in successful:
+        diff = _compute_duration(r.get("started_at"), r.get("completed_at"))
+        if diff is not None:
+            durations.append(diff)
+    avg_duration = sum(durations) / len(durations) if durations else 0
+
+    return {
+        "total_runs": len(runs),
+        "successful_runs": len(successful),
+        "failed_runs": len(failed),
+        "average_duration_seconds": round(avg_duration, 1),
+        "total_documents_processed": sum(r.get("documents_ingested", 0) for r in runs),
+        "total_chunks_created": sum(r.get("chunks_stored", 0) for r in runs),
     }
 
 

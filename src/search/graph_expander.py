@@ -255,6 +255,17 @@ class GraphSearchExpander:
             date_tokens.append(f"{m3.group(1)}_{m3.group(2)}")
         return date_tokens
 
+    @staticmethod
+    def _build_date_filter(date_tokens: list[str]) -> str:
+        """Build Cypher date filter clause from date tokens."""
+        if not date_tokens:
+            return ""
+        date_conditions = " OR ".join(
+            f"COALESCE(d.name, d.title, '') CONTAINS $dt{i}"
+            for i in range(len(date_tokens))
+        )
+        return f"AND ({date_conditions})"
+
     async def _find_person_mentioned_docs(
         self,
         entity_names: list[str],
@@ -282,15 +293,8 @@ class GraphSearchExpander:
 
         # Extract date tokens for document name filtering
         date_tokens = self._extract_date_tokens(query) if query else []
-        if date_tokens:
-            # Narrow: Person + date in document name
-            date_conditions = " OR ".join(
-                f"COALESCE(d.name, d.title, '') CONTAINS $dt{i}"
-                for i in range(len(date_tokens))
-            )
-            date_filter = f"AND ({date_conditions})"
-        else:
-            date_filter = ""
+        date_filter = self._build_date_filter(date_tokens)
+
 
         try:
             cypher = f"""
@@ -331,7 +335,6 @@ class GraphSearchExpander:
                 logger.info(
                     "Person MENTIONED_IN: names=%s date=%s → %d docs: %s",
                     korean_names[:3], date_tokens[:2], len(doc_names), list(doc_names)[:3],
-                    korean_names[:3], len(doc_names), list(doc_names)[:3],
                 )
             return doc_names
         except Exception as e:
@@ -380,6 +383,60 @@ class GraphSearchExpander:
             boosted.append(chunk)
         return boosted
 
+    async def _find_entity_connected_docs(
+        self,
+        entity_names: list[str],
+    ) -> set[str]:
+        """Find documents connected to entities via search_entities."""
+        if not hasattr(self._graph_repo, "search_entities"):
+            return set()
+
+        entities = await self._graph_repo.search_entities(
+            entity_names, max_facts=30,
+        )
+        doc_names: set[str] = set()
+        for e in entities:
+            connected = e.get("connected_name", "")
+            connected_type = e.get("connected_type", "")
+            if connected_type == "Document" and connected:
+                doc_names.add(connected)
+
+        logger.info(
+            "Entity expansion: %d entities found, %d doc names extracted",
+            len(entities), len(doc_names),
+        )
+        return doc_names
+
+    async def _find_entity_source_docs(
+        self,
+        entity_names: list[str],
+    ) -> set[str]:
+        """Find documents via source_document property on __Entity__ nodes."""
+        if not hasattr(self._graph_repo, "_client"):
+            return set()
+
+        import unicodedata
+
+        doc_names: set[str] = set()
+        for kw in entity_names:
+            try:
+                kw_nfc = unicodedata.normalize("NFC", kw)
+                kw_nfd = unicodedata.normalize("NFD", kw)
+                src_docs = await self._graph_repo._client.execute_query(
+                    "MATCH (n:__Entity__) "
+                    "WHERE (n.id CONTAINS $kw_nfc OR n.id CONTAINS $kw_nfd) "
+                    "AND n.source_document IS NOT NULL "
+                    "RETURN DISTINCT n.source_document AS doc LIMIT 5",
+                    {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd},
+                )
+                for row in src_docs:
+                    doc = row.get("doc", "")
+                    if doc:
+                        doc_names.add(doc)
+            except Exception as e:
+                logger.debug("Entity doc name lookup failed: %s", e)
+        return doc_names
+
     async def expand_with_entities(
         self,
         query: str,
@@ -394,64 +451,29 @@ class GraphSearchExpander:
         2. Finds documents connected to those entities via source_document
         3. Returns those document titles as expanded URIs for boosting/injection
         """
-        # Standard expansion first
         result = await self.expand(query, chunks, scope_kb_ids=scope_kb_ids)
 
-        # Entity-based expansion: find documents via source_document property
         try:
-            if hasattr(self._graph_repo, "search_entities"):
-                tokens = _split_compound_words(query)
-                entity_names = [t for t in tokens if len(t) >= 2]
-                if entity_names:
-                    entities = await self._graph_repo.search_entities(
-                        entity_names, max_facts=30,
-                    )
-                    entity_doc_names: set[str] = set()
-                    for e in entities:
-                        # 1. Connected Document nodes
-                        connected = e.get("connected_name", "")
-                        connected_type = e.get("connected_type", "")
-                        if connected_type == "Document" and connected:
-                            entity_doc_names.add(connected)
+            tokens = _split_compound_words(query)
+            entity_names = [t for t in tokens if len(t) >= 2]
+            if not entity_names:
+                return result
 
-                    # 2. source_document property on matched entities
-                    # Search each keyword separately (OR logic)
-                    if hasattr(self._graph_repo, "_client"):
-                        import unicodedata
-                        for kw in entity_names:
-                            try:
-                                kw_nfc = unicodedata.normalize("NFC", kw)
-                                kw_nfd = unicodedata.normalize("NFD", kw)
-                                src_docs = await self._graph_repo._client.execute_query(
-                                    "MATCH (n:__Entity__) "
-                                    "WHERE (n.id CONTAINS $kw_nfc OR n.id CONTAINS $kw_nfd) "
-                                    "AND n.source_document IS NOT NULL "
-                                    "RETURN DISTINCT n.source_document AS doc LIMIT 5",
-                                    {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd},
-                                )
-                                for row in src_docs:
-                                    doc = row.get("doc", "")
-                                    if doc:
-                                        entity_doc_names.add(doc)
-                            except Exception as e:
-                                logger.debug("Entity doc name lookup failed: %s", e)
+            entity_doc_names = await self._find_entity_connected_docs(entity_names)
+            source_doc_names = await self._find_entity_source_docs(entity_names)
+            entity_doc_names |= source_doc_names
 
-                    logger.info(
-                        "Entity expansion: %d entities found, %d doc names extracted",
-                        len(entities), len(entity_doc_names),
-                    )
-                    if entity_doc_names:
-                        result.expanded_source_uris |= entity_doc_names
-                        result.graph_related_count += len(entity_doc_names)
+            if entity_doc_names:
+                result.expanded_source_uris |= entity_doc_names
+                result.graph_related_count += len(entity_doc_names)
 
-                    # Person MENTIONED_IN: find docs where query Person is mentioned
-                    person_docs = await self._find_person_mentioned_docs(
-                        entity_names, query=query, scope_kb_ids=scope_kb_ids,
-                    )
-                    if person_docs:
-                        new_person = person_docs - result.expanded_source_uris
-                        result.expanded_source_uris |= new_person
-                        result.graph_related_count += len(new_person)
+            person_docs = await self._find_person_mentioned_docs(
+                entity_names, query=query, scope_kb_ids=scope_kb_ids,
+            )
+            if person_docs:
+                new_person = person_docs - result.expanded_source_uris
+                result.expanded_source_uris |= new_person
+                result.graph_related_count += len(new_person)
         except Exception as e:
             logger.warning("Entity expansion failed: %s", e)
 

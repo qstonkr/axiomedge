@@ -75,7 +75,7 @@ def _request(
                 if isinstance(data, list):
                     return {"items": data}
                 return data
-            except (ValueError, UnicodeDecodeError):
+            except ValueError:
                 return {"error": f"Non-JSON response ({resp.status_code})", "_api_failed": True}
     except httpx.HTTPStatusError as exc:
         duration_ms = round((time.monotonic() - t0) * 1000, 1)
@@ -94,7 +94,7 @@ def _get(path: str, **params: Any) -> dict[str, Any]:
     return _request("GET", path, params=clean)
 
 
-def _post(path: str, body: dict[str, Any] | None = None, *, retries: int | None = None,
+def _post(path: str, body: dict[str, Any] | None = None, *, _retries: int | None = None,
           timeout: int | None = None, **_kwargs: Any) -> dict[str, Any]:
     return _request("POST", path, json_body=body if body is not None else {}, timeout=timeout)
 
@@ -123,7 +123,7 @@ def _delete(path: str, **_kwargs: Any) -> dict[str, Any]:
                 if isinstance(data, list):
                     return {"items": data}
                 return data
-            except (ValueError, UnicodeDecodeError):
+            except ValueError:
                 return {"success": True}
     except httpx.HTTPStatusError as exc:
         return {"error": str(exc), "_api_failed": True}

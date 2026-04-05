@@ -16,6 +16,10 @@ from components.sidebar import render_sidebar
 from services import api_client
 from services.api_client import api_failed
 
+_MSG_NO_KB = "등록된 KB가 없습니다."
+_LBL_KB_SELECT = "KB 선택"
+_MSG_LOAD_FAIL = "데이터를 불러올 수 없습니다."
+
 render_sidebar(show_admin=True)
 
 st.title("📋 문서 라이프사이클")
@@ -44,15 +48,15 @@ if not api_failed(kbs_result):
 # =============================================================================
 with tab_status:
     if not kb_options:
-        st.info("등록된 KB가 없습니다.")
+        st.info(_MSG_NO_KB)
     else:
-        selected_kb = st.selectbox("KB 선택", list(kb_options.keys()), key="lifecycle_kb")
+        selected_kb = st.selectbox(_LBL_KB_SELECT, list(kb_options.keys()), key="lifecycle_kb")
         kb_id = kb_options[selected_kb]
 
         result = api_client.get_kb_lifecycle(kb_id)
 
         if api_failed(result):
-            st.warning("데이터를 불러올 수 없습니다.")
+            st.warning(_MSG_LOAD_FAIL)
             if st.button("재시도", key="retry_lifecycle"):
                 st.cache_data.clear()
                 st.rerun()
@@ -94,7 +98,7 @@ with tab_status:
                     go.Pie(
                         labels=labels,
                         values=values,
-                        marker=dict(colors=colors),
+                        marker={"colors": colors},
                         textinfo="label+percent+value",
                         hole=0.3,
                     )
@@ -102,7 +106,7 @@ with tab_status:
                 fig.update_layout(
                     title="문서 상태 분포",
                     height=400,
-                    margin=dict(l=20, r=20, t=40, b=20),
+                    margin={"l": 20, "r": 20, "t": 40, "b": 20},
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -134,16 +138,16 @@ with tab_archive:
     st.warning("아래 문서들은 신선도가 낮아 자동 아카이브 예정입니다.")
 
     if not kb_options:
-        st.info("등록된 KB가 없습니다.")
+        st.info(_MSG_NO_KB)
     else:
-        selected_kb2 = st.selectbox("KB 선택", list(kb_options.keys()), key="archive_kb")
+        selected_kb2 = st.selectbox(_LBL_KB_SELECT, list(kb_options.keys()), key="archive_kb")
         kb_id2 = kb_options[selected_kb2]
 
         # Try lifecycle endpoint with upcoming_archive filter
         result = api_client.get_kb_lifecycle(kb_id2, filter="upcoming_archive")
 
         if api_failed(result):
-            st.warning("데이터를 불러올 수 없습니다.")
+            st.warning(_MSG_LOAD_FAIL)
             if st.button("재시도", key="retry_archive"):
                 st.cache_data.clear()
                 st.rerun()
@@ -181,15 +185,15 @@ with tab_transitions:
     st.subheader("최근 상태 전이 이력")
 
     if not kb_options:
-        st.info("등록된 KB가 없습니다.")
+        st.info(_MSG_NO_KB)
     else:
-        selected_kb3 = st.selectbox("KB 선택", list(kb_options.keys()), key="transitions_kb")
+        selected_kb3 = st.selectbox(_LBL_KB_SELECT, list(kb_options.keys()), key="transitions_kb")
         kb_id3 = kb_options[selected_kb3]
 
         result = api_client.get_kb_lifecycle(kb_id3, filter="transitions")
 
         if api_failed(result):
-            st.warning("데이터를 불러올 수 없습니다.")
+            st.warning(_MSG_LOAD_FAIL)
             if st.button("재시도", key="retry_transitions"):
                 st.cache_data.clear()
                 st.rerun()

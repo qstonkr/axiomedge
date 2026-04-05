@@ -16,7 +16,7 @@ def hide_default_nav():
     )
 
 
-def render_sidebar(show_admin: bool = False, user_role: str | None = None):  # noqa: ARG001
+def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
     """Custom Korean sidebar rendering (5-group persona-based).
 
     All pages are visible for local development (admin mode).

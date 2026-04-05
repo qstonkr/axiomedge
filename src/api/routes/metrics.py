@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 from fastapi.responses import PlainTextResponse
@@ -40,7 +40,7 @@ _request_duration_sum: dict[tuple[str, str], float] = {}
 _request_duration_count: dict[tuple[str, str], int] = {}
 
 # Search duration histogram
-_search_duration_buckets: dict[float, int] = {b: 0 for b in _DURATION_BUCKETS}
+_search_duration_buckets: dict[float, int] = dict.fromkeys(_DURATION_BUCKETS, 0)
 _search_duration_sum: float = 0.0
 _search_duration_count: int = 0
 
@@ -234,7 +234,7 @@ def _render_prometheus() -> str:
 
 
 @router.get("/metrics")
-async def metrics(format: str = Query(default="json", alias="format")):
+async def metrics(format: Annotated[str, Query(alias="format")] = "json"):
     """Return current metrics snapshot.
 
     Query parameters:

@@ -70,6 +70,25 @@ def _build_context(chunks: list[dict[str, Any]]) -> tuple[str, list[dict]]:
     return "\n\n".join(context_parts), citation_entries
 
 
+def _determine_confidence(chunks: list[dict[str, Any]]) -> str:
+    """Determine confidence level from chunk scores — SSOT: config_weights.ConfidenceConfig."""
+    top_score = max((c.get("score", 0) for c in chunks), default=0)
+    if top_score >= _w.confidence.high:
+        return "높음"
+    if top_score >= _w.confidence.medium:
+        return "보통"
+    return "낮음"
+
+
+def _determine_disclaimer(query_type: QueryType) -> str | None:
+    """Return disclaimer text based on query type."""
+    _disclaimers = {
+        QueryType.ANALYTICAL: "이 응답은 검색된 문서를 기반으로 추론한 내용입니다.",
+        QueryType.ADVISORY: "이 응답에는 문서 외 일반 지식이 포함될 수 있습니다.",
+    }
+    return _disclaimers.get(query_type)
+
+
 class AnswerService:
     """Generate tiered LLM answers based on query type."""
 
@@ -85,12 +104,13 @@ class AnswerService:
     ) -> AnswerResult:
         """Generate answer + transparency info from search chunks."""
         # Classify query
+        resolved_type = None
         if query_type_hint:
             try:
                 resolved_type = QueryType(query_type_hint)
             except ValueError:
-                resolved_type = self._classifier.classify(query).query_type
-        else:
+                pass
+        if resolved_type is None:
             resolved_type = self._classifier.classify(query).query_type
 
         if resolved_type == QueryType.CHITCHAT:
@@ -135,21 +155,8 @@ class AnswerService:
         else:
             answer = f"관련 문서 {len(chunks)}건이 검색되었습니다.\n\n" + context
 
-        # Determine confidence — SSOT: config_weights.ConfidenceConfig
-        top_score = max((c.get("score", 0) for c in chunks), default=0)
-        if top_score >= _w.confidence.high:
-            confidence = "높음"
-        elif top_score >= _w.confidence.medium:
-            confidence = "보통"
-        else:
-            confidence = "낮음"
-
-        # Disclaimer
-        disclaimer = None
-        if resolved_type == QueryType.ANALYTICAL:
-            disclaimer = "이 응답은 검색된 문서를 기반으로 추론한 내용입니다."
-        elif resolved_type == QueryType.ADVISORY:
-            disclaimer = "이 응답에는 문서 외 일반 지식이 포함될 수 있습니다."
+        confidence = _determine_confidence(chunks)
+        disclaimer = _determine_disclaimer(resolved_type)
 
         return AnswerResult(
             answer=answer,

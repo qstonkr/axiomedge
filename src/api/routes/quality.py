@@ -312,71 +312,96 @@ async def list_evaluation_history(
 # Transparency & Contributors
 # ============================================================================
 
+def _tally_doc_transparency(
+    pay: dict[str, Any], counts: dict[str, int],
+) -> None:
+    """Update transparency counts for a single unique document."""
+    counts["total"] += 1
+    if pay.get("owner"):
+        counts["owner"] += 1
+    if pay.get("l1_category") and pay.get("l1_category") != "기타":
+        counts["category"] += 1
+    if pay.get("source_uri"):
+        counts["source"] += 1
+
+
+async def _scroll_collection_transparency(
+    client: Any,
+    qdrant_url: str,
+    raw_name: str,
+    counts: dict[str, int],
+) -> None:
+    """Scroll a single Qdrant collection and tally transparency attributes."""
+    doc_ids_seen: set[str] = set()
+    offset = None
+    while True:
+        body: dict[str, Any] = {
+            "limit": 100,
+            "with_payload": ["doc_id", "owner", "l1_category", "source_uri"],
+            "with_vector": False,
+        }
+        if offset:
+            body["offset"] = offset
+        resp = await client.post(
+            f"{qdrant_url}/collections/{raw_name}/points/scroll", json=body,
+        )
+        if resp.status_code != 200:
+            break
+        data = resp.json().get("result", {})
+        points = data.get("points", [])
+        if not points:
+            break
+        for p in points:
+            pay = p.get("payload", {})
+            did = pay.get("doc_id", "")
+            if did in doc_ids_seen:
+                continue
+            doc_ids_seen.add(did)
+            _tally_doc_transparency(pay, counts)
+        offset = data.get("next_page_offset")
+        if not offset:
+            break
+
+
+async def _count_qdrant_transparency(
+    collections: Any, qdrant_url: str,
+) -> dict[str, int]:
+    """Scroll Qdrant collections and count transparency attributes per unique doc."""
+    import httpx
+
+    counts = {"total": 0, "owner": 0, "category": 0, "source": 0}
+    if not collections:
+        return counts
+
+    raw_names = await collections.get_existing_collection_names()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for raw_name in raw_names:
+            await _scroll_collection_transparency(client, qdrant_url, raw_name, counts)
+    return counts
+
+
 @router.get("/transparency/stats")
 async def get_transparency_stats():
     """Get transparency stats from Qdrant metadata + PostgreSQL."""
-    import httpx
-
     state = _get_state()
     collections = state.get("qdrant_collections")
     qdrant_url = state.get("qdrant_url", "http://localhost:6333")
 
-    total_documents = 0
-    with_owner = 0
-    with_category = 0
-    with_source = 0
-
-    # Count from Qdrant (full scroll per collection)
     try:
-        if collections:
-            raw_names = await collections.get_existing_collection_names()
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                for raw_name in raw_names:
-                    doc_ids_seen: set[str] = set()
-                    offset = None
-                    while True:
-                        body: dict[str, Any] = {
-                            "limit": 100,
-                            "with_payload": ["doc_id", "owner", "l1_category", "source_uri"],
-                            "with_vector": False,
-                        }
-                        if offset:
-                            body["offset"] = offset
-                        resp = await client.post(
-                            f"{qdrant_url}/collections/{raw_name}/points/scroll",
-                            json=body,
-                        )
-                        if resp.status_code != 200:
-                            break
-                        data = resp.json().get("result", {})
-                        points = data.get("points", [])
-                        if not points:
-                            break
-                        for p in points:
-                            pay = p.get("payload", {})
-                            did = pay.get("doc_id", "")
-                            if did in doc_ids_seen:
-                                continue
-                            doc_ids_seen.add(did)
-                            total_documents += 1
-                            if pay.get("owner"):
-                                with_owner += 1
-                            if pay.get("l1_category") and pay.get("l1_category") != "기타":
-                                with_category += 1
-                            if pay.get("source_uri"):
-                                with_source += 1
-                        offset = data.get("next_page_offset")
-                        if not offset:
-                            break
+        counts = await _count_qdrant_transparency(collections, qdrant_url)
     except Exception as e:
         logger.warning("Transparency Qdrant stats failed: %s", e)
+        counts = {"total": 0, "owner": 0, "category": 0, "source": 0}
+
+    total_documents = counts["total"]
+    with_owner = counts["owner"]
+    with_source = counts["source"]
 
     # Document owners from PostgreSQL
     doc_owner_count = 0
     session_factory = state.get("session_factory")
     if session_factory:
         from src.api.routes.quality_helpers import query_document_owner_count
-
         doc_owner_count = await query_document_owner_count(session_factory)
 
     # Calculate transparency score (0-1)
@@ -388,7 +413,7 @@ async def get_transparency_stats():
         "total_citations": total_documents,
         "with_provenance": with_source,
         "with_owner": max(with_owner, doc_owner_count),
-        "verified": with_category,
+        "verified": counts["category"],
         "transparency_score": round(source_coverage, 2),
         "source_coverage_rate": round(source_coverage, 2),
         "avg_sources_per_response": round(avg_sources, 1),

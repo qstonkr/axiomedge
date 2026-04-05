@@ -161,32 +161,30 @@ with tab_kb_perms:
                 with st.form("add_perm_form"):
                     add_user = st.text_input("사용자 ID", key="add_perm_user")
                     add_level = st.selectbox("권한", ["reader", "contributor", "manager", "owner"], key="add_perm_level")
-                    if st.form_submit_button("추가", type="primary"):
-                        if add_user:
-                            res = api_client.add_kb_permission(
-                                selected_kb,
-                                {"user_id": add_user, "permission_level": add_level},
-                            )
-                            if api_failed(res):
-                                st.error("권한 추가 실패.")
-                            else:
-                                st.success("권한이 추가되었습니다.")
-                                st.rerun()
+                    if st.form_submit_button("추가", type="primary") and add_user:
+                        res = api_client.add_kb_permission(
+                            selected_kb,
+                            {"user_id": add_user, "permission_level": add_level},
+                        )
+                        if api_failed(res):
+                            st.error("권한 추가 실패.")
+                        else:
+                            st.success("권한이 추가되었습니다.")
+                            st.rerun()
 
             with col_remove:
                 st.markdown("**권한 삭제**")
                 with st.form("remove_perm_form"):
                     rm_user = st.text_input("사용자 ID", key="rm_perm_user")
-                    if st.form_submit_button("삭제"):
-                        if rm_user:
-                            res = api_client.remove_kb_permission(
-                                selected_kb, rm_user
-                            )
-                            if api_failed(res):
-                                st.error("권한 삭제 실패.")
-                            else:
-                                st.success("권한이 삭제되었습니다.")
-                                st.rerun()
+                    if st.form_submit_button("삭제") and rm_user:
+                        res = api_client.remove_kb_permission(
+                            selected_kb, rm_user
+                        )
+                        if api_failed(res):
+                            st.error("권한 삭제 실패.")
+                        else:
+                            st.success("권한이 삭제되었습니다.")
+                            st.rerun()
     else:
         st.warning("KB 목록을 불러올 수 없습니다.")
 
@@ -251,11 +249,10 @@ with tab_abac:
 
     with st.form("delete_policy_form"):
         del_policy_id = st.text_input("삭제할 정책 ID")
-        if st.form_submit_button("삭제"):
-            if del_policy_id:
-                res = api_client.delete_abac_policy(del_policy_id)
-                if api_failed(res):
-                    st.error("정책 삭제 실패.")
-                else:
-                    st.success("정책이 삭제되었습니다.")
-                    st.rerun()
+        if st.form_submit_button("삭제") and del_policy_id:
+            res = api_client.delete_abac_policy(del_policy_id)
+            if api_failed(res):
+                st.error("정책 삭제 실패.")
+            else:
+                st.success("정책이 삭제되었습니다.")
+                st.rerun()

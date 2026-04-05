@@ -173,6 +173,13 @@ class OnnxBgeEmbeddingProvider:
             self._cache_misses += 1
         return None
 
+    def _store_cache(self, cache_key: str, result: dict[str, Any]) -> None:
+        """Store result in thread-safe LRU cache, evicting oldest if full."""
+        with self._cache_lock:
+            if len(self._cache) >= self._cache_max:
+                self._cache.popitem(last=False)
+            self._cache[cache_key] = result
+
     def encode(
         self,
         texts: list[str],
@@ -227,26 +234,26 @@ class OnnxBgeEmbeddingProvider:
         output_map = dict(zip(self._output_names, raw_outputs, strict=False))
 
         # Extract dense vectors
-        if return_dense:
-            dense_vecs = self._extract_dense(output_map, encoded["attention_mask"], len(texts))
-        else:
-            dense_vecs = [[] for _ in texts]
+        dense_vecs = (
+            self._extract_dense(output_map, encoded["attention_mask"], len(texts))
+            if return_dense
+            else [[] for _ in texts]
+        )
 
         # Extract sparse lexical weights from input token ids.
         # ONNX export does not provide BGE lexical weights directly, so we
         # synthesize normalized TF-style sparse vectors for retrieval fusion.
-        if return_sparse:
-            sparse_vecs = self._extract_sparse(
-                encoded["input_ids"],
-                encoded["attention_mask"],
-            )
-        else:
-            sparse_vecs = []
+        sparse_vecs = (
+            self._extract_sparse(encoded["input_ids"], encoded["attention_mask"])
+            if return_sparse
+            else []
+        )
 
-        if return_colbert_vecs:
-            colbert_vecs = self._extract_colbert(output_map, encoded["attention_mask"])
-        else:
-            colbert_vecs = []
+        colbert_vecs = (
+            self._extract_colbert(output_map, encoded["attention_mask"])
+            if return_colbert_vecs
+            else []
+        )
 
         result = {
             "dense_vecs": dense_vecs,
@@ -257,11 +264,7 @@ class OnnxBgeEmbeddingProvider:
         # P1: Store in thread-safe LRU cache for single-text queries
         if len(texts) == 1 and not return_colbert_vecs:
             cache_key = f"{texts[0]}::d={return_dense}::s={return_sparse}"
-            with self._cache_lock:
-                if len(self._cache) >= self._cache_max:
-                    # Evict LRU entry (oldest in OrderedDict)
-                    self._cache.popitem(last=False)
-                self._cache[cache_key] = result
+            self._store_cache(cache_key, result)
 
         return result
 

@@ -49,44 +49,41 @@ class KBInfo(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> dict:
-    """Shared implementation for listing KBs."""
-    state = _get_state()
-    kb_registry = state.get("kb_registry")
-
-    if kb_registry:
+async def _enrich_kb_counts(kbs: list[dict], store) -> None:
+    """Enrich KB list with Qdrant chunk counts and doc_count."""
+    if not store:
+        return
+    for kb in kbs:
+        kb_id = kb.get("kb_id") or kb.get("id", "")
         try:
-            if status:
-                kbs = await kb_registry.list_by_status(status)
-            elif tier:
-                kbs = await kb_registry.list_by_tier(tier)
-            else:
-                kbs = await kb_registry.list_all()
+            kb["chunk_count"] = await store.count(kb_id)
+        except Exception:
+            kb.setdefault("chunk_count", 0)
+        kb["doc_count"] = kb.get("document_count", 0)
 
-            # Enrich with Qdrant chunk counts + ensure doc_count
-            store = state.get("qdrant_store")
-            if store:
-                for kb in kbs:
-                    kb_id = kb.get("kb_id") or kb.get("id", "")
-                    try:
-                        kb["chunk_count"] = await store.count(kb_id)
-                    except Exception:
-                        kb.setdefault("chunk_count", 0)
-                    kb["doc_count"] = kb.get("document_count", 0)
 
-            return {"kbs": kbs}
-        except Exception as e:
-            logger.warning("KB registry query failed, falling back to Qdrant: %s", e)
+async def _list_kbs_from_registry(
+    kb_registry, store, *, tier: str | None, status: str | None
+) -> dict | None:
+    """Try listing KBs from registry. Returns None on failure."""
+    try:
+        if status:
+            kbs = await kb_registry.list_by_status(status)
+        elif tier:
+            kbs = await kb_registry.list_by_tier(tier)
+        else:
+            kbs = await kb_registry.list_all()
+        await _enrich_kb_counts(kbs, store)
+        return {"kbs": kbs}
+    except Exception as e:
+        logger.warning("KB registry query failed, falling back to Qdrant: %s", e)
+        return None
 
-    # Fallback to Qdrant collections
-    collections = state.get("qdrant_collections")
-    store = state.get("qdrant_store")
-    if not collections:
-        return {"kbs": []}
 
+async def _list_kbs_from_qdrant(collections, store) -> dict:
+    """Fallback: list KBs from Qdrant collections."""
     try:
         raw_names = await collections.get_existing_collection_names()
-        # Strip collection prefix to get original kb_id
         prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
         kbs = []
         for raw_name in raw_names:
@@ -94,23 +91,35 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
             count = 0
             if store:
                 try:
-                    # Pass original kb_id (store will add prefix internally)
                     count = await store.count(kb_id)
                 except Exception as e:
                     logger.debug("Count failed for %s: %s", kb_id, e)
             kbs.append({
-                "kb_id": kb_id,
-                "name": kb_id,
-                "description": "",
-                "tier": "global",
-                "doc_count": 0,
-                "chunk_count": count,
-                "status": "active",
-                "settings": {},
+                "kb_id": kb_id, "name": kb_id, "description": "",
+                "tier": "global", "doc_count": 0, "chunk_count": count,
+                "status": "active", "settings": {},
             })
         return {"kbs": kbs}
     except Exception as e:
         return {"kbs": [], "error": str(e)}
+
+
+async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> dict:
+    """Shared implementation for listing KBs."""
+    state = _get_state()
+    kb_registry = state.get("kb_registry")
+    store = state.get("qdrant_store")
+
+    if kb_registry:
+        result = await _list_kbs_from_registry(kb_registry, store, tier=tier, status=status)
+        if result is not None:
+            return result
+
+    # Fallback to Qdrant collections
+    collections = state.get("qdrant_collections")
+    if not collections:
+        return {"kbs": []}
+    return await _list_kbs_from_qdrant(collections, store)
 
 
 # ============================================================================
@@ -194,6 +203,70 @@ async def admin_create_kb(body: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/kb/stats  (aggregation - MUST be before {kb_id})
 # ---------------------------------------------------------------------------
+async def _get_registry_counts(kb_registry: Any) -> tuple[int, int]:
+    """Get KB and document counts from registry. Returns (total_kbs, total_documents)."""
+    if not kb_registry:
+        return 0, 0
+    try:
+        kbs = await kb_registry.list_all()
+        return len(kbs), sum(kb.get("document_count", 0) for kb in kbs)
+    except Exception as e:
+        logger.debug("Failed to get KB registry stats: %s", e)
+        return 0, 0
+
+
+async def _get_qdrant_chunk_counts(
+    collections: Any, store: Any, fallback_total_kbs: int,
+) -> tuple[int, int]:
+    """Get chunk counts from Qdrant. Returns (total_chunks, total_kbs)."""
+    if not (collections and store):
+        return 0, fallback_total_kbs
+    try:
+        raw_names = await collections.get_existing_collection_names()
+        total_kbs = fallback_total_kbs or len(raw_names)
+        prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
+        total_chunks = 0
+        for raw_name in raw_names:
+            kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
+            try:
+                total_chunks += await store.count(kb_id)
+            except Exception as e:
+                logger.debug("Chunk count failed for %s: %s", kb_id, e)
+        return total_chunks, total_kbs
+    except Exception as e:
+        logger.debug("Failed to get Qdrant collection names: %s", e)
+        return 0, fallback_total_kbs
+
+
+async def _get_avg_quality_score(
+    collections: Any, store: Any, qdrant_url: str,
+) -> float:
+    """Calculate average quality score from Qdrant metadata."""
+    if not (collections and store):
+        return 0.0
+    try:
+        import httpx
+        quality_sum = 0.0
+        quality_count = 0
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            raw_names = await collections.get_existing_collection_names()
+            for raw_name in raw_names:
+                resp = await client.post(
+                    f"{qdrant_url}/collections/{raw_name}/points/scroll",
+                    json={"limit": 50, "with_payload": ["quality_score"], "with_vector": False},
+                )
+                if resp.status_code == 200:
+                    for p in resp.json().get("result", {}).get("points", []):
+                        qs = p.get("payload", {}).get("quality_score")
+                        if isinstance(qs, (int, float)) and qs > 0:
+                            quality_sum += qs
+                            quality_count += 1
+        return round(quality_sum / quality_count, 1) if quality_count > 0 else 0.0
+    except Exception as e:
+        logger.debug("Failed to calculate avg quality score: %s", e)
+        return 0.0
+
+
 @admin_router.get("/stats")
 async def admin_kb_aggregation():
     """Get KB aggregation stats."""
@@ -201,61 +274,10 @@ async def admin_kb_aggregation():
     collections = state.get("qdrant_collections")
     store = state.get("qdrant_store")
 
-    total_chunks = 0
-    total_documents = 0
-    total_kbs = 0
-
-    # Get document counts from DB
-    kb_registry = state.get("kb_registry")
-    if kb_registry:
-        try:
-            kbs = await kb_registry.list_all()
-            total_kbs = len(kbs)
-            total_documents = sum(kb.get("document_count", 0) for kb in kbs)
-        except Exception as e:
-            logger.debug("Failed to get KB registry stats: %s", e)
-
-    # Get chunk counts from Qdrant
-    if collections and store:
-        try:
-            raw_names = await collections.get_existing_collection_names()
-            if not total_kbs:
-                total_kbs = len(raw_names)
-            prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
-            for raw_name in raw_names:
-                kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
-                try:
-                    total_chunks += await store.count(kb_id)
-                except Exception as e:
-                    logger.debug("Chunk count failed for %s: %s", kb_id, e)
-        except Exception as e:
-            logger.debug("Failed to get Qdrant collection names: %s", e)
-
-    # Calculate avg quality score from Qdrant metadata
-    avg_quality_score = 0.0
-    quality_sum = 0.0
-    quality_count = 0
-    if collections and store:
-        try:
-            import httpx
-            qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                raw_names = await collections.get_existing_collection_names()
-                for raw_name in raw_names:
-                    resp = await client.post(
-                        f"{qdrant_url}/collections/{raw_name}/points/scroll",
-                        json={"limit": 50, "with_payload": ["quality_score"], "with_vector": False},
-                    )
-                    if resp.status_code == 200:
-                        for p in resp.json().get("result", {}).get("points", []):
-                            qs = p.get("payload", {}).get("quality_score")
-                            if isinstance(qs, (int, float)) and qs > 0:
-                                quality_sum += qs
-                                quality_count += 1
-            if quality_count > 0:
-                avg_quality_score = round(quality_sum / quality_count, 1)
-        except Exception as e:
-            logger.debug("Failed to calculate avg quality score: %s", e)
+    total_kbs, total_documents = await _get_registry_counts(state.get("kb_registry"))
+    total_chunks, total_kbs = await _get_qdrant_chunk_counts(collections, store, total_kbs)
+    qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
+    avg_quality_score = await _get_avg_quality_score(collections, store, qdrant_url)
 
     return {
         "total_kbs": total_kbs,

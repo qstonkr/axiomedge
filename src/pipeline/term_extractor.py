@@ -241,6 +241,84 @@ class TermExtractor:
         )
         return candidates
 
+    @staticmethod
+    def _flush_compound_buffer(
+        buf_forms: list[str],
+        buf_tags: list[str],
+        buf_scores: list[float],
+        compounds: list[tuple[str, str, float]],
+        stop_nouns: frozenset[str],
+        min_term_length: int,
+        max_compound_chars: int,
+        foreign_tag: str,
+    ) -> None:
+        """Flush the compound buffer, emitting compound + individual terms."""
+        if not buf_forms:
+            return
+        merged = "".join(buf_forms)
+        min_score = max(buf_scores) if buf_scores else 0.0
+
+        all_parts_valid = all(len(f) >= 2 for f in buf_forms)
+        no_stopwords = not any(f in stop_nouns or f in _COMPOUND_STOP for f in buf_forms)
+        if len(buf_forms) > 1 and len(merged) <= max_compound_chars and all_parts_valid and no_stopwords:
+            compounds.append((merged, "compound_noun", min_score))
+
+        for form, t, sc in zip(buf_forms, buf_tags, buf_scores):
+            if len(form) < min_term_length:
+                continue
+            if t == "NNP":
+                compounds.append((form, "proper_noun", sc))
+            elif t == foreign_tag:
+                compounds.append((form, "foreign", sc))
+            elif t == "NNG":
+                compounds.append((form, "noun", sc))
+
+        buf_forms.clear()
+        buf_tags.clear()
+        buf_scores.clear()
+
+    def _build_compounds_from_tokens(
+        self, tokens: list,
+    ) -> list[tuple[str, str, float]]:
+        """Merge adjacent noun tokens into compound terms (Pass 1)."""
+        _MAX_COMPOUND_TOKENS = 3
+        _MAX_COMPOUND_CHARS = 8
+
+        compounds: list[tuple[str, str, float]] = []
+        buf_forms: list[str] = []
+        buf_tags: list[str] = []
+        buf_scores: list[float] = []
+
+        flush = lambda: self._flush_compound_buffer(  # noqa: E731
+            buf_forms, buf_tags, buf_scores, compounds,
+            self._STOP_NOUNS, self.MIN_TERM_LENGTH, _MAX_COMPOUND_CHARS, self._FOREIGN_TAG,
+        )
+
+        for token in tokens:
+            tag = token.tag
+            if tag not in self._NOUN_TAGS and tag != self._FOREIGN_TAG:
+                flush()
+                continue
+
+            should_break = (
+                (tag == "NNP" and buf_forms)
+                or (tag == self._FOREIGN_TAG and buf_forms and buf_tags[-1] != self._FOREIGN_TAG)
+                or len(buf_forms) >= _MAX_COMPOUND_TOKENS
+            )
+            if should_break:
+                flush()
+
+            buf_forms.append(token.form)
+            buf_tags.append(tag)
+            buf_scores.append(token.score)
+
+            # NNP always flush immediately (standalone)
+            if tag == "NNP":
+                flush()
+
+        flush()
+        return compounds
+
     def _extract_terms_kiwi(
         self,
         text: str,
@@ -250,88 +328,14 @@ class TermExtractor:
         contexts: dict[str, list[str]],
         original_case: dict[str, str],
     ) -> None:
-        """Extract terms using KiwiPy morphological analysis.
-
-        Strategy:
-        1. Tokenize with KiwiPy
-        2. Extract NNG (common nouns), NNP (proper nouns), SL (foreign words)
-        3. Merge adjacent nouns into compound terms (경영+주→경영주, 정산+금→정산금)
-        4. Filter single-char nouns and stopwords
-        """
+        """Extract terms using KiwiPy morphological analysis."""
         try:
             tokens = kiwi.tokenize(text)
         except Exception:
             return
 
-        # Pass 1: Merge adjacent noun tokens into compound terms
-        # Rules:
-        # - Max 3 tokens per compound (avoid 담배권망실점포)
-        # - Max 8 chars per compound
-        # - SL (foreign) tokens stand alone unless adjacent to SL/SN
-        # - NNP (proper nouns) stand alone (사람 이름 분리)
-        _MAX_COMPOUND_TOKENS = 3
-        _MAX_COMPOUND_CHARS = 8
+        compounds = self._build_compounds_from_tokens(tokens)
 
-        # (term, tag_type, kiwi_score) — score is min score of parts
-        compounds: list[tuple[str, str, float]] = []
-        buf_forms: list[str] = []
-        buf_tags: list[str] = []
-        buf_scores: list[float] = []
-
-        def _flush():
-            if not buf_forms:
-                return
-            merged = "".join(buf_forms)
-            # Use max score (most generic part) — if all parts are generic, compound is too
-            min_score = max(buf_scores) if buf_scores else 0.0
-
-            # Emit compound (only if all parts are 2+ chars and none is a stopword)
-            all_parts_valid = all(len(f) >= 2 for f in buf_forms)
-            no_stopwords = not any(f in self._STOP_NOUNS or f in _COMPOUND_STOP for f in buf_forms)
-            if len(buf_forms) > 1 and len(merged) <= _MAX_COMPOUND_CHARS and all_parts_valid and no_stopwords:
-                compounds.append((merged, "compound_noun", min_score))
-            # Always emit individual meaningful tokens
-            for form, t, sc in zip(buf_forms, buf_tags, buf_scores):
-                if len(form) < self.MIN_TERM_LENGTH:
-                    continue
-                if t == "NNP":
-                    compounds.append((form, "proper_noun", sc))
-                elif t == self._FOREIGN_TAG:
-                    compounds.append((form, "foreign", sc))
-                elif t == "NNG":
-                    compounds.append((form, "noun", sc))
-            buf_forms.clear()
-            buf_tags.clear()
-            buf_scores.clear()
-
-        for token in tokens:
-            tag = token.tag
-            if tag in self._NOUN_TAGS or tag == self._FOREIGN_TAG:
-                # NNP (proper nouns like 김철수) break compound
-                if tag == "NNP" and buf_forms:
-                    _flush()
-                    buf_forms.append(token.form)
-                    buf_tags.append(tag)
-                    buf_scores.append(token.score)
-                    _flush()
-                # SL (foreign) only compounds with adjacent SL; also flush on max compound size
-                elif (
-                    (tag == self._FOREIGN_TAG and buf_forms and buf_tags[-1] != self._FOREIGN_TAG)
-                    or len(buf_forms) >= _MAX_COMPOUND_TOKENS
-                ):
-                    _flush()
-                    buf_forms.append(token.form)
-                    buf_tags.append(tag)
-                    buf_scores.append(token.score)
-                else:  # default: continue compounding
-                    buf_forms.append(token.form)
-                    buf_tags.append(tag)
-                    buf_scores.append(token.score)
-            else:
-                _flush()
-        _flush()
-
-        # Pass 2: Filter and count
         for term, tag_type, kiwi_score in compounds:
             if _is_noise_term(term, tag_type, kiwi_score):
                 continue
@@ -415,6 +419,43 @@ class TermExtractor:
 
     # -- Pattern extraction ------------------------------------------------
 
+    @staticmethod
+    def _normalize_match(raw_term: str, pattern_type: str) -> str | None:
+        """Normalize a regex match. Returns None if the term should be skipped."""
+        if _is_code_artifact(raw_term):
+            return None
+        if pattern_type == "mixed":
+            raw_term = _strip_korean_particles(raw_term)
+        if len(raw_term) < 2:
+            return None
+        if raw_term.lower() in _STOP_TERMS:
+            return None
+        return raw_term
+
+    def _record_match(
+        self,
+        text: str,
+        raw_term: str,
+        counter: Counter[str],
+        types: dict[str, str],
+        contexts: dict[str, list[str]],
+        _original_case: dict[str, str],
+        pattern_type: str,
+    ) -> None:
+        """Record a single matched term into counters, types, contexts."""
+        count_key = raw_term.lower()
+        counter[count_key] += 1
+        types.setdefault(count_key, pattern_type)
+        if count_key not in _original_case:
+            _original_case[count_key] = raw_term
+
+        if count_key not in contexts:
+            contexts[count_key] = []
+        if len(contexts[count_key]) < 3:
+            ctx = self._extract_context(text, raw_term)
+            if ctx:
+                contexts[count_key].append(ctx)
+
     def _extract_patterns(
         self,
         text: str,
@@ -429,41 +470,12 @@ class TermExtractor:
 
         for pattern, pattern_type in self._PATTERNS:
             for match in pattern.finditer(text):
-                raw_term = match.group().strip()
-
-                # Apply noise filter
-                if _is_code_artifact(raw_term):
+                raw_term = self._normalize_match(match.group().strip(), pattern_type)
+                if raw_term is None:
                     continue
-
-                # Strip Korean particles for mixed terms
-                if pattern_type == "mixed":
-                    raw_term = _strip_korean_particles(raw_term)
-
-                # Minimum length check
-                if len(raw_term) < 2:
-                    continue
-
-                # Stop term check
-                if raw_term.lower() in _STOP_TERMS:
-                    continue
-
-                # Keep original casing for the term (preserves acronyms like KB, RAG)
-                canonical_term = raw_term
-                # Use lowercased version only for counting/dedup
-                count_key = raw_term.lower()
-                counter[count_key] += 1
-                types.setdefault(count_key, pattern_type)
-                # Store original-cased canonical form (first occurrence wins)
-                if count_key not in _original_case:
-                    _original_case[count_key] = canonical_term
-
-                # Collect context (surrounding text)
-                if count_key not in contexts:
-                    contexts[count_key] = []
-                if len(contexts[count_key]) < 3:
-                    ctx = self._extract_context(text, raw_term)
-                    if ctx:
-                        contexts[count_key].append(ctx)
+                self._record_match(
+                    text, raw_term, counter, types, contexts, _original_case, pattern_type,
+                )
 
     def _extract_context(
         self,
@@ -508,32 +520,9 @@ class TermExtractor:
         (_ALSO_KNOWN_PATTERN, "also_known_as"),
     )
 
-    async def discover_synonyms(
-        self,
-        text: str,
-        known_terms: list[dict[str, Any]],
-    ) -> list[tuple[str, str, str]]:
-        """Discover synonym candidates from text context.
-
-        Patterns to detect:
-        1. Parenthetical: "K8s(쿠버네티스)" or "쿠버네티스(K8s)"
-        2. Aka pattern: "K8s, 일명 쿠버네티스" or "K8s 또는 쿠버네티스"
-        3. Abbreviation intro: "Kubernetes(이하 K8s)" or "데이터마트(이하 DM)"
-        4. Also-known-as: "K8s라고도 불리는 쿠버네티스"
-
-        Args:
-            text: Full document text to scan.
-            known_terms: List of glossary term dicts with at least "term" and
-                optionally "synonyms" keys, used to match discovered pairs.
-
-        Returns:
-            List of (term, synonym, pattern_type) tuples.
-        """
-        await asyncio.sleep(0)
-        if not text:
-            return []
-
-        # Build lookup set of known term strings (lowercased)
+    @staticmethod
+    def _build_known_term_set(known_terms: list[dict[str, Any]]) -> set[str]:
+        """Build a lowercase set of all known terms and their synonyms."""
         known_set: set[str] = set()
         for kt in known_terms:
             t = kt.get("term", "")
@@ -542,7 +531,47 @@ class TermExtractor:
             for s in kt.get("synonyms", []):
                 if s:
                     known_set.add(s.lower())
+        return known_set
 
+    @staticmethod
+    def _is_valid_synonym_pair(term_a: str, term_b: str) -> bool:
+        """Check if a synonym pair passes noise/length filters."""
+        if len(term_a) < 2 or len(term_b) < 2:
+            return False
+        if _is_code_artifact(term_a) or _is_code_artifact(term_b):
+            return False
+        if len(term_a) > 30 or len(term_b) > 30:
+            return False
+        if _is_synonym_noise(term_a) or _is_synonym_noise(term_b):
+            return False
+        return True
+
+    @staticmethod
+    def _resolve_base_synonym(term_a: str, term_b: str, known_set: set[str]) -> tuple[str, str]:
+        """Determine which term is the base and which is the synonym."""
+        a_known = term_a.lower() in known_set
+        b_known = term_b.lower() in known_set
+        if a_known and not b_known:
+            return term_a, term_b
+        if b_known and not a_known:
+            return term_b, term_a
+        return term_a, term_b
+
+    async def discover_synonyms(
+        self,
+        text: str,
+        known_terms: list[dict[str, Any]],
+    ) -> list[tuple[str, str, str]]:
+        """Discover synonym candidates from text context.
+
+        Returns:
+            List of (term, synonym, pattern_type) tuples.
+        """
+        await asyncio.sleep(0)
+        if not text:
+            return []
+
+        known_set = self._build_known_term_set(known_terms)
         discovered: list[tuple[str, str, str]] = []
         seen_pairs: set[tuple[str, str]] = set()
 
@@ -551,31 +580,10 @@ class TermExtractor:
                 term_a = match.group(1).strip()
                 term_b = match.group(2).strip()
 
-                # Skip very short or noise matches
-                if len(term_a) < 2 or len(term_b) < 2:
-                    continue
-                if _is_code_artifact(term_a) or _is_code_artifact(term_b):
-                    continue
-                # Skip if either side is too long (OCR sentence fragments)
-                if len(term_a) > 30 or len(term_b) > 30:
-                    continue
-                # Skip noisy terms (special char prefix, pure numbers, low alnum ratio)
-                if _is_synonym_noise(term_a) or _is_synonym_noise(term_b):
+                if not self._is_valid_synonym_pair(term_a, term_b):
                     continue
 
-                # Determine which is the base term and which is the synonym.
-                # Prefer the one that already exists in the glossary as base.
-                a_known = term_a.lower() in known_set
-                b_known = term_b.lower() in known_set
-
-                if a_known and not b_known:
-                    base, syn = term_a, term_b
-                elif b_known and not a_known:
-                    base, syn = term_b, term_a
-                else:
-                    # Neither or both known -- use the first as base
-                    base, syn = term_a, term_b
-
+                base, syn = self._resolve_base_synonym(term_a, term_b, known_set)
                 pair_key = (base.lower(), syn.lower())
                 if pair_key in seen_pairs or base.lower() == syn.lower():
                     continue
@@ -671,23 +679,31 @@ class TermExtractor:
 
     # -- Global term filtering ---------------------------------------------
 
+    @staticmethod
+    def _is_word_exact_match(result: dict, term_str: str, normalized: str) -> bool:
+        """Check if a word-type global term is an exact match."""
+        term_lower = term_str.lower()
+        return (
+            result["term"].lower() == term_lower
+            or (result.get("term_ko") or "").lower() == term_lower
+            or normalized.lower() == result["term"].lower()
+        )
+
+    @staticmethod
+    def _is_global_hit(result: dict | None, term_str: str, normalized: str) -> bool:
+        """Check if a lookup result qualifies as a global term hit."""
+        if result is None or result.get("scope") != "global":
+            return False
+        if result.get("term_type") == "word":
+            return TermExtractor._is_word_exact_match(result, term_str, normalized)
+        return True
+
     async def _filter_global_terms(
         self,
         candidates: list[ExtractedTerm],
         _kb_id: str,
     ) -> list[ExtractedTerm]:
-        """Remove candidates that already exist as scope='global'.
-
-        Uses asyncio.gather to check all candidates in parallel instead of
-        sequential N+1 lookups. Normalizes terms before comparison to avoid
-        Unicode / particle mismatches.
-
-        Matching strategy depends on the global term's ``term_type``:
-        - **word** (term_type="word"): Exact match only after normalization.
-          No fuzzy / similarity cascade.
-        - **term** (term_type="term"): Full similarity cascade (L1-L3) via
-          normalized + original form lookups.
-        """
+        """Remove candidates that already exist as scope='global'."""
         from src.nlp.term_normalizer import TermNormalizer
 
         get_fn = getattr(self._glossary_repo, "get_by_term", None)
@@ -700,32 +716,11 @@ class TermExtractor:
             try:
                 normalized = normalizer.normalize_for_comparison(term_str)
                 result = await get_fn("all", normalized)
-                if result is not None and result.get("scope") == "global":
-                    # For word-type globals: exact match only
-                    if result.get("term_type") == "word":
-                        term_lower = term_str.lower()
-                        if (
-                            result["term"].lower() == term_lower
-                            or (result.get("term_ko") or "").lower() == term_lower
-                            or normalized.lower() == result["term"].lower()
-                        ):
-                            return True
-                        # Not an exact match -- don't count as global hit
-                        return False
-                    # term-type: any match in the similarity cascade counts
+                if self._is_global_hit(result, term_str, normalized):
                     return True
-                # Also try the original form if different
                 if normalized != term_str:
                     result = await get_fn("all", term_str)
-                    if result is not None and result.get("scope") == "global":
-                        if result.get("term_type") == "word":
-                            term_lower = term_str.lower()
-                            if (
-                                result["term"].lower() == term_lower
-                                or (result.get("term_ko") or "").lower() == term_lower
-                            ):
-                                return True
-                            return False
+                    if self._is_global_hit(result, term_str, normalized):
                         return True
                 return False
             except Exception:

@@ -86,65 +86,52 @@ class KnowledgeRAGPipeline:
         self._query_preprocessor = query_preprocessor
         self._query_expander = query_expander
 
-    async def process(self, request: RAGRequest) -> RAGResponse:
-        """Execute RAG pipeline."""
-        query = request.query.strip()
-
-        # QueryPreprocessor - correct typos BEFORE embedding
-        preprocessed_query = query
+    def _preprocess_query(self, query: str) -> str:
+        """Apply query preprocessing (typo correction + expansion)."""
+        preprocessed = query
         try:
             if self._query_preprocessor:
                 pp_result = self._query_preprocessor.preprocess(query)
-                preprocessed_query = pp_result.corrected_query
+                preprocessed = pp_result.corrected_query
                 if pp_result.was_corrected:
                     logger.info(
                         "RAG query preprocessed: '%s' -> '%s'",
                         query[:80],
-                        preprocessed_query[:80],
+                        preprocessed[:80],
                     )
         except Exception as e:
             logger.warning("QueryPreprocessor failed in RAG pipeline, using original: %s", e)
+        return preprocessed
 
-        # Query expansion via glossary synonyms
-        if self._query_expander:
-            try:
-                expanded = await self._query_expander.expand_query(
-                    kb_id=request.kb_id or "all",
-                    query=preprocessed_query,
-                )
-                expanded_text = getattr(expanded, "expanded_query", None)
-                if expanded_text and expanded_text != preprocessed_query:
-                    preprocessed_query = expanded_text
-            except Exception as e:
-                logger.warning("Query expansion failed: %s", e)
-
-        query_type = self._classify_query(preprocessed_query)
-
-        # Owner queries: graph DB direct (no hallucination)
-        if query_type == QueryIntent.OWNER_QUERY and self._graph:
-            return await self._handle_owner_query(request, preprocessed_query)
-
-        # Vector search
-        if not self._search:
-            return RAGResponse(
-                query=query, answer="검색 엔진이 초기화되지 않았습니다.",
-                query_type=query_type,
+    async def _expand_query(self, query: str, kb_id: str | None) -> str:
+        """Expand query via glossary synonyms."""
+        if not self._query_expander:
+            return query
+        try:
+            expanded = await self._query_expander.expand_query(
+                kb_id=kb_id or "all",
+                query=query,
             )
+            expanded_text = getattr(expanded, "expanded_query", None)
+            if expanded_text and expanded_text != query:
+                return expanded_text
+        except Exception as e:
+            logger.warning("Query expansion failed: %s", e)
+        return query
 
-        if not self._embedder:
-            return RAGResponse(
-                query=query, answer="임베딩 프로바이더가 초기화되지 않았습니다.",
-                query_type=query_type,
-            )
-
-        # Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
+    async def _embed_and_search(
+        self, preprocessed_query: str, kb_id: str, top_k: int,
+    ) -> list[Any]:
+        """Encode query and run hybrid search."""
         colbert_enabled = weights.hybrid_search.enable_colbert_reranking
         encoded = await asyncio.to_thread(
             self._embedder.encode, [preprocessed_query], True, True, colbert_enabled,
         )
         dense_vector = encoded["dense_vecs"][0]
         sparse_weights = encoded["lexical_weights"][0] if encoded.get("lexical_weights") else {}
-        sparse_vector = {int(k): float(v) for k, v in sparse_weights.items()} if sparse_weights else None
+        sparse_vector = (
+            {int(k): float(v) for k, v in sparse_weights.items()} if sparse_weights else None
+        )
         colbert_vectors = (
             encoded["colbert_vecs"][0]
             if colbert_enabled and encoded.get("colbert_vecs")
@@ -152,20 +139,60 @@ class KnowledgeRAGPipeline:
         )
 
         if colbert_enabled and colbert_vectors:
-            search_results = await self._search.search_with_colbert_rerank(
-                kb_id=request.kb_id or "knowledge",
-                dense_vector=dense_vector,
-                sparse_vector=sparse_vector,
-                colbert_vectors=colbert_vectors,
-                top_k=request.top_k,
+            return await self._search.search_with_colbert_rerank(
+                kb_id=kb_id, dense_vector=dense_vector,
+                sparse_vector=sparse_vector, colbert_vectors=colbert_vectors,
+                top_k=top_k,
             )
-        else:
-            search_results = await self._search.search(
-                kb_id=request.kb_id or "knowledge",
-                dense_vector=dense_vector,
-                sparse_vector=sparse_vector,
-                top_k=request.top_k,
+        return await self._search.search(
+            kb_id=kb_id, dense_vector=dense_vector,
+            sparse_vector=sparse_vector, top_k=top_k,
+        )
+
+    @staticmethod
+    def _build_context(
+        result_dicts: list[dict], include_sources: bool,
+    ) -> tuple[str, list[dict]]:
+        """Build context text and source list from search results."""
+        context_chunks = []
+        sources = []
+        for i, result in enumerate(result_dicts):
+            context_chunks.append(f"[{i+1}] {result['content']}")
+            if include_sources:
+                sources.append({
+                    "index": i + 1,
+                    "document_name": result["metadata"].get("document_name", ""),
+                    "source_uri": result["metadata"].get("source_uri", ""),
+                    "score": result["score"],
+                    "kb_id": result["metadata"].get("kb_id", ""),
+                })
+        return "\n\n".join(context_chunks), sources
+
+    async def process(self, request: RAGRequest) -> RAGResponse:
+        """Execute RAG pipeline."""
+        query = request.query.strip()
+
+        preprocessed_query = self._preprocess_query(query)
+        preprocessed_query = await self._expand_query(preprocessed_query, request.kb_id)
+        query_type = self._classify_query(preprocessed_query)
+
+        if query_type == QueryIntent.OWNER_QUERY and self._graph:
+            return await self._handle_owner_query(request, preprocessed_query)
+
+        if not self._search:
+            return RAGResponse(
+                query=query, answer="검색 엔진이 초기화되지 않았습니다.",
+                query_type=query_type,
             )
+        if not self._embedder:
+            return RAGResponse(
+                query=query, answer="임베딩 프로바이더가 초기화되지 않았습니다.",
+                query_type=query_type,
+            )
+
+        search_results = await self._embed_and_search(
+            preprocessed_query, request.kb_id or "knowledge", request.top_k,
+        )
 
         if not search_results:
             return RAGResponse(
@@ -175,34 +202,16 @@ class KnowledgeRAGPipeline:
                 confidence=0.0,
             )
 
-        # Convert QdrantSearchResult dataclass objects to dicts
         result_dicts = [
             {"point_id": r.point_id, "score": r.score, "content": r.content, "metadata": r.metadata}
             for r in search_results
         ]
 
-        # Build context from search results
-        context_chunks = []
-        sources = []
-        for i, result in enumerate(result_dicts):
-            content = result["content"]
-            context_chunks.append(f"[{i+1}] {content}")
-            if request.include_sources:
-                sources.append({
-                    "index": i + 1,
-                    "document_name": result["metadata"].get("document_name", ""),
-                    "source_uri": result["metadata"].get("source_uri", ""),
-                    "score": result["score"],
-                    "kb_id": result["metadata"].get("kb_id", ""),
-                })
+        context_text, sources = self._build_context(result_dicts, request.include_sources)
 
-        context_text = "\n\n".join(context_chunks)
-
-        # LLM answer generation
         if self._llm:
             answer = await self._llm.generate_with_context(
-                query=preprocessed_query,
-                context=context_text,
+                query=preprocessed_query, context=context_text,
             )
         else:
             answer = f"검색 결과 {len(result_dicts)}건이 있습니다.\n\n" + context_text
@@ -224,15 +233,7 @@ class KnowledgeRAGPipeline:
     async def process_stream(self, request: RAGRequest) -> AsyncIterator[str]:
         """Streaming RAG pipeline."""
         query = request.query.strip()
-
-        # QueryPreprocessor - correct typos BEFORE embedding
-        preprocessed_query = query
-        try:
-            if self._query_preprocessor:
-                pp_result = self._query_preprocessor.preprocess(query)
-                preprocessed_query = pp_result.corrected_query
-        except Exception as e:
-            logger.warning("QueryPreprocessor failed in stream pipeline, using original: %s", e)
+        preprocessed_query = self._preprocess_query(query)
 
         query_type = self._classify_query(preprocessed_query)
 
@@ -249,35 +250,9 @@ class KnowledgeRAGPipeline:
             yield "임베딩 프로바이더가 초기화되지 않았습니다."
             return
 
-        # Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
-        colbert_enabled = weights.hybrid_search.enable_colbert_reranking
-        encoded = await asyncio.to_thread(
-            self._embedder.encode, [preprocessed_query], True, True, colbert_enabled,
+        search_results = await self._embed_and_search(
+            preprocessed_query, request.kb_id or "knowledge", request.top_k,
         )
-        dense_vector = encoded["dense_vecs"][0]
-        sparse_weights = encoded["lexical_weights"][0] if encoded.get("lexical_weights") else {}
-        sparse_vector = {int(k): float(v) for k, v in sparse_weights.items()} if sparse_weights else None
-        colbert_vectors = (
-            encoded["colbert_vecs"][0]
-            if colbert_enabled and encoded.get("colbert_vecs")
-            else None
-        )
-
-        if colbert_enabled and colbert_vectors:
-            search_results = await self._search.search_with_colbert_rerank(
-                kb_id=request.kb_id or "knowledge",
-                dense_vector=dense_vector,
-                sparse_vector=sparse_vector,
-                colbert_vectors=colbert_vectors,
-                top_k=request.top_k,
-            )
-        else:
-            search_results = await self._search.search(
-                kb_id=request.kb_id or "knowledge",
-                dense_vector=dense_vector,
-                sparse_vector=sparse_vector,
-                top_k=request.top_k,
-            )
 
         if not search_results:
             yield f"'{query}'에 대한 관련 문서를 찾을 수 없습니다."

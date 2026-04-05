@@ -96,6 +96,9 @@ def clean_ocr_numbers(text: str) -> str:
     return result
 
 
+_OCR_TAG_RE = re.compile(r"\[(?:Page|Image|Slide)\s+\d+\s+OCR\]")
+
+
 def dedup_ocr_sections(text: str) -> str:
     """Remove duplicate OCR extraction sections.
 
@@ -113,22 +116,23 @@ def dedup_ocr_sections(text: str) -> str:
     i = 0
     while i < len(sections):
         part = sections[i]
-        if re.match(r"\[(?:Page|Image|Slide)\s+\d+\s+OCR\]", part):
-            # This is a tag — check if next section's content is duplicate
-            content = sections[i + 1] if i + 1 < len(sections) else ""
-            content_key = re.sub(r"\s+", "", content)[:200]  # normalize for comparison
-            if content_key and content_key in seen_content:
-                i += 2  # skip tag + content (duplicate)
-                continue
-            if content_key:
-                seen_content.add(content_key)
-            result_parts.append(part)
-            if i + 1 < len(sections):
-                result_parts.append(sections[i + 1])
-            i += 2
-        else:
+        if not _OCR_TAG_RE.match(part):
             result_parts.append(part)
             i += 1
+            continue
+
+        # This is a tag — check if next section's content is duplicate
+        content = sections[i + 1] if i + 1 < len(sections) else ""
+        content_key = re.sub(r"\s+", "", content)[:200]  # normalize for comparison
+        if content_key and content_key in seen_content:
+            i += 2  # skip tag + content (duplicate)
+            continue
+        if content_key:
+            seen_content.add(content_key)
+        result_parts.append(part)
+        if i + 1 < len(sections):
+            result_parts.append(sections[i + 1])
+        i += 2
 
     return "".join(result_parts)
 
@@ -160,6 +164,33 @@ def _get_choseong(text: str) -> str:
     return "".join(result)
 
 
+def _score_term_match(token: str, term: str) -> float | None:
+    """Score a token-term pair. Returns weighted score or None if no match."""
+    if abs(len(token) - len(term)) > 1:
+        return None
+    ratio = SequenceMatcher(None, token, term).ratio()
+
+    # Tier 1: high char similarity
+    if ratio >= 0.75:
+        return ratio
+    # Tier 2: choseong match + moderate similarity
+    if ratio >= 0.5 and len(token) == len(term) and _get_choseong(token) == _get_choseong(term):
+        return ratio + 0.3  # boost for choseong match
+    return None
+
+
+def _find_best_domain_match(token: str) -> tuple[str, float]:
+    """Find the best matching domain term for a token."""
+    best_term = ""
+    best_score = 0.0
+    for term in _DOMAIN_TERMS:
+        score = _score_term_match(token, term)
+        if score is not None and score > best_score:
+            best_score = score
+            best_term = term
+    return best_term, best_score
+
+
 def _correct_with_domain_dict(text: str) -> str:
     """Correct OCR misreads using domain dictionary.
 
@@ -189,29 +220,7 @@ def _correct_with_domain_dict(text: str) -> str:
             continue
         seen.add(token)
 
-        best_term = ""
-        best_score = 0.0
-        for term in _DOMAIN_TERMS:
-            if abs(len(token) - len(term)) > 1:
-                continue
-            ratio = SequenceMatcher(None, token, term).ratio()
-
-            # Tier 1: high char similarity
-            if ratio >= 0.75:
-                score = ratio
-            # Tier 2: choseong match + moderate similarity
-            elif ratio >= 0.5 and len(token) == len(term):
-                if _get_choseong(token) == _get_choseong(term):
-                    score = ratio + 0.3  # boost for choseong match
-                else:
-                    continue
-            else:
-                continue
-
-            if score > best_score:
-                best_score = score
-                best_term = term
-
+        best_term, best_score = _find_best_domain_match(token)
         if best_term:
             result = result.replace(token, best_term)
             corrections_made += 1

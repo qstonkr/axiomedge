@@ -26,6 +26,11 @@ from components.sidebar import hide_default_nav, render_sidebar
 from services import api_client
 from services.api_client import api_failed
 
+_MSG_API_FAIL = "API 연결 실패. 재시도 해주세요."
+_BTN_RETRY = "🔄 재시도"
+_LBL_EXPERIMENT_STATUS = "실험 상태"
+_LBL_PUBLISH_STRATEGY = "퍼블리시 전략"
+
 hide_default_nav()
 render_sidebar(show_admin=True)
 
@@ -50,8 +55,8 @@ with tab_overview:
     agg_result = api_client.get_kb_aggregation()
 
     if api_failed(kbs_result) or api_failed(agg_result):
-        st.error("API 연결 실패. 재시도 해주세요.")
-        if st.button("🔄 재시도", key="retry_overview"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_overview"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -108,8 +113,8 @@ with tab_overview:
                     "Live 청크 수": kb.get("chunk_count", 0),
                     "실험 문서 수": kb.get("experiment_document_count", 0),
                     "실험 청크 수": kb.get("experiment_chunk_count", 0),
-                    "실험 상태": kb.get("experiment_status", "idle"),
-                    "퍼블리시 전략": kb.get("publish_strategy", "legacy"),
+                    _LBL_EXPERIMENT_STATUS: kb.get("experiment_status", "idle"),
+                    _LBL_PUBLISH_STRATEGY: kb.get("publish_strategy", "legacy"),
                     "실험 퍼블리시": kb.get("experiment_publish_status", "not_started"),
                     "KB ID": kb.get("kb_id", kb.get("id", "-")),
                 })
@@ -117,7 +122,7 @@ with tab_overview:
 
             # 상태 색상 표시
             df["상태"] = df["상태"].apply(lambda s: f"{KB_STATUS_ICONS.get(s, '⚪')} {s}")
-            df["실험 상태"] = df["실험 상태"].apply(lambda s: f"{RUN_STATUS_ICONS.get(s, '⚪')} {s}")
+            df[_LBL_EXPERIMENT_STATUS] = df[_LBL_EXPERIMENT_STATUS].apply(lambda s: f"{RUN_STATUS_ICONS.get(s, '⚪')} {s}")
             df["티어"] = df["티어"].apply(lambda t: f"{TIER_ICONS.get(t, '')} {t}")
 
             st.dataframe(df, use_container_width=True, hide_index=True)
@@ -135,8 +140,8 @@ with tab_pipeline:
     kbs_for_pipeline = api_client.list_kbs()
 
     if api_failed(pipeline_result):
-        st.error("API 연결 실패. 재시도 해주세요.")
-        if st.button("🔄 재시도", key="retry_pipeline"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_pipeline"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -302,14 +307,14 @@ with tab_pipeline:
                 with c2:
                     st.metric("실험 청크", selected_kb.get("experiment_chunk_count", 0))
                 with c3:
-                    st.metric("퍼블리시 전략", selected_kb.get("publish_strategy", "legacy"))
+                    st.metric(_LBL_PUBLISH_STRATEGY, selected_kb.get("publish_strategy", "legacy"))
                 with c4:
-                    st.metric("실험 상태", selected_kb.get("experiment_status", "idle"))
+                    st.metric(_LBL_EXPERIMENT_STATUS, selected_kb.get("experiment_status", "idle"))
 
                 strategy_options = ["legacy", "alias_live"]
                 current_strategy = selected_kb.get("publish_strategy", "legacy")
                 selected_strategy = st.selectbox(
-                    "퍼블리시 전략",
+                    _LBL_PUBLISH_STRATEGY,
                     options=strategy_options,
                     index=strategy_options.index(current_strategy)
                     if current_strategy in strategy_options
@@ -495,8 +500,8 @@ with tab_category:
     # KB 선택
     kbs_for_select = api_client.list_kbs()
     if api_failed(kbs_for_select):
-        st.error("API 연결 실패. 재시도 해주세요.")
-        if st.button("🔄 재시도", key="retry_category"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_category"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -508,8 +513,8 @@ with tab_category:
 
             cat_result = api_client.get_kb_categories(selected_kb_id)
             if api_failed(cat_result):
-                st.error("API 연결 실패. 재시도 해주세요.")
-                if st.button("🔄 재시도", key="retry_cat_detail"):
+                st.error(_MSG_API_FAIL)
+                if st.button(_BTN_RETRY, key="retry_cat_detail"):
                     st.cache_data.clear()
                     st.rerun()
             else:
@@ -524,7 +529,7 @@ with tab_category:
                         title=f"{selected_kb_name} 카테고리 분포",
                         hole=0.3,
                     )
-                    fig.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+                    fig.update_layout(margin={"l": 20, "r": 20, "t": 40, "b": 20})
                     st.plotly_chart(fig, use_container_width=True)
 
                     # 테이블 표시
@@ -549,7 +554,7 @@ with tab_l1:
 
     if api_failed(l1_cats_result) and api_failed(l1_stats_result):
         st.error("L1 카테고리 API 연결 실패. 재시도 해주세요.")
-        if st.button("🔄 재시도", key="retry_l1"):
+        if st.button(_BTN_RETRY, key="retry_l1"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -603,7 +608,7 @@ with tab_l1:
                     hole=0.3,
                     color_discrete_sequence=px.colors.qualitative.Set2,
                 )
-                fig_l1.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+                fig_l1.update_layout(margin={"l": 20, "r": 20, "t": 40, "b": 20})
                 st.plotly_chart(fig_l1, use_container_width=True)
 
                 st.markdown("---")
@@ -623,7 +628,7 @@ with tab_l1:
                     )
                     fig_stack.update_layout(
                         barmode="stack",
-                        margin=dict(l=20, r=20, t=40, b=20),
+                        margin={"l": 20, "r": 20, "t": 40, "b": 20},
                         xaxis_tickangle=-45,
                     )
                     st.plotly_chart(fig_stack, use_container_width=True)

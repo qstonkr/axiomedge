@@ -128,6 +128,8 @@ class TestFileUploadIngest:
             mock_task = MagicMock()
             mock_task.add_done_callback = MagicMock()
             mock_asyncio.create_task = MagicMock(return_value=mock_task)
+            # Mock asyncio.to_thread to execute the callable synchronously
+            mock_asyncio.to_thread = AsyncMock(side_effect=lambda fn, *a, **kw: fn(*a, **kw))
 
             app = _make_app()
 

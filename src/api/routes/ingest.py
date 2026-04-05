@@ -47,6 +47,47 @@ class IngestResponse(BaseModel):
     errors: list[str] = []
 
 
+def _tally_results(
+    results: list, file_names: list[str],
+) -> tuple[int, int, list[str]]:
+    """Tally ingestion results, returning (docs_processed, chunks_created, errors)."""
+    documents_processed = 0
+    chunks_created = 0
+    errors: list[str] = []
+    for i, r in enumerate(results):
+        if isinstance(r, Exception):
+            errors.append(f"{file_names[i]}: {r}")
+            metrics_inc("errors")
+        else:
+            chunks, _ = r
+            if chunks > 0:
+                documents_processed += 1
+                chunks_created += chunks
+    return documents_processed, chunks_created, errors
+
+
+def _collect_files(source_dir: str) -> list[tuple[str, str]]:
+    """Collect all file paths and names from source directory."""
+    result = []
+    for root, _dirs, files in os.walk(source_dir):
+        for fname in files:
+            result.append((os.path.join(root, fname), fname))
+    return result
+
+
+async def _update_kb_counts(state: Any, kb_id: str, docs: int, chunks: int) -> None:
+    """Update KB registry counts if documents were processed."""
+    if docs <= 0:
+        return
+    kb_registry = state.get("kb_registry")
+    if not kb_registry:
+        return
+    try:
+        await kb_registry.update_counts(kb_id, docs, chunks)
+    except Exception as _e:
+        logger.warning("KB count update failed: %s", _e)
+
+
 @router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})
 async def ingest_directory(request: IngestRequest):
     """Ingest documents from a directory."""
@@ -59,7 +100,6 @@ async def ingest_directory(request: IngestRequest):
     if not os.path.isdir(request.source_dir):
         raise HTTPException(status_code=400, detail=f"Directory not found: {request.source_dir}")
 
-    # Ensure collection exists
     collections = state.get("qdrant_collections")
     if collections:
         await collections.ensure_collection(request.kb_id)
@@ -84,11 +124,6 @@ async def ingest_directory(request: IngestRequest):
             graphrag_extractor=state.get("graphrag_extractor"),
         )
 
-        documents_processed = 0
-        chunks_created = 0
-        errors: list[str] = []
-
-        # Bounded parallel ingestion (concurrency=4)
         semaphore = asyncio.Semaphore(4)
 
         async def _ingest_one(fpath: str, fname: str) -> tuple[int, str | None]:
@@ -107,36 +142,17 @@ async def ingest_directory(request: IngestRequest):
                 result = await pipeline.ingest(raw, collection_name=request.kb_id)
                 return result.chunks_stored, None
 
-        tasks = []
-        file_names = []
-        for root, _dirs, files in os.walk(request.source_dir):
-            for fname in files:
-                fpath = os.path.join(root, fname)
-                tasks.append(_ingest_one(fpath, fname))
-                file_names.append(fname)
+        file_paths = _collect_files(request.source_dir)
+        tasks = [_ingest_one(fp, fn) for fp, fn in file_paths]
+        file_names = [fn for _, fn in file_paths]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        for i, r in enumerate(results):
-            if isinstance(r, Exception):
-                errors.append(f"{file_names[i]}: {r}")
-                metrics_inc("errors")
-            else:
-                chunks, _ = r
-                if chunks > 0:
-                    documents_processed += 1
-                    chunks_created += chunks
+        documents_processed, chunks_created, errors = _tally_results(results, file_names)
 
         metrics_inc("ingest_documents", documents_processed)
         metrics_inc("ingest_chunks", chunks_created)
 
-        # Update KB registry counts
-        if documents_processed > 0:
-            kb_registry = state.get("kb_registry")
-            if kb_registry:
-                try:
-                    await kb_registry.update_counts(request.kb_id, documents_processed, chunks_created)
-                except Exception as _e:
-                    logger.warning("KB count update failed: %s", _e)
+        await _update_kb_counts(state, request.kb_id, documents_processed, chunks_created)
 
         return IngestResponse(
             success=True,

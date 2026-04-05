@@ -20,17 +20,23 @@ from src.database.repositories.base import BaseRepository
 logger = logging.getLogger(__name__)
 
 
+def _serialize_json_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Serialize extraction_metadata (dict) and contributors (list) to JSON strings."""
+    result = dict(data)
+    if "extraction_metadata" in result and isinstance(result["extraction_metadata"], dict):
+        result["extraction_metadata"] = json.dumps(result["extraction_metadata"])
+    if "contributors" in result and isinstance(result["contributors"], list):
+        result["contributors"] = json.dumps(result["contributors"])
+    return result
+
+
 class ProvenanceRepository(BaseRepository):
     """PostgreSQL provenance repository."""
 
     async def save(self, data: dict[str, Any]) -> None:
         async with await self._get_session() as session:
             try:
-                model_data = dict(data)
-                if "extraction_metadata" in model_data and isinstance(model_data["extraction_metadata"], dict):
-                    model_data["extraction_metadata"] = json.dumps(model_data["extraction_metadata"])
-                if "contributors" in model_data and isinstance(model_data["contributors"], list):
-                    model_data["contributors"] = json.dumps(model_data["contributors"])
+                model_data = _serialize_json_fields(data)
                 if "id" not in model_data:
                     model_data["id"] = str(uuid.uuid4())
                 model = ProvenanceModel(**model_data)
@@ -52,34 +58,31 @@ class ProvenanceRepository(BaseRepository):
                     )
                 )
                 existing = result.scalar_one_or_none()
-                previous_hash: str | None = None
 
                 if existing:
                     previous_hash = existing.content_hash
-                    for key, value in data.items():
-                        if key in ("extraction_metadata",) and isinstance(value, dict):
-                            value = json.dumps(value)
-                        if key in ("contributors",) and isinstance(value, list):
-                            value = json.dumps(value)
-                        if hasattr(existing, key):
-                            setattr(existing, key, value)
-                    existing.updated_at = datetime.now(timezone.utc)
-                else:
-                    model_data = dict(data)
-                    if "extraction_metadata" in model_data and isinstance(model_data["extraction_metadata"], dict):
-                        model_data["extraction_metadata"] = json.dumps(model_data["extraction_metadata"])
-                    if "contributors" in model_data and isinstance(model_data["contributors"], list):
-                        model_data["contributors"] = json.dumps(model_data["contributors"])
-                    if "id" not in model_data:
-                        model_data["id"] = str(uuid.uuid4())
-                    model = ProvenanceModel(**model_data)
-                    session.add(model)
+                    self._update_existing(existing, data)
+                    await session.commit()
+                    return previous_hash
 
+                model_data = _serialize_json_fields(data)
+                if "id" not in model_data:
+                    model_data["id"] = str(uuid.uuid4())
+                session.add(ProvenanceModel(**model_data))
                 await session.commit()
-                return previous_hash
+                return None
             except SQLAlchemyError:
                 await session.rollback()
                 raise
+
+    @staticmethod
+    def _update_existing(existing: ProvenanceModel, data: dict[str, Any]) -> None:
+        """Update existing model fields from data dict."""
+        serialized = _serialize_json_fields(data)
+        for key, value in serialized.items():
+            if hasattr(existing, key):
+                setattr(existing, key, value)
+        existing.updated_at = datetime.now(timezone.utc)
 
     async def get_by_knowledge_id(self, knowledge_id: str) -> dict[str, Any] | None:
         async with await self._get_session() as session:

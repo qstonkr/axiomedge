@@ -132,11 +132,12 @@ def run_graphrag_parallel(kb_id: str):
             completed += 1
             future.result()
 
-            if completed % 50 == 0:
-                elapsed = time.time() - start_time
-                rate = completed / elapsed
-                remaining = (len(chunks) - completed) / rate if rate > 0 else 0
-                with stats_lock:
+            if completed % 50 != 0:
+                continue
+            elapsed = time.time() - start_time
+            rate = completed / elapsed
+            remaining = (len(chunks) - completed) / rate if rate > 0 else 0
+            with stats_lock:
                     logger.info(
                         f"[{kb_id}] Progress: {completed}/{len(chunks)} "
                         f"— {stats['nodes']} nodes, {stats['rels']} rels "

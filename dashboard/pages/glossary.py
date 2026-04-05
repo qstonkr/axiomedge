@@ -274,15 +274,14 @@ with tab_list:
                 st.warning("해당 ID의 용어를 찾을 수 없습니다.")
 
         del_term_id = st.text_input("삭제할 용어 ID", key="del_term_id")
-        if del_term_id:
-            if st.button("🗑️ 삭제 실행", key="delete_term_btn"):
-                result = api_client.delete_glossary_term(del_term_id)
-                if api_failed(result):
-                    st.error("삭제 실패")
-                else:
-                    st.success("삭제 완료")
-                    st.cache_data.clear()
-                    st.rerun()
+        if del_term_id and st.button("🗑️ 삭제 실행", key="delete_term_btn"):
+            result = api_client.delete_glossary_term(del_term_id)
+            if api_failed(result):
+                st.error("삭제 실패")
+            else:
+                st.success("삭제 완료")
+                st.cache_data.clear()
+                st.rerun()
 
 
 # =============================================================================

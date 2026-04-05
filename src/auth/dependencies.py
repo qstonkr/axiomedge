@@ -114,6 +114,26 @@ async def get_optional_user(request: Request) -> AuthUser | None:
         return None
 
 
+async def _check_rbac_roles(
+    state: Any, user: AuthUser, roles: tuple[str, ...],
+) -> bool:
+    """Check if user has any of the required roles via RBAC engine."""
+    rbac = state.get("rbac_engine")
+    if not rbac:
+        return False
+
+    auth_service = state.get("auth_service")
+    if auth_service:
+        user_roles = await auth_service.get_user_roles(user.sub)
+    else:
+        user_roles = [{"role": r} for r in user.roles]
+
+    if rbac.get_highest_role(user_roles) in roles:
+        return True
+
+    return any(ur.get("role") in roles for ur in user_roles)
+
+
 def require_role(*roles: str) -> Callable:
     """Dependency factory: require user to have at least one of the specified roles.
 
@@ -131,24 +151,8 @@ def require_role(*roles: str) -> Callable:
         if not state:
             return user  # No state = allow (graceful degradation)
 
-        rbac = state.get("rbac_engine")
-
-        if rbac:
-            # Build user roles from DB
-            auth_service = state.get("auth_service")
-            if auth_service:
-                user_roles = await auth_service.get_user_roles(user.sub)
-            else:
-                user_roles = [{"role": r} for r in user.roles]
-
-            highest = rbac.get_highest_role(user_roles)
-            if highest in roles:
-                return user
-
-            # Check if any user role is in the required set
-            for ur in user_roles:
-                if ur.get("role") in roles:
-                    return user
+        if await _check_rbac_roles(state, user, roles):
+            return user
 
         # Fallback: check IdP roles from token
         if any(r in roles for r in user.roles):
@@ -202,6 +206,74 @@ def require_permission(resource: str, action: str) -> Callable:
     return _check
 
 
+async def _check_rbac_admin(state: Any, user: AuthUser) -> bool:
+    """Check if user has admin-level KB management permission via RBAC."""
+    rbac = state.get("rbac_engine")
+    auth_service = state.get("auth_service")
+    if not (rbac and auth_service):
+        return False
+    user_roles = await auth_service.get_user_roles(user.sub)
+    admin_check = rbac.check_permission(user_roles, "kb", "manage")
+    return admin_check.allowed
+
+
+async def _check_kb_level_permission(
+    state: Any, user: AuthUser, kb_id: str, min_level: str,
+    level_order: dict[str, int],
+) -> bool:
+    """Check if user has sufficient KB-level permission."""
+    auth_service = state.get("auth_service")
+    if not auth_service:
+        return False
+    kb_perm = await auth_service.get_kb_permission(user.sub, kb_id)
+    if not kb_perm:
+        return False
+    return level_order.get(kb_perm, -1) >= level_order.get(min_level, 0)
+
+
+async def _check_abac_kb_access(
+    state: Any, user: AuthUser, kb_id: str, min_level: str,
+) -> bool:
+    """Check KB access via ABAC policies."""
+    abac = state.get("abac_engine")
+    if not abac:
+        return False
+
+    from src.auth.abac import ABACContext
+
+    kb_info = await _fetch_kb_info(state, kb_id)
+    ctx = ABACContext(
+        subject={
+            "user_id": user.sub,
+            "department": user.department,
+            "organization_id": user.organization_id,
+            "provider": user.provider,
+            "roles": user.roles,
+        },
+        resource={
+            "type": "kb",
+            "kb_id": kb_id,
+            "tier": kb_info.get("tier", "team") if isinstance(kb_info, dict) else "team",
+            "organization_id": kb_info.get("organization_id") if isinstance(kb_info, dict) else None,
+            "data_classification": kb_info.get("data_classification", "internal") if isinstance(kb_info, dict) else "internal",
+        },
+        action="read" if min_level == "reader" else "write",
+    )
+    return abac.evaluate(ctx).allowed
+
+
+async def _fetch_kb_info(state: Any, kb_id: str) -> dict:
+    """Fetch KB info from registry, returning empty dict on failure."""
+    kb_registry = state.get("kb_registry")
+    if not kb_registry:
+        return {}
+    try:
+        return await kb_registry.get_kb(kb_id) or {}
+    except Exception as e:
+        logger.debug("Failed to fetch KB info for ABAC check: %s", e)
+        return {}
+
+
 def require_kb_access(min_level: str = "reader") -> Callable:
     """Dependency factory: require KB-level access.
 
@@ -230,57 +302,12 @@ def require_kb_access(min_level: str = "reader") -> Callable:
         if not state:
             return user  # No state = allow (graceful degradation)
 
-        # 1. Check RBAC (admin bypasses everything)
-        rbac = state.get("rbac_engine")
-        auth_service = state.get("auth_service")
-
-        if rbac and auth_service:
-            user_roles = await auth_service.get_user_roles(user.sub)
-            admin_check = rbac.check_permission(user_roles, "kb", "manage")
-            if admin_check.allowed:
-                return user
-
-        # 2. Check KB-level permission
-        if auth_service:
-            kb_perm = await auth_service.get_kb_permission(user.sub, kb_id)
-            if kb_perm:
-                user_level = level_order.get(kb_perm, -1)
-                required_level = level_order.get(min_level, 0)
-                if user_level >= required_level:
-                    return user
-
-        # 3. Check ABAC policies
-        abac = state.get("abac_engine")
-        if abac:
-            from src.auth.abac import ABACContext
-            kb_info = {}
-            kb_registry = state.get("kb_registry")
-            if kb_registry:
-                try:
-                    kb_info = await kb_registry.get_kb(kb_id) or {}
-                except Exception as e:
-                    logger.debug("Failed to fetch KB info for ABAC check: %s", e)
-
-            ctx = ABACContext(
-                subject={
-                    "user_id": user.sub,
-                    "department": user.department,
-                    "organization_id": user.organization_id,
-                    "provider": user.provider,
-                    "roles": user.roles,
-                },
-                resource={
-                    "type": "kb",
-                    "kb_id": kb_id,
-                    "tier": kb_info.get("tier", "team") if isinstance(kb_info, dict) else "team",
-                    "organization_id": kb_info.get("organization_id") if isinstance(kb_info, dict) else None,
-                    "data_classification": kb_info.get("data_classification", "internal") if isinstance(kb_info, dict) else "internal",
-                },
-                action="read" if min_level == "reader" else "write",
-            )
-            abac_decision = abac.evaluate(ctx)
-            if abac_decision.allowed:
-                return user
+        if await _check_rbac_admin(state, user):
+            return user
+        if await _check_kb_level_permission(state, user, kb_id, min_level, level_order):
+            return user
+        if await _check_abac_kb_access(state, user, kb_id, min_level):
+            return user
 
         raise HTTPException(
             status_code=403,

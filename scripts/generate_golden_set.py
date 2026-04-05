@@ -128,7 +128,7 @@ def generate_qa_from_chunk(sm_client, chunk: dict, kb_id: str = "") -> list[dict
             # Fix trailing commas before ] or }
             json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
             # Fix unescaped newlines inside JSON strings
-            json_str = re.sub(r'(?<=": ")(.*?)(?=")', lambda m: m.group(0).replace('\n', '\\n'), json_str, flags=re.DOTALL)
+            json_str = re.sub(r'(?<=": ")(.*)(?=")', lambda m: m.group(0).replace('\n', '\\n'), json_str, flags=re.DOTALL)
             try:
                 qa_list = json.loads(json_str)
             except json.JSONDecodeError:

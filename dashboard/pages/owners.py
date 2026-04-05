@@ -17,6 +17,10 @@ from components.sidebar import hide_default_nav, render_sidebar
 from services import api_client
 from services.api_client import api_failed
 
+_MSG_API_FAIL = "API 연결 실패. 재시도 해주세요."
+_BTN_RETRY = "🔄 재시도"
+_LBL_DOC_ID = "문서 ID"
+
 hide_default_nav()
 render_sidebar(show_admin=True)
 
@@ -35,8 +39,8 @@ with tab_owners:
     # KB 선택
     kbs_result = api_client.list_kbs()
     if api_failed(kbs_result):
-        st.error("API 연결 실패. 재시도 해주세요.")
-        if st.button("🔄 재시도", key="retry_owners"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_owners"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -54,8 +58,8 @@ with tab_owners:
             owners_result = api_client.list_document_owners(selected_kb_id)
 
             if api_failed(owners_result):
-                st.error("API 연결 실패. 재시도 해주세요.")
-                if st.button("🔄 재시도", key="retry_doc_owners"):
+                st.error(_MSG_API_FAIL)
+                if st.button(_BTN_RETRY, key="retry_doc_owners"):
                     st.cache_data.clear()
                     st.rerun()
             else:
@@ -64,7 +68,7 @@ with tab_owners:
                     rows = []
                     for owner in owners:
                         rows.append({
-                            "문서 ID": owner.get("document_id", "-"),
+                            _LBL_DOC_ID: owner.get("document_id", "-"),
                             "담당자": owner.get("owner_user_id", owner.get("owner_name", "-")),
                             "백업 담당자": owner.get("backup_owner_user_id") or "-",
                             "할당 유형": owner.get("ownership_type", "-"),
@@ -82,7 +86,7 @@ with tab_owners:
                     with action_col1:
                         with st.expander("➕ 담당자 할당"):
                             with st.form("assign_owner_form"):
-                                doc_id = st.text_input("문서 ID")
+                                doc_id = st.text_input(_LBL_DOC_ID)
                                 user_id = st.text_input("담당자 User ID")
                                 owner_name = st.text_input("담당자 이름")
                                 submitted = st.form_submit_button("할당")
@@ -103,7 +107,7 @@ with tab_owners:
                     with action_col2:
                         with st.expander("🔄 소유권 이전"):
                             with st.form("transfer_owner_form"):
-                                t_doc_id = st.text_input("문서 ID", key="transfer_doc")
+                                t_doc_id = st.text_input(_LBL_DOC_ID, key="transfer_doc")
                                 new_user_id = st.text_input("새 담당자 User ID")
                                 reason = st.text_input("이전 사유")
                                 submitted = st.form_submit_button("이전")
@@ -123,7 +127,7 @@ with tab_owners:
                     with action_col3:
                         with st.expander("✅ 담당자 검증"):
                             with st.form("verify_owner_form"):
-                                v_doc_id = st.text_input("문서 ID", key="verify_doc")
+                                v_doc_id = st.text_input(_LBL_DOC_ID, key="verify_doc")
                                 verifier = st.text_input("검증자 User ID")
                                 submitted = st.form_submit_button("검증")
                                 if submitted and v_doc_id and verifier:
@@ -176,8 +180,8 @@ with tab_experts:
     contributors_result = api_client.list_contributors()
 
     if api_failed(contributors_result):
-        st.error("API 연결 실패. 재시도 해주세요.")
-        if st.button("🔄 재시도", key="retry_experts"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_experts"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -237,8 +241,8 @@ with tab_availability:
         avail_result = api_client.get_owner_availability(owner_user_id)
 
         if api_failed(avail_result):
-            st.error("API 연결 실패. 재시도 해주세요.")
-            if st.button("🔄 재시도", key="retry_avail"):
+            st.error(_MSG_API_FAIL)
+            if st.button(_BTN_RETRY, key="retry_avail"):
                 st.cache_data.clear()
                 st.rerun()
         else:

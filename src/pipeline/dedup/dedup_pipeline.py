@@ -276,6 +276,105 @@ class DedupPipeline:
         self._title_hash_index: dict[str, str] = {}
         self._content_hash_index: dict[str, str] = {}
 
+    def _apply_stage1(self, document: Document, result: DedupResult) -> bool:
+        """Stage 1: Metadata Pre-filter. Returns True if exact duplicate found."""
+        stage_start = time.perf_counter()
+        stage1_result = self._stage1_prefilter(document)
+        _stage1_ms = (time.perf_counter() - stage_start) * 1000
+        result.stage_reached = 1
+
+        if not stage1_result:
+            return False
+
+        result.status = DedupStatus.EXACT_DUPLICATE
+        result.duplicate_of = stage1_result
+        result.similarity_score = 1.0
+        result.resolution = Resolution.KEEP_NEWEST
+        self._metrics.stage1_filtered += 1
+        result.details["stage1"] = "exact_match"
+        logger.debug(
+            "Stage 1 exact match: doc=%s dup_of=%s (%.1fms)",
+            document.doc_id, stage1_result, _stage1_ms,
+        )
+        return True
+
+    async def _apply_stage2_and_beyond(
+        self, document: Document, result: DedupResult
+    ) -> None:
+        """Stage 2 (LSHBloom) + Stage 3 (SemHash) + Stage 4 (Conflict)."""
+        stage_start = time.perf_counter()
+        stage2_result = self._stage2_lshbloom(document)
+        _stage2_ms = (time.perf_counter() - stage_start) * 1000
+        result.stage_reached = 2
+
+        if not stage2_result:
+            return
+
+        self._metrics.stage2_flagged += 1
+
+        # C7 fix: Jaccard < skip_threshold -> Stage 3 skip (50ms savings)
+        if stage2_result.estimated_similarity < self._skip_threshold:
+            result.status = DedupStatus.NEAR_DUPLICATE
+            result.duplicate_of = stage2_result.doc_id_2
+            result.similarity_score = stage2_result.estimated_similarity
+            result.resolution = Resolution.REVIEW
+            result.details["stage3_skipped"] = True
+            logger.debug(
+                "Stage 2 near-dup (skip S3): doc=%s dup_of=%s jaccard=%.3f (%.1fms)",
+                document.doc_id, stage2_result.doc_id_2,
+                stage2_result.estimated_similarity, _stage2_ms,
+            )
+            return
+
+        # Stage 3: SemHash (only when Jaccard >= STAGE3_SKIP_THRESHOLD)
+        stage_start = time.perf_counter()
+        stage3_result = await self._stage3_semhash(document)
+        _stage3_ms = (time.perf_counter() - stage_start) * 1000
+        result.stage_reached = 3
+
+        if not stage3_result:
+            # Near duplicate (Jaccard only, no semantic verification)
+            result.status = DedupStatus.NEAR_DUPLICATE
+            result.duplicate_of = stage2_result.doc_id_2
+            result.similarity_score = stage2_result.estimated_similarity
+            result.resolution = Resolution.MERGE
+            return
+
+        self._metrics.stage3_confirmed += 1
+        result.status = DedupStatus.SEMANTIC_DUPLICATE
+        result.duplicate_of = stage3_result.doc_id_2
+        result.similarity_score = stage3_result.similarity
+        result.resolution = Resolution.REVIEW
+        logger.debug(
+            "Stage 3 semantic dup: doc=%s dup_of=%s cosine=%.3f (%.1fms)",
+            document.doc_id, stage3_result.doc_id_2,
+            stage3_result.similarity, _stage3_ms,
+        )
+
+        # Stage 4: Conflict Detection (optional)
+        if not (self._enable_stage4 and result.duplicate_of):
+            return
+        stage_start = time.perf_counter()
+        stage4_result = await self._stage4_conflict(document, result.duplicate_of)
+        _stage4_ms = (time.perf_counter() - stage_start) * 1000
+        result.stage_reached = 4
+
+        if stage4_result and stage4_result.has_conflict:
+            self._metrics.stage4_conflicts += 1
+            result.status = DedupStatus.CONTENT_CONFLICT
+            result.conflict_types = [
+                c.conflict_type for c in stage4_result.conflicts
+            ]
+            result.resolution = Resolution.REVIEW
+            result.details["conflicts"] = [
+                c.to_dict() for c in stage4_result.conflicts
+            ]
+            logger.debug(
+                "Stage 4 conflict: doc=%s dup_of=%s conflicts=%d (%.1fms)",
+                document.doc_id, result.duplicate_of,
+                len(stage4_result.conflicts), _stage4_ms,
+            )
+
     async def check(self, document: Document) -> DedupResult:
         """Check a document for duplicates WITHOUT adding it to the index.
 
@@ -291,94 +390,8 @@ class DedupPipeline:
         start_time = time.time()
         result = DedupResult(doc_id=document.doc_id)
 
-        # Stage 1: Metadata Pre-filter
-        stage_start = time.perf_counter()
-        stage1_result = self._stage1_prefilter(document)
-        _stage1_ms = (time.perf_counter() - stage_start) * 1000
-        result.stage_reached = 1
-
-        if stage1_result:
-            result.status = DedupStatus.EXACT_DUPLICATE
-            result.duplicate_of = stage1_result
-            result.similarity_score = 1.0
-            result.resolution = Resolution.KEEP_NEWEST
-            self._metrics.stage1_filtered += 1
-            result.details["stage1"] = "exact_match"
-            logger.debug(
-                "Stage 1 exact match: doc=%s dup_of=%s (%.1fms)",
-                document.doc_id, stage1_result, _stage1_ms,
-            )
-        else:
-            # Stage 2: LSHBloom
-            stage_start = time.perf_counter()
-            stage2_result = self._stage2_lshbloom(document)
-            _stage2_ms = (time.perf_counter() - stage_start) * 1000
-            result.stage_reached = 2
-
-            if stage2_result:
-                self._metrics.stage2_flagged += 1
-
-                # C7 fix: Jaccard < skip_threshold -> Stage 3 skip (50ms savings)
-                if stage2_result.estimated_similarity < self._skip_threshold:
-                    result.status = DedupStatus.NEAR_DUPLICATE
-                    result.duplicate_of = stage2_result.doc_id_2
-                    result.similarity_score = stage2_result.estimated_similarity
-                    result.resolution = Resolution.REVIEW
-                    result.details["stage3_skipped"] = True
-                    logger.debug(
-                        "Stage 2 near-dup (skip S3): doc=%s dup_of=%s jaccard=%.3f (%.1fms)",
-                        document.doc_id, stage2_result.doc_id_2,
-                        stage2_result.estimated_similarity, _stage2_ms,
-                    )
-                else:
-                    # Stage 3: SemHash (only when Jaccard >= STAGE3_SKIP_THRESHOLD)
-                    stage_start = time.perf_counter()
-                    stage3_result = await self._stage3_semhash(document)
-                    _stage3_ms = (time.perf_counter() - stage_start) * 1000
-                    result.stage_reached = 3
-
-                    if stage3_result:
-                        self._metrics.stage3_confirmed += 1
-                        result.status = DedupStatus.SEMANTIC_DUPLICATE
-                        result.duplicate_of = stage3_result.doc_id_2
-                        result.similarity_score = stage3_result.similarity
-                        result.resolution = Resolution.REVIEW
-                        logger.debug(
-                            "Stage 3 semantic dup: doc=%s dup_of=%s cosine=%.3f (%.1fms)",
-                            document.doc_id, stage3_result.doc_id_2,
-                            stage3_result.similarity, _stage3_ms,
-                        )
-
-                        # Stage 4: Conflict Detection (optional)
-                        if self._enable_stage4 and result.duplicate_of:
-                            stage_start = time.perf_counter()
-                            stage4_result = await self._stage4_conflict(
-                                document, result.duplicate_of
-                            )
-                            _stage4_ms = (time.perf_counter() - stage_start) * 1000
-                            result.stage_reached = 4
-
-                            if stage4_result and stage4_result.has_conflict:
-                                self._metrics.stage4_conflicts += 1
-                                result.status = DedupStatus.CONTENT_CONFLICT
-                                result.conflict_types = [
-                                    c.conflict_type for c in stage4_result.conflicts
-                                ]
-                                result.resolution = Resolution.REVIEW
-                                result.details["conflicts"] = [
-                                    c.to_dict() for c in stage4_result.conflicts
-                                ]
-                                logger.debug(
-                                    "Stage 4 conflict: doc=%s dup_of=%s conflicts=%d (%.1fms)",
-                                    document.doc_id, result.duplicate_of,
-                                    len(stage4_result.conflicts), _stage4_ms,
-                                )
-                    else:
-                        # Near duplicate (Jaccard only, no semantic verification)
-                        result.status = DedupStatus.NEAR_DUPLICATE
-                        result.duplicate_of = stage2_result.doc_id_2
-                        result.similarity_score = stage2_result.estimated_similarity
-                        result.resolution = Resolution.MERGE
+        if not self._apply_stage1(document, result):
+            await self._apply_stage2_and_beyond(document, result)
 
         # Metrics update
         processing_time = (time.time() - start_time) * 1000

@@ -407,14 +407,9 @@ class TieredResponseGenerator:
             formatted.append(f"[{i}] {source_info}{meta_line}:\n{chunk}\n")
         return "\n".join(formatted)
 
-    def _extract_citations(self, response: str, context: RAGContext) -> list[dict]:
-        """Extract citations from response."""
-        citations: list[dict] = []
-        raw_refs = {int(ref) for ref in _CITATION_REF_PATTERN.findall(response)}
-        if not raw_refs:
-            return citations
-
-        normalized_sources: list[dict] = []
+    def _normalize_sources(self, context: RAGContext) -> list[dict]:
+        """Normalize chunk_sources into a uniform list for citation formatting."""
+        normalized: list[dict] = []
         for index, source in enumerate(context.chunk_sources, start=1):
             metadata = source.get("metadata") or {}
             default_score = (
@@ -428,56 +423,58 @@ class TieredResponseGenerator:
                 or metadata.get("source_uri")
                 or metadata.get("url")
             )
-            normalized_sources.append(
-                {
-                    "ref": str(index),
-                    "document_name": source.get("document_name"),
-                    "kb_name": source.get("kb_name") or metadata.get("kb_name"),
-                    "source_uri": source_uri,
-                    "url": source_uri,
-                    "score": source.get("score")
-                    if source.get("score") is not None
-                    else default_score,
-                }
-            )
+            normalized.append({
+                "ref": str(index),
+                "document_name": source.get("document_name"),
+                "kb_name": source.get("kb_name") or metadata.get("kb_name"),
+                "source_uri": source_uri,
+                "url": source_uri,
+                "score": source.get("score")
+                if source.get("score") is not None
+                else default_score,
+            })
+        return normalized
 
+    @staticmethod
+    def _build_citation(ref: int, source: dict, entry: Any) -> dict:
+        """Build a single citation dict from source and optional CitationEntry."""
+        metadata = source.get("metadata") or {}
+        has_entry = entry is not None
+        return {
+            "ref": str(ref),
+            "document_id": source.get("document_id"),
+            "document_name": entry.document_name if has_entry else source.get("document_name"),
+            "chunk_id": source.get("chunk_id"),
+            "url": entry.source_uri if has_entry else source.get("url"),
+            "source_uri": (
+                entry.source_uri if has_entry
+                else source.get("source_uri") or source.get("url")
+            ),
+            "kb_name": entry.kb_name if has_entry else source.get("kb_name"),
+            "relevance_score": entry.relevance_score if has_entry else source.get("score"),
+            "is_stale": bool(metadata.get("is_stale", False)),
+            "freshness_warning": metadata.get("freshness_warning"),
+            "days_since_update": metadata.get("days_since_update"),
+        }
+
+    def _extract_citations(self, response: str, context: RAGContext) -> list[dict]:
+        """Extract citations from response."""
+        raw_refs = {int(ref) for ref in _CITATION_REF_PATTERN.findall(response)}
+        if not raw_refs:
+            return []
+
+        normalized_sources = self._normalize_sources(context)
         entries = CitationFormatter.from_sources(normalized_sources)
         entry_map = {entry.ref: entry for entry in entries}
 
+        citations: list[dict] = []
         for ref in sorted(raw_refs):
             source_index = ref - 1
             if source_index < 0 or source_index >= len(context.chunk_sources):
                 continue
             source = context.chunk_sources[source_index]
-            metadata = source.get("metadata") or {}
             entry = entry_map.get(str(ref))
-            citations.append(
-                {
-                    "ref": str(ref),
-                    "document_id": source.get("document_id"),
-                    "document_name": (
-                        entry.document_name
-                        if entry is not None
-                        else source.get("document_name")
-                    ),
-                    "chunk_id": source.get("chunk_id"),
-                    "url": entry.source_uri if entry is not None else source.get("url"),
-                    "source_uri": (
-                        entry.source_uri
-                        if entry is not None
-                        else source.get("source_uri") or source.get("url")
-                    ),
-                    "kb_name": entry.kb_name if entry is not None else source.get("kb_name"),
-                    "relevance_score": (
-                        entry.relevance_score
-                        if entry is not None
-                        else source.get("score")
-                    ),
-                    "is_stale": bool(metadata.get("is_stale", False)),
-                    "freshness_warning": metadata.get("freshness_warning"),
-                    "days_since_update": metadata.get("days_since_update"),
-                }
-            )
+            citations.append(self._build_citation(ref, source, entry))
 
         return citations
 

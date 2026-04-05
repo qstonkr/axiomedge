@@ -64,7 +64,7 @@ NON_PERSON_BLOCKLIST = {
     "과금", "리턴", "로드", "큐빅", "올해말",
     # Generic role terms (not specific persons)
     "관리자", "운영자", "담당자", "담당 부서",
-    "시스템", "서버", "클라이언트", "프로세스", "서비스",
+    "클라이언트", "프로세스", "서비스",
     "모듈", "컴포넌트", "플랫폼", "애플리케이션", "앱",
     "법무법인", "외부인",
 }
@@ -334,6 +334,64 @@ def task_remove_test_nodes(session, *, apply: bool, kb_id: str | None) -> dict:
     }
 
 
+def _apply_rule(session, rule: dict) -> int:
+    """Apply a single cleanup rule and return the number of nodes fixed."""
+    action = rule["action"]
+    match_clause = rule["match"]
+    label = rule["label"]
+
+    if action == "delete":
+        action_q = f"{match_clause} DETACH DELETE n RETURN count(*) AS fixed"
+        fixed = _run_query(session, action_q)[0]["fixed"]
+        logger.info("Pattern %s: deleted %d", label, fixed)
+        return fixed
+
+    if action == "relabel":
+        action_q = f"{match_clause} REMOVE n:Person RETURN count(*) AS fixed"
+        fixed = _run_query(session, action_q)[0]["fixed"]
+        logger.info("Pattern %s: relabeled %d", label, fixed)
+        return fixed
+
+    if action == "clean_paren":
+        return _apply_clean_paren(session, match_clause, label)
+
+    return 0
+
+
+def _apply_clean_paren(session, match_clause: str, label: str) -> int:
+    """Clean parenthesized org names from Person nodes."""
+    action_q = (
+        f"{match_clause} "
+        "WITH n, apoc.text.regexGroups(n.name, '([가-힣]{2,4})\\\\(') AS groups "
+        "WHERE size(groups) > 0 AND size(groups[0]) > 1 "
+        "SET n.name = groups[0][1] "
+        "RETURN count(*) AS fixed"
+    )
+    try:
+        fixed = _run_query(session, action_q)[0]["fixed"]
+        logger.info("Pattern %s: cleaned %d", label, fixed)
+        return fixed
+    except Exception:
+        pass
+
+    # Fallback without APOC: use Python-side regex
+    fetch_q = f"{match_clause} RETURN id(n) AS nid, n.name AS name"
+    rows = _run_query(session, fetch_q)
+    cleaned = 0
+    for row in rows:
+        m = re.match(r"^([가-힣]{2,4})\s*\(", row["name"])
+        if not m:
+            continue
+        _run_query(
+            session,
+            "MATCH (n) WHERE id(n) = $nid SET n.name = $new_name",
+            {"nid": row["nid"], "new_name": m.group(1)},
+        )
+        cleaned += 1
+    logger.info("Pattern %s: cleaned %d (fallback)", label, cleaned)
+    return cleaned
+
+
 def task_pattern_cleanup_persons(session, *, apply: bool, kb_id: str | None) -> dict:
     """Pattern-based cleanup of Person nodes (short names, roles, brackets, etc.)."""
     kb_clause = _kb_filter(kb_id)
@@ -373,7 +431,7 @@ def task_pattern_cleanup_persons(session, *, apply: bool, kb_id: str | None) -> 
                 f"MATCH (n:Person) WHERE "
                 f"(n.name CONTAINS '(주)' OR n.name CONTAINS '(사)'){kb_clause}"
             ),
-            "action": "relabel",  # Remove Person label, keep __Entity__
+            "action": "relabel",
         },
         {
             "label": "server_infra",
@@ -405,63 +463,17 @@ def task_pattern_cleanup_persons(session, *, apply: bool, kb_id: str | None) -> 
     ]
 
     for rule in sub_rules:
-        # Count
         count_q = f"{rule['match']} RETURN count(n) AS cnt"
         count = _run_query(session, count_q)[0]["cnt"]
         total_found += count
 
-        # Samples
         samples_q = f"{rule['match']} RETURN n.name AS name LIMIT 3"
         samples = _run_query(session, samples_q)
         for s in samples:
             all_samples.append(f"[{rule['label']}] {s['name']}")
 
         if apply and count > 0:
-            if rule["action"] == "delete":
-                action_q = f"{rule['match']} DETACH DELETE n RETURN count(*) AS fixed"
-                fixed = _run_query(session, action_q)[0]["fixed"]
-                total_fixed += fixed
-                logger.info("Pattern %s: deleted %d", rule["label"], fixed)
-            elif rule["action"] == "relabel":
-                action_q = (
-                    f"{rule['match']} REMOVE n:Person RETURN count(*) AS fixed"
-                )
-                fixed = _run_query(session, action_q)[0]["fixed"]
-                total_fixed += fixed
-                logger.info("Pattern %s: relabeled %d", rule["label"], fixed)
-            elif rule["action"] == "clean_paren":
-                # Extract Korean name before parenthesis
-                action_q = (
-                    f"{rule['match']} "
-                    "WITH n, apoc.text.regexGroups(n.name, '([가-힣]{2,4})\\\\(') AS groups "
-                    "WHERE size(groups) > 0 AND size(groups[0]) > 1 "
-                    "SET n.name = groups[0][1] "
-                    "RETURN count(*) AS fixed"
-                )
-                try:
-                    fixed = _run_query(session, action_q)[0]["fixed"]
-                    total_fixed += fixed
-                    logger.info("Pattern %s: cleaned %d", rule["label"], fixed)
-                except Exception:
-                    # Fallback without APOC: use Python-side regex
-                    fetch_q = (
-                        f"{rule['match']} RETURN id(n) AS nid, n.name AS name"
-                    )
-                    rows = _run_query(session, fetch_q)
-                    cleaned = 0
-                    for row in rows:
-                        m = re.match(r"^([가-힣]{2,4})\s*\(", row["name"])
-                        if m:
-                            update_q = (
-                                "MATCH (n) WHERE id(n) = $nid SET n.name = $new_name"
-                            )
-                            _run_query(
-                                session, update_q,
-                                {"nid": row["nid"], "new_name": m.group(1)},
-                            )
-                            cleaned += 1
-                    total_fixed += cleaned
-                    logger.info("Pattern %s: cleaned %d (fallback)", rule["label"], cleaned)
+            total_fixed += _apply_rule(session, rule)
 
     return {
         "task": "pattern_cleanup_persons",
@@ -567,6 +579,25 @@ def _safe_set_label(session, node_eid: str, new_label: str) -> bool:
         return False
 
 
+def _relabel_nodes(
+    session, rows: list[dict], old_label: str, new_label: str
+) -> int:
+    """Relabel nodes by elementId, falling back to safe set on conflict."""
+    fixed = 0
+    for row in rows:
+        try:
+            session.run(
+                f"MATCH (n) WHERE elementId(n) = $eid "
+                f"REMOVE n:{old_label} SET n:{new_label}",
+                parameters={"eid": row["eid"]},
+            )
+            fixed += 1
+        except Exception:
+            if _safe_set_label(session, row["eid"], new_label):
+                fixed += 1
+    return fixed
+
+
 def _reclassify_nodes(
     session,
     *,
@@ -597,23 +628,11 @@ def _reclassify_nodes(
             fixed = _run_query(session, action_q, p)[0]["fixed"]
             logger.info("[%s] Deleted %d nodes", rule_name, fixed)
         elif action == "relabel" and new_label:
-            # Use elementId-based safe relabel to avoid constraint conflicts
             fetch_q = (
                 f"{full_match} RETURN elementId(n) AS eid, n.name AS name"
             )
             rows = _run_query(session, fetch_q, p)
-            for row in rows:
-                # Remove old label, set new label
-                try:
-                    session.run(
-                        f"MATCH (n) WHERE elementId(n) = $eid "
-                        f"REMOVE n:{old_label} SET n:{new_label}",
-                        parameters={"eid": row["eid"]},
-                    )
-                    fixed += 1
-                except Exception:
-                    if _safe_set_label(session, row["eid"], new_label):
-                        fixed += 1
+            fixed = _relabel_nodes(session, rows, old_label, new_label)
             logger.info("[%s] Relabeled %d → %s", rule_name, fixed, new_label)
 
     return {
@@ -910,7 +929,12 @@ def main() -> None:
         fixed = r["fixed"]
         total_found += found
         total_fixed += fixed
-        marker = "+" if fixed > 0 else (" " if found == 0 else "!")
+        if fixed > 0:
+            marker = "+"
+        elif found == 0:
+            marker = " "
+        else:
+            marker = "!"
         print(f"  [{marker}] {r['description']}: {found}건 발견, {fixed}건 수정")
         for s in r.get("samples", []):
             print(f"      - {s}")
