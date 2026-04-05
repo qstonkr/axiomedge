@@ -438,7 +438,8 @@ with tab_cleanup:
     ai_col1, ai_col2 = st.columns(2)
     with ai_col1:
         ai_limit = st.number_input(
-            "처리 건수", min_value=10, max_value=500, value=100, key="ai_classify_limit",
+            "처리 건수 (0=전체)", min_value=0, max_value=10000, value=0,
+            key="ai_classify_limit", help="0으로 설정하면 전체 미분류 노드를 처리합니다",
         )
     with ai_col2:
         ai_kb = st.text_input("KB ID (선택)", placeholder="전체", key="ai_classify_kb")

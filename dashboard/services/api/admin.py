@@ -105,7 +105,7 @@ def graph_ai_classify(
     body: dict[str, Any] = {"limit": limit, "apply": apply}
     if kb_id:
         body["kb_id"] = kb_id
-    return _post("/api/v1/admin/graph/cleanup/ai-classify", body, timeout=180)
+    return _post("/api/v1/admin/graph/cleanup/ai-classify", body, timeout=600)
 
 
 # ============================================================================

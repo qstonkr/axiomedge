@@ -634,7 +634,9 @@ def _fetch_ai_classify_candidates(
 
     kb_clause = f" AND n.kb_id = '{kb_id}'" if kb_id else ""
     candidates: list[dict[str, Any]] = []
-    half = limit // 2
+    # limit=0 means fetch all
+    limit_clause1 = f"LIMIT {limit // 2}" if limit > 0 else ""
+    limit_clause2 = f"LIMIT {limit - limit // 2}" if limit > 0 else ""
 
     try:
         with driver.session(database=database) as session:
@@ -643,8 +645,7 @@ def _fetch_ai_classify_candidates(
                 "MATCH (n:Person) "
                 f"WHERE NOT n.name =~ '^[가-힣]{{2,4}}$'{kb_clause} "
                 "RETURN elementId(n) AS eid, n.name AS name, "
-                "'Person' AS current_label, n.kb_id AS kb_id "
-                f"LIMIT {half}"
+                f"'Person' AS current_label, n.kb_id AS kb_id {limit_clause1}"
             )
             result1 = session.run(q1)
             for record in result1:
@@ -656,8 +657,7 @@ def _fetch_ai_classify_candidates(
                 "WHERE size([l IN labels(n) WHERE l <> '__Entity__']) = 0 "
                 f"AND n.name IS NOT NULL{kb_clause} "
                 "RETURN elementId(n) AS eid, n.name AS name, "
-                "'__Entity__' AS current_label, n.kb_id AS kb_id "
-                f"LIMIT {limit - half}"
+                f"'__Entity__' AS current_label, n.kb_id AS kb_id {limit_clause2}"
             )
             result2 = session.run(q2)
             for record in result2:
@@ -665,7 +665,7 @@ def _fetch_ai_classify_candidates(
     finally:
         driver.close()
 
-    return candidates[:limit]
+    return candidates[:limit] if limit > 0 else candidates
 
 
 def _apply_ai_classifications(
@@ -777,17 +777,30 @@ async def graph_ai_classify(body: dict[str, Any] | None = None):
     state = _get_state()
     llm = state.get("llm_client")
 
+    # Fallback to SageMaker if local LLM not available
+    if not llm:
+        import os
+        if os.getenv("USE_SAGEMAKER_LLM", "false").lower() in ("true", "1"):
+            try:
+                from src.llm.sagemaker_client import SageMakerLLMClient
+                llm = SageMakerLLMClient()
+                logger.info("AI classify: using SageMaker LLM (fallback)")
+            except Exception as e:
+                logger.warning("SageMaker LLM init failed: %s", e)
+
     if not llm:
         return {
             "success": False,
-            "error": "LLM client not available",
+            "error": "LLM client not available. Set USE_SAGEMAKER_LLM=true or start Ollama.",
             "candidates": 0,
             "classifications": [],
             "stats": {},
         }
 
     body = body or {}
-    limit = min(max(body.get("limit", 200), 10), 500)
+    limit = body.get("limit", 200)
+    if limit != 0:  # 0 = all
+        limit = min(max(limit, 10), 10000)
     apply = body.get("apply", False)
     kb_id = body.get("kb_id")
 
