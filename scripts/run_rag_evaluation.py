@@ -236,6 +236,245 @@ async def save_eval_results(engine, eval_id: str, kb_id: str, results: list[dict
     logger.info(f"DB save: {saved}/{len(results)} results inserted")
 
 
+async def _load_and_filter_golden_set(engine, kb_ids: list[str], eval_id: str) -> list[dict]:
+    """Load golden set, filter by KB IDs, and skip already-evaluated items."""
+    from sqlalchemy import text as _text
+
+    golden_set = await load_golden_set(engine)
+    if kb_ids:
+        golden_set = [g for g in golden_set if g["kb_id"] in kb_ids]
+    logger.info(f"Golden set: {len(golden_set)} questions")
+
+    if not golden_set:
+        return []
+
+    evaluated_ids: set[str] = set()
+    try:
+        async with engine.begin() as conn:
+            rows = await conn.execute(_text(
+                "SELECT CAST(golden_set_id AS TEXT) FROM rag_eval_results WHERE eval_id = :eid"
+            ), {"eid": eval_id})
+            evaluated_ids = {r[0] for r in rows.fetchall() if r[0]}
+    except Exception:
+        pass  # Table may not exist yet
+
+    if evaluated_ids:
+        before = len(golden_set)
+        golden_set = [g for g in golden_set if g["id"] not in evaluated_ids]
+        logger.info(f"Resuming: skipped {before - len(golden_set)} already-evaluated, {len(golden_set)} remaining")
+
+    return golden_set
+
+
+async def _search_with_retry(question: str, kb_id: str, index: int) -> tuple[str, float, dict]:
+    """Search with one retry on timeout. Returns (answer, search_time_ms, search_result)."""
+    search_result = {"answer": None, "chunks": [], "metadata": {}}
+    actual_answer = ""
+    search_time = 0.0
+
+    for attempt in range(2):
+        try:
+            t0 = time.time()
+            search_result = search_and_answer(question, [kb_id])
+            search_time = (time.time() - t0) * 1000
+            actual_answer = search_result.get("answer") or ""
+            logger.info(
+                f"[{index}] SEARCH done: {search_time:.0f}ms, "
+                f"answer_len={len(actual_answer)}, "
+                f"chunks={len(search_result.get('chunks', []))}"
+            )
+            break
+        except Exception as e:
+            if attempt == 0:
+                logger.warning(f"Search retry for: {question[:40]}... ({e})")
+                await asyncio.sleep(3)
+            else:
+                logger.warning(f"Search failed after retry: {question[:40]}")
+
+    return actual_answer, search_time, search_result
+
+
+def _check_recall(source_doc: str, chunks: list) -> bool:
+    """Check if source document appears in retrieved chunks."""
+    if not source_doc or not chunks:
+        return False
+    retrieved_docs = {c.get("document_name", "") for c in chunks}
+    return any(source_doc in d for d in retrieved_docs)
+
+
+def _build_eval_result(gs: dict, actual_answer: str, scores: dict,
+                       search_time: float, search_result: dict, recall_hit: bool) -> dict:
+    """Build a single evaluation result dict."""
+    meta = search_result.get("metadata", {})
+    crag_rec = meta.get("crag_recommendation", "")
+    return {
+        "kb_id": gs["kb_id"],
+        "golden_set_id": gs["id"],
+        "question": gs["question"],
+        "expected": gs["expected"],
+        "actual": actual_answer[:500],
+        "faithfulness": scores["faithfulness"],
+        "relevancy": scores["relevancy"],
+        "completeness": scores["completeness"],
+        "search_time_ms": search_time,
+        "crag_action": meta.get("crag_action", ""),
+        "crag_confidence": meta.get("crag_confidence", 0.0),
+        "crag_recommendation": crag_rec[:500] if crag_rec else "",
+        "recall_hit": recall_hit,
+    }
+
+
+def _log_final_report(eval_id: str, results: list[dict], scores_sum: dict):
+    """Log the final evaluation report."""
+    n = len(results)
+    metrics = {
+        "faithfulness": round(scores_sum["faithfulness"] / n, 3) if n else 0,
+        "answer_relevancy": round(scores_sum["relevancy"] / n, 3) if n else 0,
+        "completeness": round(scores_sum["completeness"] / n, 3) if n else 0,
+        "overall_score": round(sum(scores_sum.values()) / (n * 3), 3) if n else 0,
+        "total_questions": n,
+        "avg_search_time_ms": round(sum(r["search_time_ms"] for r in results) / n, 1) if n else 0,
+    }
+
+    crag_actions = [r.get("crag_action", "") for r in results if r.get("crag_action")]
+    crag_correct = sum(1 for a in crag_actions if a == "correct")
+    crag_ambiguous = sum(1 for a in crag_actions if a == "ambiguous")
+    crag_incorrect = sum(1 for a in crag_actions if a == "incorrect")
+    crag_total = len(crag_actions) or 1
+    avg_crag_conf = sum(r.get("crag_confidence", 0) for r in results) / n if n else 0
+
+    recall_total = sum(1 for r in results if r.get("recall_hit") is not None)
+    recall_hits = sum(1 for r in results if r.get("recall_hit"))
+    recall_rate = recall_hits / recall_total if recall_total else 0
+
+    logger.info(f"\n{'='*60}")
+    logger.info(f"EVALUATION COMPLETE: {eval_id}")
+    logger.info("  --- LLM Judge ---")
+    logger.info(f"  Faithfulness:  {metrics['faithfulness']:.3f}")
+    logger.info(f"  Relevancy:     {metrics['answer_relevancy']:.3f}")
+    logger.info(f"  Completeness:  {metrics['completeness']:.3f}")
+    logger.info(f"  Overall:       {metrics['overall_score']:.3f}")
+    logger.info("  --- CRAG (Retrieval Quality) ---")
+    logger.info(f"  Correct:       {crag_correct}/{crag_total} ({crag_correct/crag_total:.0%})")
+    logger.info(f"  Ambiguous:     {crag_ambiguous}/{crag_total} ({crag_ambiguous/crag_total:.0%})")
+    logger.info(f"  Incorrect:     {crag_incorrect}/{crag_total} ({crag_incorrect/crag_total:.0%})")
+    logger.info(f"  Avg Confidence:{avg_crag_conf:.3f}")
+    logger.info("  --- Recall ---")
+    logger.info(f"  Source Recall:  {recall_hits}/{recall_total} ({recall_rate:.0%})")
+    logger.info("  --- Performance ---")
+    logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
+    logger.info(f"  Questions:     {metrics['total_questions']}")
+    logger.info(f"{'='*60}")
+
+
+async def _evaluate_single_item(
+    gs: dict, index: int, _total: int,
+) -> tuple[dict | None, int]:
+    """Evaluate a single golden set item. Returns (result_dict, was_skipped)."""
+    actual_answer, search_time, search_result = await _search_with_retry(
+        gs["question"], gs["kb_id"], index,
+    )
+
+    # Adaptive throttle
+    delay = (
+        min(SEARCH_DELAY_MAX, search_time / 1000 * 0.5)
+        if search_time > SEARCH_DELAY_TARGET_MS
+        else SEARCH_DELAY_MIN
+    )
+    await asyncio.sleep(delay)
+
+    skip_count = 0
+    if not actual_answer:
+        skip_count += 1
+        logger.info(f"[{index}] SKIPPED (no answer)")
+
+    chunks = search_result.get("chunks", [])
+    recall_hit = _check_recall(gs.get("source_doc", ""), chunks)
+
+    t_judge = time.time()
+    scores = judge_answer(gs["question"], gs["expected"], actual_answer, chunks=chunks)
+    judge_time = (time.time() - t_judge) * 1000
+    if scores is None:
+        skip_count += 1
+        logger.warning(f"[{index}] SKIPPED (judge failed, SSO expired?)")
+        return None, skip_count
+
+    _log_judge_result(index, judge_time, scores, recall_hit, search_result)
+
+    result = _build_eval_result(gs, actual_answer, scores, search_time, search_result, recall_hit)
+    return result, skip_count
+
+
+def _log_judge_result(
+    index: int, judge_time: float, scores: dict, recall_hit: bool, search_result: dict,
+) -> None:
+    """Log individual judge result."""
+    meta = search_result.get("metadata", {})
+    crag_action = meta.get("crag_action", "")
+    crag_confidence = meta.get("crag_confidence", 0.0)
+    logger.info(
+        f"[{index}] JUDGE done: {judge_time:.0f}ms, "
+        f"F={scores['faithfulness']:.2f} R={scores['relevancy']:.2f} C={scores['completeness']:.2f} "
+        f"recall={'HIT' if recall_hit else 'MISS'}"
+        f"{f' crag={crag_action}({crag_confidence:.2f})' if crag_action else ''}"
+    )
+
+
+def _log_progress(
+    index: int, total: int, results: list[dict], scores_sum: dict, skipped: int,
+) -> None:
+    """Log progress summary every N items."""
+    n = len(results) or 1
+    crag_ok = sum(1 for r in results if r.get("crag_action") == "correct")
+    recall_ok = sum(1 for r in results if r.get("recall_hit"))
+    logger.info(
+        f"Progress: {index}/{total} (scored: {n}, skipped: {skipped}) | "
+        f"F={scores_sum['faithfulness']/n:.3f} "
+        f"R={scores_sum['relevancy']/n:.3f} "
+        f"C={scores_sum['completeness']/n:.3f} | "
+        f"CRAG-OK={crag_ok}/{n} Recall={recall_ok}/{n}"
+    )
+
+
+async def _run_eval_loop(
+    golden_set, engine, eval_id, kb_label,
+    results, scores_sum, skipped, batch_to_save,
+    batch_cooldown_size, batch_cooldown_sec,
+) -> list[dict]:
+    """Run the evaluation loop over golden set items."""
+    for i, gs in enumerate(golden_set):
+        logger.info(
+            f"[{i+1}/{len(golden_set)}] START kb={gs['kb_id']} q={gs['question'][:60]}"
+        )
+
+        result, skip_count = await _evaluate_single_item(gs, i + 1, len(golden_set))
+        skipped += skip_count
+        if result is None:
+            continue
+
+        results.append(result)
+        batch_to_save.append(result)
+        for k in scores_sum:
+            scores_sum[k] += result.get(k, 0)
+
+        if len(batch_to_save) >= 10:
+            t_save = time.time()
+            await save_eval_results(engine, eval_id, kb_label, batch_to_save)
+            logger.info(f"[{i+1}] DB SAVE done: {(time.time()-t_save)*1000:.0f}ms, batch={len(batch_to_save)}")
+            batch_to_save = []
+
+        if (i + 1) % 10 == 0:
+            _log_progress(i + 1, len(golden_set), results, scores_sum, skipped)
+
+        if (i + 1) % batch_cooldown_size == 0 and (i + 1) < len(golden_set):
+            logger.info(
+                f"=== BATCH COOLDOWN: sleeping {batch_cooldown_sec}s after {i+1} items ==="
+            )
+            await asyncio.sleep(batch_cooldown_sec)
+
+    return batch_to_save
+
+
 async def async_main(kb_ids: list[str]):
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -244,201 +483,29 @@ async def async_main(kb_ids: list[str]):
         eval_id = os.getenv("EVAL_ID") or str(uuid.uuid4())[:8]
         logger.info(f"Evaluation ID: {eval_id}")
 
-        golden_set = await load_golden_set(engine)
-        if kb_ids:
-            golden_set = [g for g in golden_set if g["kb_id"] in kb_ids]
-        logger.info(f"Golden set: {len(golden_set)} questions")
-
+        golden_set = await _load_and_filter_golden_set(engine, kb_ids, eval_id)
         if not golden_set:
             logger.error("No golden set found. Run generate_golden_set.py first.")
             return
-
-        # Skip already-evaluated questions for this eval_id (resume support)
-        from sqlalchemy import text as _text
-        evaluated_ids: set[str] = set()
-        try:
-            async with engine.begin() as conn:
-                rows = await conn.execute(_text(
-                    "SELECT CAST(golden_set_id AS TEXT) FROM rag_eval_results WHERE eval_id = :eid"
-                ), {"eid": eval_id})
-                evaluated_ids = {r[0] for r in rows.fetchall() if r[0]}
-        except Exception:
-            pass  # Table may not exist yet
-        if evaluated_ids:
-            before = len(golden_set)
-            golden_set = [g for g in golden_set if g["id"] not in evaluated_ids]
-            logger.info(f"Resuming: skipped {before - len(golden_set)} already-evaluated, {len(golden_set)} remaining")
 
         results: list[dict] = []
         scores_sum = {"faithfulness": 0, "relevancy": 0, "completeness": 0}
         skipped = 0
         batch_to_save: list[dict] = []
 
-        # Batch cooldown: sleep between every N items to let the server recover
         BATCH_COOLDOWN_SIZE = int(os.getenv("EVAL_BATCH_COOLDOWN_SIZE", "10"))
         BATCH_COOLDOWN_SEC = float(os.getenv("EVAL_BATCH_COOLDOWN_SEC", "15"))
+        kb_label = ",".join(kb_ids) if kb_ids else "all"
 
-        for i, gs in enumerate(golden_set):
-            logger.info(
-                f"[{i+1}/{len(golden_set)}] START kb={gs['kb_id']} q={gs['question'][:60]}"
-            )
-
-            # Search with retry on timeout
-            actual_answer = ""
-            search_time = 0.0
-            search_result = {"answer": None, "chunks": [], "metadata": {}}
-            for attempt in range(2):
-                try:
-                    t0 = time.time()
-                    search_result = search_and_answer(gs["question"], [gs["kb_id"]])
-                    search_time = (time.time() - t0) * 1000
-                    actual_answer = search_result.get("answer") or ""
-                    logger.info(
-                        f"[{i+1}] SEARCH done: {search_time:.0f}ms, "
-                        f"answer_len={len(actual_answer)}, "
-                        f"chunks={len(search_result.get('chunks', []))}"
-                    )
-                    break
-                except Exception as e:
-                    if attempt == 0:
-                        logger.warning(f"Search retry for: {gs['question'][:40]}... ({e})")
-                        time.sleep(3)
-                    else:
-                        logger.warning(f"Search failed after retry: {gs['question'][:40]}")
-
-            # Adaptive throttle: slow down when server is stressed, speed up when fast
-            if search_time > SEARCH_DELAY_TARGET_MS:
-                # Server is slow — wait proportionally longer
-                delay = min(SEARCH_DELAY_MAX, search_time / 1000 * 0.5)
-            else:
-                delay = SEARCH_DELAY_MIN
-            time.sleep(delay)
-
-            if not actual_answer:
-                skipped += 1
-                logger.info(f"[{i+1}] SKIPPED (no answer)")
-
-            # Extract CRAG evaluation from search metadata
-            meta = search_result.get("metadata", {})
-            crag_action = meta.get("crag_action", "")
-            crag_confidence = meta.get("crag_confidence", 0.0)
-            crag_recommendation = meta.get("crag_recommendation", "")
-
-            # Recall: check if source document appears in retrieved chunks
-            source_doc = gs.get("source_doc", "")
-            chunks = search_result.get("chunks", [])
-            recall_hit = False
-            if source_doc and chunks:
-                retrieved_docs = {c.get("document_name", "") for c in chunks}
-                recall_hit = any(source_doc in d for d in retrieved_docs)
-
-            t_judge = time.time()
-            scores = judge_answer(gs["question"], gs["expected"], actual_answer, chunks=chunks)
-            judge_time = (time.time() - t_judge) * 1000
-            if scores is None:
-                skipped += 1
-                logger.warning(f"[{i+1}] SKIPPED (judge failed, SSO expired?)")
-                continue
-            logger.info(
-                f"[{i+1}] JUDGE done: {judge_time:.0f}ms, "
-                f"F={scores['faithfulness']:.2f} R={scores['relevancy']:.2f} C={scores['completeness']:.2f} "
-                f"recall={'HIT' if recall_hit else 'MISS'}"
-                f"{f' crag={crag_action}({crag_confidence:.2f})' if crag_action else ''}"
-            )
-
-            result = {
-                "kb_id": gs["kb_id"],
-                "golden_set_id": gs["id"],
-                "question": gs["question"],
-                "expected": gs["expected"],
-                "actual": actual_answer[:500],
-                "faithfulness": scores["faithfulness"],
-                "relevancy": scores["relevancy"],
-                "completeness": scores["completeness"],
-                "search_time_ms": search_time,
-                "crag_action": crag_action,
-                "crag_confidence": crag_confidence,
-                "crag_recommendation": crag_recommendation[:500] if crag_recommendation else "",
-                "recall_hit": recall_hit,
-            }
-            results.append(result)
-            batch_to_save.append(result)
-
-            for k in scores_sum:
-                scores_sum[k] += scores[k]
-
-            # Save every 10 results (crash-safe incremental save)
-            if len(batch_to_save) >= 10:
-                t_save = time.time()
-                await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", batch_to_save)
-                logger.info(f"[{i+1}] DB SAVE done: {(time.time()-t_save)*1000:.0f}ms, batch={len(batch_to_save)}")
-                batch_to_save = []
-
-            if (i + 1) % 10 == 0:
-                n = len(results) or 1
-                crag_ok = sum(1 for r in results if r.get("crag_action") == "correct")
-                recall_ok = sum(1 for r in results if r.get("recall_hit"))
-                logger.info(
-                    f"Progress: {i+1}/{len(golden_set)} (scored: {n}, skipped: {skipped}) | "
-                    f"F={scores_sum['faithfulness']/n:.3f} "
-                    f"R={scores_sum['relevancy']/n:.3f} "
-                    f"C={scores_sum['completeness']/n:.3f} | "
-                    f"CRAG-OK={crag_ok}/{n} Recall={recall_ok}/{n}"
-                )
-
-            # Batch cooldown: give the server breathing room every N items
-            if (i + 1) % BATCH_COOLDOWN_SIZE == 0 and (i + 1) < len(golden_set):
-                logger.info(
-                    f"=== BATCH COOLDOWN: sleeping {BATCH_COOLDOWN_SEC}s after {i+1} items ==="
-                )
-                time.sleep(BATCH_COOLDOWN_SEC)
-
-        # Save remaining batch
+        batch_to_save = await _run_eval_loop(
+            golden_set, engine, eval_id, kb_label,
+            results, scores_sum, skipped, batch_to_save,
+            BATCH_COOLDOWN_SIZE, BATCH_COOLDOWN_SEC,
+        )
         if batch_to_save:
-            await save_eval_results(engine, eval_id, ",".join(kb_ids) if kb_ids else "all", batch_to_save)
+            await save_eval_results(engine, eval_id, kb_label, batch_to_save)
 
-        # Final metrics
-        n = len(results)
-        metrics = {
-            "faithfulness": round(scores_sum["faithfulness"] / n, 3) if n else 0,
-            "answer_relevancy": round(scores_sum["relevancy"] / n, 3) if n else 0,
-            "completeness": round(scores_sum["completeness"] / n, 3) if n else 0,
-            "overall_score": round(sum(scores_sum.values()) / (n * 3), 3) if n else 0,
-            "total_questions": n,
-            "avg_search_time_ms": round(sum(r["search_time_ms"] for r in results) / n, 1) if n else 0,
-        }
-
-        # CRAG statistics
-        crag_actions = [r.get("crag_action", "") for r in results if r.get("crag_action")]
-        crag_correct = sum(1 for a in crag_actions if a == "correct")
-        crag_ambiguous = sum(1 for a in crag_actions if a == "ambiguous")
-        crag_incorrect = sum(1 for a in crag_actions if a == "incorrect")
-        crag_total = len(crag_actions) or 1
-        avg_crag_conf = sum(r.get("crag_confidence", 0) for r in results) / n if n else 0
-
-        # Recall statistics
-        recall_total = sum(1 for r in results if r.get("recall_hit") is not None)
-        recall_hits = sum(1 for r in results if r.get("recall_hit"))
-        recall_rate = recall_hits / recall_total if recall_total else 0
-
-        logger.info(f"\n{'='*60}")
-        logger.info(f"EVALUATION COMPLETE: {eval_id}")
-        logger.info("  --- LLM Judge ---")
-        logger.info(f"  Faithfulness:  {metrics['faithfulness']:.3f}")
-        logger.info(f"  Relevancy:     {metrics['answer_relevancy']:.3f}")
-        logger.info(f"  Completeness:  {metrics['completeness']:.3f}")
-        logger.info(f"  Overall:       {metrics['overall_score']:.3f}")
-        logger.info("  --- CRAG (Retrieval Quality) ---")
-        logger.info(f"  Correct:       {crag_correct}/{crag_total} ({crag_correct/crag_total:.0%})")
-        logger.info(f"  Ambiguous:     {crag_ambiguous}/{crag_total} ({crag_ambiguous/crag_total:.0%})")
-        logger.info(f"  Incorrect:     {crag_incorrect}/{crag_total} ({crag_incorrect/crag_total:.0%})")
-        logger.info(f"  Avg Confidence:{avg_crag_conf:.3f}")
-        logger.info("  --- Recall ---")
-        logger.info(f"  Source Recall:  {recall_hits}/{recall_total} ({recall_rate:.0%})")
-        logger.info("  --- Performance ---")
-        logger.info(f"  Avg Search:    {metrics['avg_search_time_ms']:.0f}ms")
-        logger.info(f"  Questions:     {metrics['total_questions']}")
-        logger.info(f"{'='*60}")
+        _log_final_report(eval_id, results, scores_sum)
     finally:
         await engine.dispose()
 

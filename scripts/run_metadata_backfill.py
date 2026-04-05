@@ -51,13 +51,89 @@ def update_point_payload(collection: str, point_id: str, payload: dict):
     )
 
 
-def run_backfill(kb_id: str, *, force: bool = False, skip_neo4j: bool = False):
+def _compute_doc_metadata(payload: dict) -> dict:
+    """Compute owner, L1 category, and quality score for a document."""
     from src.pipeline.ingestion import (
         extract_owner, classify_l1_category, calculate_quality_score,
         _calculate_metrics, _determine_quality_tier,
     )
     from src.domain.models import RawDocument
 
+    doc_id = payload.get("doc_id", "")
+    doc_name = payload.get("document_name", "")
+    author = payload.get("author", "")
+    content = payload.get("content", "")
+
+    raw = RawDocument(
+        doc_id=doc_id,
+        title=doc_name,
+        content=content,
+        source_uri=payload.get("source_uri", ""),
+        author=author,
+        metadata={"creator": payload.get("creator", ""), "last_modifier": payload.get("last_modifier", "")},
+    )
+    owner = extract_owner(raw)
+    l1_category = classify_l1_category(doc_name, content)
+
+    metrics = _calculate_metrics(content)
+    tier = _determine_quality_tier(metrics)
+    quality_score = calculate_quality_score(metrics, tier)
+
+    return {"owner": owner, "l1_category": l1_category, "quality_score": quality_score}
+
+
+def _build_point_update(
+    payload: dict, cached: dict, force: bool, stats: dict,
+    category_counts: Counter, owner_counts: Counter,
+) -> dict:
+    """Build the payload update dict for a single point."""
+    new_payload = {}
+
+    if force or (not payload.get("owner") and cached["owner"]):
+        new_payload["owner"] = cached["owner"]
+        if cached["owner"]:
+            stats["owner_set"] += 1
+            owner_counts[cached["owner"]] += 1
+
+    if force or not payload.get("l1_category"):
+        new_payload["l1_category"] = cached["l1_category"]
+        stats["category_set"] += 1
+        category_counts[cached["l1_category"]] += 1
+
+    if force or not payload.get("quality_score"):
+        new_payload["quality_score"] = cached["quality_score"]
+        stats["score_set"] += 1
+
+    return new_payload
+
+
+def _process_backfill_point(
+    point: dict,
+    force: bool,
+    doc_cache: dict[str, dict],
+    stats: dict,
+    category_counts: Counter,
+    owner_counts: Counter,
+    updates: list[tuple[str, dict]],
+) -> None:
+    """Process a single point for metadata backfill."""
+    payload = point["payload"]
+    point_id = point["id"]
+
+    if not force and payload.get("owner") and payload.get("l1_category") and payload.get("quality_score"):
+        stats["already_has"] += 1
+        return
+
+    doc_id = payload.get("doc_id", "")
+    if doc_id not in doc_cache:
+        doc_cache[doc_id] = _compute_doc_metadata(payload)
+
+    new_payload = _build_point_update(payload, doc_cache[doc_id], force, stats, category_counts, owner_counts)
+    if new_payload:
+        updates.append((point_id, new_payload))
+
+
+def run_backfill(kb_id: str, *, force: bool = False, skip_neo4j: bool = False):
     collection = f"kb_{kb_id.replace('-', '_')}"
     logger.info(f"[{kb_id}] Fetching points from {collection}...")
     points = fetch_all_points(collection)
@@ -66,84 +142,19 @@ def run_backfill(kb_id: str, *, force: bool = False, skip_neo4j: bool = False):
     if not points:
         return
 
-    stats = {
-        "total": len(points),
-        "owner_set": 0,
-        "category_set": 0,
-        "score_set": 0,
-        "already_has": 0,
-    }
+    stats = {"total": len(points), "owner_set": 0, "category_set": 0, "score_set": 0, "already_has": 0}
     category_counts: Counter[str] = Counter()
     owner_counts: Counter[str] = Counter()
-
-    # Group points by doc_id to avoid recalculating per chunk
-    doc_cache: dict[str, dict] = {}  # doc_id -> {owner, l1_category, quality_score}
-
+    doc_cache: dict[str, dict] = {}
     updates: list[tuple[str, dict]] = []
 
     for i, point in enumerate(points):
-        payload = point["payload"]
-        point_id = point["id"]
-
-        # Skip if already backfilled (unless force mode)
-        if not force and payload.get("owner") and payload.get("l1_category") and payload.get("quality_score"):
-            stats["already_has"] += 1
-            continue
-
-        doc_id = payload.get("doc_id", "")
-        doc_name = payload.get("document_name", "")
-        author = payload.get("author", "")
-        content = payload.get("content", "")
-
-        # Use cached doc-level data if available
-        if doc_id not in doc_cache:
-            raw = RawDocument(
-                doc_id=doc_id,
-                title=doc_name,
-                content=content,
-                source_uri=payload.get("source_uri", ""),
-                author=author,
-                metadata={"creator": payload.get("creator", ""), "last_modifier": payload.get("last_modifier", "")},
-            )
-            owner = extract_owner(raw)
-            l1_category = classify_l1_category(doc_name, content)
-
-            # Quality score from content
-            metrics = _calculate_metrics(content)
-            tier = _determine_quality_tier(metrics)
-            quality_score = calculate_quality_score(metrics, tier)
-
-            doc_cache[doc_id] = {
-                "owner": owner,
-                "l1_category": l1_category,
-                "quality_score": quality_score,
-            }
-
-        cached = doc_cache[doc_id]
-        new_payload = {}
-
-        if force or (not payload.get("owner") and cached["owner"]):
-            new_payload["owner"] = cached["owner"]
-            if cached["owner"]:
-                stats["owner_set"] += 1
-                owner_counts[cached["owner"]] += 1
-
-        if force or not payload.get("l1_category"):
-            new_payload["l1_category"] = cached["l1_category"]
-            stats["category_set"] += 1
-            category_counts[cached["l1_category"]] += 1
-
-        if force or not payload.get("quality_score"):
-            new_payload["quality_score"] = cached["quality_score"]
-            stats["score_set"] += 1
-
-        if new_payload:
-            updates.append((point_id, new_payload))
-
+        _process_backfill_point(
+            point, force, doc_cache, stats, category_counts, owner_counts, updates,
+        )
         if (i + 1) % 500 == 0:
             logger.info(f"[{kb_id}] Scanned {i+1}/{len(points)}...")
 
-    # Apply updates to Qdrant
     if updates:
         logger.info(f"[{kb_id}] Applying {len(updates)} metadata updates to Qdrant...")
         t0 = time.time()
@@ -152,13 +163,11 @@ def run_backfill(kb_id: str, *, force: bool = False, skip_neo4j: bool = False):
         elapsed = time.time() - t0
         logger.info(f"[{kb_id}] Qdrant update done in {elapsed:.1f}s")
 
-    # Create Neo4j graph edges (skip if --skip-neo4j or already created via ingestion)
     if not skip_neo4j:
         _create_neo4j_edges(kb_id, doc_cache)
     else:
         logger.info(f"[{kb_id}] Skipping Neo4j edge creation (--skip-neo4j)")
 
-    # Report
     logger.info(f"[{kb_id}] DONE: {stats}")
     if category_counts:
         logger.info(f"[{kb_id}] Categories: {dict(category_counts.most_common(10))}")

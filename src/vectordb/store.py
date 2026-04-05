@@ -190,6 +190,38 @@ class QdrantStoreOperations:
 
     # ==================== Delete ====================
 
+    async def _scroll_stale_ids(
+        self,
+        client: Any,
+        collection_name: str,
+        conditions: list,
+        exclude_point_ids: set[str],
+    ) -> list[str]:
+        """Scroll through matching points and return IDs not in exclude set."""
+        from qdrant_client.models import Filter
+
+        stale_ids: list[str] = []
+        offset = None
+        while True:
+            scroll_kwargs: dict[str, Any] = {
+                "collection_name": collection_name,
+                "scroll_filter": Filter(must=conditions),
+                "limit": 100,
+                "with_payload": False,
+                "with_vectors": False,
+            }
+            if offset is not None:
+                scroll_kwargs["offset"] = offset
+            points, next_offset = await client.scroll(**scroll_kwargs)
+            for pt in points:
+                pid = str(pt.id)
+                if pid not in exclude_point_ids:
+                    stale_ids.append(pid)
+            if next_offset is None:
+                break
+            offset = next_offset
+        return stale_ids
+
     async def delete_by_filter(
         self,
         kb_id: str,
@@ -215,27 +247,9 @@ class QdrantStoreOperations:
 
         try:
             if exclude_point_ids:
-                stale_ids: list[str] = []
-                offset = None
-                while True:
-                    scroll_kwargs: dict[str, Any] = {
-                        "collection_name": collection_name,
-                        "scroll_filter": Filter(must=conditions),
-                        "limit": 100,
-                        "with_payload": False,
-                        "with_vectors": False,
-                    }
-                    if offset is not None:
-                        scroll_kwargs["offset"] = offset
-                    points, next_offset = await client.scroll(**scroll_kwargs)
-                    for pt in points:
-                        pid = str(pt.id)
-                        if pid not in exclude_point_ids:
-                            stale_ids.append(pid)
-                    if next_offset is None:
-                        break
-                    offset = next_offset
-
+                stale_ids = await self._scroll_stale_ids(
+                    client, collection_name, conditions, exclude_point_ids,
+                )
                 if stale_ids:
                     await client.delete(
                         collection_name=collection_name,
@@ -450,6 +464,30 @@ class QdrantStoreOperations:
 
     # ==================== Source URI listing ====================
 
+    async def _scroll_distinct_source_uris(
+        self, client: Any, collection_name: str, safe_limit: int,
+    ) -> list[str]:
+        """Fallback: scroll all points to collect distinct source_uri values."""
+        source_uris_set: set[str] = set()
+        offset = None
+        while True:
+            points, offset = await client.scroll(
+                collection_name=collection_name,
+                limit=1000,
+                offset=offset,
+                with_payload=["source_uri"],
+                with_vectors=False,
+            )
+            for p in points:
+                uri = (p.payload or {}).get("source_uri")
+                if isinstance(uri, str) and uri.strip():
+                    source_uris_set.add(uri.strip())
+                    if len(source_uris_set) >= safe_limit:
+                        return sorted(source_uris_set)
+            if offset is None:
+                break
+        return sorted(source_uris_set)
+
     async def list_distinct_source_uris(self, kb_id: str, limit: int = 200_000) -> list[str]:
         client = await self._provider.ensure_client()
         collection_name = await self._collection_mgr.resolve_read_collection_name(kb_id)
@@ -476,25 +514,7 @@ class QdrantStoreOperations:
             )
 
         try:
-            source_uris_set: set[str] = set()
-            offset = None
-            while True:
-                points, offset = await client.scroll(
-                    collection_name=collection_name,
-                    limit=1000,
-                    offset=offset,
-                    with_payload=["source_uri"],
-                    with_vectors=False,
-                )
-                for p in points:
-                    uri = (p.payload or {}).get("source_uri")
-                    if isinstance(uri, str) and uri.strip():
-                        source_uris_set.add(uri.strip())
-                        if len(source_uris_set) >= safe_limit:
-                            return sorted(source_uris_set)
-                if offset is None:
-                    break
-            return sorted(source_uris_set)
+            return await self._scroll_distinct_source_uris(client, collection_name, safe_limit)
         except Exception as e:
             logger.warning(
                 "Failed to list distinct documents for kb_id=%s: %s",

@@ -16,6 +16,8 @@ from services.api_client import api_failed
 
 render_sidebar(show_admin=True)
 
+_MSG_DATA_LOAD_FAILED = "데이터를 불러올 수 없습니다."
+
 st.title("🔗 지식 그래프")
 st.caption("지식 그래프의 엔티티, 관계, 전문가를 탐색하고 무결성을 검사합니다.")
 
@@ -54,7 +56,7 @@ with tab_search:
                 result = api_client.graph_search(entity_query.strip(), max_hops=max_hops)
 
             if api_failed(result):
-                st.warning("데이터를 불러올 수 없습니다.")
+                st.warning(_MSG_DATA_LOAD_FAILED)
             else:
                 entities = result.get("entities", result.get("items", result.get("nodes", [])))
                 if entities:
@@ -200,7 +202,7 @@ with tab_expert:
                 result = api_client.graph_experts_search(topic_query.strip())
 
             if api_failed(result):
-                st.warning("데이터를 불러올 수 없습니다.")
+                st.warning(_MSG_DATA_LOAD_FAILED)
             else:
                 experts = result.get("experts", result.get("items", result.get("authors", [])))
                 if experts:
@@ -249,7 +251,7 @@ with tab_integrity:
             result = api_client.graph_integrity_check()
 
         if api_failed(result):
-            st.warning("데이터를 불러올 수 없습니다.")
+            st.warning(_MSG_DATA_LOAD_FAILED)
         else:
             # Summary metrics
             orphan_count = result.get("orphan_count", result.get("orphan_nodes", 0))

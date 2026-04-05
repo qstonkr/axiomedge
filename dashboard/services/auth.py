@@ -41,7 +41,7 @@ def get_authenticated_user() -> LocalUser:
     return LocalUser()
 
 
-def is_session_valid(last_activity: datetime) -> bool:
+def is_session_valid(_last_activity: datetime) -> bool:
     """Always valid for local."""
     return True
 
@@ -59,7 +59,7 @@ def check_session_timeout() -> bool:
     return True
 
 
-def get_user_role(user=None) -> str:
+def get_user_role(_user=None) -> str:
     """Always return admin for local."""
     return "admin"
 

@@ -12,16 +12,16 @@ from typing import Any
 class SessionStore:
     """Chat session persistence stub - always returns empty/false."""
 
-    def save_messages(self, session_id: str, user_id: str, messages: list[dict[str, Any]]) -> bool:
+    def save_messages(self, _session_id: str, _user_id: str, _messages: list[dict[str, Any]]) -> bool:
         return False
 
-    def load_messages(self, session_id: str, user_id: str) -> list[dict[str, Any]]:
+    def load_messages(self, _session_id: str, _user_id: str) -> list[dict[str, Any]]:
         return []
 
-    def list_sessions(self, user_id: str, page: int = 1, page_size: int = 20) -> list[dict[str, Any]]:
+    def list_sessions(self, _user_id: str, _page: int = 1, _page_size: int = 20) -> list[dict[str, Any]]:
         return []
 
-    def delete_session(self, session_id: str, user_id: str) -> bool:
+    def delete_session(self, _session_id: str, _user_id: str) -> bool:
         return False
 
 

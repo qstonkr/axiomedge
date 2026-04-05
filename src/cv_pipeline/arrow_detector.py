@@ -106,6 +106,38 @@ class ArrowDetector:
         logger.debug("Detected %d edges (%d with arrowheads)", len(result), sum(1 for e in result if e.has_arrowhead))
         return result
 
+    def _is_nearby(
+        self,
+        group_start: tuple[float, float],
+        group_end: tuple[float, float],
+        s2: tuple[float, float],
+        e2: tuple[float, float],
+    ) -> bool:
+        """Check if any endpoint of segment (s2, e2) is close to group endpoints."""
+        return (
+            self._point_distance(group_end, s2) < MERGE_DISTANCE
+            or self._point_distance(group_end, e2) < MERGE_DISTANCE
+            or self._point_distance(group_start, s2) < MERGE_DISTANCE
+            or self._point_distance(group_start, e2) < MERGE_DISTANCE
+        )
+
+    @staticmethod
+    def _farthest_pair(
+        points: list[tuple[float, float]],
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Select the two farthest points from a list."""
+        from math import hypot
+
+        max_dist = 0.0
+        best = (points[0], points[1])
+        for a_idx in range(len(points)):
+            for b_idx in range(a_idx + 1, len(points)):
+                d = hypot(points[a_idx][0] - points[b_idx][0], points[a_idx][1] - points[b_idx][1])
+                if d > max_dist:
+                    max_dist = d
+                    best = (points[a_idx], points[b_idx])
+        return best
+
     def _merge_segments(
         self, segments: list[tuple[tuple[float, float], tuple[float, float]]]
     ) -> list[tuple[tuple[float, float], tuple[float, float]]]:
@@ -129,24 +161,10 @@ class ArrowDetector:
                     continue
                 s2, e2 = segments[j]
 
-                # Merge if any endpoint is close
-                if (
-                    self._point_distance(group_end, s2) < MERGE_DISTANCE
-                    or self._point_distance(group_end, e2) < MERGE_DISTANCE
-                    or self._point_distance(group_start, s2) < MERGE_DISTANCE
-                    or self._point_distance(group_start, e2) < MERGE_DISTANCE
-                ):
-                    # Select the two farthest points
-                    points = [group_start, group_end, s2, e2]
-                    max_dist = 0.0
-                    best_pair = (group_start, group_end)
-                    for a_idx in range(len(points)):
-                        for b_idx in range(a_idx + 1, len(points)):
-                            d = self._point_distance(points[a_idx], points[b_idx])
-                            if d > max_dist:
-                                max_dist = d
-                                best_pair = (points[a_idx], points[b_idx])
-                    group_start, group_end = best_pair
+                if self._is_nearby(group_start, group_end, s2, e2):
+                    group_start, group_end = self._farthest_pair(
+                        [group_start, group_end, s2, e2]
+                    )
                     used[j] = True
 
             merged.append((group_start, group_end))

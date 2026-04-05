@@ -98,6 +98,54 @@ def _build_citation_entry(idx: int, citation: dict[str, Any]) -> CitationEntry:
     )
 
 
+def _build_citation_from_source(idx: int, source: Any) -> CitationEntry:
+    """Build a CitationEntry from a source attribution object or dict."""
+    if isinstance(source, Mapping):
+        read = source.get
+    else:
+        def read(name: str, default: Any = None, *, _source: Any = source) -> Any:
+            return _read_source_attr(_source, name, default)
+
+    document_name = (
+        str(
+            read("document_name")
+            or read("title")
+            or read("source_id")
+            or f"문서 {idx}"
+        ).strip()
+        or f"문서 {idx}"
+    )
+
+    score = _safe_float(
+        read("relevance_score")
+        if read("relevance_score") is not None
+        else read("score", read("relevance"))
+    )
+
+    source_uri = read("source_uri") or read("url")
+
+    return CitationEntry(
+        index=idx,
+        ref=str(read("ref") or idx),
+        document_name=document_name,
+        kb_name=str(read("kb_name")).strip() if read("kb_name") else None,
+        source_uri=str(source_uri).strip() if source_uri else None,
+        relevance_score=score,
+        is_stale=bool(read("is_stale", False)),
+        freshness_warning=(
+            str(read("freshness_warning")).strip() or None
+            if read("freshness_warning") is not None
+            else None
+        ),
+        days_since_update=_safe_int(read("days_since_update")),
+        updated_at=(
+            str(read("updated_at")).strip() or None
+            if read("updated_at") is not None
+            else None
+        ),
+    )
+
+
 class CitationFormatter:
     """Normalize and render citations with a single output convention."""
 
@@ -111,57 +159,10 @@ class CitationFormatter:
     @classmethod
     def from_sources(cls, sources: Iterable[Any]) -> list[CitationEntry]:
         """Normalize source attribution objects into canonical citation entries."""
-        entries: list[CitationEntry] = []
-        for idx, source in enumerate(sources, start=1):
-            if isinstance(source, Mapping):
-                read = source.get
-            else:
-                def read(name: str, default: Any = None, *, _source: Any = source) -> Any:
-                    return _read_source_attr(_source, name, default)
-
-            document_name = (
-                str(
-                    read("document_name")
-                    or read("title")
-                    or read("source_id")
-                    or f"문서 {idx}"
-                ).strip()
-                or f"문서 {idx}"
-            )
-
-            score = _safe_float(
-                read("relevance_score")
-                if read("relevance_score") is not None
-                else read("score", read("relevance"))
-            )
-
-            source_uri = read("source_uri")
-            if not source_uri:
-                source_uri = read("url")
-
-            entries.append(
-                CitationEntry(
-                    index=idx,
-                    ref=str(read("ref") or idx),
-                    document_name=document_name,
-                    kb_name=str(read("kb_name")).strip() if read("kb_name") else None,
-                    source_uri=str(source_uri).strip() if source_uri else None,
-                    relevance_score=score,
-                    is_stale=bool(read("is_stale", False)),
-                    freshness_warning=(
-                        str(read("freshness_warning")).strip() or None
-                        if read("freshness_warning") is not None
-                        else None
-                    ),
-                    days_since_update=_safe_int(read("days_since_update")),
-                    updated_at=(
-                        str(read("updated_at")).strip() or None
-                        if read("updated_at") is not None
-                        else None
-                    ),
-                )
-            )
-        return entries
+        return [
+            _build_citation_from_source(idx, source)
+            for idx, source in enumerate(sources, start=1)
+        ]
 
     @classmethod
     def format_markdown(

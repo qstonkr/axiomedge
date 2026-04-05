@@ -40,49 +40,52 @@ class OCRWithCoords:
             img = img.convert("RGB")
         img_array = np.array(img)
 
-        # Initialize PaddleOCR
         ocr = PaddleOCR(lang="korean", use_gpu=False, use_angle_cls=True)
         result = ocr.ocr(img_array, cls=True)
 
         if not result or not isinstance(result, list) or len(result) == 0:
             return []
 
-        # Handle both new predict API and legacy ocr API formats
         ocr_result = result[0]
 
         # Try new-style .json attribute first
         try:
-            if hasattr(ocr_result, "json"):
-                result_dict = ocr_result.json
-                res = result_dict.get("res", {})
-                rec_texts = res.get("rec_texts", [])
-                rec_scores = res.get("rec_scores", [])
-                dt_polys = res.get("dt_polys", [])
-
-                if rec_texts and dt_polys:
-                    boxes: list[OCRBox] = []
-                    for i, (text, poly) in enumerate(zip(rec_texts, dt_polys)):
-                        if not text:
-                            continue
-                        score = rec_scores[i] if i < len(rec_scores) else 0.0
-                        if not isinstance(poly, (list, tuple)) or len(poly) < 4:
-                            continue
-                        polygon = [[float(p[0]), float(p[1])] for p in poly[:4]]
-                        cx = sum(p[0] for p in polygon) / 4
-                        cy = sum(p[1] for p in polygon) / 4
-                        boxes.append(OCRBox(
-                            text=text,
-                            polygon=polygon,
-                            confidence=float(score),
-                            center=(cx, cy),
-                        ))
-                    logger.debug("Extracted %d OCR boxes with coordinates", len(boxes))
-                    return boxes
+            boxes = self._extract_v3(ocr_result)
+            if boxes is not None:
+                return boxes
         except (AttributeError, TypeError) as e:
             logger.debug("PaddleOCR v3 format extraction failed, trying legacy: %s", e)
 
-        # Legacy format: [[box, (text, score)], ...]
         return self._extract_legacy(result)
+
+    def _extract_v3(self, ocr_result: object) -> list[OCRBox] | None:
+        """Try extracting via PaddleOCR v3 .json attribute. Returns None if not applicable."""
+        if not hasattr(ocr_result, "json"):
+            return None
+        result_dict = ocr_result.json
+        res = result_dict.get("res", {})
+        rec_texts = res.get("rec_texts", [])
+        rec_scores = res.get("rec_scores", [])
+        dt_polys = res.get("dt_polys", [])
+
+        if not rec_texts or not dt_polys:
+            return None
+
+        boxes: list[OCRBox] = []
+        for i, (text, poly) in enumerate(zip(rec_texts, dt_polys)):
+            if not text:
+                continue
+            if not isinstance(poly, (list, tuple)) or len(poly) < 4:
+                continue
+            score = rec_scores[i] if i < len(rec_scores) else 0.0
+            polygon = [[float(p[0]), float(p[1])] for p in poly[:4]]
+            cx = sum(p[0] for p in polygon) / 4
+            cy = sum(p[1] for p in polygon) / 4
+            boxes.append(OCRBox(
+                text=text, polygon=polygon, confidence=float(score), center=(cx, cy),
+            ))
+        logger.debug("Extracted %d OCR boxes with coordinates", len(boxes))
+        return boxes
 
     def _extract_legacy(self, result: list) -> list[OCRBox]:
         """Legacy PaddleOCR format handling."""

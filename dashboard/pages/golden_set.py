@@ -58,7 +58,7 @@ with tab_golden:
             pending = sum(1 for i in items if i.get("status") == "pending")
             st.metric("대기", f"{pending}건")
         with m4:
-            kb_count = len(set(i.get("kb_id", "") for i in items))
+            kb_count = len({i.get("kb_id", "") for i in items})
             st.metric("KB 수", f"{kb_count}개")
 
         # KB별 분포

@@ -73,6 +73,11 @@ _CONTEXT_NAME_RE = re.compile(
 )
 
 
+def _is_valid_name(name: str) -> bool:
+    """Check if a name is a valid Korean person name."""
+    return len(name) >= 2 and name not in _NAME_BLACKLIST
+
+
 def extract_persons_from_text(text: str) -> set[str]:
     """Extract Korean person names using KiwiPy NNP + regex patterns.
 
@@ -90,22 +95,20 @@ def extract_persons_from_text(text: str) -> set[str]:
         for tok in tokens:
             if tok.tag == "NNP" and _KOREAN_NAME_RE.match(tok.form):
                 name = tok.form.rstrip("M")
-                if name not in _NAME_BLACKLIST and len(name) >= 2:
+                if _is_valid_name(name):
                     persons.add(name)
     except Exception:
         pass
 
     # Tier 2: Regex for table cells (| 유경희 |, | 김재경M |)
     for m in _TABLE_NAME_RE.finditer(sample):
-        name = m.group(1)
-        if name not in _NAME_BLACKLIST and len(name) >= 2:
-            persons.add(name)
+        if _is_valid_name(m.group(1)):
+            persons.add(m.group(1))
 
     # Tier 3: Context patterns (담당자: 유경희)
     for m in _CONTEXT_NAME_RE.finditer(sample):
-        name = m.group(1)
-        if name not in _NAME_BLACKLIST and len(name) >= 2:
-            persons.add(name)
+        if _is_valid_name(m.group(1)):
+            persons.add(m.group(1))
 
     return persons
 
@@ -117,8 +120,8 @@ def extract_persons_from_text(text: str) -> set[str]:
 # Patterns: "2024_04", "2024-04", "2024.04", "202404", "2024년 4월"
 _DATE_PATTERNS = [
     re.compile(r"(20\d{2})[_\-./](0[1-9]|1[0-2])"),           # 2024_04, 2024-04
-    re.compile(r"(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])"),  # 20240430
-    re.compile(r"(20\d{2})년\s*(1?[0-9])월"),                   # 2024년 4월
+    re.compile(r"(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])"),    # 20240430
+    re.compile(r"(20\d{2})년\s*(1?\d)월"),                      # 2024년 4월
     re.compile(r"(20\d{2})[_\-.](\d{1,2})[_\-.](\d{1,2})"),   # 2024-4-30
     re.compile(r"(\d{1,2})월\s*(\d{1,2})주"),                   # 4월 3주차 (no year)
 ]
@@ -273,70 +276,75 @@ def update_doc_dates(collection: str, doc_date_map: dict[str, str]):
 # ---------------------------------------------------------------------------
 
 
+def _extract_date_tokens(doc_name: str) -> list[str]:
+    """Extract date-related tokens from a document name."""
+    import re
+
+    extra: list[str] = []
+    doc_date = extract_date_from_docname(doc_name)
+    if doc_date:
+        parts = doc_date.split("-")
+        if len(parts) == 2:
+            extra.extend([
+                parts[0], f"{parts[0]}년", f"{int(parts[1])}월",
+                doc_date.replace("-", "_"),
+            ])
+
+    m = re.search(r"(\d{1,2})월\s*(\d)주차", doc_name)
+    if m:
+        extra.append(f"{m.group(1)}월")
+        extra.append(f"{m.group(2)}주차")
+        extra.append(f"{m.group(1)}월 {m.group(2)}주차")
+
+    return extra
+
+
+def _update_morphemes_batch(
+    collection: str, sub: list[tuple], token_map: dict,
+) -> int:
+    """Read current morphemes for a batch, append tokens, write back. Returns count."""
+    point_ids = [p[0] for p in sub]
+
+    resp = requests.post(
+        f"{QDRANT_URL}/collections/{collection}/points",
+        json={"ids": point_ids, "with_payload": ["morphemes"], "with_vector": False},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        return 0
+
+    updated = 0
+    for pt in resp.json().get("result", []):
+        pid = pt["id"]
+        current = pt.get("payload", {}).get("morphemes", "")
+        extra_tokens = token_map.get(pid, "")
+        if not extra_tokens or extra_tokens in current:
+            continue
+        requests.post(
+            f"{QDRANT_URL}/collections/{collection}/points/payload",
+            json={"payload": {"morphemes": f"{current} {extra_tokens}"}, "points": [pid]},
+            timeout=5,
+        )
+        updated += 1
+    return updated
+
+
 def enrich_morphemes(collection: str, chunks: list[dict]):
     """Append date and owner tokens to morphemes payload for sparse matching."""
     updated = 0
     batch: list[tuple] = []  # (point_id, extra_tokens)
 
     for chunk in chunks:
-        extra = []
-        doc_name = chunk["document_name"]
-
-        # Date tokens from document name
-        doc_date = extract_date_from_docname(doc_name)
-        if doc_date:
-            # "2020-12" → ["2020", "2020년", "12월", "2020_12"]
-            parts = doc_date.split("-")
-            if len(parts) == 2:
-                extra.extend([parts[0], f"{parts[0]}년", f"{int(parts[1])}월", doc_date.replace("-", "_")])
-
-        # Date tokens from doc_name directly (주차, 월 patterns)
-        import re
-        m = re.search(r"(\d{1,2})월\s*(\d)주차", doc_name)
-        if m:
-            extra.append(f"{m.group(1)}월")
-            extra.append(f"{m.group(2)}주차")
-            extra.append(f"{m.group(1)}월 {m.group(2)}주차")
-
-        # Owner/author from payload (if exists)
-        # Note: owner is not in scroll payload, but Person names from content are
-
+        extra = _extract_date_tokens(chunk["document_name"])
         if extra:
             batch.append((chunk["point_id"], " ".join(extra)))
 
     # Batch update: read current morphemes, append tokens, write back
     for i in range(0, len(batch), 100):
         sub = batch[i:i + 100]
-        point_ids = [p[0] for p in sub]
         token_map = {p[0]: p[1] for p in sub}
-
         try:
-            # Read current morphemes
-            resp = requests.post(
-                f"{QDRANT_URL}/collections/{collection}/points",
-                json={"ids": point_ids, "with_payload": ["morphemes"], "with_vector": False},
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                continue
-
-            points = resp.json().get("result", [])
-            updates: list[dict] = []
-            for pt in points:
-                pid = pt["id"]
-                current = pt.get("payload", {}).get("morphemes", "")
-                extra_tokens = token_map.get(pid, "")
-                if extra_tokens and extra_tokens not in current:
-                    updates.append({"id": pid, "morphemes": f"{current} {extra_tokens}"})
-
-            # Write updated morphemes
-            for upd in updates:
-                requests.post(
-                    f"{QDRANT_URL}/collections/{collection}/points/payload",
-                    json={"payload": {"morphemes": upd["morphemes"]}, "points": [upd["id"]]},
-                    timeout=5,
-                )
-                updated += 1
+            updated += _update_morphemes_batch(collection, sub, token_map)
         except Exception as e:
             logger.warning(f"Morphemes update failed: {e}")
 

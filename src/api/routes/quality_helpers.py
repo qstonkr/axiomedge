@@ -8,7 +8,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-async def _get_db_engine():
+def _get_db_engine():
     """Create a disposable async engine from settings."""
     from sqlalchemy.ext.asyncio import create_async_engine
     from src.config import get_settings
@@ -29,7 +29,7 @@ async def query_golden_set(
     """List golden set Q&A pairs with optional filters."""
     from sqlalchemy import text
 
-    engine = await _get_db_engine()
+    engine = _get_db_engine()
     try:
         async with engine.begin() as conn:
             conditions: list[str] = []
@@ -101,7 +101,7 @@ async def update_golden_set(item_id: str, body: dict[str, Any]) -> dict[str, Any
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["id"] = item_id
 
-    engine = await _get_db_engine()
+    engine = _get_db_engine()
     try:
         async with engine.begin() as conn:
             await conn.execute(
@@ -117,7 +117,7 @@ async def delete_golden_set(item_id: str) -> dict[str, Any]:
     """Delete a golden set item."""
     from sqlalchemy import text
 
-    engine = await _get_db_engine()
+    engine = _get_db_engine()
     try:
         async with engine.begin() as conn:
             await conn.execute(
@@ -142,7 +142,7 @@ async def query_eval_results(
     """List evaluation results with optional filters."""
     from sqlalchemy import text
 
-    engine = await _get_db_engine()
+    engine = _get_db_engine()
     try:
         async with engine.begin() as conn:
             check = await conn.execute(
@@ -215,7 +215,7 @@ async def query_eval_results_summary() -> dict[str, Any]:
     """Get summary of all evaluation runs."""
     from sqlalchemy import text
 
-    engine = await _get_db_engine()
+    engine = _get_db_engine()
     try:
         async with engine.begin() as conn:
             check = await conn.execute(

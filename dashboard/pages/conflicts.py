@@ -19,6 +19,9 @@ from components.constants import DEDUP
 from services import api_client
 from services.api_client import api_failed
 
+_MSG_API_FAIL = "API 연결 실패"
+_BTN_RETRY = "🔄 재시도"
+
 render_sidebar(show_admin=True)
 
 st.title("⚠️ 충돌 / 중복")
@@ -33,8 +36,8 @@ with tab_dedup:
     dedup_result = api_client.get_dedup_stats()
 
     if api_failed(dedup_result):
-        st.error("API 연결 실패")
-        if st.button("🔄 재시도", key="retry_dedup"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_dedup"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -125,7 +128,7 @@ with tab_dedup:
             ))
             fig_funnel.update_layout(
                 title="Stage별 필터링 퍼널",
-                margin=dict(l=20, r=20, t=40, b=20),
+                margin={"l": 20, "r": 20, "t": 40, "b": 20},
             )
             st.plotly_chart(fig_funnel, use_container_width=True)
 
@@ -144,7 +147,7 @@ with tab_dedup:
                     title="DedupStatus 분포 (5종)",
                     hole=0.3,
                 )
-                fig_status.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+                fig_status.update_layout(margin={"l": 20, "r": 20, "t": 40, "b": 20})
                 st.plotly_chart(fig_status, use_container_width=True)
             else:
                 st.info("상태 분포 데이터가 없습니다.")
@@ -158,7 +161,7 @@ with tab_dedup:
                     title="Resolution 분포 (5종)",
                     hole=0.3,
                 )
-                fig_res.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+                fig_res.update_layout(margin={"l": 20, "r": 20, "t": 40, "b": 20})
                 st.plotly_chart(fig_res, use_container_width=True)
             else:
                 st.info("해결 방법 분포 데이터가 없습니다.")
@@ -171,8 +174,8 @@ with tab_conflict:
     conflicts_result = api_client.get_dedup_conflicts()
 
     if api_failed(conflicts_result):
-        st.error("API 연결 실패")
-        if st.button("🔄 재시도", key="retry_conflicts"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_conflicts"):
             st.cache_data.clear()
             st.rerun()
     else:
@@ -203,7 +206,7 @@ with tab_conflict:
                         labels={"x": "유형", "y": "건수"},
                         color=list(type_counts.keys()),
                     )
-                    fig_ct.update_layout(showlegend=False, margin=dict(l=20, r=20, t=40, b=20))
+                    fig_ct.update_layout(showlegend=False, margin={"l": 20, "r": 20, "t": 40, "b": 20})
                     st.plotly_chart(fig_ct, use_container_width=True)
 
             with ccol2:
@@ -222,7 +225,7 @@ with tab_conflict:
                         color_discrete_map=severity_colors,
                         hole=0.3,
                     )
-                    fig_sev.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+                    fig_sev.update_layout(margin={"l": 20, "r": 20, "t": 40, "b": 20})
                     st.plotly_chart(fig_sev, use_container_width=True)
 
             st.markdown("---")
@@ -313,8 +316,8 @@ with tab_history:
     conflicts_all = api_client.get_dedup_conflicts(page_size=50)
 
     if api_failed(conflicts_all):
-        st.error("API 연결 실패")
-        if st.button("🔄 재시도", key="retry_history"):
+        st.error(_MSG_API_FAIL)
+        if st.button(_BTN_RETRY, key="retry_history"):
             st.cache_data.clear()
             st.rerun()
     else:

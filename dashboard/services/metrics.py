@@ -15,28 +15,28 @@ class DashboardMetrics:
     """No-op metrics for local development."""
 
     def page_loaded(self, page: str, duration_ms: float) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     def search_executed(self, query: str, results: int, duration_ms: float) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     def api_call(self, method: str, path: str, status: int, duration_ms: float) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     def error(self, page: str, error_type: str) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     def graph_query(self, query_type: str, duration_ms: float) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     def track_search_quality(self, *, mode: str, has_results: bool, source_count: int,
                              duration_ms: float, has_stale_docs: bool = False,
                              quality_gate_passed: bool | None = None,
                              timed_out: bool = False) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     def session_active(self, count: int) -> None:
-        pass
+        pass  # No-op: stub implementation
 
     @contextmanager
     def timed(self, metric_name: str, **tags: str) -> Generator[None, None, None]:

@@ -110,97 +110,151 @@ class HubSearchResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})
-async def hub_search(request: HubSearchRequest):
-    """Hub Search - unified knowledge search with full pipeline."""
-    state = _get_state()
-    search_engine = state.get("qdrant_search")
-    if not search_engine:
-        raise HTTPException(status_code=503, detail="Search engine not initialized")
+# ---------------------------------------------------------------------------
+# Hub Search helper functions (extracted from hub_search for cognitive complexity)
+# ---------------------------------------------------------------------------
 
-    start = time.time()
-    query = request.query.strip()
-    metrics_inc("search_requests")
+# Error patterns that should NOT be cached
+_ERROR_PATTERNS = [
+    "응답 생성 중 오류",
+    "검색 결과의 신뢰도가 낮아",
+    "검색 조건에 맞는 문서를 찾지 못했습니다",
+]
 
-    # 0. Check cache: MultiLayerCache (L1+L2) first, then legacy SearchCache fallback
+
+def _is_valid_cache(cached_dict: dict, expected_version: str) -> bool:
+    """Check if cached result is valid (correct version, not error)."""
+    ver = cached_dict.get("_cache_version", "")
+    if ver != expected_version:
+        return False
+    answer = cached_dict.get("answer", "")
+    return not (answer and any(p in answer for p in _ERROR_PATTERNS))
+
+
+def _try_deserialize_cache(
+    cached: dict, start: float, cache_layer: str,
+) -> HubSearchResponse | None:
+    """Deserialize a validated cache dict into a HubSearchResponse."""
+    metrics_inc("search_cache_hits")
+    cached["metadata"] = cached.get("metadata", {})
+    cached["metadata"]["cache_hit"] = True
+    if cache_layer:
+        cached["metadata"]["cache_layer"] = cache_layer
+    cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
+    try:
+        return HubSearchResponse(**cached)
+    except Exception:
+        logger.warning("%s cache deserialization failed, proceeding", cache_layer or "Legacy")
+        return None
+
+
+async def _check_multi_layer_cache(
+    multi_cache: Any, query: str, cache_collections: list[str],
+    top_k: int, expected_version: str, start: float,
+) -> HubSearchResponse | None:
+    """Try multi-layer cache lookup."""
+    try:
+        from src.cache.cache_types import CacheDomain
+        cache_entry = await multi_cache.get(
+            query, domain=CacheDomain.KB_SEARCH,
+            kb_ids=cache_collections, top_k=top_k,
+            cache_version=expected_version,
+        )
+        if not (cache_entry and cache_entry.response):
+            return None
+        cached = cache_entry.response
+        if isinstance(cached, dict) and _is_valid_cache(cached, expected_version):
+            return _try_deserialize_cache(cached, start, "multi_layer")
+    except Exception as e:
+        logger.warning("MultiLayerCache lookup failed: %s", e)
+    return None
+
+
+async def _check_legacy_cache(
+    search_cache: Any, query: str, cache_collections: list[str],
+    top_k: int, expected_version: str, start: float,
+) -> HubSearchResponse | None:
+    """Try legacy search cache lookup."""
+    try:
+        cached = await search_cache.get(query, cache_collections, top_k)
+        if cached and isinstance(cached, dict) and _is_valid_cache(cached, expected_version):
+            return _try_deserialize_cache(cached, start, "")
+    except Exception as e:
+        logger.warning("Search cache lookup failed: %s", e)
+    return None
+
+
+async def _step_cache_check(
+    query: str,
+    state: dict[str, Any],
+    cache_collections: list[str],
+    top_k: int,
+    start: float,
+) -> HubSearchResponse | None:
+    """Step 0: Check multi-layer and legacy caches."""
+    expected_version = weights.cache.cache_version
+
     multi_cache = state.get("multi_layer_cache")
-    search_cache = state.get("search_cache")
-    # Resolve collections early for cache key
-    _cache_collections = request.kb_ids or []
-    if not _cache_collections and request.kb_filter and request.kb_filter.kb_ids:
-        _cache_collections = request.kb_filter.kb_ids
-    if not _cache_collections:
-        _cache_collections = ["knowledge"]
-
-    # Cache version from config (auto-invalidates on weight/pipeline changes)
-    _expected_cache_version = weights.cache.cache_version
-
-    # Error patterns that should NOT be cached
-    _ERROR_PATTERNS = [
-        "응답 생성 중 오류",
-        "검색 결과의 신뢰도가 낮아",
-        "검색 조건에 맞는 문서를 찾지 못했습니다",
-    ]
-
-    def _is_valid_cache(cached_dict: dict) -> bool:
-        """Check if cached result is valid (correct version, not error)."""
-        ver = cached_dict.get("_cache_version", "")
-        if ver != _expected_cache_version:
-            return False
-        answer = cached_dict.get("answer", "")
-        if answer and any(p in answer for p in _ERROR_PATTERNS):
-            return False
-        return True
-
-    # Try MultiLayerCache first
     if multi_cache:
-        try:
-            from src.cache.cache_types import CacheDomain
-            cache_entry = await multi_cache.get(
-                query, domain=CacheDomain.KB_SEARCH,
-                kb_ids=_cache_collections, top_k=request.top_k,
-                cache_version=_expected_cache_version,
-            )
-            if cache_entry and cache_entry.response:
-                cached = cache_entry.response
-                if isinstance(cached, dict) and _is_valid_cache(cached):
-                    metrics_inc("search_cache_hits")
-                    cached["metadata"] = cached.get("metadata", {})
-                    cached["metadata"]["cache_hit"] = True
-                    cached["metadata"]["cache_layer"] = "multi_layer"
-                    cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
-                    try:
-                        return HubSearchResponse(**cached)
-                    except Exception:
-                        logger.warning("MultiLayerCache deserialization failed, proceeding")
-        except Exception as e:
-            logger.warning("MultiLayerCache lookup failed: %s", e)
+        result = await _check_multi_layer_cache(
+            multi_cache, query, cache_collections, top_k, expected_version, start,
+        )
+        if result:
+            return result
 
-    # Fallback: legacy SearchCache (exact hash match via Redis)
+    search_cache = state.get("search_cache")
     if search_cache:
-        try:
-            cached = await search_cache.get(query, _cache_collections, request.top_k)
-            if cached and isinstance(cached, dict) and _is_valid_cache(cached):
-                metrics_inc("search_cache_hits")
-                cached["metadata"] = cached.get("metadata", {})
-                cached["metadata"]["cache_hit"] = True
-                cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
-                try:
-                    return HubSearchResponse(**cached)
-                except Exception:
-                    logger.warning("Cache deserialization failed, proceeding without cache")
-        except Exception as e:
-            logger.warning("Search cache lookup failed: %s", e)
+        result = await _check_legacy_cache(
+            search_cache, query, cache_collections, top_k, expected_version, start,
+        )
+        if result:
+            return result
 
-    metrics_inc("search_cache_misses")
+    return None
 
-    # 1. Parse request - handle BOTH kb_ids (flat) and kb_filter.kb_ids (nested)
-    # Resolve search scope: group_id/group_name > kb_ids > kb_filter > default
+
+async def _resolve_collections_from_qdrant(state: dict[str, Any]) -> list[str]:
+    """Fallback: list all non-test collections from Qdrant."""
+    qdrant_collections = state.get("qdrant_collections")
+    if not qdrant_collections:
+        return ["knowledge"]
+    try:
+        all_names = await qdrant_collections.get_existing_collection_names()
+        collections = [
+            n[3:].replace("_", "-") if n.startswith("kb_") else n
+            for n in all_names
+            if not n.startswith("kb_test")
+        ]
+        return collections if collections else ["knowledge"]
+    except Exception:
+        return ["knowledge"]
+
+
+async def _filter_by_kb_registry(
+    collections: list[str], state: dict[str, Any],
+) -> list[str]:
+    """Filter collections by KB registry active status."""
+    kb_registry = state.get("kb_registry")
+    if not kb_registry or collections == ["knowledge"]:
+        return collections
+    try:
+        accessible_kbs = await kb_registry.list_all()
+        active_kb_ids = {kb["kb_id"] for kb in accessible_kbs if kb.get("status") == "active"}
+        filtered = [c for c in collections if c in active_kb_ids]
+        return filtered if filtered else collections
+    except Exception:
+        return collections
+
+
+async def _step_resolve_collections(
+    request: HubSearchRequest,
+    state: dict[str, Any],
+) -> list[str]:
+    """Step 1: Resolve KB collections from request params."""
     collections = request.kb_ids or []
     if not collections and request.kb_filter and request.kb_filter.kb_ids:
         collections = request.kb_filter.kb_ids
 
-    # KB Search Group 지원: 그룹으로 스코프 검색
     if not collections and (request.group_id or request.group_name):
         group_repo = state.get("search_group_repo")
         if group_repo:
@@ -210,58 +264,43 @@ async def hub_search(request: HubSearchRequest):
             )
 
     if not collections:
-        # "전체" 검색: 실제 존재하는 모든 KB 컬렉션 사용
-        qdrant_collections = state.get("qdrant_collections")
-        if qdrant_collections:
-            try:
-                all_names = await qdrant_collections.get_existing_collection_names()
-                collections = [
-                    n[3:].replace("_", "-") if n.startswith("kb_") else n
-                    for n in all_names
-                    if not n.startswith("kb_test")
-                ]
-            except Exception:
-                collections = ["knowledge"]
-        if not collections:
-            collections = ["knowledge"]
+        collections = await _resolve_collections_from_qdrant(state)
 
-    # 1.5 KB tier access control — filter collections by user's accessible tiers
-    kb_registry = state.get("kb_registry")
-    if kb_registry and collections != ["knowledge"]:
-        try:
-            accessible_kbs = await kb_registry.list_all()
-            active_kb_ids = {kb["kb_id"] for kb in accessible_kbs if kb.get("status") == "active"}
-            filtered = [c for c in collections if c in active_kb_ids]
-            if filtered:
-                collections = filtered
-        except Exception:
-            pass  # Graceful degradation: use original collections
+    collections = await _filter_by_kb_registry(collections, state)
+    return collections
 
-    # 2. QueryPreprocessor - correct typos BEFORE embedding
-    corrected_query = query
-    preprocess_info: QueryPreprocessInfo | None = None
+
+def _step_preprocess(
+    query: str,
+    state: dict[str, Any],
+) -> tuple[str, QueryPreprocessInfo | None]:
+    """Step 2: Preprocess query (typo correction)."""
     preprocessor = state.get("query_preprocessor")
-    if preprocessor:
-        pp_result = preprocessor.preprocess(query)
-        corrected_query = pp_result.corrected_query
-        preprocess_info = QueryPreprocessInfo(
-            corrected_query=pp_result.corrected_query,
-            original_query=pp_result.original_query,
-            corrections=[
-                {
-                    "original": c.original,
-                    "corrected": c.corrected,
-                    "reason": c.reason,
-                }
-                for c in pp_result.corrections
-            ],
-        )
+    if not preprocessor:
+        return query, None
 
-    # 2b. Query expansion - enrich query with synonyms/related terms
-    # Keep original query for LLM prompt; expanded query only for vector search
+    pp_result = preprocessor.preprocess(query)
+    preprocess_info = QueryPreprocessInfo(
+        corrected_query=pp_result.corrected_query,
+        original_query=pp_result.original_query,
+        corrections=[
+            {"original": c.original, "corrected": c.corrected, "reason": c.reason}
+            for c in pp_result.corrections
+        ],
+    )
+    return pp_result.corrected_query, preprocess_info
+
+
+async def _step_expand_query(
+    corrected_query: str,
+    collections: list[str],
+    state: dict[str, Any],
+) -> tuple[str, str, list[str]]:
+    """Step 2b: Query expansion. Returns (search_query, display_query, expanded_terms)."""
     expanded_terms: list[str] = []
-    search_query = corrected_query  # For vector search (may include Lucene syntax)
-    display_query = corrected_query  # For LLM prompt (clean, human-readable)
+    search_query = corrected_query
+    display_query = corrected_query
+
     query_expander = state.get("query_expander")
     if query_expander:
         try:
@@ -270,20 +309,28 @@ async def hub_search(request: HubSearchRequest):
             expanded_terms = getattr(expansion_result, "expanded_terms", [])
             expanded_q = getattr(expansion_result, "expanded_query", None)
             if expanded_q and expanded_q != corrected_query:
-                search_query = expanded_q  # Lucene-expanded for vector search only
+                search_query = expanded_q
         except Exception as e:
             logger.warning("Query expansion failed: %s", e)
 
-    # 2.5 Query type classification — adjust strategy per type
-    effective_top_k = request.top_k
-    query_classification = None
-    # Dynamic dense/sparse weights based on query type
+    return search_query, display_query, expanded_terms
+
+
+def _step_classify_query(
+    display_query: str,
+    top_k: int,
+    state: dict[str, Any],
+) -> tuple[int, float, float]:
+    """Step 2.5: Classify query type and adjust weights. Returns (effective_top_k, dense_w, sparse_w)."""
+    import re as _re_dq
+
+    effective_top_k = top_k
     _dense_w = weights.hybrid_search.dense_weight
     _sparse_w = weights.hybrid_search.sparse_weight
+
     classifier = state.get("query_classifier")
     if classifier:
         try:
-            from src.search.query_classifier import QueryClassifier
             query_classification = classifier.classify(display_query)
             qtype = query_classification.query_type.value
             if qtype == "owner_query":
@@ -295,17 +342,21 @@ async def hub_search(request: HubSearchRequest):
             elif qtype in ("procedure", "troubleshoot"):
                 _dense_w = weights.hybrid_search.procedure_dense_weight
                 _sparse_w = weights.hybrid_search.procedure_sparse_weight
-            # factual/general: keep default balance
         except Exception as e:
             logger.debug("Query type weight adjustment failed: %s", e)
 
-    # Date-containing queries: boost sparse for document_name/morphemes matching
-    import re as _re_dq
     if _re_dq.search(r"20\d{2}년\s*\d{1,2}월|20\d{2}[_\-]\d{2}|\d{1,2}월\s*\d주차", display_query):
         _dense_w = weights.hybrid_search.date_query_dense_weight
         _sparse_w = weights.hybrid_search.date_query_sparse_weight
 
-    # 3. Embed the preprocessed query (include ColBERT vectors when reranking is enabled)
+    return effective_top_k, _dense_w, _sparse_w
+
+
+async def _step_embed(
+    search_query: str,
+    state: dict[str, Any],
+) -> tuple[list[float], dict[int, float] | None, list | None]:
+    """Step 3: Embed query. Returns (dense_vector, sparse_vector, colbert_vectors)."""
     embedder = state.get("embedder")
     if not embedder:
         raise HTTPException(status_code=503, detail="Embedding provider not initialized")
@@ -320,437 +371,643 @@ async def hub_search(request: HubSearchRequest):
         ),
     )
     dense_vector = encoded["dense_vecs"][0]
-    sparse_weights = encoded["lexical_weights"][0] if encoded.get("lexical_weights") else {}
-    sparse_vector = {int(k): float(v) for k, v in sparse_weights.items()} if sparse_weights else None
+    sparse_weights_raw = encoded["lexical_weights"][0] if encoded.get("lexical_weights") else {}
+    sparse_vector = (
+        {int(k): float(v) for k, v in sparse_weights_raw.items()}
+        if sparse_weights_raw else None
+    )
     colbert_vectors = (
         encoded["colbert_vecs"][0]
         if colbert_enabled and encoded.get("colbert_vecs")
         else None
     )
+    return dense_vector, sparse_vector, colbert_vectors
 
-    # 4. Search across collections in parallel
-    all_chunks: list[dict[str, Any]] = []
-    searched_kbs: list[str] = []
 
-    # Fetch wider pool from Qdrant; trim after keyword boost + reranking
-    _qdrant_top_k = effective_top_k * weights.search.rerank_pool_multiplier
+def _build_chunks_from_results(
+    results: list[Any],
+    collection: str,
+    document_filter: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Convert search results to chunk dicts, applying optional document filter."""
+    chunks = []
+    for r in results:
+        chunk_meta = r.metadata or {}
+        doc_name = chunk_meta.get("document_name", "")
+        if document_filter and not any(
+            f.lower() in doc_name.lower() for f in document_filter
+        ):
+            continue
+        chunks.append({
+            "chunk_id": r.point_id, "content": r.content,
+            "score": r.score, "kb_id": collection,
+            "document_name": doc_name,
+            "source_uri": chunk_meta.get("source_uri", ""),
+            "updated_at": chunk_meta.get("last_modified") or chunk_meta.get("updated_at"),
+            "is_stale": bool(chunk_meta.get("is_stale", False)),
+            "metadata": chunk_meta,
+        })
+    return chunks
 
-    async def _search_collection(collection: str) -> tuple[str, list[dict[str, Any]]]:
+
+async def _step_search_collections(
+    search_engine: Any,
+    collections: list[str],
+    dense_vector: list[float],
+    sparse_vector: dict[int, float] | None,
+    colbert_vectors: list | None,
+    qdrant_top_k: int,
+    document_filter: list[str] | None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Step 4: Search across collections in parallel."""
+    colbert_enabled = weights.hybrid_search.enable_colbert_reranking
+
+    async def _search_one(collection: str) -> tuple[str, list[dict[str, Any]]]:
         if colbert_enabled and colbert_vectors:
             results = await search_engine.search_with_colbert_rerank(
-                kb_id=collection,
-                dense_vector=dense_vector,
-                sparse_vector=sparse_vector,
-                colbert_vectors=colbert_vectors,
-                top_k=_qdrant_top_k,
+                kb_id=collection, dense_vector=dense_vector,
+                sparse_vector=sparse_vector, colbert_vectors=colbert_vectors,
+                top_k=qdrant_top_k,
             )
         else:
             results = await search_engine.search(
-                kb_id=collection,
-                dense_vector=dense_vector,
-                sparse_vector=sparse_vector,
-                top_k=_qdrant_top_k,
+                kb_id=collection, dense_vector=dense_vector,
+                sparse_vector=sparse_vector, top_k=qdrant_top_k,
             )
-        chunks = []
-        for r in results:
-            chunk_meta = r.metadata or {}
-            doc_name = chunk_meta.get("document_name", "")
-            # Document filter: skip chunks not matching filter
-            if request.document_filter:
-                if not any(f.lower() in doc_name.lower() for f in request.document_filter):
-                    continue
-            chunks.append({
-                "chunk_id": r.point_id,
-                "content": r.content,
-                "score": r.score,
-                "kb_id": collection,
-                "document_name": doc_name,
-                "source_uri": chunk_meta.get("source_uri", ""),
-                "updated_at": chunk_meta.get("last_modified") or chunk_meta.get("updated_at"),
-                "is_stale": bool(chunk_meta.get("is_stale", False)),
-                "metadata": chunk_meta,
-            })
+        chunks = _build_chunks_from_results(results, collection, document_filter)
         return collection, chunks
 
-    search_tasks = []
-    for collection in collections:
-        search_tasks.append(_search_collection(collection))
+    tasks = [_search_one(c) for c in collections]
+    results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
-    search_results_list = await asyncio.gather(*search_tasks, return_exceptions=True)
-    for result in search_results_list:
+    all_chunks: list[dict[str, Any]] = []
+    searched_kbs: list[str] = []
+    for result in results_list:
         if isinstance(result, Exception):
             logger.warning("Search in collection failed: %s", result)
             continue
         col_name, chunks = result
         all_chunks.extend(chunks)
         searched_kbs.append(col_name)
+    return all_chunks, searched_kbs
 
-    # 4.3. Keyword fallback: if main query keywords are missing from ALL results,
-    # do a targeted Qdrant text filter search to find exact keyword matches
-    _kw_tokens = _extract_query_keywords(display_query)
-    if _kw_tokens and all_chunks:
-        _has_keyword_match = any(
-            any(t in c.get("content", "").lower() for t in _kw_tokens)
-            for c in all_chunks[:20]
+
+async def _step_keyword_fallback(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    collections: list[str],
+    qdrant_url: str,
+) -> list[dict[str, Any]]:
+    """Step 4.3: Keyword fallback if main keywords missing from results."""
+    kw_tokens = _extract_query_keywords(display_query)
+    if not kw_tokens or not all_chunks:
+        return all_chunks
+
+    has_match = any(
+        any(t in c.get("content", "").lower() for t in kw_tokens)
+        for c in all_chunks[:20]
+    )
+    if has_match:
+        return all_chunks
+
+    import httpx
+    kw_primary = kw_tokens[0]
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            for coll in collections:
+                coll_name = f"kb_{coll.replace('-', '_')}"
+                resp = await client.post(
+                    f"{qdrant_url}/collections/{coll_name}/points/scroll",
+                    json={
+                        "limit": 5, "with_payload": True, "with_vector": False,
+                        "filter": {"should": [
+                            {"key": "morphemes", "match": {"text": kw_primary}},
+                            {"key": "content", "match": {"text": kw_primary}},
+                        ]},
+                    },
+                )
+                if resp.status_code == 200:
+                    for pt in resp.json().get("result", {}).get("points", []):
+                        pay = pt.get("payload", {})
+                        all_chunks.append({
+                            "chunk_id": str(pt["id"]),
+                            "content": pay.get("content", ""),
+                            "score": 0.5,
+                            "kb_id": coll,
+                            "document_name": pay.get("document_name", ""),
+                            "source_uri": pay.get("source_uri", ""),
+                            "metadata": pay,
+                            "_keyword_fallback": True,
+                        })
+        logger.info("Keyword fallback: injected chunks for '%s'", kw_primary)
+    except Exception as e:
+        logger.debug("Keyword fallback search failed: %s", e)
+
+    return all_chunks
+
+
+def _step_composite_rerank(
+    search_query: str,
+    all_chunks: list[dict[str, Any]],
+    effective_top_k: int,
+    state: dict[str, Any],
+) -> tuple[list[dict[str, Any]], bool, list[SearchChunk]]:
+    """Step 5: Composite reranking. Returns (reranked_chunks, rerank_applied, search_chunks)."""
+    composite_reranker = state.get("composite_reranker")
+    if not composite_reranker or not all_chunks:
+        return all_chunks, False, []
+
+    for c in all_chunks:
+        if c.get("_week_matched"):
+            meta = c.get("metadata") or {}
+            meta["_week_matched"] = True
+            c["metadata"] = meta
+
+    search_chunks = [
+        SearchChunk(
+            chunk_id=c.get("chunk_id", ""), content=c.get("content", ""),
+            score=c.get("score", 0.0), kb_id=c.get("kb_id", ""),
+            document_name=c.get("document_name", ""), metadata=c.get("metadata", {}),
         )
-        if not _has_keyword_match:
-            import httpx as _hx_kw
-            _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
-            _kw_primary = _kw_tokens[0]  # Most important keyword
-            try:
-                async with _hx_kw.AsyncClient(timeout=3.0) as _kw_client:
-                    for coll in collections:
-                        _coll_name = f"kb_{coll.replace('-', '_')}"
-                        # Try morphemes field first (more precise), fallback to content
-                        resp = await _kw_client.post(
-                            f"{_qdrant_url}/collections/{_coll_name}/points/scroll",
-                            json={
-                                "limit": 5,
-                                "with_payload": True,
-                                "with_vector": False,
-                                "filter": {"should": [
-                                    {"key": "morphemes", "match": {"text": _kw_primary}},
-                                    {"key": "content", "match": {"text": _kw_primary}},
-                                ]},
-                            },
-                        )
-                        if resp.status_code == 200:
-                            for pt in resp.json().get("result", {}).get("points", []):
-                                pay = pt.get("payload", {})
-                                all_chunks.append({
-                                    "chunk_id": str(pt["id"]),
-                                    "content": pay.get("content", ""),
-                                    "score": 0.5,  # Base score for keyword match
-                                    "kb_id": coll,
-                                    "document_name": pay.get("document_name", ""),
-                                    "source_uri": pay.get("source_uri", ""),
-                                    "metadata": pay,
-                                    "_keyword_fallback": True,
-                                })
-                logger.info("Keyword fallback: injected chunks for '%s'", _kw_primary)
-            except Exception as e:
-                logger.debug("Keyword fallback search failed: %s", e)
+        for c in all_chunks
+    ]
 
-    # 4.35. Specific identifier search: numbers, JIRA keys, codes, store names
-    from src.api.routes.search_helpers import identifier_search
+    reranked = composite_reranker.rerank(
+        query=search_query, chunks=search_chunks, top_k=effective_top_k,
+    )
+    if not reranked:
+        return all_chunks, False, search_chunks
 
-    _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
-    all_chunks = await identifier_search(display_query, all_chunks, collections, _qdrant_url)
+    result_chunks = [
+        {
+            "chunk_id": rc.chunk_id, "content": rc.content,
+            "score": rc.score, "rerank_score": rc.score,
+            "kb_id": rc.kb_id, "document_name": rc.document_name,
+            "source_uri": (rc.metadata or {}).get("source_uri", ""),
+            "updated_at": (rc.metadata or {}).get("last_modified")
+            or (rc.metadata or {}).get("updated_at"),
+            "is_stale": bool((rc.metadata or {}).get("is_stale", False)),
+            "metadata": rc.metadata or {},
+        }
+        for rc in reranked
+    ]
+    return result_chunks, True, search_chunks
 
-    # 4.4. Smart candidate selection: keyword-match priority + KB diversity
-    from src.api.routes.search_helpers import keyword_boost, document_diversity
+
+def _step_week_match_guarantee(
+    all_chunks: list[dict[str, Any]],
+    rerank_applied: bool,
+    search_chunks: list[SearchChunk],
+) -> list[dict[str, Any]]:
+    """Step 5.1: Ensure at least 1 week-matched chunk survives reranking."""
+    has_week = any(
+        c.get("_week_matched") or (c.get("metadata") or {}).get("_week_matched")
+        for c in all_chunks
+    )
+    if has_week or not rerank_applied or not search_chunks:
+        return all_chunks
+
+    week_candidates = [
+        sc for sc in search_chunks if (sc.metadata or {}).get("_week_matched")
+    ]
+    if not week_candidates:
+        return all_chunks
+
+    best_wk = max(week_candidates, key=lambda sc: sc.score)
+    all_chunks[-1] = {
+        "chunk_id": best_wk.chunk_id, "content": best_wk.content,
+        "score": best_wk.score, "rerank_score": best_wk.score,
+        "kb_id": best_wk.kb_id, "document_name": best_wk.document_name,
+        "source_uri": (best_wk.metadata or {}).get("source_uri", ""),
+        "updated_at": (best_wk.metadata or {}).get("last_modified")
+        or (best_wk.metadata or {}).get("updated_at"),
+        "is_stale": bool((best_wk.metadata or {}).get("is_stale", False)),
+        "metadata": best_wk.metadata or {},
+        "_week_matched": True,
+    }
+    logger.info("Week-match guarantee: pinned doc '%s' into final top-k", best_wk.document_name)
+    return all_chunks
+
+
+async def _step_generate_answer(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    crag_evaluation: Any,
+    include_answer: bool,
+    state: dict[str, Any],
+) -> tuple[str | None, str, str]:
+    """Step 8: Generate answer. Returns (answer, query_type, confidence)."""
+    if crag_evaluation and crag_evaluation.action == RetrievalAction.INCORRECT:
+        return crag_evaluation.recommendation, "", crag_evaluation.confidence_level.value
+
+    if crag_evaluation and crag_evaluation.confidence_score < weights.search.crag_block_threshold:
+        return (
+            "검색 결과의 신뢰도가 낮아 정확한 답변을 제공하기 어렵습니다. 질문을 더 구체적으로 해주세요.",
+            "", "낮음",
+        )
+
+    if not include_answer or not all_chunks:
+        return None, "", ""
+
+    answer = await _try_tiered_generation(display_query, all_chunks, state)
+    if answer is not None:
+        return answer
+
+    # Fallback to AnswerService
+    answer_service = state.get("answer_service")
+    if answer_service:
+        result = await answer_service.enrich(display_query, all_chunks)
+        return result.answer, result.query_type, result.confidence_indicator
+
+    return None, "", ""
+
+
+async def _try_tiered_generation(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    state: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    """Try TieredResponseGenerator. Returns (answer, query_type, confidence) or None."""
+    tiered_gen = state.get("tiered_response_generator")
+    llm = state.get("llm")
+    if not tiered_gen or not llm:
+        return None
+
+    try:
+        from src.search.query_classifier import QueryClassifier
+        from src.search.tiered_response import RAGContext
+
+        classifier = state.get("query_classifier") or QueryClassifier()
+        classification = classifier.classify(display_query)
+
+        rag_context = RAGContext(
+            query=display_query,
+            retrieved_chunks=[c.get("content", "") for c in all_chunks],
+            chunk_sources=[
+                {
+                    "document_name": c.get("document_name", ""),
+                    "source_uri": c.get("source_uri", ""),
+                    "score": c.get("score", 0),
+                    "metadata": c.get("metadata", {}),
+                }
+                for c in all_chunks
+            ],
+            relevance_scores=[c.get("score", 0.0) for c in all_chunks],
+        )
+
+        tiered_result = await tiered_gen.generate(
+            query_type=classification.query_type, context=rag_context,
+        )
+
+        if tiered_result.confidence >= weights.search.confidence_display_high:
+            confidence = "높음"
+        elif tiered_result.confidence >= weights.search.confidence_display_medium:
+            confidence = "보통"
+        else:
+            confidence = "낮음"
+        return tiered_result.content, tiered_result.query_type.value, confidence
+    except Exception as e:
+        logger.warning("TieredResponseGenerator failed, falling back to AnswerService: %s", e)
+        return None
+
+
+def _check_kb_pair_conflict(
+    kb_a: str, kb_b: str,
+    kb_answers: dict[str, list[str]],
+    threshold: float,
+) -> dict[str, Any] | None:
+    """Check if two KBs have conflicting answers based on word overlap."""
+    words_a = set(" ".join(kb_answers[kb_a][:3]).split())
+    words_b = set(" ".join(kb_answers[kb_b][:3]).split())
+    if not words_a or not words_b:
+        return None
+    overlap = len(words_a & words_b) / min(len(words_a), len(words_b))
+    if overlap >= threshold:
+        return None
+    return {
+        "kb_a": kb_a, "kb_b": kb_b,
+        "overlap_ratio": round(overlap, 3),
+        "warning": f"KB '{kb_a}'와 '{kb_b}'의 답변이 상이할 수 있습니다.",
+    }
+
+
+def _step_detect_conflicts(
+    all_chunks: list[dict[str, Any]],
+    searched_kbs: list[str],
+) -> list[dict[str, Any]]:
+    """Step 9.5: Detect contradictory answers from different KBs."""
+    if len(searched_kbs) <= 1 or not all_chunks:
+        return []
+
+    kb_answers: dict[str, list[str]] = {}
+    for c in all_chunks[:10]:
+        kb = c.get("kb_id", "")
+        content = c.get("content", "")[:200]
+        if kb and content:
+            kb_answers.setdefault(kb, []).append(content)
+
+    if len(kb_answers) <= 1:
+        return []
+
+    conflicts: list[dict[str, Any]] = []
+    kb_list = list(kb_answers.keys())
+    threshold = weights.search.conflict_overlap_threshold
+    for i in range(len(kb_list)):
+        for j in range(i + 1, len(kb_list)):
+            conflict = _check_kb_pair_conflict(
+                kb_list[i], kb_list[j], kb_answers, threshold,
+            )
+            if conflict:
+                conflicts.append(conflict)
+    return conflicts
+
+
+async def _step_follow_ups(
+    display_query: str,
+    answer: str | None,
+    all_chunks: list[dict[str, Any]],
+    include_answer: bool,
+    state: dict[str, Any],
+) -> list[str]:
+    """Step 9.6: Generate follow-up questions."""
+    if not include_answer or not answer or not all_chunks:
+        return []
+    try:
+        llm = state.get("llm")
+        if not llm:
+            return []
+        prompt = (
+            f"다음 질문과 답변을 바탕으로, 사용자가 추가로 궁금해할 수 있는 후속 질문 3개를 생성하세요.\n"
+            f"각 질문은 한 줄씩, 번호 없이 작성하세요.\n\n"
+            f"질문: {display_query}\n답변: {answer[:500]}\n\n후속 질문:"
+        )
+        result = await llm.generate(prompt, temperature=0.3, max_tokens=200)
+        if result:
+            return [q.strip().lstrip("- ·•123.") for q in result.strip().split("\n") if q.strip()][:3]
+    except Exception as e:
+        logger.debug("Follow-up generation skipped: %s", e)
+    return []
+
+
+async def _step_cache_store(
+    query: str,
+    response: HubSearchResponse,
+    collections: list[str],
+    effective_top_k: int,
+    state: dict[str, Any],
+) -> None:
+    """Store response in caches (fire-and-forget)."""
+    if not response.answer or any(p in response.answer for p in _ERROR_PATTERNS):
+        return
+
+    response_dict = response.model_dump()
+    response_dict["_cache_version"] = weights.cache.cache_version
+
+    multi_cache = state.get("multi_layer_cache")
+    if multi_cache:
+        try:
+            from src.cache.cache_types import CacheDomain
+            await multi_cache.set(
+                query, response_dict, domain=CacheDomain.KB_SEARCH,
+                metadata={"kb_ids": collections},
+                kb_ids=collections, top_k=effective_top_k,
+            )
+        except Exception as e:
+            logger.debug("Failed to write multi-layer cache: %s", e)
+
+    search_cache = state.get("search_cache")
+    if search_cache:
+        try:
+            await search_cache.set(query, collections, response_dict, effective_top_k)
+        except Exception as e:
+            logger.debug("Failed to write search cache: %s", e)
+
+
+async def _step_search_enrichment(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    collections: list[str],
+    qdrant_url: str,
+    effective_top_k: int,
+) -> list[dict[str, Any]]:
+    """Steps 4.35-4.46: identifier, keyword boost, diversity, date, week."""
+    from src.api.routes.search_helpers import (
+        identifier_search, keyword_boost, document_diversity,
+        date_filter_search, week_name_search,
+    )
+
+    all_chunks = await identifier_search(display_query, all_chunks, collections, qdrant_url)
 
     _query_tokens = _extract_query_keywords(display_query)
     _pool_size = effective_top_k * weights.search.rerank_pool_multiplier
 
     all_chunks = keyword_boost(
-        all_chunks, _query_tokens, collections, _pool_size,
-        weights.search.keyword_boost_weight,
+        all_chunks, _query_tokens, collections, _pool_size, weights.search.keyword_boost_weight,
     )
-
-    # 4.42. Document diversity: prevent single document from dominating Top-K
     all_chunks = document_diversity(all_chunks, _pool_size)
-
-    # 4.45. Date-filtered search
-    from src.api.routes.search_helpers import date_filter_search, week_name_search
-
     all_chunks = await date_filter_search(
-        display_query, all_chunks, collections, _qdrant_url, _pool_size,
+        display_query, all_chunks, collections, qdrant_url, _pool_size,
     )
-
-    # 4.46. Week-specific document_name search for weekly report KBs.
     all_chunks = await week_name_search(
-        display_query, all_chunks, collections, _qdrant_url, _pool_size,
+        display_query, all_chunks, collections, qdrant_url, _pool_size,
+    )
+    return all_chunks
+
+
+async def _step_graph_expand(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    collections: list[str],
+    state: dict[str, Any],
+    qdrant_url: str,
+) -> list[dict[str, Any]]:
+    """Step 6: Graph expansion."""
+    graph_expander = state.get("graph_expander")
+    logger.info(
+        "Graph expander: %s, chunks: %d",
+        type(graph_expander).__name__ if graph_expander else "None",
+        len(all_chunks),
+    )
+    if not graph_expander or not all_chunks:
+        return all_chunks
+    from src.api.routes.search_helpers import graph_expansion
+    return await graph_expansion(
+        display_query, all_chunks, collections, graph_expander, qdrant_url,
     )
 
-    # 4.5. Passage cleaning - normalize text before reranking
-    all_chunks = clean_chunks(all_chunks)
 
-    # 4.6. Cross-encoder reranking - neural relevance scoring
+async def _step_crag_evaluate(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    start: float,
+    state: dict[str, Any],
+) -> Any:
+    """Step 7: CRAG evaluation."""
+    crag_evaluator = state.get("crag_evaluator")
+    if not crag_evaluator or not all_chunks:
+        return None
+    try:
+        crag_evaluation = await crag_evaluator.evaluate(
+            display_query, all_chunks, search_time_ms=(time.time() - start) * 1000,
+        )
+        logger.info(
+            "CRAG evaluation: action=%s confidence=%.3f level=%s",
+            crag_evaluation.action.value,
+            crag_evaluation.confidence_score,
+            crag_evaluation.confidence_level.value,
+        )
+        return crag_evaluation
+    except Exception as e:
+        logger.warning("CRAG evaluation failed: %s", e)
+        return None
+
+
+async def _step_log_usage(
+    query: str,
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    elapsed: float,
+    collections: list[str],
+    request: HubSearchRequest,
+    answer: str | None,
+    follow_ups: list[str],
+    rerank_applied: bool,
+    state: dict[str, Any],
+) -> None:
+    """Log search usage to repository."""
+    usage_repo = state.get("usage_log_repo")
+    if not usage_repo:
+        return
+    try:
+        await usage_repo.log_search(
+            knowledge_id=query, kb_id=",".join(collections),
+            user_id="local-user", usage_type="hub_search",
+            context={
+                "query": query, "display_query": display_query,
+                "total_chunks": len(all_chunks), "search_time_ms": elapsed,
+                "mode": request.mode, "group_name": request.group_name,
+                "embed_calls": 1, "llm_calls": 1 if answer else 0,
+                "cross_encoder_calls": 1 if all_chunks else 0,
+                "follow_up_generated": len(follow_ups) > 0,
+                "rerank_applied": rerank_applied,
+            },
+        )
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Hub Search endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})
+async def hub_search(request: HubSearchRequest):
+    """Hub Search - unified knowledge search with full pipeline."""
+    state = _get_state()
+    search_engine = state.get("qdrant_search")
+    if not search_engine:
+        raise HTTPException(status_code=503, detail="Search engine not initialized")
+
+    start = time.time()
+    query = request.query.strip()
+    metrics_inc("search_requests")
+
+    # 0. Cache check
+    cache_collections = request.kb_ids or []
+    if not cache_collections and request.kb_filter and request.kb_filter.kb_ids:
+        cache_collections = request.kb_filter.kb_ids
+    if not cache_collections:
+        cache_collections = ["knowledge"]
+
+    cached = await _step_cache_check(query, state, cache_collections, request.top_k, start)
+    if cached:
+        return cached
+    metrics_inc("search_cache_misses")
+
+    # 1. Resolve collections
+    collections = await _step_resolve_collections(request, state)
+
+    # 2. Preprocess query
+    corrected_query, preprocess_info = _step_preprocess(query, state)
+
+    # 2b. Query expansion
+    search_query, display_query, expanded_terms = await _step_expand_query(
+        corrected_query, collections, state,
+    )
+
+    # 2.5. Query classification
+    effective_top_k, _dense_w, _sparse_w = _step_classify_query(
+        display_query, request.top_k, state,
+    )
+
+    # 3. Embed query
+    dense_vector, sparse_vector, colbert_vectors = await _step_embed(search_query, state)
+
+    # 4. Search collections
+    _qdrant_top_k = effective_top_k * weights.search.rerank_pool_multiplier
+    all_chunks, searched_kbs = await _step_search_collections(
+        search_engine, collections, dense_vector, sparse_vector,
+        colbert_vectors, _qdrant_top_k, request.document_filter,
+    )
+
+    # 4.3. Keyword fallback
+    _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    all_chunks = await _step_keyword_fallback(display_query, all_chunks, collections, _qdrant_url)
+
+    # 4.35-4.46. Search enrichment pipeline
+    all_chunks = await _step_search_enrichment(
+        display_query, all_chunks, collections, _qdrant_url, effective_top_k,
+    )
+
+    # 4.5-4.6. Passage cleaning + cross-encoder reranking
+    all_chunks = clean_chunks(all_chunks)
     try:
         all_chunks = await async_rerank_with_cross_encoder(
-            query=search_query,
-            chunks=all_chunks,
+            query=search_query, chunks=all_chunks,
             top_k=effective_top_k * weights.search.rerank_pool_multiplier,
         )
-    except Exception as _ce_err:
-        logger.warning("Cross-encoder reranking skipped: %s", _ce_err)
+    except Exception as ce_err:
+        logger.warning("Cross-encoder reranking skipped: %s", ce_err)
 
-    # 5. CompositeReranker - rerank results with weighted fusion
-    rerank_applied = False
-    search_chunks: list[SearchChunk] = []
-    composite_reranker = state.get("composite_reranker")
-    if composite_reranker and all_chunks:
-        # Propagate _week_matched flag into metadata so it survives SearchChunk conversion
-        for _c in all_chunks:
-            if _c.get("_week_matched"):
-                _meta = _c.get("metadata") or {}
-                _meta["_week_matched"] = True
-                _c["metadata"] = _meta
-        search_chunks = [
-            SearchChunk(
-                chunk_id=c.get("chunk_id", ""),
-                content=c.get("content", ""),
-                score=c.get("score", 0.0),
-                kb_id=c.get("kb_id", ""),
-                document_name=c.get("document_name", ""),
-                metadata=c.get("metadata", {}),
-            )
-            for c in all_chunks
-        ]
-
-        reranked = composite_reranker.rerank(
-            query=search_query,
-            chunks=search_chunks,
-            top_k=effective_top_k,
-        )
-
-        if reranked:
-            all_chunks = [
-                {
-                    "chunk_id": rc.chunk_id,
-                    "content": rc.content,
-                    "score": rc.score,
-                    "rerank_score": rc.score,
-                    "kb_id": rc.kb_id,
-                    "document_name": rc.document_name,
-                    "source_uri": (rc.metadata or {}).get("source_uri", ""),
-                    "updated_at": (rc.metadata or {}).get("last_modified")
-                    or (rc.metadata or {}).get("updated_at"),
-                    "is_stale": bool((rc.metadata or {}).get("is_stale", False)),
-                    "metadata": rc.metadata or {},
-                }
-                for rc in reranked
-            ]
-            rerank_applied = True
-
-    # Trim to final top_k after reranking
-    all_chunks = all_chunks[: effective_top_k]
-
-    # 5.1. Post-rerank guarantee: ensure at least 1 _week_matched chunk survives.
-    # The composite reranker may push week-matched chunks out of top-k because
-    # weekly docs are structurally similar (low model-score differentiation).
-    _has_week_in_final = any(
-        c.get("_week_matched") or (c.get("metadata") or {}).get("_week_matched")
-        for c in all_chunks
+    # 5. Composite reranking + week-match guarantee
+    all_chunks, rerank_applied, search_chunks = _step_composite_rerank(
+        search_query, all_chunks, effective_top_k, state,
     )
-    if not _has_week_in_final and rerank_applied and search_chunks:
-        # Check the pre-trim pool (search_chunks) for any week-matched chunk
-        _week_candidates = [
-            sc for sc in search_chunks
-            if (sc.metadata or {}).get("_week_matched")
-        ]
-        if _week_candidates:
-            _best_wk = max(_week_candidates, key=lambda sc: sc.score)
-            # Replace the lowest-scoring chunk in final results
-            all_chunks[-1] = {
-                "chunk_id": _best_wk.chunk_id,
-                "content": _best_wk.content,
-                "score": _best_wk.score,
-                "rerank_score": _best_wk.score,
-                "kb_id": _best_wk.kb_id,
-                "document_name": _best_wk.document_name,
-                "source_uri": (_best_wk.metadata or {}).get("source_uri", ""),
-                "updated_at": (_best_wk.metadata or {}).get("last_modified")
-                or (_best_wk.metadata or {}).get("updated_at"),
-                "is_stale": bool((_best_wk.metadata or {}).get("is_stale", False)),
-                "metadata": _best_wk.metadata or {},
-                "_week_matched": True,
-            }
-            logger.info(
-                "Week-match guarantee: pinned doc '%s' into final top-k",
-                _best_wk.document_name,
-            )
+    all_chunks = all_chunks[:effective_top_k]
+    all_chunks = _step_week_match_guarantee(all_chunks, rerank_applied, search_chunks)
 
-    # 6. Graph Expansion - enrich results with structurally related content
-    #    Must run BEFORE answer generation so expanded chunks are included in the answer.
-    graph_expander = state.get("graph_expander")
-    logger.info("Graph expander: %s, chunks: %d", type(graph_expander).__name__ if graph_expander else "None", len(all_chunks))
+    # 6. Graph expansion
+    all_chunks = await _step_graph_expand(
+        display_query, all_chunks, collections, state, _qdrant_url,
+    )
 
-    if graph_expander and all_chunks:
-        from src.api.routes.search_helpers import graph_expansion
-
-        all_chunks = await graph_expansion(
-            display_query, all_chunks, collections, graph_expander, _qdrant_url,
-        )
-
-    # 7. CRAG Evaluation - assess retrieval quality before answer generation
-    crag_evaluation = None
-    crag_evaluator = state.get("crag_evaluator")
-    if crag_evaluator and all_chunks:
-        try:
-            elapsed_so_far = (time.time() - start) * 1000
-            crag_evaluation = await crag_evaluator.evaluate(
-                display_query, all_chunks, search_time_ms=elapsed_so_far,
-            )
-            logger.info(
-                "CRAG evaluation: action=%s confidence=%.3f level=%s",
-                crag_evaluation.action.value,
-                crag_evaluation.confidence_score,
-                crag_evaluation.confidence_level.value,
-            )
-        except Exception as e:
-            logger.warning("CRAG evaluation failed: %s", e)
-
-    # 8. Generate answer
-    answer = None
-    query_type = ""
-    confidence = ""
-
-    # Inline quality blocking: skip answer when confidence too low
-    if crag_evaluation and crag_evaluation.action == RetrievalAction.INCORRECT:
-        answer = crag_evaluation.recommendation
-        confidence = crag_evaluation.confidence_level.value
-    elif crag_evaluation and crag_evaluation.confidence_score < weights.search.crag_block_threshold:
-        answer = "검색 결과의 신뢰도가 낮아 정확한 답변을 제공하기 어렵습니다. 질문을 더 구체적으로 해주세요."
-        confidence = "낮음"
-    elif request.include_answer and all_chunks:
-        # Try TieredResponseGenerator first, fall back to AnswerService
-        tiered_gen = state.get("tiered_response_generator")
-        llm = state.get("llm")
-
-        if tiered_gen and llm:
-            try:
-                from src.search.query_classifier import QueryClassifier
-                from src.search.tiered_response import RAGContext
-
-                classifier = state.get("query_classifier") or QueryClassifier()
-                classification = classifier.classify(display_query)
-
-                rag_context = RAGContext(
-                    query=display_query,
-                    retrieved_chunks=[c.get("content", "") for c in all_chunks],
-                    chunk_sources=[
-                        {
-                            "document_name": c.get("document_name", ""),
-                            "source_uri": c.get("source_uri", ""),
-                            "score": c.get("score", 0),
-                            "metadata": c.get("metadata", {}),
-                        }
-                        for c in all_chunks
-                    ],
-                    relevance_scores=[c.get("score", 0.0) for c in all_chunks],
-                )
-
-                tiered_result = await tiered_gen.generate(
-                    query_type=classification.query_type,
-                    context=rag_context,
-                )
-                answer = tiered_result.content
-                query_type = tiered_result.query_type.value
-                if tiered_result.confidence >= weights.search.confidence_display_high:
-                    confidence = "높음"
-                elif tiered_result.confidence >= weights.search.confidence_display_medium:
-                    confidence = "보통"
-                else:
-                    confidence = "낮음"
-            except Exception as e:
-                logger.warning("TieredResponseGenerator failed, falling back to AnswerService: %s", e)
-                tiered_gen = None  # fall through to AnswerService
-
-        if answer is None:
-            # Fallback to AnswerService (pre-initialized in _init_services)
-            answer_service = state.get("answer_service")
-            if answer_service:
-                result = await answer_service.enrich(display_query, all_chunks)
-                answer = result.answer
-                query_type = result.query_type
-                confidence = result.confidence_indicator
-
-    # 9. Answer Guard - replace generic LLM answers with chunk-based fallback
+    # 7-9. CRAG + answer + guard + conflicts + follow-ups
+    crag_evaluation = await _step_crag_evaluate(display_query, all_chunks, start, state)
+    answer, query_type, confidence = await _step_generate_answer(
+        display_query, all_chunks, crag_evaluation, request.include_answer, state,
+    )
     if answer:
         answer = _answer_guard.guard(answer, all_chunks, display_query)
-
-    # 9.5 Conflict detection - detect contradictory answers from different KBs
-    conflicts: list[dict[str, Any]] = []
-    if len(searched_kbs) > 1 and all_chunks:
-        kb_answers: dict[str, list[str]] = {}
-        for c in all_chunks[:10]:
-            kb = c.get("kb_id", "")
-            content = c.get("content", "")[:200]
-            if kb and content:
-                kb_answers.setdefault(kb, []).append(content)
-        if len(kb_answers) > 1:
-            # Simple conflict detection: check if top chunks from different KBs
-            # have very different content (low overlap)
-            kb_list = list(kb_answers.keys())
-            for i in range(len(kb_list)):
-                for j in range(i + 1, len(kb_list)):
-                    kb_a, kb_b = kb_list[i], kb_list[j]
-                    texts_a = " ".join(kb_answers[kb_a][:3])
-                    texts_b = " ".join(kb_answers[kb_b][:3])
-                    # Check word overlap ratio
-                    words_a = set(texts_a.split())
-                    words_b = set(texts_b.split())
-                    if words_a and words_b:
-                        overlap = len(words_a & words_b) / min(len(words_a), len(words_b))
-                        if overlap < weights.search.conflict_overlap_threshold:
-                            conflicts.append({
-                                "kb_a": kb_a,
-                                "kb_b": kb_b,
-                                "overlap_ratio": round(overlap, 3),
-                                "warning": f"KB '{kb_a}'와 '{kb_b}'의 답변이 상이할 수 있습니다.",
-                            })
-
-    # 9.6 Follow-up question generation (only when answer is included)
-    follow_ups: list[str] = []
-    if request.include_answer and answer and all_chunks:
-        try:
-            llm = state.get("llm")
-            if llm:
-                follow_up_prompt = (
-                    f"다음 질문과 답변을 바탕으로, 사용자가 추가로 궁금해할 수 있는 후속 질문 3개를 생성하세요.\n"
-                    f"각 질문은 한 줄씩, 번호 없이 작성하세요.\n\n"
-                    f"질문: {display_query}\n답변: {answer[:500]}\n\n후속 질문:"
-                )
-                follow_up_result = await llm.generate(follow_up_prompt, temperature=0.3, max_tokens=200)
-                if follow_up_result:
-                    follow_ups = [q.strip().lstrip("- ·•123.") for q in follow_up_result.strip().split("\n") if q.strip()][:3]
-        except Exception as _fu_err:
-            logger.debug("Follow-up generation skipped: %s", _fu_err)
+    conflicts = _step_detect_conflicts(all_chunks, searched_kbs)
+    follow_ups = await _step_follow_ups(
+        display_query, answer, all_chunks, request.include_answer, state,
+    )
 
     elapsed = (time.time() - start) * 1000
-
-    # Log search usage (fire-and-forget, never fail the search)
-    usage_repo = state.get("usage_log_repo")
-    if usage_repo:
-        try:
-            await usage_repo.log_search(
-                knowledge_id=query,
-                kb_id=",".join(collections),
-                user_id="local-user",
-                usage_type="hub_search",
-                context={
-                    "query": query,
-                    "display_query": display_query,
-                    "total_chunks": len(all_chunks),
-                    "search_time_ms": elapsed,
-                    "mode": request.mode,
-                    "group_name": request.group_name,
-                    "embed_calls": 1,
-                    "llm_calls": 1 if answer else 0,
-                    "cross_encoder_calls": 1 if all_chunks else 0,
-                    "follow_up_generated": len(follow_ups) > 0,
-                    "rerank_applied": rerank_applied,
-                },
-            )
-        except Exception:
-            pass  # Don't fail search because of logging
+    await _step_log_usage(
+        query, display_query, all_chunks, elapsed, collections,
+        request, answer, follow_ups, rerank_applied, state,
+    )
 
     response = HubSearchResponse(
-        query=query,
-        answer=answer,
-        chunks=all_chunks,
-        searched_kbs=searched_kbs,
-        total_chunks=len(all_chunks),
-        search_time_ms=round(elapsed, 1),
-        query_type=query_type,
+        query=query, answer=answer, chunks=all_chunks,
+        searched_kbs=searched_kbs, total_chunks=len(all_chunks),
+        search_time_ms=round(elapsed, 1), query_type=query_type,
         confidence=confidence,
         display_query=display_query if display_query != query else None,
-        expanded_terms=expanded_terms,
-        confidence_level=confidence,
-        rerank_applied=rerank_applied,
-        query_preprocess=preprocess_info,
+        expanded_terms=expanded_terms, confidence_level=confidence,
+        rerank_applied=rerank_applied, query_preprocess=preprocess_info,
         metadata={
             "display_query": corrected_query,
             "rerank_applied": rerank_applied,
@@ -764,33 +1021,7 @@ async def hub_search(request: HubSearchRequest):
         },
     )
 
-    # Store in caches (fire-and-forget)
-    _response_dict = response.model_dump()
-
-    # Only cache high-quality results (not errors/fallbacks)
-    _should_cache = (
-        response.answer
-        and not any(p in response.answer for p in _ERROR_PATTERNS)
-    )
-    if _should_cache:
-        _response_dict["_cache_version"] = _expected_cache_version
-        if multi_cache:
-            try:
-                from src.cache.cache_types import CacheDomain
-                await multi_cache.set(
-                    query, _response_dict, domain=CacheDomain.KB_SEARCH,
-                    metadata={"kb_ids": collections},
-                    kb_ids=collections, top_k=effective_top_k,
-                )
-            except Exception as e:
-                logger.debug("Failed to write multi-layer cache: %s", e)
-
-        if search_cache:
-            try:
-                await search_cache.set(query, collections, _response_dict, effective_top_k)
-            except Exception as e:
-                logger.debug("Failed to write search cache: %s", e)
-
+    await _step_cache_store(query, response, collections, effective_top_k, state)
     return response
 
 

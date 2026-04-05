@@ -27,6 +27,26 @@ from .collections import QdrantCollectionManager
 logger = logging.getLogger(__name__)
 
 
+class QdrantServerError(RuntimeError):
+    """Raised when Qdrant returns a 5xx server error."""
+
+
+def _raise_if_qdrant_server_error(
+    error: Exception, collection_name: str, kb_id: str,
+) -> None:
+    """Re-raise as QdrantServerError if the error is a Qdrant 5xx."""
+    status = getattr(error, "status_code", None)
+    if status is not None and status >= 500:
+        logger.error(
+            "Qdrant server error %s for collection %s, failing fast",
+            status, collection_name,
+            extra={"status_code": status, "kb_id": kb_id},
+        )
+        raise QdrantServerError(
+            f"Qdrant server error {status} for {collection_name}"
+        ) from error
+
+
 class QdrantSearchEngine:
     """Hybrid search (RRF fusion) and ColBERT late-interaction reranking.
 
@@ -45,6 +65,96 @@ class QdrantSearchEngine:
         self._collection_mgr = collection_mgr
 
     # ==================== Query candidates ====================
+
+    @staticmethod
+    def _build_qdrant_filter(
+        filter_conditions: dict[str, Any] | None,
+    ) -> Any:
+        """Build a Qdrant Filter from filter_conditions dict."""
+        if not filter_conditions:
+            return None
+
+        from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
+
+        conditions = []
+        for key, value in filter_conditions.items():
+            if isinstance(value, list):
+                if not value:
+                    continue
+                conditions.append(FieldCondition(key=key, match=MatchAny(any=value)))
+            elif isinstance(value, dict) and "match_text" in value:
+                from qdrant_client.models import MatchText
+                conditions.append(FieldCondition(key=key, match=MatchText(text=value["match_text"])))
+            else:
+                conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
+        return Filter(must=conditions) if conditions else None
+
+    async def _query_hybrid(
+        self,
+        client: Any,
+        dense_vector: list[float],
+        sparse_vector: dict[int, float],
+        config: Any,
+        prefetch_limit: int,
+        qdrant_filter: Any,
+        query_kwargs: dict[str, Any],
+        collection_name: str,
+        kb_id: str,
+        error_cls: type,
+    ) -> Any:
+        """Execute hybrid (dense + sparse) query with RRF fusion."""
+        from qdrant_client.models import Fusion, FusionQuery, Prefetch, SparseVector
+
+        sparse_indices = sorted(sparse_vector.keys())
+        sparse_values = [sparse_vector[i] for i in sparse_indices]
+
+        def _build_prefetches(dense_name: str, sparse_name: str) -> list:
+            return [
+                Prefetch(query=dense_vector, using=dense_name,
+                         limit=prefetch_limit, filter=qdrant_filter),
+                Prefetch(query=SparseVector(indices=sparse_indices, values=sparse_values),
+                         using=sparse_name, limit=prefetch_limit, filter=qdrant_filter),
+            ]
+
+        try:
+            return await client.query_points(
+                prefetch=_build_prefetches(config.dense_vector_name, config.sparse_vector_name),
+                query=FusionQuery(fusion=Fusion.RRF),
+                **query_kwargs,
+            )
+        except (error_cls, ValueError) as primary_error:
+            _raise_if_qdrant_server_error(primary_error, collection_name, kb_id)
+            logger.warning("Named vector query failed, retrying with legacy names: %s", primary_error)
+            return await client.query_points(
+                prefetch=_build_prefetches("dense", "sparse"),
+                query=FusionQuery(fusion=Fusion.RRF),
+                **query_kwargs,
+            )
+
+    async def _query_dense_only(
+        self,
+        client: Any,
+        dense_vector: list[float],
+        config: Any,
+        qdrant_filter: Any,
+        query_kwargs: dict[str, Any],
+        collection_name: str,
+        kb_id: str,
+        error_cls: type,
+    ) -> Any:
+        """Execute dense-only query."""
+        try:
+            return await client.query_points(
+                query=dense_vector, using=config.dense_vector_name,
+                query_filter=qdrant_filter, **query_kwargs,
+            )
+        except (error_cls, ValueError) as primary_error:
+            _raise_if_qdrant_server_error(primary_error, collection_name, kb_id)
+            logger.warning("Dense named vector query failed, retrying with legacy name: %s", primary_error)
+            return await client.query_points(
+                query=dense_vector, using="dense",
+                query_filter=qdrant_filter, **query_kwargs,
+            )
 
     async def query_candidates(
         self,
@@ -65,154 +175,36 @@ class QdrantSearchEngine:
         cfg = self._provider.config
         prefetch_limit = min(
             max(1, top_k)
-            * (
-                prefetch_multiplier
-                if prefetch_multiplier is not None
-                else cfg.hybrid_prefetch_multiplier
-            ),
-            (
-                prefetch_max
-                if prefetch_max is not None
-                else cfg.hybrid_prefetch_max
-            ),
+            * (prefetch_multiplier if prefetch_multiplier is not None else cfg.hybrid_prefetch_multiplier),
+            prefetch_max if prefetch_max is not None else cfg.hybrid_prefetch_max,
         )
 
-        from qdrant_client.models import (
-            FieldCondition,
-            Filter,
-            Fusion,
-            FusionQuery,
-            MatchAny,
-            MatchValue,
-            Prefetch,
-            SparseVector,
-        )
         try:
             from qdrant_client.http.exceptions import UnexpectedResponse as _unexpected_resp_cls
         except Exception:
             _unexpected_resp_cls = ValueError  # type: ignore[assignment,misc]
 
-        qdrant_filter = None
-        if filter_conditions:
-            conditions = []
-            for key, value in filter_conditions.items():
-                if isinstance(value, list):
-                    if not value:
-                        continue
-                    conditions.append(
-                        FieldCondition(key=key, match=MatchAny(any=value))
-                    )
-                elif isinstance(value, dict) and "match_text" in value:
-                    from qdrant_client.models import MatchText
-                    conditions.append(
-                        FieldCondition(key=key, match=MatchText(text=value["match_text"]))
-                    )
-                else:
-                    conditions.append(
-                        FieldCondition(key=key, match=MatchValue(value=value))
-                    )
-            if conditions:
-                qdrant_filter = Filter(must=conditions)
-
-        config = self._provider.config
+        qdrant_filter = self._build_qdrant_filter(filter_conditions)
         query_kwargs: dict[str, Any] = {"collection_name": collection_name, "limit": top_k}
         if with_payload is not None:
             query_kwargs["with_payload"] = with_payload
 
         if sparse_vector:
-            sparse_indices = sorted(sparse_vector.keys())
-            sparse_values = [sparse_vector[i] for i in sparse_indices]
-
-            try:
-                results = await client.query_points(
-                    prefetch=[
-                        Prefetch(
-                            query=dense_vector,
-                            using=config.dense_vector_name,
-                            limit=prefetch_limit,
-                            filter=qdrant_filter,
-                        ),
-                        Prefetch(
-                            query=SparseVector(
-                                indices=sparse_indices,
-                                values=sparse_values,
-                            ),
-                            using=config.sparse_vector_name,
-                            limit=prefetch_limit,
-                            filter=qdrant_filter,
-                        ),
-                    ],
-                    query=FusionQuery(fusion=Fusion.RRF),
-                    **query_kwargs,
-                )
-            except (_unexpected_resp_cls, ValueError) as primary_error:
-                status = getattr(primary_error, "status_code", None)
-                if status is not None and status >= 500:
-                    logger.error(
-                        "Qdrant server error %s for collection %s, failing fast",
-                        status, collection_name,
-                        extra={"status_code": status, "kb_id": kb_id},
-                    )
-                    raise
-                logger.warning(
-                    "Named vector query failed, retrying with legacy dense/sparse names: %s",
-                    primary_error,
-                )
-                results = await client.query_points(
-                    prefetch=[
-                        Prefetch(
-                            query=dense_vector,
-                            using="dense",
-                            limit=prefetch_limit,
-                            filter=qdrant_filter,
-                        ),
-                        Prefetch(
-                            query=SparseVector(
-                                indices=sparse_indices,
-                                values=sparse_values,
-                            ),
-                            using="sparse",
-                            limit=prefetch_limit,
-                            filter=qdrant_filter,
-                        ),
-                    ],
-                    query=FusionQuery(fusion=Fusion.RRF),
-                    **query_kwargs,
-                )
+            results = await self._query_hybrid(
+                client, dense_vector, sparse_vector, cfg, prefetch_limit,
+                qdrant_filter, query_kwargs, collection_name, kb_id, _unexpected_resp_cls,
+            )
         else:
-            try:
-                results = await client.query_points(
-                    query=dense_vector,
-                    using=config.dense_vector_name,
-                    query_filter=qdrant_filter,
-                    **query_kwargs,
-                )
-            except (_unexpected_resp_cls, ValueError) as primary_error:
-                status = getattr(primary_error, "status_code", None)
-                if status is not None and status >= 500:
-                    logger.error(
-                        "Qdrant server error %s for collection %s, failing fast",
-                        status, collection_name,
-                        extra={"status_code": status, "kb_id": kb_id},
-                    )
-                    raise
-                logger.warning(
-                    "Dense named vector query failed, retrying with legacy dense name: %s",
-                    primary_error,
-                )
-                results = await client.query_points(
-                    query=dense_vector,
-                    using="dense",
-                    query_filter=qdrant_filter,
-                    **query_kwargs,
-                )
+            results = await self._query_dense_only(
+                client, dense_vector, cfg, qdrant_filter, query_kwargs,
+                collection_name, kb_id, _unexpected_resp_cls,
+            )
 
         search_results: list[QdrantSearchResult] = []
         for point in results.points:
             score = point.score or 0.0
             if score_threshold is not None and score < score_threshold:
                 continue
-
             payload = point.payload or {}
             search_results.append(
                 QdrantSearchResult(

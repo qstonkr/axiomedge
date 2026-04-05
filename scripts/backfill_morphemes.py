@@ -31,6 +31,47 @@ def extract_morphemes(kiwi: Kiwi, text: str) -> str:
         return ""
 
 
+def _update_point_morphemes(collection: str, point: dict, kiwi: Kiwi) -> bool:
+    """Extract and update morphemes for a single point. Returns True if updated."""
+    if point["payload"].get("morphemes"):
+        return False
+
+    content = point["payload"].get("content", "")
+    morphs = extract_morphemes(kiwi, content)
+    if not morphs:
+        return False
+
+    requests.post(
+        f"{QDRANT_URL}/collections/{collection}/points/payload",
+        json={"points": [point["id"]], "payload": {"morphemes": morphs}},
+    )
+    return True
+
+
+def _scroll_page(collection: str, offset):
+    """Fetch one scroll page from Qdrant. Returns (points, next_offset) or None on error."""
+    body = {"limit": 50, "with_payload": ["content", "morphemes"], "with_vector": False}
+    if offset:
+        body["offset"] = offset
+    resp = requests.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json=body)
+    if resp.status_code != 200:
+        return None
+    data = resp.json()["result"]
+    return data["points"], data.get("next_page_offset")
+
+
+def _tally_points(points, collection: str, kiwi: Kiwi) -> tuple[int, int]:
+    """Process points and return (updated, skipped) counts."""
+    updated = 0
+    skipped = 0
+    for p in points:
+        if _update_point_morphemes(collection, p, kiwi):
+            updated += 1
+        elif p["payload"].get("morphemes"):
+            skipped += 1
+    return updated, skipped
+
+
 def run_backfill(kb_id: str, kiwi: Kiwi):
     collection = f"kb_{kb_id.replace('-', '_')}"
     logger.info(f"[{kb_id}] Processing {collection}...")
@@ -42,36 +83,20 @@ def run_backfill(kb_id: str, kiwi: Kiwi):
     t0 = time.time()
 
     while True:
-        body = {"limit": 50, "with_payload": ["content", "morphemes"], "with_vector": False}
-        if offset:
-            body["offset"] = offset
-        resp = requests.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json=body)
-        if resp.status_code != 200:
-            logger.error(f"[{kb_id}] Scroll failed: {resp.status_code}")
+        result = _scroll_page(collection, offset)
+        if result is None:
+            logger.error(f"[{kb_id}] Scroll failed")
             break
 
-        data = resp.json()["result"]
-        points = data["points"]
+        points, offset = result
         if not points:
             break
 
-        for p in points:
-            total += 1
-            # Skip if already has morphemes
-            if p["payload"].get("morphemes"):
-                skipped += 1
-                continue
+        page_updated, page_skipped = _tally_points(points, collection, kiwi)
+        total += len(points)
+        updated += page_updated
+        skipped += page_skipped
 
-            content = p["payload"].get("content", "")
-            morphs = extract_morphemes(kiwi, content)
-            if morphs:
-                requests.post(
-                    f"{QDRANT_URL}/collections/{collection}/points/payload",
-                    json={"points": [p["id"]], "payload": {"morphemes": morphs}},
-                )
-                updated += 1
-
-        offset = data.get("next_page_offset")
         if not offset:
             break
 

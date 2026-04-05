@@ -62,6 +62,224 @@ async def _approve_single_synonym(repo: Any, syn_id: str, errors: list[str]) -> 
     return True
 
 
+async def _fetch_sample_and_standard(repo: Any) -> tuple[list, str, list, int, int]:
+    """Fetch sample terms and standard terms with random sampling.
+
+    Returns (sample_terms, sample_source, standard_terms, total_approved, total_pending).
+    """
+    import random
+
+    SAMPLE_SIZE = 500
+    STANDARD_POOL = 5000
+
+    total_approved = await repo.count_by_kb(kb_id="all", status="approved")
+    total_pending = await repo.count_by_kb(kb_id="all", status="pending")
+
+    if total_pending > 0:
+        max_offset = max(0, total_pending - SAMPLE_SIZE)
+        rand_offset = random.randint(0, max_offset) if max_offset > 0 else 0
+        sample_terms = await repo.list_by_kb(
+            kb_id="all", status="pending", limit=SAMPLE_SIZE, offset=rand_offset
+        )
+        sample_source = "pending"
+    else:
+        max_offset = max(0, total_approved - SAMPLE_SIZE)
+        rand_offset = random.randint(0, max_offset) if max_offset > 0 else 0
+        sample_terms = await repo.list_by_kb(
+            kb_id="all", status="approved", limit=SAMPLE_SIZE, offset=rand_offset
+        )
+        sample_source = "approved"
+
+    std_max_offset = max(0, total_approved - STANDARD_POOL)
+    std_rand_offset = random.randint(0, std_max_offset) if std_max_offset > 0 else 0
+    standard_terms = await repo.list_by_kb(
+        kb_id="all", status="approved", limit=STANDARD_POOL, offset=std_rand_offset
+    )
+    return sample_terms, sample_source, standard_terms, total_approved, total_pending
+
+
+def _deduplicate_terms(terms: list[dict]) -> list[dict]:
+    """Deduplicate term list by lowercased term name, preserving order."""
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for t in terms:
+        term_lower = t.get("term", "").lower()
+        if term_lower and term_lower not in seen:
+            seen.add(term_lower)
+            unique.append(t)
+    return unique
+
+
+def _build_comparison_set(
+    unique_standard: list[dict], sample_seen: set[str],
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Build comparison names and definition pairs excluding sample terms."""
+    unique_standard_names = [t["term"] for t in unique_standard]
+    comparison_names = [n for n in unique_standard_names if n.lower() not in sample_seen]
+    if not comparison_names:
+        comparison_names = unique_standard_names
+
+    std_definitions: dict[str, str] = {}
+    for t in unique_standard:
+        defn = (t.get("definition") or t.get("term_ko") or "").strip()
+        if defn:
+            std_definitions[t["term"]] = defn
+
+    comp_with_def = [
+        (n, std_definitions[n]) for n in comparison_names if n in std_definitions
+    ]
+    return comparison_names, comp_with_def
+
+
+def _compute_rf_score(
+    query: str, comparison_names: list[str], exact_match_threshold: float,
+) -> float | None:
+    """Compute RapidFuzz best-match score, excluding exact self-match."""
+    from rapidfuzz import fuzz, process
+
+    rf_result = process.extractOne(query, comparison_names, scorer=fuzz.WRatio)
+    if not rf_result:
+        return None
+    score = rf_result[1] / 100.0
+    if score >= exact_match_threshold and rf_result[0].lower() == query.lower():
+        results = process.extract(query, comparison_names, scorer=fuzz.WRatio, limit=2)
+        if len(results) > 1:
+            score = results[1][1] / 100.0
+    return score
+
+
+def _compute_jaccard_score(query: str, comparison_names: list[str]) -> float:
+    """Compute best trigram Jaccard score against comparison names."""
+    q_ngrams = {query[i:i + 3] for i in range(max(1, len(query) - 2))}
+    best_jac = 0.0
+    for std in comparison_names[:1000]:
+        if std.lower() == query.lower():
+            continue
+        s_ngrams = {std[i:i + 3] for i in range(max(1, len(std) - 2))}
+        if q_ngrams and s_ngrams:
+            intersection = len(q_ngrams & s_ngrams)
+            union = len(q_ngrams | s_ngrams)
+            if union > 0:
+                jac = intersection / union
+                if jac > best_jac:
+                    best_jac = jac
+    return best_jac
+
+
+def _compute_def_score(
+    query_def: str, comp_with_def: list[tuple[str, str]], exact_match_threshold: float,
+) -> float:
+    """Compute definition-based similarity score."""
+    if not query_def or not comp_with_def:
+        return 0.0
+    from rapidfuzz import fuzz, process
+
+    comp_def_texts = [d for _, d in comp_with_def]
+    def_result = process.extractOne(query_def, comp_def_texts, scorer=fuzz.WRatio)
+    if not def_result:
+        return 0.0
+    def_score = def_result[1] / 100.0
+    if def_score >= exact_match_threshold:
+        def_results = process.extract(query_def, comp_def_texts, scorer=fuzz.WRatio, limit=2)
+        if len(def_results) > 1:
+            def_score = def_results[1][1] / 100.0
+    return def_score
+
+
+def _compute_text_scores(
+    sample_terms: list[dict],
+    comparison_names: list[str],
+    comp_with_def: list[tuple[str, str]],
+    exact_match_threshold: float,
+    sample_size: int,
+) -> tuple[list[float], list[float], list[float]]:
+    """Compute RapidFuzz, Jaccard, and definition scores for sample terms."""
+    rf_scores: list[float] = []
+    jac_scores: list[float] = []
+    def_scores: list[float] = []
+
+    for term_data in sample_terms[:sample_size]:
+        query = term_data.get("term", "")
+        if not query:
+            continue
+
+        rf = _compute_rf_score(query, comparison_names, exact_match_threshold)
+        if rf is not None:
+            rf_scores.append(rf)
+
+        jac_scores.append(_compute_jaccard_score(query, comparison_names))
+
+        query_def = (term_data.get("definition") or term_data.get("term_ko") or "").strip()
+        def_scores.append(_compute_def_score(query_def, comp_with_def, exact_match_threshold))
+
+    return rf_scores, jac_scores, def_scores
+
+
+async def _compute_dense_scores(
+    embedder: Any,
+    sample_terms: list[dict],
+    comparison_names: list[str],
+    sample_size: int,
+) -> list[float]:
+    """Compute dense cosine similarity scores via embedding."""
+    import numpy as np
+
+    if not embedder:
+        return []
+    try:
+        import asyncio as _asyncio
+
+        sample_texts = [t.get("term", "") for t in sample_terms[:sample_size] if t.get("term")]
+        comp_texts = comparison_names[:1000]
+
+        sample_vecs = await _asyncio.to_thread(embedder.encode, sample_texts, True, False, False)
+        comp_vecs = await _asyncio.to_thread(embedder.encode, comp_texts, True, False, False)
+
+        s_dense = sample_vecs.get("dense_vecs", [])
+        c_dense = comp_vecs.get("dense_vecs", [])
+        if not s_dense or not c_dense:
+            return []
+
+        s_matrix = np.array(s_dense, dtype=np.float32)
+        c_matrix = np.array(c_dense, dtype=np.float32)
+        s_norms = np.linalg.norm(s_matrix, axis=1, keepdims=True)
+        c_norms = np.linalg.norm(c_matrix, axis=1, keepdims=True)
+        s_matrix = s_matrix / np.clip(s_norms, 1e-12, None)
+        c_matrix = c_matrix / np.clip(c_norms, 1e-12, None)
+        sim_matrix = s_matrix @ c_matrix.T
+
+        dense_scores: list[float] = []
+        for i, term_data in enumerate(sample_terms[:len(s_dense)]):
+            query_lower = term_data.get("term", "").lower()
+            row = sim_matrix[i]
+            for j, cn in enumerate(comp_texts[:len(c_dense)]):
+                if cn.lower() == query_lower:
+                    row[j] = -1.0
+            dense_scores.append(max(0.0, float(np.max(row))))
+        return dense_scores
+    except Exception as e:
+        logger.warning("Dense similarity computation failed: %s", e)
+        return []
+
+
+def _compute_score_stats(scores: list[float]) -> dict[str, Any]:
+    """Compute statistical summary for a list of scores."""
+    import numpy as np
+
+    if not scores:
+        return {"count": 0, "mean": 0, "p50": 0, "p90": 0, "p95": 0, "min": 0, "max": 0}
+    arr = np.array(scores)
+    return {
+        "count": len(arr),
+        "mean": float(np.mean(arr)),
+        "p50": float(np.percentile(arr, 50)),
+        "p90": float(np.percentile(arr, 90)),
+        "p95": float(np.percentile(arr, 95)),
+        "min": float(np.min(arr)),
+        "max": float(np.max(arr)),
+    }
+
+
 async def compute_similarity_distribution(
     state: Any,
     exact_match_threshold: float,
@@ -72,36 +290,15 @@ async def compute_similarity_distribution(
     """
     import numpy as np
 
+    SAMPLE_SIZE = 500
+
     repo = state.get("glossary_repo")
     if not repo:
         return {"distribution": [], "total_pairs": 0, "mean_similarity": 0.0, "sample_size": 0}
 
-    total_approved = await repo.count_by_kb(kb_id="all", status="approved")
-    total_pending = await repo.count_by_kb(kb_id="all", status="pending")
-
-    # Sample size and random sampling
-    SAMPLE_SIZE = 500
-    STANDARD_POOL = 5000
-
-    # Random sampling via SQL OFFSET with random spread
-    import random
-    pending_total = await repo.count_by_kb(kb_id="all", status="pending")
-    approved_total = await repo.count_by_kb(kb_id="all", status="approved")
-
-    if pending_total > 0:
-        max_offset = max(0, pending_total - SAMPLE_SIZE)
-        rand_offset = random.randint(0, max_offset) if max_offset > 0 else 0
-        sample_terms = await repo.list_by_kb(kb_id="all", status="pending", limit=SAMPLE_SIZE, offset=rand_offset)
-        sample_source = "pending"
-    else:
-        max_offset = max(0, approved_total - SAMPLE_SIZE)
-        rand_offset = random.randint(0, max_offset) if max_offset > 0 else 0
-        sample_terms = await repo.list_by_kb(kb_id="all", status="approved", limit=SAMPLE_SIZE, offset=rand_offset)
-        sample_source = "approved"
-
-    std_max_offset = max(0, approved_total - STANDARD_POOL)
-    std_rand_offset = random.randint(0, std_max_offset) if std_max_offset > 0 else 0
-    standard_terms = await repo.list_by_kb(kb_id="all", status="approved", limit=STANDARD_POOL, offset=std_rand_offset)
+    sample_terms, sample_source, standard_terms, total_approved, total_pending = (
+        await _fetch_sample_and_standard(repo)
+    )
     standard_names = [t["term"] for t in standard_terms if t.get("term")]
 
     if not sample_terms or not standard_names:
@@ -116,152 +313,19 @@ async def compute_similarity_distribution(
             "standard_count": len(standard_names),
         }
 
-    # RapidFuzz batch similarity
-    from rapidfuzz import fuzz, process
+    unique_standard = _deduplicate_terms(standard_terms)
+    sample_terms = _deduplicate_terms(sample_terms)
+    sample_seen = {t.get("term", "").lower() for t in sample_terms}
 
-    rf_scores: list[float] = []
-    jac_scores: list[float] = []
+    comparison_names, comp_with_def = _build_comparison_set(unique_standard, sample_seen)
 
-    # Build UNIQUE standard terms (deduplicated by lower(term))
-    seen_terms: dict[str, dict] = {}
-    for t in standard_terms:
-        term_lower = t.get("term", "").lower()
-        if term_lower and term_lower not in seen_terms:
-            seen_terms[term_lower] = t
-    unique_standard = list(seen_terms.values())
-    unique_standard_names = [t["term"] for t in unique_standard]
+    rf_scores, jac_scores, def_scores = _compute_text_scores(
+        sample_terms, comparison_names, comp_with_def, exact_match_threshold, SAMPLE_SIZE,
+    )
 
-    # Build term->definition map for definition-based comparison
-    std_definitions: dict[str, str] = {}
-    for t in unique_standard:
-        defn = (t.get("definition") or t.get("term_ko") or "").strip()
-        if defn:
-            std_definitions[t["term"]] = defn
-
-    # Build sample with unique terms only
-    sample_seen: set[str] = set()
-    unique_sample: list[dict] = []
-    for t in sample_terms:
-        term_lower = t.get("term", "").lower()
-        if term_lower and term_lower not in sample_seen:
-            sample_seen.add(term_lower)
-            unique_sample.append(t)
-    sample_terms = unique_sample
-
-    # Exclude sample terms from comparison set
-    comparison_names = [n for n in unique_standard_names if n.lower() not in sample_seen]
-    comparison_definitions = [std_definitions.get(n, "") for n in comparison_names]
-    comp_with_def = [(n, d) for n, d in zip(comparison_names, comparison_definitions) if d]
-
-    if not comparison_names:
-        comparison_names = unique_standard_names
-
-    def_scores: list[float] = []
-
-    for term_data in sample_terms[:SAMPLE_SIZE]:
-        query = term_data.get("term", "")
-        if not query:
-            continue
-
-        # 1) RapidFuzz term-name similarity (exclude exact self)
-        rf_result = process.extractOne(query, comparison_names, scorer=fuzz.WRatio)
-        if rf_result:
-            score = rf_result[1] / 100.0
-            if score >= exact_match_threshold and rf_result[0].lower() == query.lower():
-                results = process.extract(query, comparison_names, scorer=fuzz.WRatio, limit=2)
-                if len(results) > 1:
-                    score = results[1][1] / 100.0
-            rf_scores.append(score)
-
-        # 2) Jaccard n-gram (trigram)
-        q_ngrams = {query[i:i+3] for i in range(max(1, len(query)-2))}
-        best_jac = 0.0
-        for std in comparison_names[:1000]:
-            if std.lower() == query.lower():
-                continue
-            s_ngrams = {std[i:i+3] for i in range(max(1, len(std)-2))}
-            if q_ngrams and s_ngrams:
-                intersection = len(q_ngrams & s_ngrams)
-                union = len(q_ngrams | s_ngrams)
-                if union > 0:
-                    jac = intersection / union
-                    if jac > best_jac:
-                        best_jac = jac
-        jac_scores.append(best_jac)
-
-        # 3) Definition-based similarity
-        query_def = (term_data.get("definition") or term_data.get("term_ko") or "").strip()
-        if query_def and comp_with_def:
-            comp_def_texts = [d for _, d in comp_with_def]
-            def_result = process.extractOne(query_def, comp_def_texts, scorer=fuzz.WRatio)
-            if def_result:
-                def_score = def_result[1] / 100.0
-                if def_score >= exact_match_threshold:
-                    def_results = process.extract(query_def, comp_def_texts, scorer=fuzz.WRatio, limit=2)
-                    if len(def_results) > 1:
-                        def_score = def_results[1][1] / 100.0
-                def_scores.append(def_score)
-            else:
-                def_scores.append(0.0)
-        else:
-            def_scores.append(0.0)
-
-    # 4) Dense cosine similarity via embedding
-    dense_scores: list[float] = []
-    embedder = state.get("embedder")
-    if embedder:
-        try:
-            import asyncio as _asyncio
-
-            sample_texts = [t.get("term", "") for t in sample_terms[:SAMPLE_SIZE] if t.get("term")]
-            comp_texts = comparison_names[:1000]
-
-            sample_vecs = await _asyncio.to_thread(
-                embedder.encode, sample_texts, True, False, False
-            )
-            comp_vecs = await _asyncio.to_thread(
-                embedder.encode, comp_texts, True, False, False
-            )
-
-            s_dense = sample_vecs.get("dense_vecs", [])
-            c_dense = comp_vecs.get("dense_vecs", [])
-
-            if s_dense and c_dense:
-                s_matrix = np.array(s_dense, dtype=np.float32)
-                c_matrix = np.array(c_dense, dtype=np.float32)
-
-                s_norms = np.linalg.norm(s_matrix, axis=1, keepdims=True)
-                c_norms = np.linalg.norm(c_matrix, axis=1, keepdims=True)
-                s_matrix = s_matrix / np.clip(s_norms, 1e-12, None)
-                c_matrix = c_matrix / np.clip(c_norms, 1e-12, None)
-
-                sim_matrix = s_matrix @ c_matrix.T
-
-                for i, term_data in enumerate(sample_terms[:len(s_dense)]):
-                    query_lower = term_data.get("term", "").lower()
-                    row = sim_matrix[i]
-                    for j, cn in enumerate(comp_texts[:len(c_dense)]):
-                        if cn.lower() == query_lower:
-                            row[j] = -1.0
-                    best = float(np.max(row))
-                    dense_scores.append(max(0.0, best))
-        except Exception as e:
-            logger.warning("Dense similarity computation failed: %s", e)
-
-    # Compute stats
-    def _stats(scores: list[float]) -> dict[str, Any]:
-        if not scores:
-            return {"count": 0, "mean": 0, "p50": 0, "p90": 0, "p95": 0, "min": 0, "max": 0}
-        arr = np.array(scores)
-        return {
-            "count": len(arr),
-            "mean": float(np.mean(arr)),
-            "p50": float(np.percentile(arr, 50)),
-            "p90": float(np.percentile(arr, 90)),
-            "p95": float(np.percentile(arr, 95)),
-            "min": float(np.min(arr)),
-            "max": float(np.max(arr)),
-        }
+    dense_scores = await _compute_dense_scores(
+        state.get("embedder"), sample_terms, comparison_names, SAMPLE_SIZE,
+    )
 
     return {
         "distribution": [
@@ -274,10 +338,10 @@ async def compute_similarity_distribution(
         "sample_source": sample_source,
         "standard_count": len(comparison_names),
         "score_stats": {
-            "rapidfuzz": _stats(rf_scores),
-            "jaccard": _stats(jac_scores),
-            "definition": _stats(def_scores),
-            "dense_cosine": _stats(dense_scores),
+            "rapidfuzz": _compute_score_stats(rf_scores),
+            "jaccard": _compute_score_stats(jac_scores),
+            "definition": _compute_score_stats(def_scores),
+            "dense_cosine": _compute_score_stats(dense_scores),
         },
         "rapidfuzz_scores": rf_scores[:200],
         "jaccard_scores": jac_scores[:200],

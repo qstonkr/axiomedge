@@ -77,81 +77,95 @@ _DIGIT_UNDERSCORE_RE = _re_mod.compile(r'[\d_]')
 _PRODUCT_PATTERN_RE = _re_mod.compile(r'\d+[GgMmLl]|김밥|라면|도시락|샌드위치|음료')
 
 
+def _is_corrupted_entity(node_id: str) -> bool:
+    """Check if entity ID is a placeholder or OCR corruption."""
+    stripped = node_id.strip()
+    if stripped.lower() in _PLACEHOLDER_VALUES or stripped in _PLACEHOLDER_VALUES:
+        return True
+    if _LONE_JAMO_RE.search(node_id):
+        return True
+    if _REPEATED_SYLLABLE_RE.search(node_id):
+        return True
+    return False
+
+
+_ROLE_SUFFIXES = ("담당자", "관리자", "엔지니어", "개발자", "운영자", "리더", "매니저", "담당")
+_PLACEHOLDER_NAMES = ("미기재", "미명시", "미상", "이름 없", "확인 불가")
+
+
+def _is_invalid_person(node_id: str, name: str) -> bool:
+    """Return True if the person entity should be rejected."""
+    if node_id in _NON_PERSON_BLOCKLIST:
+        return True
+    if len(node_id) > 15:
+        return True
+    if _DIGIT_UNDERSCORE_RE.search(node_id):
+        return True
+    if len(name) <= 2:
+        return True
+    if name.endswith(_ROLE_SUFFIXES):
+        return True
+    if name.startswith("[") or name.startswith("("):
+        return True
+    if "(주)" in name or "(사)" in name:
+        return True
+    if any(ph in name for ph in _PLACEHOLDER_NAMES):
+        return True
+    return False
+
+
+def _reclassify_person(node_id: str) -> tuple[str | None, str | None]:
+    """Reclassify a Person entity to a more specific type, or reject it.
+
+    Returns:
+        (corrected_id, corrected_type) — corrected_type is None if no reclassification,
+        corrected_id is None if entity should be skipped.
+    """
+    name = node_id.strip()
+
+    # Reclassify to other types
+    if any(name.endswith(s) for s in _COMPANY_SUFFIXES):
+        return node_id, "Store"
+    if _LOCATION_SUFFIX_RE.match(name):
+        return node_id, "Location"
+    if name in _SYSTEM_NAMES:
+        return node_id, "System"
+    if name.endswith(_TEAM_SUFFIXES):
+        return node_id, "Team"
+
+    # Reject invalid persons
+    if _is_invalid_person(node_id, name):
+        return None, None
+
+    # Clean parenthetical — extract name before parenthesis
+    if "(" in name:
+        _paren_match = _re_mod.match(r"^([가-힣]{2,4})[A-Z]?\s*\(", name)
+        if _paren_match:
+            return _paren_match.group(1), None
+
+    return node_id, None  # Valid person, no reclassification
+
+
 def _validate_entity(node_id: str, node_type: str) -> tuple[str | None, str]:
     """Validate and possibly reclassify an entity.
 
     Returns:
         (corrected_id, corrected_type) — corrected_id is None if entity should be skipped.
     """
-    # --- Placeholder filter ---
-    if node_id.strip().lower() in _PLACEHOLDER_VALUES or node_id.strip() in _PLACEHOLDER_VALUES:
+    if _is_corrupted_entity(node_id):
         return None, node_type
 
-    # --- OCR corruption: lone jamo ---
-    if _LONE_JAMO_RE.search(node_id):
-        return None, node_type
-
-    # --- OCR corruption: 3+ repeated syllables ---
-    if _REPEATED_SYLLABLE_RE.search(node_id):
-        return None, node_type
-
-    # --- Person type correction: reclassify before validation ---
     if node_type == "Person":
-        name = node_id.strip()
+        corrected_id, new_type = _reclassify_person(node_id)
+        if corrected_id is None:
+            return None, node_type
+        return corrected_id, new_type if new_type else node_type
 
-        # Reclassify: company suffixes → Store
-        if any(name.endswith(s) for s in _COMPANY_SUFFIXES):
-            return node_id, "Store"
-
-        # Reclassify: location pattern → Location
-        if _LOCATION_SUFFIX_RE.match(name):
-            return node_id, "Location"
-
-        # Reclassify: tech/tool names → System
-        if name in _SYSTEM_NAMES:
+    if node_type == "Store":
+        if node_id in _PLATFORM_NAMES:
             return node_id, "System"
-
-        # Reclassify: team/org suffixes → Team
-        if name.endswith(_TEAM_SUFFIXES):
-            return node_id, "Team"
-
-        # --- Person semantic validation (skip invalid) ---
-        if node_id in _NON_PERSON_BLOCKLIST:
+        if _PRODUCT_PATTERN_RE.search(node_id):
             return None, node_type
-        if len(node_id) > 15:
-            return None, node_type
-        if _DIGIT_UNDERSCORE_RE.search(node_id):
-            return None, node_type
-
-        # Rule 1: Too short (<=2 chars)
-        if len(name) <= 2:
-            return None, node_type
-        # Rule 2: Role description, not a name
-        _role_suffixes = ("담당자", "관리자", "엔지니어", "개발자", "운영자", "리더", "매니저", "담당")
-        if name.endswith(_role_suffixes):
-            return None, node_type
-        # Rule 3: Bracket-wrapped
-        if name.startswith("[") or name.startswith("("):
-            return None, node_type
-        # Rule 4: Company name
-        if "(주)" in name or "(사)" in name:
-            return None, node_type
-        # Rule 5: Contains "미기재", "미명시", "미상", etc.
-        if any(ph in name for ph in ("미기재", "미명시", "미상", "이름 없", "확인 불가")):
-            return None, node_type
-        # Rule 6: Clean parenthetical — extract name before parenthesis
-        if "(" in name:
-            _paren_match = _re_mod.match(r"^([가-힣]{2,4})[A-Z]?\s*\(", name)
-            if _paren_match:
-                node_id = _paren_match.group(1)
-
-    # --- Store type correction: platforms → System ---
-    if node_type == "Store" and node_id in _PLATFORM_NAMES:
-        return node_id, "System"
-
-    # --- Store type correction: product-like names → skip ---
-    if node_type == "Store" and _PRODUCT_PATTERN_RE.search(node_id):
-        return None, node_type
 
     return node_id, node_type
 
@@ -383,97 +397,101 @@ class GraphRAGExtractor:
 
         return result
 
+    @staticmethod
+    def _extract_json_str(content: str) -> str | None:
+        """Extract JSON string from LLM response, stripping code fences."""
+        if '```' in content:
+            import re as _re
+            _match = _re.search(r"```(?:json)?\s*\n?(.*?)```", content, _re.DOTALL)
+            if _match:
+                content = _match.group(1).strip()
+
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        if start < 0 or end <= start:
+            return None
+        return content[start:end]
+
+    @staticmethod
+    def _parse_json_with_repair(json_str: str) -> dict:
+        """Parse JSON string, trying repair on failure."""
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            from json_repair import repair_json
+            data = json.loads(repair_json(json_str))
+            logger.warning("GraphRAG JSON repaired for document")
+            return data
+
+    @staticmethod
+    def _parse_nodes(data: dict) -> list[GraphNode]:
+        """Parse and validate nodes from extracted data."""
+        nodes = []
+        for node_data in data.get('nodes', []):
+            node_id = node_data.get('id', '')
+            node_type = node_data.get('type', 'Unknown')
+
+            if node_type not in ALLOWED_NODES:
+                logger.warning(f"허용되지 않은 노드 타입 무시: {node_type} (id={node_id})")
+                continue
+            if not node_id:
+                continue
+
+            validated_id, validated_type = _validate_entity(node_id, node_type)
+            if validated_id is None:
+                logger.debug("Entity filtered: id=%s, type=%s", node_id, node_type)
+                continue
+            if validated_type != node_type:
+                logger.info("Entity reclassified: %s %s → %s", node_id, node_type, validated_type)
+
+            nodes.append(GraphNode(
+                id=validated_id,
+                type=validated_type,
+                properties={k: v for k, v in node_data.items() if k not in ('id', 'type')},
+            ))
+        return nodes
+
+    @staticmethod
+    def _parse_relationships(data: dict, node_ids: set[str]) -> list[GraphRelationship]:
+        """Parse and validate relationships from extracted data."""
+        relationships = []
+        for rel_data in data.get('relationships', []):
+            source = rel_data.get('source', '')
+            target = rel_data.get('target', '')
+            rel_type = rel_data.get('type', 'RELATED_TO')
+
+            if rel_type not in ALLOWED_RELATIONSHIPS:
+                rel_type = 'RELATED_TO'
+
+            if not source or not target:
+                continue
+
+            if source not in node_ids or target not in node_ids:
+                logger.warning(
+                    f"Dangling reference: {source}-[{rel_type}]->{target} "
+                    f"(추출된 노드에 없는 엔티티 참조)"
+                )
+
+            relationships.append(GraphRelationship(
+                source=source, target=target, type=rel_type,
+                properties={k: v for k, v in rel_data.items() if k not in ('source', 'target', 'type')},
+            ))
+        return relationships
+
     def _parse_response(self, content: str) -> ExtractionResult:
         """LLM 응답 파싱"""
         result = ExtractionResult()
 
         try:
-            # ```json 블록 제거
-            if '```' in content:
-                import re as _re
-                _match = _re.search(r"```(?:json)?\s*\n?(.*?)```", content, _re.DOTALL)
-                if _match:
-                    content = _match.group(1).strip()
-
-            # JSON 추출
-            start = content.find('{')
-            end = content.rfind('}') + 1
-
-            if start < 0 or end <= start:
+            json_str = self._extract_json_str(content)
+            if json_str is None:
                 logger.warning("JSON을 찾을 수 없음")
                 return result
 
-            json_str = content[start:end]
-            try:
-                data = json.loads(json_str)
-            except json.JSONDecodeError:
-                try:
-                    from json_repair import repair_json
-                    data = json.loads(repair_json(json_str))
-                    logger.warning("GraphRAG JSON repaired for document")
-                except Exception:
-                    logger.warning("GraphRAG JSON repair also failed")
-                    raise
-
-            # 노드 파싱
-            for node_data in data.get('nodes', []):
-                node_id = node_data.get('id', '')
-                node_type = node_data.get('type', 'Unknown')
-
-                # 유효한 타입만 허용 (Cypher Injection 방지)
-                if node_type not in ALLOWED_NODES:
-                    logger.warning(f"허용되지 않은 노드 타입 무시: {node_type} (id={node_id})")
-                    continue
-
-                if node_id:  # 빈 ID 제외
-                    # Entity validation (placeholder, OCR corruption, semantic checks)
-                    validated_id, validated_type = _validate_entity(node_id, node_type)
-                    if validated_id is None:
-                        logger.debug("Entity filtered: id=%s, type=%s", node_id, node_type)
-                        continue
-                    # Apply corrections (e.g. platform Store → System)
-                    if validated_type != node_type:
-                        logger.info(
-                            "Entity reclassified: %s %s → %s", node_id, node_type, validated_type,
-                        )
-                    node_id = validated_id
-                    node_type = validated_type
-
-                    node = GraphNode(
-                        id=node_id,
-                        type=node_type,
-                        properties={k: v for k, v in node_data.items() if k not in ('id', 'type')}
-                    )
-                    result.nodes.append(node)
-
-            # 노드 ID 집합 (관계 검증용)
+            data = self._parse_json_with_repair(json_str)
+            result.nodes = self._parse_nodes(data)
             node_ids = {n.id for n in result.nodes}
-
-            # 관계 파싱
-            for rel_data in data.get('relationships', []):
-                source = rel_data.get('source', '')
-                target = rel_data.get('target', '')
-                rel_type = rel_data.get('type', 'RELATED_TO')
-
-                # 유효한 관계 타입만 허용
-                if rel_type not in ALLOWED_RELATIONSHIPS:
-                    rel_type = 'RELATED_TO'
-
-                # source와 target이 모두 있는 유효한 관계만 추가
-                if source and target:
-                    # Dangling reference 경고
-                    if source not in node_ids or target not in node_ids:
-                        logger.warning(
-                            f"Dangling reference: {source}-[{rel_type}]->{target} "
-                            f"(추출된 노드에 없는 엔티티 참조)"
-                        )
-                    rel = GraphRelationship(
-                        source=source,
-                        target=target,
-                        type=rel_type,
-                        properties={k: v for k, v in rel_data.items() if k not in ('source', 'target', 'type')}
-                    )
-                    result.relationships.append(rel)
+            result.relationships = self._parse_relationships(data, node_ids)
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON 파싱 실패: {e}")
@@ -482,106 +500,105 @@ class GraphRAGExtractor:
 
         return result
 
-    def save_to_neo4j(self, result: ExtractionResult) -> dict[str, int]:
-        """추출 결과를 Neo4j에 저장 (이력 보존 + 최신성 기반 업데이트)
+    @staticmethod
+    def _build_node_properties(node, result: ExtractionResult) -> dict:
+        """Build Neo4j properties dict for a single node."""
+        properties = {"id": node.id, "name": node.id}
+        for k, v in node.properties.items():
+            if isinstance(v, (dict, list)):
+                properties[k] = json.dumps(v, ensure_ascii=False)
+            elif v is not None:
+                properties[k] = v
+        if result.source_page_id:
+            properties["source_page_id"] = result.source_page_id
+        if result.source_document:
+            properties["source_document"] = result.source_document
+        if result.kb_id:
+            properties["kb_id"] = result.kb_id
+        return properties
 
-        동작 방식:
-        1. 노드: MERGE로 생성/업데이트, updated_at 타임스탬프 기록
-        2. 관계: 기존 관계 확인 후 최신성 비교
-           - 새 문서가 최신 -> 기존 관계를 이력(WAS_*)으로 이동, 새 관계 생성
-           - 기존이 최신 -> Skip (새 관계 무시)
-           - 동일 target -> 타임스탬프만 업데이트
-
-        Args:
-            result: 추출 결과
+    def _prepare_node_batches(
+        self, result: ExtractionResult, referenced_ids: set[str],
+    ) -> tuple[dict[str, list[dict]], int]:
+        """Group nodes by type for batch upsert, skipping orphans and unsafe labels.
 
         Returns:
-            저장된 노드/관계 수
+            (nodes_by_type, skipped_orphan_count)
         """
+        nodes_by_type: dict[str, list[dict]] = {}
+        skipped_orphan = 0
+
+        for node in result.nodes:
+            if not _is_safe_cypher_label(node.type):
+                logger.error(f"안전하지 않은 노드 타입 스킵: {node.type}")
+                continue
+            if node.id not in referenced_ids:
+                skipped_orphan += 1
+                continue
+
+            properties = self._build_node_properties(node, result)
+            nodes_by_type.setdefault(node.type, []).append(properties)
+
+        return nodes_by_type, skipped_orphan
+
+    def _upsert_node_batches(
+        self, session, nodes_by_type: dict[str, list[dict]], now: str,
+    ) -> tuple[int, int]:
+        """Upsert node batches to Neo4j. Returns (created, updated) counts."""
+        created = 0
+        updated = 0
+        for node_type, node_params in nodes_by_type.items():
+            try:
+                batch_query = f"""
+                    UNWIND $nodes AS props
+                    MERGE (n:{node_type} {{id: props.id}})
+                    ON CREATE SET n.created_at = $now, n.updated_at = $now, n += props
+                    ON MATCH SET n.updated_at = $now, n += props
+                    SET n:__Entity__
+                    RETURN n.created_at = $now AS is_new
+                """
+                records = session.run(batch_query, nodes=node_params, now=now)
+                for rec in records:
+                    if rec and rec["is_new"]:
+                        created += 1
+                    else:
+                        updated += 1
+            except Exception as e:
+                logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
+        return created, updated
+
+    def save_to_neo4j(self, result: ExtractionResult) -> dict[str, int]:
+        """추출 결과를 Neo4j에 저장 (이력 보존 + 최신성 기반 업데이트)"""
         driver = self._get_neo4j_driver()
         now = datetime.now(UTC).isoformat()
         source_updated = result.source_updated_at or now
 
         stats = {
-            "nodes_created": 0,
-            "nodes_updated": 0,
-            "relationships_created": 0,
-            "relationships_updated": 0,
-            "relationships_archived": 0,
-            "relationships_skipped": 0,
+            "nodes_created": 0, "nodes_updated": 0,
+            "relationships_created": 0, "relationships_updated": 0,
+            "relationships_archived": 0, "relationships_skipped": 0,
         }
 
-        # 관계에서 참조하는 노드 id 집합 — 관계 없는 노드는 저장 skip
-        referenced_ids = set()
-        for rel in result.relationships:
-            referenced_ids.add(rel.source)
-            referenced_ids.add(rel.target)
+        referenced_ids = {rel.source for rel in result.relationships} | {
+            rel.target for rel in result.relationships
+        }
+
+        nodes_by_type, skipped_orphan = self._prepare_node_batches(result, referenced_ids)
+        if skipped_orphan:
+            logger.info(f"고아노드 방지: 관계 없는 노드 {skipped_orphan}개 skip")
 
         with driver.session() as session:
-            # 노드 생성/업데이트 (batched by type for efficiency)
-            nodes_by_type: dict[str, list[dict]] = {}
-            skipped_orphan = 0
-            for node in result.nodes:
-                if not _is_safe_cypher_label(node.type):
-                    logger.error(f"안전하지 않은 노드 타입 스킵: {node.type}")
-                    continue
-                # 관계에서 참조되지 않는 노드는 저장하지 않음 (고아노드 방지)
-                if node.id not in referenced_ids:
-                    skipped_orphan += 1
-                    continue
-                properties = {"id": node.id, "name": node.id}
-                # Flatten node properties — Neo4j rejects Map/List values
-                for k, v in node.properties.items():
-                    if isinstance(v, (dict, list)):
-                        properties[k] = json.dumps(v, ensure_ascii=False)
-                    elif v is not None:
-                        properties[k] = v
-                if result.source_page_id:
-                    properties["source_page_id"] = result.source_page_id
-                if result.source_document:
-                    properties["source_document"] = result.source_document
-                if result.kb_id:
-                    properties["kb_id"] = result.kb_id
-                nodes_by_type.setdefault(node.type, []).append(properties)
-            if skipped_orphan:
-                logger.info(f"고아노드 방지: 관계 없는 노드 {skipped_orphan}개 skip")
+            created, updated = self._upsert_node_batches(session, nodes_by_type, now)
+            stats["nodes_created"] = created
+            stats["nodes_updated"] = updated
 
-            for node_type, node_params in nodes_by_type.items():
-                try:
-                    batch_query = f"""
-                        UNWIND $nodes AS props
-                        MERGE (n:{node_type} {{id: props.id}})
-                        ON CREATE SET
-                            n.created_at = $now,
-                            n.updated_at = $now,
-                            n += props
-                        ON MATCH SET
-                            n.updated_at = $now,
-                            n += props
-                        SET n:__Entity__
-                        RETURN n.created_at = $now AS is_new
-                    """
-                    records = session.run(batch_query, nodes=node_params, now=now)
-                    for rec in records:
-                        if rec and rec["is_new"]:
-                            stats["nodes_created"] += 1
-                        else:
-                            stats["nodes_updated"] += 1
-                except Exception as e:
-                    logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
-
-            # 노드 id → type 매핑 (관계 MATCH에서 타입 레이블 사용)
             node_type_map: dict[str, str] = {n.id: n.type for n in result.nodes}
 
-            # 관계 생성 (이력 보존 + 최신성 기반)
-            # Simple relationships (non-history) are batched; history-aware ones use individual queries
             for rel in result.relationships:
                 try:
-                    # 관계 타입 검증 (Cypher Injection 방지)
                     if not _is_safe_cypher_label(rel.type):
                         logger.error(f"안전하지 않은 관계 타입 스킵: {rel.type}")
                         continue
-
                     rel_stats = self._save_relationship_with_history(
                         session, rel, result, source_updated, now,
                         node_type_map=node_type_map,
@@ -594,6 +611,78 @@ class GraphRAGExtractor:
                     logger.error(f"관계 생성 실패 ({rel.source}->{rel.target}): {e}")
 
         logger.info(f"Neo4j 저장 완료: {stats}")
+        return stats
+
+    def _resolve_node_labels(
+        self, rel: GraphRelationship, node_type_map: dict[str, str] | None,
+    ) -> tuple[str, str]:
+        """Resolve Cypher-safe node type labels for source and target."""
+        if not node_type_map:
+            return "", ""
+        src_label = ""
+        tgt_label = ""
+        src_type = node_type_map.get(rel.source)
+        tgt_type = node_type_map.get(rel.target)
+        if src_type and _is_safe_cypher_label(src_type):
+            src_label = f":{src_type}"
+        if tgt_type and _is_safe_cypher_label(tgt_type):
+            tgt_label = f":{tgt_type}"
+        return src_label, tgt_label
+
+    def _handle_existing_records(
+        self,
+        session,
+        existing: list,
+        rel: GraphRelationship,
+        result: ExtractionResult,
+        source_updated: str,
+        now: str,
+        src_label: str,
+        tgt_label: str,
+    ) -> dict[str, int]:
+        """Process existing relationship records for history-aware update."""
+        stats = {"created": 0, "updated": 0, "archived": 0, "skipped": 0}
+        new_rel_created = False
+
+        for record in existing:
+            existing_target = record["target"]
+            existing_updated = record["updated_at"] or "1970-01-01"
+
+            if existing_target == rel.target:
+                update_query = f"""
+                    MATCH (a{src_label} {{id: $source}})-[r:{rel.type}]->(b{tgt_label} {{id: $target}})
+                    SET r.updated_at = $now,
+                        r.source_page_id = $source_page_id,
+                        r.source_document = $source_document
+                    RETURN r
+                """
+                session.run(
+                    update_query,
+                    source=rel.source, target=rel.target, now=now,
+                    source_page_id=result.source_page_id,
+                    source_document=result.source_document,
+                )
+                stats["updated"] += 1
+                continue
+
+            if not self._is_newer(source_updated, existing_updated):
+                logger.info(
+                    f"Skip: {rel.source}-[{rel.type}]->{rel.target} "
+                    f"(기존 {existing_target}이 더 최신)"
+                )
+                stats["skipped"] += 1
+                continue
+
+            self._archive_relationship(session, rel.source, rel.type, existing_target, now)
+            stats["archived"] += 1
+            if not new_rel_created:
+                self._create_relationship(
+                    session, rel, result, source_updated, now,
+                    src_label=src_label, tgt_label=tgt_label,
+                )
+                stats["created"] += 1
+                new_rel_created = True
+
         return stats
 
     def _save_relationship_with_history(
@@ -615,20 +704,8 @@ class GraphRAGExtractor:
            - 새 문서가 최신 -> 기존 관계를 WAS_* 이력으로 변환, 새 관계 생성
            - 기존이 최신 -> Skip
         """
-        stats = {"created": 0, "updated": 0, "archived": 0, "skipped": 0}
+        src_label, tgt_label = self._resolve_node_labels(rel, node_type_map)
 
-        # 노드 타입 레이블 (있으면 MATCH 정확도 향상, 없으면 fallback)
-        src_label = ""
-        tgt_label = ""
-        if node_type_map:
-            src_type = node_type_map.get(rel.source)
-            tgt_type = node_type_map.get(rel.target)
-            if src_type and _is_safe_cypher_label(src_type):
-                src_label = f":{src_type}"
-            if tgt_type and _is_safe_cypher_label(tgt_type):
-                tgt_label = f":{tgt_type}"
-
-        # 1. 동일 source + type의 기존 관계 조회
         check_query = f"""
             MATCH (a{src_label} {{id: $source}})-[r:{rel.type}]->(b)
             RETURN b.id AS target, r.updated_at AS updated_at, r.source_page_id AS source_page_id
@@ -636,59 +713,16 @@ class GraphRAGExtractor:
         existing = list(session.run(check_query, source=rel.source))
 
         if not existing:
-            # 기존 관계 없음 -> 새로 생성
             self._create_relationship(
                 session, rel, result, source_updated, now,
                 src_label=src_label, tgt_label=tgt_label,
             )
-            stats["created"] += 1
-        else:
-            # 기존 관계 있음
-            new_rel_created = False
-            for record in existing:
-                existing_target = record["target"]
-                existing_updated = record["updated_at"] or "1970-01-01"
+            return {"created": 1, "updated": 0, "archived": 0, "skipped": 0}
 
-                if existing_target == rel.target:
-                    # 동일 target -> 타임스탬프만 업데이트
-                    update_query = f"""
-                        MATCH (a{src_label} {{id: $source}})-[r:{rel.type}]->(b{tgt_label} {{id: $target}})
-                        SET r.updated_at = $now,
-                            r.source_page_id = $source_page_id,
-                            r.source_document = $source_document
-                        RETURN r
-                    """
-                    session.run(
-                        update_query,
-                        source=rel.source,
-                        target=rel.target,
-                        now=now,
-                        source_page_id=result.source_page_id,
-                        source_document=result.source_document,
-                    )
-                    stats["updated"] += 1
-                else:
-                    # 다른 target -> 최신성 비교
-                    if self._is_newer(source_updated, existing_updated):
-                        # 새 문서가 최신 -> 기존 관계를 이력으로 이동
-                        self._archive_relationship(session, rel.source, rel.type, existing_target, now)
-                        stats["archived"] += 1
-                        if not new_rel_created:
-                            self._create_relationship(
-                                session, rel, result, source_updated, now,
-                                src_label=src_label, tgt_label=tgt_label,
-                            )
-                            stats["created"] += 1
-                            new_rel_created = True
-                    else:
-                        # 기존이 최신 -> Skip
-                        logger.info(
-                            f"Skip: {rel.source}-[{rel.type}]->{rel.target} "
-                            f"(기존 {existing_target}이 더 최신)"
-                        )
-                        stats["skipped"] += 1
-
-        return stats
+        return self._handle_existing_records(
+            session, existing, rel, result, source_updated, now,
+            src_label, tgt_label,
+        )
 
     def _create_relationship(
         self,

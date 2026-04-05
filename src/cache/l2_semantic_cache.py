@@ -124,6 +124,40 @@ class L2SemanticCache(ICacheLayer):
             logger.warning("L2 exact match error: %s", e)
             return None
 
+    def _should_skip_entry(
+        self, stored: dict, kb_set: set[str] | None, cache_version: str,
+    ) -> bool:
+        """Check whether a stored cache entry should be skipped."""
+        # Version check — skip stale cache
+        if cache_version:
+            stored_version = (
+                stored.get("response", {}).get("_cache_version", "")
+                if isinstance(stored.get("response"), dict)
+                else ""
+            )
+            if stored_version and stored_version != cache_version:
+                return True
+        # KB isolation — skip cross-KB matches
+        if kb_set:
+            stored_kbs = set(stored.get("metadata", {}).get("kb_ids", []))
+            if stored_kbs and stored_kbs != kb_set:
+                return True
+        return False
+
+    def _build_cache_entry(
+        self, redis_key: str, stored: dict, emb: list[float], sim: float,
+    ) -> CacheEntry:
+        """Build a CacheEntry from stored Redis data."""
+        return CacheEntry(
+            key=redis_key.replace(f"{self._prefix}:", ""),
+            query=stored.get("query", ""),
+            response=stored.get("response"),
+            embedding=emb,
+            similarity=sim,
+            domain=CacheDomain(stored.get("domain", "general")),
+            metadata=stored.get("metadata", {}),
+        )
+
     async def _semantic_search(
         self,
         query_embedding: list[float],
@@ -144,46 +178,10 @@ class L2SemanticCache(ICacheLayer):
                 cursor, keys = await self._redis.scan(
                     cursor, match=f"{self._prefix}:*", count=200
                 )
-                for redis_key in keys:
-                    if scanned >= max_scan:
-                        break
-                    scanned += 1
-                    try:
-                        data = await self._redis.get(redis_key)
-                        if not data:
-                            continue
-                        stored = json.loads(data)
-
-                        # Issue 4: Version check — skip stale cache
-                        if cache_version:
-                            stored_version = stored.get("response", {}).get("_cache_version", "") \
-                                if isinstance(stored.get("response"), dict) else ""
-                            if stored_version and stored_version != cache_version:
-                                continue
-
-                        # Issue 3: KB isolation — skip cross-KB matches
-                        if kb_set:
-                            stored_kbs = set(stored.get("metadata", {}).get("kb_ids", []))
-                            if stored_kbs and stored_kbs != kb_set:
-                                continue
-
-                        emb = stored.get("embedding")
-                        if not emb:
-                            continue
-                        sim = _cosine_similarity(query_embedding, emb)
-                        if sim >= threshold and sim > best_sim:
-                            best_sim = sim
-                            best_entry = CacheEntry(
-                                key=redis_key.replace(f"{self._prefix}:", ""),
-                                query=stored.get("query", ""),
-                                response=stored.get("response"),
-                                embedding=emb,
-                                similarity=sim,
-                                domain=CacheDomain(stored.get("domain", "general")),
-                                metadata=stored.get("metadata", {}),
-                            )
-                    except Exception:
-                        continue
+                best_entry, best_sim, scanned = await self._scan_keys_batch(
+                    keys, query_embedding, threshold, kb_set, cache_version,
+                    best_entry, best_sim, scanned, max_scan,
+                )
                 if cursor == 0 or scanned >= max_scan:
                     break
 
@@ -195,6 +193,57 @@ class L2SemanticCache(ICacheLayer):
         except Exception as e:
             logger.warning("L2 semantic search scan error: %s", e)
             return None
+
+    async def _scan_keys_batch(
+        self,
+        keys: list,
+        query_embedding: list[float],
+        threshold: float,
+        kb_set: set[str] | None,
+        cache_version: str,
+        best_entry: CacheEntry | None,
+        best_sim: float,
+        scanned: int,
+        max_scan: int,
+    ) -> tuple[CacheEntry | None, float, int]:
+        """Evaluate a batch of Redis keys for similarity matches."""
+        for redis_key in keys:
+            if scanned >= max_scan:
+                break
+            scanned += 1
+            entry, sim = await self._evaluate_cached_key(
+                redis_key, query_embedding, threshold, kb_set, cache_version,
+            )
+            if entry and sim > best_sim:
+                best_sim = sim
+                best_entry = entry
+        return best_entry, best_sim, scanned
+
+    async def _evaluate_cached_key(
+        self,
+        redis_key: str,
+        query_embedding: list[float],
+        threshold: float,
+        kb_set: set[str] | None,
+        cache_version: str,
+    ) -> tuple[CacheEntry | None, float]:
+        """Evaluate a single cached key for similarity match."""
+        try:
+            data = await self._redis.get(redis_key)
+            if not data:
+                return None, 0.0
+            stored = json.loads(data)
+            if self._should_skip_entry(stored, kb_set, cache_version):
+                return None, 0.0
+            emb = stored.get("embedding")
+            if not emb:
+                return None, 0.0
+            sim = _cosine_similarity(query_embedding, emb)
+            if sim >= threshold:
+                return self._build_cache_entry(redis_key, stored, emb, sim), sim
+        except Exception:
+            pass
+        return None, 0.0
 
     async def set(self, entry: CacheEntry, ttl_seconds: int | None = None) -> None:
         """Store entry with embedding in Redis."""

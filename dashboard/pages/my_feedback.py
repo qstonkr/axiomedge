@@ -14,6 +14,8 @@ from services import api_client
 from services.api_client import api_failed
 from services.validators import sanitize_input
 
+_MSG_API_ERROR = "API 연결 실패"
+
 render_sidebar()
 
 st.title("피드백/오류 신고")
@@ -85,7 +87,7 @@ with tab_feedback:
 
                 result = api_client.create_feedback(body)
                 if api_failed(result):
-                    st.error("API 연결 실패")
+                    st.error(_MSG_API_ERROR)
                     if st.button("재시도", key="retry_create_fb"):
                         st.rerun()
                 else:
@@ -128,7 +130,7 @@ with tab_feedback:
     )
 
     if api_failed(data):
-        st.error("API 연결 실패")
+        st.error(_MSG_API_ERROR)
         if st.button("재시도", key="retry_fb_list"):
             st.cache_data.clear()
             st.rerun()
@@ -290,7 +292,7 @@ with tab_error:
 
                 result = api_client.create_error_report(body)
                 if api_failed(result):
-                    st.error("API 연결 실패")
+                    st.error(_MSG_API_ERROR)
                     if st.button("재시도", key="retry_create_er"):
                         st.rerun()
                 else:
@@ -322,7 +324,7 @@ with tab_error:
     reports_data = api_client.list_error_reports(status=er_status_param, page=er_page)
 
     if api_failed(reports_data):
-        st.error("API 연결 실패")
+        st.error(_MSG_API_ERROR)
         if st.button("재시도", key="retry_er_list"):
             st.cache_data.clear()
             st.rerun()

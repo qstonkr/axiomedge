@@ -137,60 +137,61 @@ class TransparencyFormatter:
 
         return "\n".join(parts)
 
-    def _split_into_sections(self, content: str) -> list[FormattedSection]:
-        """Split content into sections."""
-        sections = []
+    def _detect_line_source_type(self, line: str) -> SourceType | None:
+        """Detect the source type of a line based on section patterns."""
+        for source_type, patterns in self.SECTION_PATTERNS.items():
+            for pattern in patterns:
+                if re.search(pattern, line, re.IGNORECASE):
+                    return source_type
+        return None
 
-        if any(
+    def _has_section_markers(self, content: str) -> bool:
+        """Check if content contains any section marker patterns."""
+        return any(
             re.search(pattern, content)
             for patterns in self.SECTION_PATTERNS.values()
             for pattern in patterns
-        ):
-            current_type = SourceType.DOCUMENT
-            current_content = []
+        )
 
-            for line in content.split("\n"):
-                found_type = None
-                for source_type, patterns in self.SECTION_PATTERNS.items():
-                    for pattern in patterns:
-                        if re.search(pattern, line, re.IGNORECASE):
-                            found_type = source_type
-                            break
-                    if found_type:
-                        break
+    def _split_marked_sections(self, content: str) -> list[FormattedSection]:
+        """Split content with section markers into typed sections."""
+        sections: list[FormattedSection] = []
+        current_type = SourceType.DOCUMENT
+        current_content: list[str] = []
 
-                if found_type and found_type != current_type:
-                    if current_content:
-                        sections.append(
-                            FormattedSection(
-                                content="\n".join(current_content),
-                                source_type=current_type,
-                                citations=[],
-                            )
-                        )
-                    current_type = found_type
-                    current_content = [line]
-                else:
-                    current_content.append(line)
+        for line in content.split("\n"):
+            found_type = self._detect_line_source_type(line)
 
-            if current_content:
-                sections.append(
-                    FormattedSection(
+            if found_type and found_type != current_type:
+                if current_content:
+                    sections.append(FormattedSection(
                         content="\n".join(current_content),
                         source_type=current_type,
                         citations=[],
-                    )
-                )
-        else:
-            sections.append(
-                FormattedSection(
-                    content=content,
-                    source_type=SourceType.DOCUMENT,
-                    citations=[],
-                )
-            )
+                    ))
+                current_type = found_type
+                current_content = [line]
+            else:
+                current_content.append(line)
 
+        if current_content:
+            sections.append(FormattedSection(
+                content="\n".join(current_content),
+                source_type=current_type,
+                citations=[],
+            ))
         return sections
+
+    def _split_into_sections(self, content: str) -> list[FormattedSection]:
+        """Split content into sections."""
+        if self._has_section_markers(content):
+            return self._split_marked_sections(content)
+
+        return [FormattedSection(
+            content=content,
+            source_type=SourceType.DOCUMENT,
+            citations=[],
+        )]
 
     def _format_sections(self, sections: list[FormattedSection], default_source: str) -> str:
         """Format sections."""

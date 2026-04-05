@@ -49,6 +49,86 @@ class CrawlResultConnector:
         await asyncio.sleep(0)
         return True
 
+    async def _load_jsonl_file(
+        self,
+        fp: Path,
+        pages_by_id: dict[str, dict[str, Any]],
+        source_infos: list[dict[str, Any]],
+    ) -> ConnectorResult | None:
+        """Load a JSONL file into pages_by_id. Returns error ConnectorResult on failure."""
+        try:
+            for obj in await asyncio.to_thread(self._read_jsonl_lines, fp):
+                if not isinstance(obj, dict):
+                    continue
+                if isinstance(obj.get("source_info"), dict):
+                    source_infos.append(obj["source_info"])
+                if isinstance(obj.get("pages"), list):
+                    for page in obj["pages"]:
+                        if isinstance(page, dict):
+                            self._upsert_page(pages_by_id, page)
+                    continue
+                self._upsert_page(pages_by_id, obj)
+        except Exception as e:
+            return ConnectorResult(
+                success=False, source_type=self.source_type,
+                error=f"Failed to read crawl JSONL: {fp} ({e})",
+            )
+        return None
+
+    async def _load_json_file(
+        self,
+        fp: Path,
+        pages_by_id: dict[str, dict[str, Any]],
+        source_infos: list[dict[str, Any]],
+    ) -> ConnectorResult | None:
+        """Load a JSON file into pages_by_id. Returns error ConnectorResult on failure."""
+        try:
+            raw = await asyncio.to_thread(fp.read_text, encoding="utf-8")
+            data = json.loads(raw)
+        except Exception as e:
+            return ConnectorResult(
+                success=False, source_type=self.source_type,
+                error=f"Failed to read crawl JSON: {fp} ({e})",
+            )
+        if isinstance(data.get("source_info"), dict):
+            source_infos.append(data["source_info"])
+        pages = data.get("pages", [])
+        if isinstance(pages, list):
+            for page in pages:
+                if isinstance(page, dict):
+                    self._upsert_page(pages_by_id, page)
+        return None
+
+    def _page_to_document(self, page: dict[str, Any], config: dict[str, Any]) -> RawDocument | None:
+        """Convert a page dict to a RawDocument, or None if empty."""
+        page_id = str(page.get("page_id") or "")
+        if not page_id:
+            return None
+        content = self._build_content(page)
+        if not content:
+            return None
+        title = str(page.get("title") or "").strip()
+        author = str(
+            page.get("creator_email") or page.get("creator_name")
+            or page.get("creator") or ""
+        ).strip()
+        return RawDocument(
+            doc_id=page_id,
+            title=title or f"confluence:{page_id}",
+            content=content,
+            source_uri=str(page.get("url") or "").strip(),
+            author=author,
+            updated_at=self._parse_datetime(str(page.get("updated_at") or "")),
+            content_hash=RawDocument.sha256(content),
+            metadata={
+                "knowledge_type": config.get("name", ""),
+                "page_id": page_id,
+                "space_key": page.get("space_key"),
+                "version": page.get("version"),
+                "labels": self._label_names(page.get("labels")),
+            },
+        )
+
     async def fetch(
         self,
         config: dict[str, Any],
@@ -58,10 +138,8 @@ class CrawlResultConnector:
     ) -> ConnectorResult:
         input_path = self._resolve_input_path(config)
         source_selector = str(
-            config.get("source")
-            or config.get("source_key")
-            or config.get("name")
-            or "all"
+            config.get("source") or config.get("source_key")
+            or config.get("name") or "all"
         ).strip()
 
         input_files = await asyncio.to_thread(
@@ -69,8 +147,7 @@ class CrawlResultConnector:
         )
         if not input_files:
             return ConnectorResult(
-                success=False,
-                source_type=self.source_type,
+                success=False, source_type=self.source_type,
                 error=f"No crawl JSON files found under: {input_path}",
                 metadata={"input_path": str(input_path), "source_selector": source_selector},
             )
@@ -78,113 +155,62 @@ class CrawlResultConnector:
         pages_by_id: dict[str, dict[str, Any]] = {}
         source_infos: list[dict[str, Any]] = []
 
-        for fp in input_files:
-            if fp.suffix.lower() == ".jsonl":
-                try:
-                    for obj in await asyncio.to_thread(self._read_jsonl_lines, fp):
-                        if not isinstance(obj, dict):
-                            continue
-                        if isinstance(obj.get("source_info"), dict):
-                            source_infos.append(obj["source_info"])
-                        if isinstance(obj.get("pages"), list):
-                            for page in obj["pages"]:
-                                if isinstance(page, dict):
-                                    self._upsert_page(pages_by_id, page)
-                            continue
-                        self._upsert_page(pages_by_id, obj)
-                except Exception as e:
-                    return ConnectorResult(
-                        success=False,
-                        source_type=self.source_type,
-                        error=f"Failed to read crawl JSONL: {fp} ({e})",
-                    )
-                continue
-
-            try:
-                raw = await asyncio.to_thread(fp.read_text, encoding="utf-8")
-                data = json.loads(raw)
-            except Exception as e:
-                return ConnectorResult(
-                    success=False,
-                    source_type=self.source_type,
-                    error=f"Failed to read crawl JSON: {fp} ({e})",
-                )
-
-            if isinstance(data.get("source_info"), dict):
-                source_infos.append(data["source_info"])
-
-            pages = data.get("pages", [])
-            if isinstance(pages, list):
-                for page in pages:
-                    if isinstance(page, dict):
-                        self._upsert_page(pages_by_id, page)
+        err = await self._load_all_files(input_files, pages_by_id, source_infos)
+        if err is not None:
+            return err
 
         pages_list = sorted(pages_by_id.values(), key=lambda p: str(p.get("page_id") or ""))
 
         fp_current = self._fingerprint_pages(pages_list)
         if not force and last_fingerprint and last_fingerprint == fp_current:
             return ConnectorResult(
-                success=True,
-                source_type=self.source_type,
-                documents=[],
+                success=True, source_type=self.source_type, documents=[],
                 version_fingerprint=fp_current,
                 metadata={"skipped": True, "reason": "No changes detected"},
             )
 
-        documents: list[RawDocument] = []
-        empty_pages = 0
-        for page in pages_list:
-            page_id = str(page.get("page_id") or "")
-            if not page_id:
-                continue
-
-            title = str(page.get("title") or "").strip()
-            source_uri = str(page.get("url") or "").strip()
-            updated_at = self._parse_datetime(str(page.get("updated_at") or ""))
-
-            content = self._build_content(page)
-            if not content:
-                empty_pages += 1
-                continue
-
-            author = str(
-                page.get("creator_email")
-                or page.get("creator_name")
-                or page.get("creator")
-                or ""
-            ).strip()
-
-            documents.append(
-                RawDocument(
-                    doc_id=page_id,
-                    title=title or f"confluence:{page_id}",
-                    content=content,
-                    source_uri=source_uri,
-                    author=author,
-                    updated_at=updated_at,
-                    content_hash=RawDocument.sha256(content),
-                    metadata={
-                        "knowledge_type": config.get("name", ""),
-                        "page_id": page_id,
-                        "space_key": page.get("space_key"),
-                        "version": page.get("version"),
-                        "labels": self._label_names(page.get("labels")),
-                    },
-                )
-            )
+        documents, empty_pages = self._convert_pages_to_documents(pages_list, config)
 
         return ConnectorResult(
-            success=True,
-            source_type=self.source_type,
-            documents=documents,
-            version_fingerprint=fp_current,
+            success=True, source_type=self.source_type,
+            documents=documents, version_fingerprint=fp_current,
             metadata={
-                "input_path": str(input_path),
-                "pages_found": len(pages_list),
-                "pages_empty": empty_pages,
-                "documents_emitted": len(documents),
+                "input_path": str(input_path), "pages_found": len(pages_list),
+                "pages_empty": empty_pages, "documents_emitted": len(documents),
             },
         )
+
+    async def _load_all_files(
+        self,
+        input_files: list,
+        pages_by_id: dict[str, dict[str, Any]],
+        source_infos: list[dict[str, Any]],
+    ) -> ConnectorResult | None:
+        """Load all input files into pages_by_id. Returns error result or None."""
+        for fp in input_files:
+            if fp.suffix.lower() == ".jsonl":
+                err = await self._load_jsonl_file(fp, pages_by_id, source_infos)
+            else:
+                err = await self._load_json_file(fp, pages_by_id, source_infos)
+            if err is not None:
+                return err
+        return None
+
+    def _convert_pages_to_documents(
+        self, pages_list: list[dict[str, Any]], config: dict[str, Any],
+    ) -> tuple[list, int]:
+        """Convert page dicts to RawDocument list. Returns (documents, empty_count)."""
+        documents: list = []
+        empty_pages = 0
+        for page in pages_list:
+            doc = self._page_to_document(page, config)
+            if doc is None:
+                page_id = str(page.get("page_id") or "")
+                if page_id:
+                    empty_pages += 1
+                continue
+            documents.append(doc)
+        return documents, empty_pages
 
     async def lazy_fetch(
         self,
@@ -290,6 +316,43 @@ class CrawlResultConnector:
             version = 0
         return (version, str(page.get("updated_at") or ""))
 
+    @staticmethod
+    def _format_attachments(attachments: Any, page_title: str) -> list[str]:
+        """Format attachment entries into content parts."""
+        if not isinstance(attachments, list):
+            return []
+        parts: list[str] = []
+        for att in attachments:
+            if not isinstance(att, dict):
+                continue
+            extracted = str(att.get("extracted_text") or "").strip()
+            if not extracted:
+                continue
+            filename = str(att.get("filename") or "attachment").strip()
+            header = f"[Attachment: {filename}]"
+            if page_title:
+                header += f" [parent: {page_title}]"
+            parts.append(f"{header}\n{extracted}")
+        return parts
+
+    @staticmethod
+    def _format_comments(comments: Any) -> list[str]:
+        """Format comment entries into content parts."""
+        if not isinstance(comments, list):
+            return []
+        parts: list[str] = []
+        for comment in comments:
+            if not isinstance(comment, dict):
+                continue
+            text = str(comment.get("content") or "").strip()
+            if not text:
+                continue
+            author = str(
+                comment.get("author") or comment.get("author_email") or "unknown"
+            ).strip()
+            parts.append(f"[Comment: {author}]\n{text}")
+        return parts
+
     def _build_content(self, page: dict[str, Any]) -> str:
         """Build document content from normalized page fields."""
         content_text = str(page.get("content_text") or "").strip()
@@ -298,35 +361,8 @@ class CrawlResultConnector:
             parts.append(content_text)
 
         page_title = str(page.get("title") or "").strip()
-
-        # Attachments
-        attachments = page.get("attachments") or []
-        if isinstance(attachments, list):
-            for att in attachments:
-                if not isinstance(att, dict):
-                    continue
-                extracted = str(att.get("extracted_text") or "").strip()
-                if not extracted:
-                    continue
-                filename = str(att.get("filename") or "attachment").strip()
-                header = f"[Attachment: {filename}]"
-                if page_title:
-                    header += f" [parent: {page_title}]"
-                parts.append(f"{header}\n{extracted}")
-
-        # Comments
-        comments = page.get("comments") or []
-        if isinstance(comments, list):
-            for comment in comments:
-                if not isinstance(comment, dict):
-                    continue
-                text = str(comment.get("content") or "").strip()
-                if not text:
-                    continue
-                author = str(
-                    comment.get("author") or comment.get("author_email") or "unknown"
-                ).strip()
-                parts.append(f"[Comment: {author}]\n{text}")
+        parts.extend(self._format_attachments(page.get("attachments") or [], page_title))
+        parts.extend(self._format_comments(page.get("comments") or []))
 
         return "\n\n".join([p for p in parts if p.strip()]).strip()
 

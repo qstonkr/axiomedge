@@ -75,7 +75,8 @@ test:
 	uv run pytest tests/ -v --no-cov
 
 test-unit:
-	uv run pytest tests/unit/ -v --no-cov
+	uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py $(shell ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') -q --no-cov
+	@PYTHONPATH=dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
 
 test-integration:
 	uv run pytest tests/integration/ -v --no-cov

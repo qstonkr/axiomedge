@@ -247,6 +247,21 @@ class LSHBloom:
 
         return similar_pairs
 
+    def _find_band_candidates(self, doc_id: str, signature) -> set[str]:
+        """Find candidate doc IDs by checking LSH band buckets."""
+        candidates: set[str] = set()
+        for band_idx in range(self._bands):
+            start = band_idx * self._rows_per_band
+            end = start + self._rows_per_band
+            band_signature = tuple(signature.signature[start:end])
+            bucket_hash = hash(band_signature)
+
+            if bucket_hash in self._buckets[band_idx]:
+                for candidate_id in self._buckets[band_idx][bucket_hash]:
+                    if candidate_id != doc_id:
+                        candidates.add(candidate_id)
+        return candidates
+
     def find_duplicates(self, threshold: float = 0.8) -> list[SimilarPair]:
         """Find all duplicate document pairs.
 
@@ -259,20 +274,8 @@ class LSHBloom:
         seen_pairs: set[tuple[str, str]] = set()
         duplicates: list[SimilarPair] = []
 
-        for doc_id in self._signatures:
-            signature = self._signatures[doc_id]
-            candidates: set[str] = set()
-
-            for band_idx in range(self._bands):
-                start = band_idx * self._rows_per_band
-                end = start + self._rows_per_band
-                band_signature = tuple(signature.signature[start:end])
-                bucket_hash = hash(band_signature)
-
-                if bucket_hash in self._buckets[band_idx]:
-                    for candidate_id in self._buckets[band_idx][bucket_hash]:
-                        if candidate_id != doc_id:
-                            candidates.add(candidate_id)
+        for doc_id, signature in self._signatures.items():
+            candidates = self._find_band_candidates(doc_id, signature)
 
             for candidate_id in candidates:
                 pair_key = tuple(sorted([doc_id, candidate_id]))
@@ -281,16 +284,17 @@ class LSHBloom:
                 seen_pairs.add(pair_key)
 
                 candidate_sig = self._signatures.get(candidate_id)
-                if candidate_sig:
-                    similarity = MinHasher.estimate_similarity(signature, candidate_sig)
-                    if similarity >= threshold:
-                        duplicates.append(
-                            SimilarPair(
-                                doc_id_1=doc_id,
-                                doc_id_2=candidate_id,
-                                estimated_similarity=similarity,
-                            )
+                if not candidate_sig:
+                    continue
+                similarity = MinHasher.estimate_similarity(signature, candidate_sig)
+                if similarity >= threshold:
+                    duplicates.append(
+                        SimilarPair(
+                            doc_id_1=doc_id,
+                            doc_id_2=candidate_id,
+                            estimated_similarity=similarity,
                         )
+                    )
 
         duplicates.sort(key=lambda p: p.estimated_similarity, reverse=True)
         return duplicates

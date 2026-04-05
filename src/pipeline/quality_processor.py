@@ -87,6 +87,28 @@ SKIP_OWNER_PATTERNS = [
     r"^T$",
 ]
 
+_ATTACHMENT_MARKERS = ["[이미지:", "[PDF:", "[프레젠테이션:", "[스프레드시트:", "[문서:", "[첨부:"]
+
+
+def _update_tier_stats(stats: dict[str, int], processed: Any) -> None:
+    """Update tier/stale/attachment counts for a processed document."""
+    stats["useful"] += 1
+
+    if processed.quality_tier == QualityTier.GOLD:
+        stats["gold"] += 1
+    elif processed.quality_tier == QualityTier.SILVER:
+        stats["silver"] += 1
+    else:
+        stats["bronze"] += 1
+
+    if processed.is_stale:
+        stats["stale"] += 1
+
+    if "### [" in processed.content_text and any(
+        marker in processed.content_text for marker in _ATTACHMENT_MARKERS
+    ):
+        stats["with_attachments"] += 1
+
 
 def process_quality(
     crawl_data_list: list[dict[str, Any]],
@@ -134,25 +156,7 @@ def process_quality(
                 stats["excluded_noise"] += 1
                 continue
 
-            stats["useful"] += 1
-
-            if processed.quality_tier == QualityTier.GOLD:
-                stats["gold"] += 1
-            elif processed.quality_tier == QualityTier.SILVER:
-                stats["silver"] += 1
-            else:
-                stats["bronze"] += 1
-
-            if processed.is_stale:
-                stats["stale"] += 1
-
-            # 첨부파일 콘텐츠 포함 여부 체크
-            if "### [" in processed.content_text and any(
-                marker in processed.content_text
-                for marker in ["[이미지:", "[PDF:", "[프레젠테이션:", "[스프레드시트:", "[문서:", "[첨부:"]
-            ):
-                stats["with_attachments"] += 1
-
+            _update_tier_stats(stats, processed)
             documents.append(_to_dict(processed))
 
     logger.info(
@@ -167,6 +171,39 @@ def process_quality(
         "documents": documents,
         "stats": stats,
     }
+
+
+def _attachment_header(filename: str, file_type: str) -> str:
+    """Return a markdown section header based on file type."""
+    fl = filename.lower()
+    if "image" in file_type.lower() or fl.endswith((".png", ".jpg", ".jpeg", ".gif")):
+        return f"\n\n### [이미지: {filename}]\n"
+    if fl.endswith((".pdf",)):
+        return f"\n\n### [PDF: {filename}]\n"
+    if fl.endswith((".pptx", ".ppt")):
+        return f"\n\n### [프레젠테이션: {filename}]\n"
+    if fl.endswith((".xlsx", ".xls")):
+        return f"\n\n### [스프레드시트: {filename}]\n"
+    if fl.endswith((".docx", ".doc")):
+        return f"\n\n### [문서: {filename}]\n"
+    return f"\n\n### [첨부: {filename}]\n"
+
+
+def _format_attachment_section(att: dict[str, Any]) -> str | None:
+    """Format a single attachment into a markdown section, or None if invalid."""
+    extracted_text = att.get("extracted_text", "")
+
+    if not extracted_text or len(extracted_text) < 20:
+        return None
+    if "오류" in extracted_text or "Error" in extracted_text:
+        return None
+    if "지원하지 않는" in extracted_text or "unsupported" in extracted_text.lower():
+        return None
+
+    filename = att.get("filename", att.get("title", "첨부파일"))
+    file_type = att.get("mediaType", att.get("file_type", ""))
+    header = _attachment_header(filename, file_type)
+    return header + extracted_text
 
 
 def _merge_attachment_content(page: dict[str, Any], content: str) -> str:
@@ -187,35 +224,10 @@ def _merge_attachment_content(page: dict[str, Any], content: str) -> str:
     attachment_count = 0
 
     for att in attachments:
-        extracted_text = att.get("extracted_text", "")
-
-        # 유효한 텍스트만 병합 (최소 20자, 에러 메시지 제외)
-        if not extracted_text or len(extracted_text) < 20:
-            continue
-        if "오류" in extracted_text or "Error" in extracted_text:
-            continue
-        if "지원하지 않는" in extracted_text or "unsupported" in extracted_text.lower():
-            continue
-
-        filename = att.get("filename", att.get("title", "첨부파일"))
-        file_type = att.get("mediaType", att.get("file_type", ""))
-
-        # 파일 타입에 따른 섹션 헤더
-        if "image" in file_type.lower() or filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif")):
-            header = f"\n\n### [이미지: {filename}]\n"
-        elif filename.lower().endswith((".pdf",)):
-            header = f"\n\n### [PDF: {filename}]\n"
-        elif filename.lower().endswith((".pptx", ".ppt")):
-            header = f"\n\n### [프레젠테이션: {filename}]\n"
-        elif filename.lower().endswith((".xlsx", ".xls")):
-            header = f"\n\n### [스프레드시트: {filename}]\n"
-        elif filename.lower().endswith((".docx", ".doc")):
-            header = f"\n\n### [문서: {filename}]\n"
-        else:
-            header = f"\n\n### [첨부: {filename}]\n"
-
-        merged_parts.append(header + extracted_text)
-        attachment_count += 1
+        section = _format_attachment_section(att)
+        if section:
+            merged_parts.append(section)
+            attachment_count += 1
 
     if attachment_count > 0:
         logger.debug(f"첨부파일 {attachment_count}개 콘텐츠 병합: page_id={page.get('page_id')}")
@@ -294,7 +306,10 @@ def _calculate_metrics(content: str) -> QualityMetrics:
         content_length=len(content),
         has_tables=bool(re.search(r"\|.*\|.*\|", content)),
         has_code_blocks=bool(re.search(r"```|<code>", content)),
-        has_headers=bool(re.search(r"(^#{1,6}\s)|(<h[1-6]>)", content, re.MULTILINE)),
+        has_headers=bool(
+            re.search(r"^#{1,6}\s", content, re.MULTILINE)
+            or re.search(r"<h[1-6]>", content)
+        ),
         has_images=bool(re.search(r"!\[.*\]\(.*\)|<img", content)),
         has_links=bool(re.search(r"\[.*\]\(.*\)|<a\s+href", content)),
         word_count=len(content.split()),

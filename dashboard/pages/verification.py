@@ -14,6 +14,8 @@ from components.sidebar import render_sidebar
 from services import api_client
 from services.api_client import api_failed
 
+_COL_ASSIGNED_COUNT = "배정 건수"
+
 render_sidebar()
 
 st.title("검증 관리")
@@ -107,7 +109,7 @@ if status_counts:
         fig = go.Figure(
             go.Pie(
                 labels=labels, values=values,
-                marker=dict(colors=colors),
+                marker={"colors": colors},
                 textinfo="label+percent+value",
                 hole=0.3,
             )
@@ -223,7 +225,7 @@ if reviewer_stats:
     for r in reviewer_stats:
         rows.append({
             "리뷰어": r.get("name", r.get("user_id", "")),
-            "배정 건수": r.get("assigned_count", 0),
+            _COL_ASSIGNED_COUNT: r.get("assigned_count", 0),
             "완료 건수": r.get("completed_count", 0),
             "평균 소요시간": f"{r.get('avg_review_hours', 0):.1f}시간",
             "상태": "활성" if r.get("is_active", False) else "비활성",
@@ -240,8 +242,8 @@ else:
     if reviewer_map:
         import pandas as pd
 
-        rows = [{"리뷰어": name, "배정 건수": count} for name, count in reviewer_map.items()]
-        df = pd.DataFrame(rows).sort_values("배정 건수", ascending=False)
+        rows = [{"리뷰어": name, _COL_ASSIGNED_COUNT: count} for name, count in reviewer_map.items()]
+        df = pd.DataFrame(rows).sort_values(_COL_ASSIGNED_COUNT, ascending=False)
         st.dataframe(df, use_container_width=True, hide_index=True)
     else:
         st.info("리뷰어 배정 데이터가 없습니다.")

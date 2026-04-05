@@ -47,18 +47,85 @@ def run_graphrag(kb_ids: list[str]):
     )
 
 
-def run_l2_category(kb_ids: list[str]):
-    """Assign L2 categories using LLM classification.
-
-    For each unique document in each KB:
-    1. Get L1 category (already assigned)
-    2. Send title + first chunk to LLM: "이 문서의 세부 카테고리는?"
-    3. Check if similar L2 already exists (embedding similarity > 0.85)
-    4. Create new L2 or assign existing
-    5. Update Qdrant chunks + Neo4j CATEGORIZED_AS edge
-    """
-    import json
+def _fetch_unique_docs(collection: str, qdrant_url: str) -> dict[str, dict]:
+    """Fetch unique documents from a Qdrant collection."""
     import requests
+
+    docs: dict[str, dict] = {}
+    offset = None
+    while True:
+        body = {"limit": 100, "with_payload": ["doc_id", "document_name", "l1_category", "content"], "with_vector": False}
+        if offset:
+            body["offset"] = offset
+        resp = requests.post(f"{qdrant_url}/collections/{collection}/points/scroll", json=body)
+        data = resp.json()["result"]
+        for p in data["points"]:
+            pay = p["payload"]
+            did = pay.get("doc_id", "")
+            if did and did not in docs:
+                docs[did] = {
+                    "title": pay.get("document_name", ""),
+                    "l1": pay.get("l1_category", "기타"),
+                    "content": pay.get("content", "")[:500],
+                }
+        offset = data.get("next_page_offset")
+        if not offset:
+            break
+    return docs
+
+
+def _classify_l2_name(sm_client, endpoint: str, prompt: str) -> str | None:
+    """Invoke SageMaker to classify L2 category name. Returns None if invalid."""
+    import json
+
+    resp = sm_client.invoke_endpoint(
+        EndpointName=endpoint,
+        ContentType="application/json",
+        Body=json.dumps({
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 30,
+            "temperature": 0.1,
+        }),
+    )
+    result = json.loads(resp["Body"].read())
+    raw = result["choices"][0]["message"]["content"].strip()
+    l2_name = raw.split("\n")[0].strip().strip('"').strip("'").strip()
+    if "(" in l2_name:
+        l2_name = l2_name[:l2_name.index("(")].strip()
+    l2_name = l2_name[:10]
+    if l2_name and 2 <= len(l2_name) <= 10:
+        return l2_name
+    return None
+
+
+def _update_doc_l2_category(collection: str, doc_id: str, l2_name: str, qdrant_url: str):
+    """Update all Qdrant chunks for a document with the L2 category."""
+    import requests
+
+    scroll_offset = None
+    while True:
+        sb = {
+            "limit": 100, "with_payload": ["doc_id"], "with_vector": False,
+            "filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
+        }
+        if scroll_offset:
+            sb["offset"] = scroll_offset
+        sr = requests.post(f"{qdrant_url}/collections/{collection}/points/scroll", json=sb)
+        pts = sr.json()["result"]["points"]
+        if not pts:
+            break
+        point_ids = [p["id"] for p in pts]
+        requests.post(
+            f"{qdrant_url}/collections/{collection}/points/payload",
+            json={"points": point_ids, "payload": {"l2_category": l2_name}},
+        )
+        scroll_offset = sr.json()["result"].get("next_page_offset")
+        if not scroll_offset:
+            break
+
+
+def run_l2_category(kb_ids: list[str]):
+    """Assign L2 categories using LLM classification."""
     import boto3
 
     session = boto3.Session(
@@ -82,28 +149,7 @@ L2:"""
         collection = f"kb_{kb_id.replace('-', '_')}"
         logger.info(f"[{kb_id}] L2 category assignment...")
 
-        # Get unique documents
-        docs: dict[str, dict] = {}
-        offset = None
-        while True:
-            body = {"limit": 100, "with_payload": ["doc_id", "document_name", "l1_category", "content"], "with_vector": False}
-            if offset:
-                body["offset"] = offset
-            resp = requests.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json=body)
-            data = resp.json()["result"]
-            for p in data["points"]:
-                pay = p["payload"]
-                did = pay.get("doc_id", "")
-                if did and did not in docs:
-                    docs[did] = {
-                        "title": pay.get("document_name", ""),
-                        "l1": pay.get("l1_category", "기타"),
-                        "content": pay.get("content", "")[:500],
-                    }
-            offset = data.get("next_page_offset")
-            if not offset:
-                break
-
+        docs = _fetch_unique_docs(collection, QDRANT_URL)
         logger.info(f"[{kb_id}] {len(docs)} unique documents")
         assigned = 0
 
@@ -114,49 +160,10 @@ L2:"""
                     title=doc["title"],
                     content=doc["content"][:300],
                 )
-                resp = sm_client.invoke_endpoint(
-                    EndpointName=endpoint,
-                    ContentType="application/json",
-                    Body=json.dumps({
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 30,
-                        "temperature": 0.1,
-                    }),
-                )
-                result = json.loads(resp["Body"].read())
-                raw = result["choices"][0]["message"]["content"].strip()
-                # Take first line only, remove quotes/parens/explanation
-                l2_name = raw.split("\n")[0].strip().strip('"').strip("'").strip()
-                # Remove parenthetical explanation
-                if "(" in l2_name:
-                    l2_name = l2_name[:l2_name.index("(")].strip()
-                # Truncate to max 10 chars
-                l2_name = l2_name[:10]
-
-                if l2_name and 2 <= len(l2_name) <= 10:
-                    # Update Qdrant chunks for this document
-                    scroll_offset = None
-                    while True:
-                        sb = {
-                            "limit": 100, "with_payload": ["doc_id"], "with_vector": False,
-                            "filter": {"must": [{"key": "doc_id", "match": {"value": doc_id}}]},
-                        }
-                        if scroll_offset:
-                            sb["offset"] = scroll_offset
-                        sr = requests.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json=sb)
-                        pts = sr.json()["result"]["points"]
-                        if not pts:
-                            break
-                        point_ids = [p["id"] for p in pts]
-                        requests.post(
-                            f"{QDRANT_URL}/collections/{collection}/points/payload",
-                            json={"points": point_ids, "payload": {"l2_category": l2_name}},
-                        )
-                        scroll_offset = sr.json()["result"].get("next_page_offset")
-                        if not scroll_offset:
-                            break
+                l2_name = _classify_l2_name(sm_client, endpoint, prompt)
+                if l2_name is not None:
+                    _update_doc_l2_category(collection, doc_id, l2_name, QDRANT_URL)
                     assigned += 1
-
                     if assigned % 50 == 0:
                         logger.info(f"[{kb_id}] {assigned}/{len(docs)} assigned...")
             except Exception as e:
@@ -165,15 +172,74 @@ L2:"""
         logger.info(f"[{kb_id}] L2 assigned: {assigned}/{len(docs)}")
 
 
-def run_term_enrich(kb_ids: list[str]):
-    """Enrich term definitions using LLM.
+def _fetch_term_context(qdrant_url: str, collection: str, term_text: str, kb_id: str) -> str:
+    """Fetch context chunks containing the term from Qdrant."""
+    import requests as _rq
 
-    For terms with empty definitions:
-    1. Find context chunks containing the term
-    2. Send to LLM: "이 용어를 정의하세요"
-    3. Save definition to glossary
-    """
+    resp = _rq.post(
+        f"{qdrant_url}/collections/{collection}/points/scroll",
+        json={
+            "limit": 2, "with_payload": ["content"], "with_vector": False,
+            "filter": {"must": [{"key": "morphemes", "match": {"text": term_text}}]},
+        },
+    )
+    ctx_chunks = resp.json().get("result", {}).get("points", [])
+    context = " ".join(p["payload"].get("content", "")[:200] for p in ctx_chunks)[:400]
+    return context or f"KB '{kb_id}'에서 발견된 용어"
+
+
+def _generate_definition(sm_client, endpoint: str, prompt: str) -> str | None:
+    """Generate a term definition via SageMaker LLM. Returns None if too short."""
     import json
+
+    resp = sm_client.invoke_endpoint(
+        EndpointName=endpoint,
+        ContentType="application/json",
+        Body=json.dumps({
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 100,
+            "temperature": 0.2,
+        }),
+    )
+    result = json.loads(resp["Body"].read())
+    definition = result["choices"][0]["message"]["content"].strip()
+    for sep in [".", "다.", "니다."]:
+        if sep in definition:
+            definition = definition[:definition.index(sep) + len(sep)]
+            break
+    definition = definition[:200]
+    if definition and len(definition) >= 5:
+        return definition
+    return None
+
+
+async def _enrich_single_term(
+    engine, sm_client, endpoint: str, prompt_template: str,
+    qdrant_url: str, collection: str, kb_id: str,
+    term_id, term_text: str,
+) -> bool:
+    """Enrich a single term's definition via LLM. Returns True on success."""
+    import asyncio as _asyncio
+    from sqlalchemy import text
+    try:
+        context = await _asyncio.to_thread(
+            _fetch_term_context, qdrant_url, collection, term_text, kb_id,
+        )
+        prompt = prompt_template.format(term=term_text, context=context)
+        definition = _generate_definition(sm_client, endpoint, prompt)
+        if definition is not None:
+            async with engine.begin() as conn:
+                await conn.execute(text(
+                    "UPDATE glossary_terms SET definition = :def WHERE id = :id"
+                ), {"def": definition, "id": str(term_id)})
+            return True
+    except Exception as e:
+        logger.debug(f"[{kb_id}] Failed for '{term_text}': {e}")
+    return False
+
+
+def run_term_enrich(kb_ids: list[str]):
+    """Enrich term definitions using LLM."""
     import asyncio
     import boto3
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -214,51 +280,14 @@ def run_term_enrich(kb_ids: list[str]):
             enriched = 0
 
             for term_id, term_text in terms:
-                try:
-                    # Find context chunks containing this term
-                    import requests as _rq
-                    ctx_resp = _rq.post(f"{QDRANT_URL}/collections/{collection}/points/scroll", json={
-                        "limit": 2, "with_payload": ["content"], "with_vector": False,
-                        "filter": {"must": [{"key": "morphemes", "match": {"text": term_text}}]},
-                    })
-                    ctx_chunks = ctx_resp.json().get("result", {}).get("points", [])
-                    context = " ".join(p["payload"].get("content", "")[:200] for p in ctx_chunks)[:400]
-                    if not context:
-                        context = f"KB '{kb_id}'에서 발견된 용어"
-
-                    prompt = PROMPT.format(
-                        term=term_text,
-                        context=context,
-                    )
-                    resp = sm_client.invoke_endpoint(
-                        EndpointName=endpoint,
-                        ContentType="application/json",
-                        Body=json.dumps({
-                            "messages": [{"role": "user", "content": prompt}],
-                            "max_tokens": 100,
-                            "temperature": 0.2,
-                        }),
-                    )
-                    result = json.loads(resp["Body"].read())
-                    definition = result["choices"][0]["message"]["content"].strip()
-                    # Take first sentence only
-                    for sep in [".", "다.", "니다."]:
-                        if sep in definition:
-                            definition = definition[:definition.index(sep) + len(sep)]
-                            break
-                    definition = definition[:200]  # Max 200 chars
-
-                    if definition and len(definition) >= 5:
-                        async with engine.begin() as conn:
-                            await conn.execute(text(
-                                "UPDATE glossary_terms SET definition = :def WHERE id = :id"
-                            ), {"def": definition, "id": str(term_id)})
-                        enriched += 1
-
-                        if enriched % 50 == 0:
-                            logger.info(f"[{kb_id}] {enriched}/{len(terms)} enriched...")
-                except Exception as e:
-                    logger.debug(f"[{kb_id}] Failed for '{term_text}': {e}")
+                success = await _enrich_single_term(
+                    engine, sm_client, endpoint, PROMPT,
+                    QDRANT_URL, collection, kb_id, term_id, term_text,
+                )
+                if success:
+                    enriched += 1
+                    if enriched % 50 == 0:
+                        logger.info(f"[{kb_id}] {enriched}/{len(terms)} enriched...")
 
             logger.info(f"[{kb_id}] Enriched: {enriched}/{len(terms)}")
         await engine.dispose()

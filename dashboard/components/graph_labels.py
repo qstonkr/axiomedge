@@ -14,7 +14,7 @@ _FILE_EXT_RE = re.compile(r"\.(pptx|docx|pdf|xlsx|txt|hwp|hwpx)$", re.IGNORECASE
 _SLIDE_RE = re.compile(r"\s*[-–—]\s*[Ss]lide\s*\d+\s*$")
 
 
-def sanitize_label(label: str, node_type: str = "") -> tuple[str, str]:
+def sanitize_label(label: str, _node_type: str = "") -> tuple[str, str]:
     """Metadata cleanup. Returns (clean_label, tooltip_extra).
 
     - Strip leading numeric IDs: "17729858auto-order..." -> "auto-order..."

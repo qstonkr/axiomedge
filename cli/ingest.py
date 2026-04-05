@@ -18,6 +18,7 @@ import hashlib
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -81,7 +82,7 @@ async def _init_services():
     return embedder, sparse_embedder, store, cm, graph_repo, provider
 
 
-async def _get_ingested_hashes(kb_id: str, provider) -> set[str]:
+async def _get_ingested_hashes(kb_id: str, _provider) -> set[str]:
     """Get content hashes of already-ingested documents from Qdrant."""
     import httpx
 
@@ -119,11 +120,10 @@ async def _get_ingested_hashes(kb_id: str, provider) -> set[str]:
                 if not points:
                     break
 
-                for pt in points:
-                    pay = pt.get("payload", {})
-                    h = pay.get("content_hash", "")
-                    if h:
-                        hashes.add(h)
+                hashes.update(
+                    h for pt in points
+                    if (h := pt.get("payload", {}).get("content_hash", ""))
+                )
 
                 offset = data.get("next_page_offset")
                 if not offset:
@@ -135,11 +135,41 @@ async def _get_ingested_hashes(kb_id: str, provider) -> set[str]:
     return hashes
 
 
-async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
-    embedder, sparse_embedder, store, cm, graph_repo, provider = await _init_services()
+async def _should_skip_file(
+    fpath: str, force: bool, ingested_hashes: set[str],
+) -> bool:
+    """Check if file was already ingested (by content hash)."""
+    if force or not ingested_hashes:
+        return False
+    _content = await asyncio.to_thread(Path(fpath).read_bytes)
+    file_hash = hashlib.sha256(_content).hexdigest()[:32]
+    return file_hash in ingested_hashes
 
+
+async def _ingest_single_file(
+    fpath: str, fname: str, kb_id: str, pipeline: Any,
+) -> int:
+    """Parse and ingest a single file. Returns chunks_stored or 0 on skip."""
     from src.domain.models import RawDocument
     from src.pipeline.document_parser import parse_file_enhanced
+
+    result = parse_file_enhanced(fpath)
+    text = result.full_text if hasattr(result, 'full_text') else str(result)
+    if not text:
+        return 0
+    raw = RawDocument(
+        doc_id=RawDocument.sha256(fpath),
+        title=fname,
+        content=text,
+        source_uri=fpath,
+    )
+    result = await pipeline.ingest(raw, collection_name=kb_id)
+    return result.chunks_stored
+
+
+async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
+    embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
+
     from src.pipeline.ingestion import IngestionPipeline
 
     pipeline = IngestionPipeline(
@@ -162,26 +192,14 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
         for fname in sorted(files):
             fpath = os.path.join(root, fname)
 
-            # Incremental: check content hash
-            if not force and ingested_hashes:
-                file_hash = hashlib.sha256(open(fpath, "rb").read()).hexdigest()[:32]
-                if file_hash in ingested_hashes:
-                    skipped += 1
-                    continue
-
-            result = parse_file_enhanced(fpath)
-            text = result.full_text if hasattr(result, 'full_text') else str(result)
-            if not text:
+            if await _should_skip_file(fpath, force, ingested_hashes):
+                skipped += 1
                 continue
-            raw = RawDocument(
-                doc_id=RawDocument.sha256(fpath),
-                title=fname,
-                content=text,
-                source_uri=fpath,
-            )
-            result = await pipeline.ingest(raw, collection_name=kb_id)
-            total_docs += 1
-            total_chunks += result.chunks_stored
+
+            chunks_stored = await _ingest_single_file(fpath, fname, kb_id, pipeline)
+            if chunks_stored:
+                total_docs += 1
+                total_chunks += chunks_stored
 
     mode = "FORCE" if force else "INCREMENTAL"
     logger.info(
@@ -192,7 +210,7 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
 
 
 async def ingest_file(file_path: str, kb_id: str):
-    embedder, sparse_embedder, store, cm, graph_repo, provider = await _init_services()
+    embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.domain.models import RawDocument
     from src.pipeline.document_parser import parse_file_enhanced
@@ -224,13 +242,13 @@ async def ingest_file(file_path: str, kb_id: str):
 
 
 async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False):
-    embedder, sparse_embedder, store, cm, graph_repo, provider = await _init_services()
+    embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.connectors.crawl_result import CrawlResultConnector
     from src.pipeline.ingestion import IngestionPipeline
 
-    connector = CrawlResultConnector(crawl_dir=crawl_dir)
-    result = await connector.fetch()
+    connector = CrawlResultConnector(default_output_dir=crawl_dir)
+    result = await connector.fetch({"entry_point": crawl_dir}, force=force)
 
     if not result.documents:
         logger.info("No documents found in %s", crawl_dir)

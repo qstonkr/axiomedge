@@ -13,6 +13,8 @@ st.set_page_config(page_title="내 담당 문서", page_icon="📄", layout="wid
 import pandas as pd
 
 from components.sidebar import render_sidebar
+
+_MSG_ENTER_USER_ID = "사이드바에서 사용자 ID를 입력해주세요."
 from services import api_client
 from services.api_client import api_failed
 
@@ -43,7 +45,7 @@ tab_docs, tab_pending, tab_notifications = st.tabs(["내 담당 문서", "대기
 # =============================================================================
 with tab_docs:
     if not current_user:
-        st.info("사이드바에서 사용자 ID를 입력해주세요.")
+        st.info(_MSG_ENTER_USER_ID)
     else:
         # KB 선택
         kbs_result = api_client.list_kbs()
@@ -123,7 +125,7 @@ with tab_docs:
 # =============================================================================
 with tab_pending:
     if not current_user:
-        st.info("사이드바에서 사용자 ID를 입력해주세요.")
+        st.info(_MSG_ENTER_USER_ID)
     else:
         st.subheader("대기 중인 작업")
         st.caption("검증, 피드백, 오류 신고 등 내 문서에 대한 대기 작업")
@@ -204,7 +206,7 @@ with tab_pending:
 # =============================================================================
 with tab_notifications:
     if not current_user:
-        st.info("사이드바에서 사용자 ID를 입력해주세요.")
+        st.info(_MSG_ENTER_USER_ID)
     else:
         st.subheader("알림")
         st.caption("조직 변경(OrgChangeEvent) 및 문서 할당 알림")

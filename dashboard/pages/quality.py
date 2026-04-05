@@ -17,6 +17,9 @@ from components.sidebar import render_sidebar
 from services import api_client
 from services.api_client import api_failed
 
+_MODE_LINES_MARKERS = "lines+markers"
+_AGE_7_30 = "7-30일"
+
 render_sidebar()
 
 st.title("품질 관리")
@@ -74,13 +77,13 @@ with tab_quality:
                         fill="toself",
                         name="KTS 점수",
                         fillcolor="rgba(74, 144, 217, 0.3)",
-                        line=dict(color="#4A90D9"),
+                        line={"color": "#4A90D9"},
                     )
                 )
                 fig.update_layout(
-                    polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+                    polar={"radialaxis": {"visible": True, "range": [0, 1]}},
                     title="6-Signal 레이더", height=400,
-                    margin=dict(l=60, r=60, t=40, b=20),
+                    margin={"l": 60, "r": 60, "t": 40, "b": 20},
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -116,7 +119,7 @@ with tab_quality:
                     fig2 = go.Figure(
                         go.Pie(
                             labels=labels, values=values,
-                            marker=dict(colors=colors),
+                            marker={"colors": colors},
                             textinfo="label+percent+value",
                             hole=0.3,
                         )
@@ -160,7 +163,7 @@ with tab_quality:
                     primary_source = max(sources, key=sources.get) if sources else "-"
                     st.metric("주요 소스", primary_source)
                 with m3:
-                    unique_titles = len(set(d.get("title", "") for d in doc_items))
+                    unique_titles = len({d.get("title", "") for d in doc_items})
                     st.metric("고유 문서", f"{unique_titles}건")
                 with m4:
                     chunk_ratio = (len(doc_items) / unique_titles) if unique_titles > 0 else 0
@@ -175,7 +178,7 @@ with tab_quality:
                         go.Pie(
                             labels=list(sources.keys()),
                             values=list(sources.values()),
-                            marker=dict(colors=[src_colors.get(s, "#BDC3C7") for s in sources]),
+                            marker={"colors": [src_colors.get(s, "#BDC3C7") for s in sources]},
                             textinfo="label+percent+value",
                             hole=0.3,
                         )
@@ -205,7 +208,7 @@ with tab_quality:
                 dates = [d.get("updated_at", "") for d in doc_items if d.get("updated_at")]
                 if dates:
                     now = datetime.now(timezone.utc)
-                    age_buckets = {"< 7일": 0, "7-30일": 0, "30-90일": 0, "90일+": 0}
+                    age_buckets = {"< 7일": 0, _AGE_7_30: 0, "30-90일": 0, "90일+": 0}
                     for date_str in dates:
                         try:
                             dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
@@ -213,7 +216,7 @@ with tab_quality:
                             if age_days < 7:
                                 age_buckets["< 7일"] += 1
                             elif age_days < 30:
-                                age_buckets["7-30일"] += 1
+                                age_buckets[_AGE_7_30] += 1
                             elif age_days < 90:
                                 age_buckets["30-90일"] += 1
                             else:
@@ -237,7 +240,7 @@ with tab_quality:
                     st.plotly_chart(fig_fresh, use_container_width=True)
 
                     from components.constants import FRESHNESS_GOOD_PCT, FRESHNESS_WARN_PCT
-                    fresh_pct = (age_buckets["< 7일"] + age_buckets["7-30일"]) / len(dates) * 100 if dates else 0
+                    fresh_pct = (age_buckets["< 7일"] + age_buckets[_AGE_7_30]) / len(dates) * 100 if dates else 0
                     if fresh_pct >= FRESHNESS_GOOD_PCT:
                         st.success(f"신선도 양호: 30일 이내 문서 {fresh_pct:.0f}%")
                     elif fresh_pct >= FRESHNESS_WARN_PCT:
@@ -324,14 +327,14 @@ with tab_rag:
                 comp_vals = [r.get("avg_completeness", 0) for r in reversed(runs)]
 
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=dates, y=faith_vals, name="Faithfulness", mode="lines+markers"))
-                fig.add_trace(go.Scatter(x=dates, y=relev_vals, name="Relevancy", mode="lines+markers"))
-                fig.add_trace(go.Scatter(x=dates, y=comp_vals, name="Completeness", mode="lines+markers"))
+                fig.add_trace(go.Scatter(x=dates, y=faith_vals, name="Faithfulness", mode=_MODE_LINES_MARKERS))
+                fig.add_trace(go.Scatter(x=dates, y=relev_vals, name="Relevancy", mode=_MODE_LINES_MARKERS))
+                fig.add_trace(go.Scatter(x=dates, y=comp_vals, name="Completeness", mode=_MODE_LINES_MARKERS))
                 fig.add_hline(y=gate_threshold, line_dash="dash", line_color="red", annotation_text="Quality Gate")
                 fig.update_layout(
                     title="RAG 평가 추이", xaxis_title="날짜", yaxis_title="점수",
-                    height=400, yaxis=dict(range=[0, 1]),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    height=400, yaxis={"range": [0, 1]},
+                    legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
                 )
                 st.plotly_chart(fig, use_container_width=True)
             else:

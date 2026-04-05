@@ -168,6 +168,53 @@ class EntityResolver:
             resolved.append(result)
         return resolved
 
+    @staticmethod
+    def _term_to_resolved(
+        term: Any, name: str, confidence: float,
+    ) -> ResolvedEntity:
+        """Convert a glossary term object to a ResolvedEntity."""
+        term_name = getattr(term, "term", None) or getattr(term, "name", str(term))
+        term_id = getattr(term, "id", None)
+        return ResolvedEntity(
+            canonical_name=str(term_name),
+            original_name=name,
+            entity_type=EntityType.TOPIC,
+            resolution_stage=ResolutionStage.GLOSSARY,
+            confidence=confidence,
+            source_id=str(term_id) if term_id else None,
+            matched_term=str(term_name),
+        )
+
+    async def _try_exact_glossary_match(self, name: str, kb_id: str) -> ResolvedEntity | None:
+        """Attempt exact glossary term match."""
+        get_by_term = getattr(self.glossary, "get_by_term", None)
+        if not (get_by_term and callable(get_by_term)):
+            return None
+        term = await get_by_term(name, kb_id)
+        if not term:
+            return None
+        return self._term_to_resolved(term, name, 1.0)
+
+    async def _try_variant_glossary_match(self, name: str, kb_id: str) -> ResolvedEntity | None:
+        """Attempt variant (synonym/abbreviation) glossary match."""
+        list_fn = getattr(self.glossary, "list_by_kb", None)
+        if not (list_fn and callable(list_fn)):
+            return None
+        terms = await list_fn(kb_id=kb_id, limit=500, offset=0)
+        if not terms:
+            return None
+        name_lower = name.lower()
+        for term in terms:
+            all_variants_fn = getattr(term, "get_all_variants", None)
+            if not (all_variants_fn and callable(all_variants_fn)):
+                continue
+            all_variants = all_variants_fn()
+            if name_lower in [v.lower() for v in all_variants]:
+                return self._term_to_resolved(
+                    term, name, _w.confidence.glossary_match_confidence,
+                )
+        return None
+
     async def _match_by_glossary(
         self,
         name: str,
@@ -176,47 +223,10 @@ class EntityResolver:
     ) -> ResolvedEntity | None:
         """Glossary-based matching (exact + variant matching)."""
         try:
-            # Exact match
-            get_by_term = getattr(self.glossary, "get_by_term", None)
-            if get_by_term and callable(get_by_term):
-                term = await get_by_term(name, kb_id)
-                if term:
-                    term_name = getattr(term, "term", None) or getattr(term, "name", str(term))
-                    term_id = getattr(term, "id", None)
-                    return ResolvedEntity(
-                        canonical_name=str(term_name),
-                        original_name=name,
-                        entity_type=EntityType.TOPIC,
-                        resolution_stage=ResolutionStage.GLOSSARY,
-                        confidence=1.0,
-                        source_id=str(term_id) if term_id else None,
-                        matched_term=str(term_name),
-                    )
-
-            # Variant (synonym/abbreviation) matching
-            list_fn = getattr(self.glossary, "list_by_kb", None)
-            if list_fn and callable(list_fn):
-                terms = await list_fn(kb_id=kb_id, limit=500, offset=0)
-                if terms:
-                    for term in terms:
-                        all_variants_fn = getattr(term, "get_all_variants", None)
-                        if all_variants_fn and callable(all_variants_fn):
-                            all_variants = all_variants_fn()
-                            if name.lower() in [v.lower() for v in all_variants]:
-                                term_name = getattr(term, "term", None) or getattr(term, "name", "")
-                                term_id = getattr(term, "id", None)
-                                return ResolvedEntity(
-                                    canonical_name=str(term_name),
-                                    original_name=name,
-                                    entity_type=EntityType.TOPIC,
-                                    resolution_stage=ResolutionStage.GLOSSARY,
-                                    confidence=_w.confidence.glossary_match_confidence,
-                                    source_id=str(term_id) if term_id else None,
-                                    matched_term=str(term_name),
-                                )
-
-            return None
-
+            result = await self._try_exact_glossary_match(name, kb_id)
+            if result:
+                return result
+            return await self._try_variant_glossary_match(name, kb_id)
         except Exception as e:
             logger.warning("Glossary matching failed: %s", e)
             return None

@@ -59,7 +59,7 @@ def hub_search_answer(query: str, kb_ids: list[str] | None = None, mode: str | N
         body["mode"] = mode
     if group_name:
         body["group_name"] = group_name
-    return _post("/api/v1/search/hub", body, timeout=cfg.API_SEARCH_TIMEOUT, retries=1)
+    return _post("/api/v1/search/hub", body, timeout=cfg.API_SEARCH_TIMEOUT, _retries=1)
 
 
 # ============================================================================

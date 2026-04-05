@@ -385,27 +385,14 @@ class CVPipeline:
             "tags": [],
         }
 
-    def _detect_vertical_steps(self, cv_result: CVResult) -> list[dict]:
-        """Detect vertical step pattern (left label column + right description column).
-
-        Detects pattern where short label texts are vertically aligned on the left,
-        with detailed descriptions on the right.
-        Consecutive left labels (y gap < 40px) are merged into a single step.
-        """
-        if len(cv_result.ocr_boxes) < _VERTICAL_STEP_MIN_OCR:
-            return []
-
-        width = cv_result.image_width
-        if width == 0:
-            return []
-
-        left_threshold = width * _VERTICAL_STEP_LEFT_THRESHOLD_RATIO
-
-        # Collect left/right texts with y-coordinates
-        left_items: list[tuple[float, str]] = []  # (y, text)
+    @staticmethod
+    def _classify_left_right_items(
+        ocr_boxes, left_threshold: float,
+    ) -> tuple[list[tuple[float, str]], list[tuple[float, str]]]:
+        """Split OCR boxes into left labels and right descriptions by x-position."""
+        left_items: list[tuple[float, str]] = []
         right_items: list[tuple[float, str]] = []
-
-        for box in cv_result.ocr_boxes:
+        for box in ocr_boxes:
             text = box.text.strip()
             if not text:
                 continue
@@ -413,42 +400,38 @@ class CVPipeline:
                 left_items.append((box.center[1], text))
             elif box.center[0] >= left_threshold:
                 right_items.append((box.center[1], text))
+        return left_items, right_items
 
-        if len(left_items) < _VERTICAL_STEP_MIN_LABELS:
-            return []
-
-        # Sort left labels by y, then merge consecutive labels (gap < _VERTICAL_STEP_MERGE_GAP)
+    @staticmethod
+    def _merge_consecutive_labels(
+        left_items: list[tuple[float, str]],
+    ) -> list[tuple[float, float, str]]:
+        """Merge vertically adjacent left labels into groups."""
         left_items.sort(key=lambda x: x[0])
-        merged_labels: list[tuple[float, float, str]] = []  # (y_start, y_end, label)
-
+        merged: list[tuple[float, float, str]] = []
         for y, text in left_items:
-            if merged_labels and y - merged_labels[-1][1] < _VERTICAL_STEP_MERGE_GAP:
-                # Merge with previous label
-                prev_start, _, prev_text = merged_labels[-1]
-                merged_labels[-1] = (prev_start, y, f"{prev_text} {text}")
+            if merged and y - merged[-1][1] < _VERTICAL_STEP_MERGE_GAP:
+                prev_start, _, prev_text = merged[-1]
+                merged[-1] = (prev_start, y, f"{prev_text} {text}")
             else:
-                merged_labels.append((y, y, text))
+                merged.append((y, y, text))
+        return merged
 
-        if len(merged_labels) < _VERTICAL_STEP_MIN_LABELS:
-            return []
-
-        # Sort right descriptions by y
+    @staticmethod
+    def _map_labels_to_descriptions(
+        merged_labels: list[tuple[float, float, str]],
+        right_items: list[tuple[float, str]],
+    ) -> list[dict]:
+        """Map right descriptions to merged labels by y-range proximity."""
         right_items.sort(key=lambda x: x[0])
-
-        # Map right descriptions to each merged label by y-range
         consumed_right: set[int] = set()
         steps = []
-        step_num = 1
 
         for i, (y_start, y_end, label) in enumerate(merged_labels):
-            # Right description search range: label y_start-20 ~ next label y_start (or y_end+60)
             search_end = (
-                merged_labels[i + 1][0] - 10
-                if i + 1 < len(merged_labels)
-                else y_end + 60
+                merged_labels[i + 1][0] - 10 if i + 1 < len(merged_labels) else y_end + 60
             )
             search_start = y_start - 20
-
             detail_texts: list[str] = []
             for j, (ry, rtext) in enumerate(right_items):
                 if j in consumed_right:
@@ -456,13 +439,30 @@ class CVPipeline:
                 if search_start <= ry <= search_end:
                     detail_texts.append(rtext)
                     consumed_right.add(j)
-
             detail = " / ".join(detail_texts) if detail_texts else ""
             action = f"{label}: {detail}" if detail else label
-            steps.append({"step": step_num, "action": action})
-            step_num += 1
+            steps.append({"step": i + 1, "action": action})
 
         return steps
+
+    def _detect_vertical_steps(self, cv_result: CVResult) -> list[dict]:
+        """Detect vertical step pattern (left label column + right description column)."""
+        if len(cv_result.ocr_boxes) < _VERTICAL_STEP_MIN_OCR:
+            return []
+        if cv_result.image_width == 0:
+            return []
+
+        left_threshold = cv_result.image_width * _VERTICAL_STEP_LEFT_THRESHOLD_RATIO
+        left_items, right_items = self._classify_left_right_items(cv_result.ocr_boxes, left_threshold)
+
+        if len(left_items) < _VERTICAL_STEP_MIN_LABELS:
+            return []
+
+        merged_labels = self._merge_consecutive_labels(left_items)
+        if len(merged_labels) < _VERTICAL_STEP_MIN_LABELS:
+            return []
+
+        return self._map_labels_to_descriptions(merged_labels, right_items)
 
     def _fallback_structure(
         self, cv_result: CVResult, quality: SignalQuality

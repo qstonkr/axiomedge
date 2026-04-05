@@ -289,6 +289,90 @@ def _classify_pdf_page(
     _extract_page_images(page, doc, extracted_images)
 
 
+def _has_broken_cmap_fonts(page, doc) -> bool:
+    """Detect fonts with broken ToUnicode CMaps (common in PowerPoint PDF exports).
+
+    Type0/Identity-H fonts with large embedded TrueType but very few Unicode
+    mappings indicate stripped CMap tables — all Korean chars map to a single
+    character (e.g. 폐 or 손).
+    """
+    import re as _re
+    for xref, _ext, ftype, _basefont, _name, encoding in page.get_fonts():
+        if ftype != "Type0" or encoding != "Identity-H":
+            continue
+        if _check_font_broken_cmap(doc, xref, _re):
+            return True
+    return False
+
+
+def _check_font_broken_cmap(doc, xref: int, _re) -> bool:
+    """Check if a single Type0 font has a broken CMap."""
+    try:
+        obj = doc.xref_object(xref)
+        tounicode_match = _re.search(r"/ToUnicode (\d+) 0 R", obj)
+        if not tounicode_match:
+            return True
+        cmap = doc.xref_stream(int(tounicode_match.group(1))).decode("latin-1", errors="replace")
+        bfchar_count = sum(int(m) for m in _re.findall(r"(\d+)\s+beginbfchar", cmap))
+        bfrange_count = sum(int(m) for m in _re.findall(r"(\d+)\s+beginbfrange", cmap))
+        total_mappings = bfchar_count + bfrange_count
+
+        font_size = _get_embedded_font_size(doc, obj, _re)
+        if font_size is None:
+            return False
+        return font_size > 10_000 and total_mappings < 20
+    except Exception:
+        return False
+
+
+def _get_embedded_font_size(doc, font_obj: str, _re) -> int | None:
+    """Get embedded font file size from a CID font descriptor chain."""
+    desc_match = _re.search(r"/DescendantFonts\s+(\d+)\s+0\s+R", font_obj)
+    if not desc_match:
+        return None
+    desc_arr = doc.xref_object(int(desc_match.group(1)))
+    cidfont_xref = _re.search(r"(\d+)\s+0\s+R", desc_arr)
+    if not cidfont_xref:
+        return None
+    cidfont = doc.xref_object(int(cidfont_xref.group(1)))
+    fd_match = _re.search(r"/FontDescriptor\s+(\d+)\s+0\s+R", cidfont)
+    if not fd_match:
+        return None
+    fd = doc.xref_object(int(fd_match.group(1)))
+    ff2_match = _re.search(r"/FontFile2\s+(\d+)\s+0\s+R", fd)
+    if not ff2_match:
+        return None
+    return len(doc.xref_stream(int(ff2_match.group(1))))
+
+
+def _is_garbled_text(text: str) -> bool:
+    """Detect garbled text from broken font mapping in PDFs."""
+    if not text or len(text.strip()) < 10:
+        return False
+    clean = text.strip().replace(" ", "").replace("\n", "")
+    if not clean:
+        return False
+    from collections import Counter
+    char_counts = Counter(clean)
+    total = len(clean)
+
+    top1_ratio = char_counts.most_common(1)[0][1] / total
+    if top1_ratio > 0.25:
+        return True
+
+    cjk_counts = [(ch, cnt) for ch, cnt in char_counts.most_common(10)
+                   if '\u4e00' <= ch <= '\u9fff' or '\uac00' <= ch <= '\ud7a3']
+    if len(cjk_counts) >= 2:
+        top3_cjk_total = sum(cnt for _, cnt in cjk_counts[:3])
+        if top3_cjk_total / total > 0.4:
+            return True
+
+    unique_ratio = len(set(clean)) / total
+    if unique_ratio < 0.08 and total > 30:
+        return True
+    return False
+
+
 def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     """Enhanced PDF parsing with table extraction, scanned page detection, and image OCR."""
     import pymupdf
@@ -298,7 +382,6 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     except Exception as e:
         raise ValueError(f"PDF open failed (encrypted or corrupt?): {e}") from e
 
-    # Extract file modification date from PDF metadata
     file_modified_at = _extract_pdf_date(doc.metadata.get("modDate", "")) or \
                        _extract_pdf_date(doc.metadata.get("creationDate", ""))
 
@@ -307,95 +390,15 @@ def _parse_pdf_enhanced(data: bytes, filename: str) -> ParseResult:
     scanned_pages: list[int] = []
     extracted_images: list[bytes] = []
 
-    def _has_broken_cmap_fonts(page) -> bool:
-        """Detect fonts with broken ToUnicode CMaps (common in PowerPoint PDF exports).
-
-        Type0/Identity-H fonts with large embedded TrueType but very few Unicode
-        mappings indicate stripped CMap tables — all Korean chars map to a single
-        character (e.g. 폐 or 손).
-        """
-        import re as _re
-        for xref, _ext, ftype, _basefont, _name, encoding in page.get_fonts():
-            if ftype != "Type0" or encoding != "Identity-H":
-                continue
-            try:
-                obj = doc.xref_object(xref)
-                tounicode_match = _re.search(r"/ToUnicode (\d+) 0 R", obj)
-                if not tounicode_match:
-                    return True  # No ToUnicode at all for CID font
-                cmap = doc.xref_stream(int(tounicode_match.group(1))).decode("latin-1", errors="replace")
-                bfchar_count = sum(int(m) for m in _re.findall(r"(\d+)\s+beginbfchar", cmap))
-                bfrange_count = sum(int(m) for m in _re.findall(r"(\d+)\s+beginbfrange", cmap))
-                total_mappings = bfchar_count + bfrange_count
-                # Find embedded font size
-                desc_match = _re.search(r"/DescendantFonts\s+(\d+)\s+0\s+R", obj)
-                if not desc_match:
-                    continue
-                desc_arr = doc.xref_object(int(desc_match.group(1)))
-                cidfont_xref = _re.search(r"(\d+)\s+0\s+R", desc_arr)
-                if not cidfont_xref:
-                    continue
-                cidfont = doc.xref_object(int(cidfont_xref.group(1)))
-                fd_match = _re.search(r"/FontDescriptor\s+(\d+)\s+0\s+R", cidfont)
-                if not fd_match:
-                    continue
-                fd = doc.xref_object(int(fd_match.group(1)))
-                ff2_match = _re.search(r"/FontFile2\s+(\d+)\s+0\s+R", fd)
-                if not ff2_match:
-                    continue
-                font_size = len(doc.xref_stream(int(ff2_match.group(1))))
-                # Large font (>10KB) but very few mappings (<20) = broken CMap
-                if font_size > 10_000 and total_mappings < 20:
-                    return True
-            except Exception:
-                continue
-        return False
-
-    def _is_garbled_text(text: str) -> bool:
-        """Detect garbled text from broken font mapping in PDFs.
-
-        Patterns: repeated single chars (손손손, 폐폐폐), CJK chars with no meaning,
-        very low unique char ratio, top-N chars dominating text, etc.
-        """
-        if not text or len(text.strip()) < 10:
-            return False
-        stripped = text.strip()
-        clean = stripped.replace(" ", "").replace("\n", "")
-        if not clean:
-            return False
-        from collections import Counter
-        char_counts = Counter(clean)
-        total = len(clean)
-
-        # Top-1 char > 25% of text (lowered from 30%)
-        top1_ratio = char_counts.most_common(1)[0][1] / total
-        if top1_ratio > 0.25:
-            return True
-
-        # Top-3 CJK chars dominate > 50% of text
-        cjk_counts = [(ch, cnt) for ch, cnt in char_counts.most_common(10)
-                       if '\u4e00' <= ch <= '\u9fff' or '\uac00' <= ch <= '\ud7a3']
-        if len(cjk_counts) >= 2:
-            top3_cjk_total = sum(cnt for _, cnt in cjk_counts[:3])
-            if top3_cjk_total / total > 0.4:
-                return True
-
-        # Very low unique char ratio (garbled = few unique chars repeated)
-        unique_ratio = len(set(clean)) / total
-        if unique_ratio < 0.08 and total > 30:
-            return True
-        return False
-
     for page_num, page in enumerate(doc):
         _classify_pdf_page(
             page, page_num, filename, doc,
-            _has_broken_cmap_fonts, _is_garbled_text,
+            lambda p: _has_broken_cmap_fonts(p, doc), _is_garbled_text,
             texts, scanned_pages, tables, extracted_images,
         )
 
     doc.close()
 
-    # Process scanned/garbled pages via OCR — per-page tagging
     ocr_texts = []
     visual_analyses = []
     total_images = 0
@@ -624,168 +627,191 @@ def _parse_text(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _resize_image(raw: bytes, scale: float = 0.75) -> bytes | None:
+    """Resize image as fallback when OCR fails on the original."""
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(raw))
+        new_w = max(int(img.width * scale), 32)
+        new_h = max(int(img.height * scale), 32)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def _ocr_request(client, endpoint: str, payload: bytes) -> dict | None:
+    """Send OCR request. Returns parsed JSON or None on failure."""
+    import base64
+    b64_image = base64.b64encode(payload).decode("utf-8")
+    try:
+        resp = client.post(endpoint, json={"image": b64_image}, timeout=60.0)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
+def _prepare_image_bytes(img_bytes: bytes, index: int) -> bytes | None:
+    """Validate, decode, and convert image to PNG. Returns None if invalid."""
+    from PIL import Image
+    _MIN_W, _MIN_H = 20, 20
+
+    try:
+        _img = Image.open(io.BytesIO(img_bytes))
+    except Exception:
+        logger.debug("Skipping image %d: cannot decode", index)
+        return None
+    if _img.width < _MIN_W or _img.height < _MIN_H:
+        logger.debug("Skipping image %d: too small (%dx%d)", index, _img.width, _img.height)
+        return None
+    if _img.mode not in ("RGB", "L"):
+        _img = _img.convert("RGB")
+    _buf = io.BytesIO()
+    _img.save(_buf, format="PNG")
+    return _buf.getvalue()
+
+
+def _extract_text_from_boxes(boxes: list[dict], min_conf: float, index: int) -> str:
+    """Extract text from OCR boxes with confidence filtering."""
+    filtered_texts = []
+    dropped = 0
+    for box in boxes:
+        conf = box.get("confidence", 0.0)
+        box_text = box.get("text", "")
+        if conf >= min_conf and box_text.strip():
+            filtered_texts.append(box_text)
+        elif box_text.strip():
+            dropped += 1
+    if dropped > 0:
+        logger.info(
+            "OCR confidence filter: kept %d, dropped %d (< %.0f%%) for image %d",
+            len(filtered_texts), dropped, min_conf * 100, index,
+        )
+    return " ".join(filtered_texts)
+
+
+def _extract_text_fallback(result: dict) -> str:
+    """Extract text from OCR result when no boxes are available."""
+    text_lines = result.get("texts", result.get("result", []))
+    if isinstance(text_lines, list):
+        return " ".join(str(t) for t in text_lines if t)
+    if isinstance(text_lines, str):
+        return text_lines
+    return str(text_lines)
+
+
+def _extract_vision_analysis(
+    result: dict, index: int,
+    ocr_texts: list[str], visual_analyses: list[dict[str, Any]],
+) -> None:
+    """Extract vision analysis (shapes/arrows/mappings) from OCR result."""
+    shapes = result.get("shapes", [])
+    arrows = result.get("arrows", [])
+    mappings = result.get("text_shape_mappings", [])
+    if not shapes and not arrows and not mappings:
+        return
+
+    visual_analyses.append({
+        "image_index": index,
+        "shapes": shapes,
+        "arrows": arrows,
+        "text_shape_mappings": mappings,
+        "shape_count": result.get("shape_count", len(shapes)),
+        "arrow_count": result.get("arrow_count", len(arrows)),
+        "ocr_confidence": result.get("ocr_confidence", 0.0),
+    })
+
+    desc_parts: list[str] = []
+    if shapes:
+        shape_types = [s.get("type", "unknown") for s in shapes]
+        desc_parts.append(f"Shapes: {', '.join(shape_types)}")
+    if arrows:
+        desc_parts.append(f"Arrows: {len(arrows)} connections")
+    if mappings:
+        for m in mappings:
+            shape_label = m.get("shape_type", "shape")
+            texts_in = m.get("texts", m.get("text", ""))
+            if texts_in:
+                desc_parts.append(f"  [{shape_label}] {texts_in}")
+    if desc_parts:
+        diagram_desc = "\n".join(desc_parts)
+        ocr_texts.append(f"[Image {index} Diagram]\n{diagram_desc}")
+
+
+def _process_single_image_ocr(
+    client,
+    endpoint: str,
+    img_bytes: bytes,
+    index: int,
+    min_conf: float,
+    vision_enabled: bool,
+    ocr_texts: list[str],
+    visual_analyses: list[dict[str, Any]],
+) -> None:
+    """Process a single image through OCR with retry on failure."""
+    try:
+        prepared = _prepare_image_bytes(img_bytes, index)
+        if prepared is None:
+            return
+
+        result = _ocr_request(client, endpoint, prepared)
+        if result is None:
+            resized = _resize_image(prepared)
+            if resized:
+                logger.info("Retrying image %d with resized version", index)
+                result = _ocr_request(client, endpoint, resized)
+
+        if result is None:
+            logger.warning("PaddleOCR failed for image %d after retry, skipping", index)
+            return
+
+        boxes = result.get("boxes", [])
+        text = (
+            _extract_text_from_boxes(boxes, min_conf, index)
+            if boxes
+            else _extract_text_fallback(result)
+        )
+
+        if text.strip():
+            ocr_texts.append(f"[Image {index} OCR] {text}")
+            logger.info("OCR success for image %d: %d chars", index, len(text))
+
+        if vision_enabled:
+            _extract_vision_analysis(result, index, ocr_texts, visual_analyses)
+
+    except Exception as e:
+        logger.warning("PaddleOCR API failed for image %d: %s", index, e)
+
+
 def _process_images_ocr(
     images: list[bytes],
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Route extracted images through PaddleOCR Docker API server.
-
-    When ``weights.ocr.enable_vision_analysis`` is True, calls ``/analyze``
-    instead of ``/ocr`` to get shape/arrow detection alongside OCR text.
-
-    Returns:
-        (ocr_text, visual_analyses)
-    """
-    import base64
+    """Route extracted images through PaddleOCR Docker API server."""
     import httpx
     import os
+
+    if not images:
+        return "", []
 
     ocr_texts: list[str] = []
     visual_analyses: list[dict[str, Any]] = []
     base_url = os.getenv("PADDLEOCR_API_URL", "http://localhost:8866")
-    # Strip trailing path if user set full URL like "http://host:8866/ocr"
     if base_url.endswith("/ocr") or base_url.endswith("/analyze"):
         base_url = base_url.rsplit("/", 1)[0]
 
     vision_enabled = _w.ocr.enable_vision_analysis
     endpoint = f"{base_url}/analyze" if vision_enabled else f"{base_url}/ocr"
-
-    if not images:
-        return "", []
-
+    min_conf = float(os.getenv("OCR_MIN_CONFIDENCE", "0.65"))
     client = httpx.Client(timeout=60.0)
 
-    def _resize_image(raw: bytes, scale: float = 0.75) -> bytes | None:
-        """Resize image as fallback when OCR fails on the original."""
-        try:
-            from PIL import Image
-            import io
-            img = Image.open(io.BytesIO(raw))
-            new_w = max(int(img.width * scale), 32)
-            new_h = max(int(img.height * scale), 32)
-            img = img.resize((new_w, new_h), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            return buf.getvalue()
-        except Exception:
-            return None
-
-    def _ocr_request(payload: bytes) -> dict | None:
-        """Send OCR request with one retry using resized image on failure."""
-        b64_image = base64.b64encode(payload).decode("utf-8")
-        try:
-            resp = client.post(endpoint, json={"image": b64_image}, timeout=60.0)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception:
-            return None
-
-    # Pre-filter: skip images too small to contain meaningful text
-    MIN_W, MIN_H = 20, 20
-
     for i, img_bytes in enumerate(images):
-        try:
-            from PIL import Image
-            import io
-            try:
-                _img = Image.open(io.BytesIO(img_bytes))
-            except Exception:
-                logger.debug("Skipping image %d: cannot decode", i + 1)
-                continue
-            if _img.width < MIN_W or _img.height < MIN_H:
-                logger.debug("Skipping image %d: too small (%dx%d)", i + 1, _img.width, _img.height)
-                continue
-            # Convert to RGB PNG to handle EMF/WMF/CMYK/palette formats
-            if _img.mode not in ("RGB", "L"):
-                _img = _img.convert("RGB")
-            _buf = io.BytesIO()
-            _img.save(_buf, format="PNG")
-            img_bytes = _buf.getvalue()
-
-            result = _ocr_request(img_bytes)
-
-            # Retry with resized image on failure
-            if result is None:
-                resized = _resize_image(img_bytes)
-                if resized:
-                    logger.info("Retrying image %d with resized version", i + 1)
-                    result = _ocr_request(resized)
-
-            if result is None:
-                logger.warning("PaddleOCR failed for image %d after retry, skipping", i + 1)
-                continue
-
-            # Parse OCR text with per-word confidence filtering
-            # PaddleOCR boxes contain {"text", "confidence", "polygon"} per text region
-            boxes = result.get("boxes", [])
-            min_conf = float(os.getenv("OCR_MIN_CONFIDENCE", "0.65"))
-
-            if boxes:
-                # Filter by per-region confidence score
-                filtered_texts = []
-                dropped = 0
-                for box in boxes:
-                    conf = box.get("confidence", 0.0)
-                    box_text = box.get("text", "")
-                    if conf >= min_conf and box_text.strip():
-                        filtered_texts.append(box_text)
-                    elif box_text.strip():
-                        dropped += 1
-                text = " ".join(filtered_texts)
-                if dropped > 0:
-                    logger.info(
-                        "OCR confidence filter: kept %d, dropped %d (< %.0f%%) for image %d",
-                        len(filtered_texts), dropped, min_conf * 100, i + 1,
-                    )
-            else:
-                # Fallback: no boxes available, use texts directly
-                text_lines = result.get("texts", result.get("result", []))
-                if isinstance(text_lines, list):
-                    text = " ".join(str(t) for t in text_lines if t)
-                elif isinstance(text_lines, str):
-                    text = text_lines
-                else:
-                    text = str(text_lines)
-
-            if text.strip():
-                ocr_texts.append(f"[Image {i + 1} OCR] {text}")
-                logger.info("OCR success for image %d: %d chars", i + 1, len(text))
-
-            # When vision analysis is enabled, capture shapes/arrows/mappings
-            if vision_enabled:
-                shapes = result.get("shapes", [])
-                arrows = result.get("arrows", [])
-                mappings = result.get("text_shape_mappings", [])
-                if shapes or arrows or mappings:
-                    analysis: dict[str, Any] = {
-                        "image_index": i + 1,
-                        "shapes": shapes,
-                        "arrows": arrows,
-                        "text_shape_mappings": mappings,
-                        "shape_count": result.get("shape_count", len(shapes)),
-                        "arrow_count": result.get("arrow_count", len(arrows)),
-                        "ocr_confidence": result.get("ocr_confidence", 0.0),
-                    }
-                    visual_analyses.append(analysis)
-
-                    # Build a structured textual description of the diagram
-                    desc_parts: list[str] = []
-                    if shapes:
-                        shape_types = [s.get("type", "unknown") for s in shapes]
-                        desc_parts.append(f"Shapes: {', '.join(shape_types)}")
-                    if arrows:
-                        desc_parts.append(f"Arrows: {len(arrows)} connections")
-                    if mappings:
-                        for m in mappings:
-                            shape_label = m.get("shape_type", "shape")
-                            texts_in = m.get("texts", m.get("text", ""))
-                            if texts_in:
-                                desc_parts.append(f"  [{shape_label}] {texts_in}")
-                    if desc_parts:
-                        diagram_desc = "\n".join(desc_parts)
-                        ocr_texts.append(f"[Image {i + 1} Diagram]\n{diagram_desc}")
-
-        except Exception as e:
-            logger.warning("PaddleOCR API failed for image %d: %s", i + 1, e)
+        _process_single_image_ocr(
+            client, endpoint, img_bytes, i + 1, min_conf, vision_enabled,
+            ocr_texts, visual_analyses,
+        )
 
     client.close()
     return "\n".join(ocr_texts), visual_analyses

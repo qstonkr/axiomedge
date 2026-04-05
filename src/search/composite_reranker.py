@@ -161,6 +161,143 @@ class CompositeReranker:
 
         return model_scores, base_scores
 
+    def _resolve_source_weights(
+        self, source_weights: dict[str, float] | None,
+    ) -> dict[str, float]:
+        """Resolve effective source weights with optional overrides."""
+        if not source_weights:
+            return self._source_weights
+        weights = self._source_weights.copy()
+        for key, value in source_weights.items():
+            source_key = str(key).lower()
+            weights[source_key] = self._safe_weight(
+                value,
+                default=self._source_type_weights.get(source_key, 1.0),
+                source_type=source_key,
+            )
+        return weights
+
+    def _compute_source_contribution(
+        self, chunk: SearchChunk, weights: dict[str, float],
+    ) -> float:
+        """Compute source-type contribution for a chunk."""
+        source_type = (
+            str(
+                (
+                    chunk.metadata.get("source_type")
+                    or chunk.metadata.get("knowledge_type")
+                    or chunk.metadata.get("chunk_source")
+                    or "qdrant"
+                )
+                or "qdrant"
+            )
+            .lower()
+        )
+        source_boost = weights.get(source_type, 1.0)
+        if source_type == "faq":
+            source_boost *= self._faq_boost
+        max_boost = max(self._faq_boost, 1.0)
+        normalized_boost = min(source_boost, max_boost) / max_boost
+        return normalized_boost * self._source_weight
+
+    def _compute_graph_distance_bonus(self, chunk: SearchChunk) -> float:
+        """Compute cross-KB graph distance bonus."""
+        if self._graph_distance_weight <= 0.0:
+            return 0.0
+        raw_distance = (chunk.metadata or {}).get("graph_distance")
+        if raw_distance is None:
+            return 0.0
+        try:
+            distance = int(raw_distance)
+        except (TypeError, ValueError):
+            return 0.0
+        if distance <= 0:
+            return 0.0
+        graph_score = 1.0 / (1 + (distance - 1) * _w.reranker.graph_distance_decay)
+        axis_name = str((chunk.metadata or {}).get("traversal_axis", ""))
+        axis_boost = self._axis_boost_map.get(axis_name, 1.0)
+        return self._graph_distance_weight * graph_score * axis_boost
+
+    @staticmethod
+    def _compute_keyword_bonus(query: str, chunk: SearchChunk) -> float:
+        """Compute keyword exact match bonus."""
+        if not query:
+            return 0.0
+        content_lower = (chunk.content or "").lower()
+        query_tokens = [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
+        if not query_tokens:
+            return 0.0
+        matched = sum(1 for t in query_tokens if t in content_lower)
+        return 0.1 * (matched / len(query_tokens))
+
+    @staticmethod
+    def _compute_entity_bonus(query: str, chunk: SearchChunk) -> float:
+        """Compute entity name bonus for store/person names in query."""
+        if not query:
+            return 0.0
+        import re as _re_ent
+        doc_name = ((chunk.metadata or {}).get("document_name", "") or "").lower()
+        if not doc_name:
+            return 0.0
+        stores = _re_ent.findall(r"[\w가-힣]+점", query)
+        persons = _re_ent.findall(r"[가-힣]{2,4}M", query)
+        for ent in stores + persons:
+            if ent.lower() in doc_name:
+                return 0.12
+        return 0.0
+
+    def _score_chunk(
+        self,
+        idx: int,
+        chunk: SearchChunk,
+        normalized_model_score: float,
+        normalized_base_score: float,
+        weights: dict[str, float],
+        query: str,
+        total_chunks: int,
+    ) -> tuple[SearchChunk, float, float, float, float, float]:
+        """Compute composite score for a single chunk."""
+        source_contribution = self._compute_source_contribution(chunk, weights)
+
+        position_prior = 0.0
+        if self._position_weight > 0.0:
+            position_prior = self._position_weight * (
+                1.0 - (idx / max(1, total_chunks))
+            )
+
+        graph_distance_bonus = self._compute_graph_distance_bonus(chunk)
+        keyword_bonus = self._compute_keyword_bonus(query, chunk)
+        entity_bonus = self._compute_entity_bonus(query, chunk)
+
+        composite_score = (
+            (normalized_model_score * self._model_weight)
+            + (normalized_base_score * self._base_weight)
+            + source_contribution
+            + position_prior
+            + graph_distance_bonus
+            + keyword_bonus
+            + entity_bonus
+        )
+
+        source_boost = weights.get(
+            str(
+                chunk.metadata.get("source_type")
+                or chunk.metadata.get("knowledge_type")
+                or chunk.metadata.get("chunk_source")
+                or "qdrant"
+            ).lower(),
+            1.0,
+        )
+
+        return (
+            chunk,
+            max(0.0, min(1.0, composite_score)),
+            normalized_model_score,
+            normalized_base_score,
+            source_boost,
+            position_prior,
+        )
+
     def rerank(
         self,
         query: str,
@@ -172,127 +309,27 @@ class CompositeReranker:
         """Return reranked chunks with updated scores.
 
         Args:
-            query: Retrieval query (reserved for future query-aware scoring hooks).
+            query: Retrieval query (used for keyword/entity match bonus).
             chunks: Input chunks.
             top_k: Maximum result size.
             source_weights: Optional source-type weight override.
         """
-        # query is now used for keyword match bonus (no longer reserved)
-
         if not chunks:
             return []
 
-        if source_weights:
-            weights = self._source_weights.copy()
-            for key, value in source_weights.items():
-                source_key = str(key).lower()
-                weights[source_key] = self._safe_weight(
-                    value,
-                    default=self._source_type_weights.get(source_key, 1.0),
-                    source_type=source_key,
-                )
-        else:
-            weights = self._source_weights
-
+        weights = self._resolve_source_weights(source_weights)
         model_scores, base_scores = self._extract_component_scores(chunks)
         normalized_model_scores = self._normalize_scores(model_scores)
         normalized_base_scores = self._normalize_scores(base_scores)
 
-        weighted_chunks: list[
-            tuple[SearchChunk, float, float, float, float, float]
-        ] = []
-
-        for idx, chunk in enumerate(chunks):
-            normalized_model_score = normalized_model_scores[idx]
-            normalized_base_score = normalized_base_scores[idx]
-            source_type = (
-                str(
-                    (
-                        chunk.metadata.get("source_type")
-                        or chunk.metadata.get("knowledge_type")
-                        or chunk.metadata.get("chunk_source")
-                        or "qdrant"
-                    )
-                    or "qdrant"
-                )
-                .lower()
+        weighted_chunks = [
+            self._score_chunk(
+                idx, chunk,
+                normalized_model_scores[idx], normalized_base_scores[idx],
+                weights, query, len(chunks),
             )
-            source_boost = weights.get(source_type, 1.0)
-            if source_type == "faq":
-                source_boost *= self._faq_boost
-            # Normalize source_boost: cap raw boost so the weighted contribution
-            # stays within [0, source_weight] while still differentiating FAQ (1.2)
-            # from default (1.0).  E.g., max_boost=1.5 -> FAQ 1.2 maps to 0.8 band.
-            max_boost = max(self._faq_boost, 1.0)
-            normalized_boost = min(source_boost, max_boost) / max_boost
-            source_contribution = normalized_boost * self._source_weight
-
-            position_prior = 0.0
-            if self._position_weight > 0.0:
-                position_prior = self._position_weight * (
-                    1.0 - (idx / max(1, len(chunks)))
-                )
-
-            # Cross-KB graph distance bonus (additive when graph_distance metadata present)
-            graph_distance_bonus = 0.0
-            if self._graph_distance_weight > 0.0:
-                raw_distance = (chunk.metadata or {}).get("graph_distance")
-                if raw_distance is not None:
-                    try:
-                        distance = int(raw_distance)
-                    except (TypeError, ValueError):
-                        distance = 0
-                    if distance > 0:
-                        # Closer = higher score: 1/(1 + (d-1)*decay)
-                        graph_score = 1.0 / (1 + (distance - 1) * _w.reranker.graph_distance_decay)
-                        axis_name = str((chunk.metadata or {}).get("traversal_axis", ""))
-                        axis_boost = self._axis_boost_map.get(axis_name, 1.0)
-                        graph_distance_bonus = self._graph_distance_weight * graph_score * axis_boost
-
-            # Keyword exact match bonus: boost chunks containing query keywords
-            keyword_bonus = 0.0
-            if query:
-                content_lower = (chunk.content or "").lower()
-                query_tokens = [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
-                if query_tokens:
-                    matched = sum(1 for t in query_tokens if t in content_lower)
-                    keyword_bonus = 0.1 * (matched / len(query_tokens))  # max +0.1
-
-            # Entity name bonus: boost chunks whose document_name contains
-            # store/person names mentioned in the query (e.g. 논산퍼스트점, 유성욱M)
-            entity_bonus = 0.0
-            if query:
-                import re as _re_ent
-                doc_name = ((chunk.metadata or {}).get("document_name", "") or "").lower()
-                if doc_name:
-                    # Store names (XXX점)
-                    stores = _re_ent.findall(r"[\w가-힣]+점", query)
-                    # Person names (XXM)
-                    persons = _re_ent.findall(r"[가-힣]{2,4}M", query)
-                    for ent in stores + persons:
-                        if ent.lower() in doc_name:
-                            entity_bonus = 0.12  # significant but not dominant
-                            break
-
-            composite_score = (
-                (normalized_model_score * self._model_weight)
-                + (normalized_base_score * self._base_weight)
-                + source_contribution
-                + position_prior
-                + graph_distance_bonus
-                + keyword_bonus
-                + entity_bonus
-            )
-            weighted_chunks.append(
-                (
-                    chunk,
-                    max(0.0, min(1.0, composite_score)),
-                    normalized_model_score,
-                    normalized_base_score,
-                    source_boost,
-                    position_prior,
-                )
-            )
+            for idx, chunk in enumerate(chunks)
+        ]
 
         if not weighted_chunks:
             return []

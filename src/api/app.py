@@ -115,7 +115,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     state["category_repo"] = CategoryRepository(session_factory)
     state["search_group_repo"] = SearchGroupRepository(session_factory)
     state["usage_log_repo"] = UsageLogRepository(session_factory)
-    return KBRegistryRepository(db_url)
+    state["_kb_registry_pending"] = KBRegistryRepository(db_url)
 
 
 async def _init_database(state: AppState, settings) -> None:
@@ -134,9 +134,10 @@ async def _init_database(state: AppState, settings) -> None:
     state["db_session_factory"] = session_factory
 
     # Initialize repositories
-    kb_registry = _create_repositories(state, session_factory, db_url)
+    _create_repositories(state, session_factory, db_url)
 
     # KB Registry uses its own engine (manages RegistryBase tables)
+    kb_registry = state["_kb_registry_pending"]
     await kb_registry.initialize()
     state["kb_registry"] = kb_registry
 
@@ -408,69 +409,83 @@ async def _init_graph(state: AppState, settings) -> None:
         logger.warning("Neo4j init failed: %s", e)
 
 
+def _try_tei_embedding(_settings):
+    """Try to initialize TEI embedding provider."""
+    use_cloud = os.getenv("USE_CLOUD_EMBEDDING", "true").lower() in ("true", "1", "yes")
+    if not use_cloud:
+        logger.info("Cloud embedding disabled (USE_CLOUD_EMBEDDING=false), using local")
+        return None
+    try:
+        from src.embedding.tei_provider import TEIEmbeddingProvider
+
+        tei_url = os.getenv("BGE_TEI_URL", "http://localhost:8080")
+        tei_embedder = TEIEmbeddingProvider(base_url=tei_url)
+        if tei_embedder.is_ready():
+            logger.info("TEI embedding initialized (cloud): %s", tei_url)
+            return tei_embedder
+    except Exception as e:
+        logger.debug("TEI embedding not available: %s", e)
+    return None
+
+
+def _try_ollama_embedding(settings):
+    """Try to initialize Ollama embedding provider."""
+    try:
+        from src.embedding.ollama_provider import OllamaEmbeddingProvider
+
+        ollama_embedder = OllamaEmbeddingProvider(
+            base_url=settings.ollama.base_url,
+            model=settings.ollama.embedding_model,
+        )
+        if ollama_embedder.is_ready():
+            logger.info("Ollama embedding initialized (Metal GPU): %s", settings.ollama.embedding_model)
+            return ollama_embedder
+    except Exception as e:
+        logger.debug("Ollama embedding not available: %s", e)
+    return None
+
+
+def _try_onnx_embedding(settings):
+    """Try to initialize ONNX embedding provider."""
+    try:
+        from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+
+        model_path = settings.embedding.onnx_model_path or os.getenv(
+            "KNOWLEDGE_BGE_ONNX_MODEL_PATH", ""
+        )
+        onnx_embedder = OnnxBgeEmbeddingProvider(model_path=model_path)
+        if onnx_embedder.is_ready():
+            logger.info("BGE-M3 ONNX embedding initialized (CPU)")
+            return onnx_embedder
+        logger.warning("BGE-M3 ONNX model not ready (check model path)")
+    except Exception as e:
+        logger.warning("ONNX embedding init failed: %s", e)
+    return None
+
+
+def _wire_embedder_to_cache(state: AppState, embedder) -> None:
+    """Wire embedder into MultiLayerCache for L2 semantic matching."""
+    multi_cache = state.get("multi_layer_cache")
+    if multi_cache is None:
+        return
+    multi_cache._embedding_provider = embedder
+    if multi_cache._l2 is not None and hasattr(multi_cache._l2, "_embedding_provider"):
+        multi_cache._l2._embedding_provider = embedder
+    logger.info("MultiLayerCache embedder wired")
+
+
 async def _init_embedding(state: AppState, settings) -> None:
     """Initialize embedding provider: TEI > Ollama > ONNX fallback, wire to cache."""
     await asyncio.sleep(0)
-    embedder = None
-
-    # 1st: HuggingFace TEI (dedicated embedding server, fastest)
-    # USE_CLOUD_EMBEDDING=false → skip TEI, fall back to local Ollama/ONNX
-    use_cloud = os.getenv("USE_CLOUD_EMBEDDING", "true").lower() in ("true", "1", "yes")
-    if use_cloud:
-        try:
-            from src.embedding.tei_provider import TEIEmbeddingProvider
-
-            tei_url = os.getenv("BGE_TEI_URL", "http://localhost:8080")
-            tei_embedder = TEIEmbeddingProvider(base_url=tei_url)
-            if tei_embedder.is_ready():
-                embedder = tei_embedder
-                logger.info("TEI embedding initialized (cloud): %s", tei_url)
-        except Exception as e:
-            logger.debug("TEI embedding not available: %s", e)
-    else:
-        logger.info("Cloud embedding disabled (USE_CLOUD_EMBEDDING=false), using local")
-
-    # 2nd: Ollama (Metal GPU on Apple Silicon)
-    if embedder is None:
-        try:
-            from src.embedding.ollama_provider import OllamaEmbeddingProvider
-
-            ollama_embedder = OllamaEmbeddingProvider(
-                base_url=settings.ollama.base_url,
-                model=settings.ollama.embedding_model,
-            )
-            if ollama_embedder.is_ready():
-                embedder = ollama_embedder
-                logger.info("Ollama embedding initialized (Metal GPU): %s", settings.ollama.embedding_model)
-        except Exception as e:
-            logger.debug("Ollama embedding not available: %s", e)
-
-    if embedder is None:
-        try:
-            from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
-
-            model_path = settings.embedding.onnx_model_path or os.getenv(
-                "KNOWLEDGE_BGE_ONNX_MODEL_PATH", ""
-            )
-            onnx_embedder = OnnxBgeEmbeddingProvider(model_path=model_path)
-            if onnx_embedder.is_ready():
-                embedder = onnx_embedder
-                logger.info("BGE-M3 ONNX embedding initialized (CPU)")
-            else:
-                logger.warning("BGE-M3 ONNX model not ready (check model path)")
-        except Exception as e:
-            logger.warning("ONNX embedding init failed: %s", e)
+    embedder = (
+        _try_tei_embedding(settings)
+        or _try_ollama_embedding(settings)
+        or _try_onnx_embedding(settings)
+    )
 
     if embedder:
         state["embedder"] = embedder
-
-        # Wire embedder into MultiLayerCache for L2 semantic matching
-        multi_cache = state.get("multi_layer_cache")
-        if multi_cache is not None:
-            multi_cache._embedding_provider = embedder
-            if multi_cache._l2 is not None and hasattr(multi_cache._l2, "_embedding_provider"):
-                multi_cache._l2._embedding_provider = embedder
-            logger.info("MultiLayerCache embedder wired")
+        _wire_embedder_to_cache(state, embedder)
     else:
         logger.error("No embedding provider available. Search will not work.")
 
@@ -699,6 +714,52 @@ async def _init_services():
     await _init_auth(_state, settings)
 
 
+async def _close_caches(state: AppState) -> None:
+    """Close Redis caches and multi-layer cache L2."""
+    for key in ("search_cache", "dedup_cache"):
+        cache = state.get(key)
+        if cache:
+            try:
+                await cache.close()
+                logger.info("Closed %s", key)
+            except Exception as e:
+                logger.debug("Error closing %s: %s", key, e)
+
+    multi_cache = state.get("multi_layer_cache")
+    if multi_cache and hasattr(multi_cache, "_l2") and multi_cache._l2 is not None:
+        try:
+            if hasattr(multi_cache._l2, "close"):
+                await multi_cache._l2.close()
+            logger.info("Closed multi_layer_cache L2")
+        except Exception as e:
+            logger.debug("Error closing multi_layer_cache L2: %s", e)
+
+
+async def _close_connections(state: AppState) -> None:
+    """Close Qdrant, Neo4j, PostgreSQL, and Auth connections."""
+    for key, label, method in (
+        ("qdrant_provider", "Qdrant", "close"),
+        ("neo4j", "Neo4j", "close"),
+        ("kb_registry", "KB registry", "shutdown"),
+    ):
+        svc = state.get(key)
+        if not svc:
+            continue
+        try:
+            await getattr(svc, method)()
+            logger.info("Closed %s", label)
+        except Exception as e:
+            logger.debug("Error closing %s: %s", label, e)
+
+    auth_svc = state.get("auth_service")
+    if auth_svc:
+        try:
+            await auth_svc.close()
+            logger.info("Closed Auth service")
+        except Exception as e:
+            logger.debug("Error closing Auth service: %s", e)
+
+
 async def _shutdown_services():
     """Clean up on shutdown with graceful drain of active jobs."""
     import asyncio as _aio
@@ -725,59 +786,8 @@ async def _shutdown_services():
     if active_remaining:
         logger.warning("Shutdown deadline reached with %d job(s) still active", len(active_remaining))
 
-    # Close connections in order: Redis, Qdrant, Neo4j, PostgreSQL, Auth
-    # 1. Redis + multi-layer cache
-    for key in ("search_cache", "dedup_cache"):
-        cache = _state.get(key)
-        if cache:
-            try:
-                await cache.close()
-                logger.info("Closed %s", key)
-            except Exception as e:
-                logger.debug("Error closing %s: %s", key, e)
-
-    # Close L2 semantic cache Redis connection
-    multi_cache = _state.get("multi_layer_cache")
-    if multi_cache and hasattr(multi_cache, "_l2") and multi_cache._l2 is not None:
-        try:
-            if hasattr(multi_cache._l2, "close"):
-                await multi_cache._l2.close()
-            logger.info("Closed multi_layer_cache L2")
-        except Exception as e:
-            logger.debug("Error closing multi_layer_cache L2: %s", e)
-
-    # 2. Qdrant
-    if "qdrant_provider" in _state:
-        try:
-            await _state["qdrant_provider"].close()
-            logger.info("Closed Qdrant")
-        except Exception as e:
-            logger.debug("Error closing Qdrant: %s", e)
-
-    # 3. Neo4j
-    if "neo4j" in _state:
-        try:
-            await _state["neo4j"].close()
-            logger.info("Closed Neo4j")
-        except Exception as e:
-            logger.debug("Error closing Neo4j: %s", e)
-
-    # 4. PostgreSQL (kb_registry has its own engine)
-    if "kb_registry" in _state:
-        try:
-            await _state["kb_registry"].shutdown()
-            logger.info("Closed KB registry")
-        except Exception as e:
-            logger.debug("Error closing KB registry: %s", e)
-
-    # 5. Auth
-    auth_svc = _state.get("auth_service")
-    if auth_svc:
-        try:
-            await auth_svc.close()
-            logger.info("Closed Auth service")
-        except Exception as e:
-            logger.debug("Error closing Auth service: %s", e)
+    await _close_caches(_state)
+    await _close_connections(_state)
 
     logger.info("Shutdown complete")
 

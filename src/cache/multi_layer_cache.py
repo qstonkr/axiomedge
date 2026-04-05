@@ -56,6 +56,53 @@ class MultiLayerCache:
         self._compute_locks: dict[str, asyncio.Lock] = {}
         self._locks_lock = asyncio.Lock()  # Protects _compute_locks dict itself
 
+    async def _lookup_l1(self, key: str) -> CacheEntry | None:
+        """Try L1 (exact match) lookup. Returns entry or None."""
+        start = time.time()
+        entry = await self._l1.get(key)
+        l1_latency = (time.time() - start) * 1000
+
+        if not entry:
+            return None
+
+        if self._metrics:
+            self._metrics.l1_hits += 1
+            self._metrics.l1_latency_sum_ms += l1_latency
+        logger.debug("L1 hit: %s... (%.2fms)", key[:16], l1_latency)
+        return entry
+
+    async def _lookup_l2(
+        self, key: str, query: str, domain: CacheDomain,
+        kb_ids: list[str] | None, cache_version: str,
+    ) -> CacheEntry | None:
+        """Try L2 (semantic match) lookup. Promotes to L1 on hit."""
+        if self._l2 is None:
+            return None
+
+        start = time.time()
+        entry = await self._l2.get(
+            key, query=query, domain=domain,
+            kb_ids=kb_ids, cache_version=cache_version,
+        )
+        # Validate L2 result version if cache_version provided
+        if entry and cache_version:
+            resp = entry.response
+            if isinstance(resp, dict):
+                stored_ver = resp.get("_cache_version", "")
+                if stored_ver and stored_ver != cache_version:
+                    entry = None  # Stale version, discard
+        l2_latency = (time.time() - start) * 1000
+
+        if not entry:
+            return None
+
+        if self._metrics:
+            self._metrics.l2_hits += 1
+            self._metrics.l2_latency_sum_ms += l2_latency
+        logger.debug("L2 hit: similarity=%.3f (%.2fms)", entry.similarity, l2_latency)
+        await self._l1.set(entry)
+        return entry
+
     async def get(
         self,
         query: str,
@@ -77,47 +124,15 @@ class MultiLayerCache:
         """
         key = self._generate_key(query, kb_ids, top_k)
 
-        # L1: Exact match
-        start = time.time()
-        entry = await self._l1.get(key)
-        l1_latency = (time.time() - start) * 1000
-
+        entry = await self._lookup_l1(key)
         if entry:
-            if self._metrics:
-                self._metrics.l1_hits += 1
-                self._metrics.l1_latency_sum_ms += l1_latency
-            logger.debug("L1 hit: %s... (%.2fms)", key[:16], l1_latency)
             return entry
 
-        # L2: Semantic match
-        if self._l2 is not None:
-            start = time.time()
-            entry = await self._l2.get(
-                key, query=query, domain=domain,
-                kb_ids=kb_ids,
-                cache_version=kwargs.get("cache_version", ""),
-            )
-            # Validate L2 result version if cache_version provided
-            if entry and kwargs.get("cache_version"):
-                resp = entry.response
-                if isinstance(resp, dict):
-                    stored_ver = resp.get("_cache_version", "")
-                    if stored_ver and stored_ver != kwargs["cache_version"]:
-                        entry = None  # Stale version, discard
-            l2_latency = (time.time() - start) * 1000
-
-            if entry:
-                if self._metrics:
-                    self._metrics.l2_hits += 1
-                    self._metrics.l2_latency_sum_ms += l2_latency
-                logger.debug(
-                    "L2 hit: similarity=%.3f (%.2fms)",
-                    entry.similarity,
-                    l2_latency,
-                )
-                # Promote to L1
-                await self._l1.set(entry)
-                return entry
+        entry = await self._lookup_l2(
+            key, query, domain, kb_ids, kwargs.get("cache_version", ""),
+        )
+        if entry:
+            return entry
 
         # Miss
         if self._metrics:
