@@ -85,6 +85,20 @@ def graph_experts_search(topic: str) -> dict:
     return _get("/api/v1/admin/graph/experts", topic=topic)
 
 
+def graph_cleanup_analyze(kb_id: str | None = None) -> dict:
+    body: dict[str, Any] = {}
+    if kb_id:
+        body["kb_id"] = kb_id
+    return _post("/api/v1/admin/graph/cleanup/analyze", body, timeout=60)
+
+
+def graph_cleanup_apply(kb_id: str | None = None) -> dict:
+    body: dict[str, Any] = {"apply": True}
+    if kb_id:
+        body["kb_id"] = kb_id
+    return _post("/api/v1/admin/graph/cleanup", body, timeout=120)
+
+
 # ============================================================================
 # Embedding & Cache
 # ============================================================================

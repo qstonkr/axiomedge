@@ -129,8 +129,23 @@ DEFAULT_SCHEMA_PROFILE = {
 
 
 def get_kb_schema(kb_id: str) -> dict[str, Any]:
-    """Get schema profile for a KB."""
-    return KB_SCHEMA_PROFILES.get(kb_id, DEFAULT_SCHEMA_PROFILE)
+    """Get schema profile for a KB.
+
+    Normalizes hyphens/underscores so that e.g. ``a_ari`` and ``a-ari``
+    both resolve to the same profile.
+    """
+    # Direct lookup first (fast path)
+    if kb_id in KB_SCHEMA_PROFILES:
+        return KB_SCHEMA_PROFILES[kb_id]
+    # Normalize: replace underscores with hyphens and try again
+    normalized = kb_id.replace("_", "-")
+    if normalized in KB_SCHEMA_PROFILES:
+        return KB_SCHEMA_PROFILES[normalized]
+    # Reverse: replace hyphens with underscores
+    normalized = kb_id.replace("-", "_")
+    if normalized in KB_SCHEMA_PROFILES:
+        return KB_SCHEMA_PROFILES[normalized]
+    return DEFAULT_SCHEMA_PROFILE
 
 
 def build_extraction_prompt(_document: str, kb_id: str | None = None) -> str:
