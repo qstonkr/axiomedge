@@ -210,7 +210,20 @@ async def hub_search(request: HubSearchRequest):
             )
 
     if not collections:
-        collections = ["knowledge"]
+        # "전체" 검색: 실제 존재하는 모든 KB 컬렉션 사용
+        qdrant_collections = state.get("qdrant_collections")
+        if qdrant_collections:
+            try:
+                all_names = await qdrant_collections.get_existing_collection_names()
+                collections = [
+                    n[3:].replace("_", "-") if n.startswith("kb_") else n
+                    for n in all_names
+                    if not n.startswith("kb_test")
+                ]
+            except Exception:
+                collections = ["knowledge"]
+        if not collections:
+            collections = ["knowledge"]
 
     # 1.5 KB tier access control — filter collections by user's accessible tiers
     kb_registry = state.get("kb_registry")
