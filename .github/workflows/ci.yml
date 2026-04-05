@@ -38,6 +38,52 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
           REDIS_URL: redis://localhost:6379
 
+  sonarqube:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - name: Run tests with coverage
+        run: |
+          uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py \
+            --cov=src --cov=cli --cov-report=xml:coverage.xml -q --tb=no
+        env:
+          DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
+          REDIS_URL: redis://localhost:6379
+      - name: Fix coverage paths
+        run: |
+          python3 -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          sources = root.find('sources')
+          if sources is not None:
+              for s in list(sources):
+                  sources.remove(s)
+              ET.SubElement(sources, 'source').text = '.'
+          for pkg in root.iter('package'):
+              pkg_name = pkg.get('name', '')
+              for cls in pkg.iter('class'):
+                  fn = cls.get('filename', '')
+                  if not fn.startswith(('src/', 'cli/')):
+                      prefix = 'cli/' if pkg_name.startswith('cli') else 'src/'
+                      cls.set('filename', prefix + fn)
+          tree.write('coverage.xml', xml_declaration=True)
+          "
+      - uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      - uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   build:
     runs-on: ubuntu-latest
     needs: test
