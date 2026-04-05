@@ -1,0 +1,63 @@
+#!/bin/bash
+# SonarQube Quality Gate check before push
+# Skip with: SKIP_SONAR=1 git push
+[ "$SKIP_SONAR" = "1" ] && exit 0
+
+# Check if SonarQube is running
+if ! curl -s "http://localhost:9000/api/system/status" | grep -q '"UP"'; then
+  echo "⚠️  SonarQube not running. Skipping scan."
+  exit 0
+fi
+
+echo "🔍 Running SonarQube scan..."
+
+# Generate coverage
+uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py \
+  $(ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') \
+  --cov=src --cov=cli --cov-report=xml:coverage.xml -q --tb=no 2>&1 | tail -1
+
+# Fix coverage paths
+python3 -c "
+import xml.etree.ElementTree as ET
+tree = ET.parse('coverage.xml')
+root = tree.getroot()
+sources = root.find('sources')
+if sources is not None:
+    for s in list(sources):
+        sources.remove(s)
+    ET.SubElement(sources, 'source').text = '/usr/src'
+for pkg in root.iter('package'):
+    pkg_name = pkg.get('name', '')
+    for cls in pkg.iter('class'):
+        fn = cls.get('filename', '')
+        if not fn.startswith(('src/', 'cli/')):
+            prefix = 'cli/' if pkg_name.startswith('cli') else 'src/'
+            cls.set('filename', prefix + fn)
+tree.write('coverage.xml', xml_declaration=True)
+"
+
+# Run scan
+docker run --rm --network host -v "$(pwd):/usr/src" -w /usr/src sonarsource/sonar-scanner-cli \
+  -Dsonar.projectKey=knowledge-local \
+  -Dsonar.sources=src,cli -Dsonar.tests=tests \
+  -Dsonar.python.version=3.12 -Dsonar.python.coverage.reportPaths=coverage.xml \
+  -Dsonar.exclusions="**/__pycache__/**,**/node_modules/**,.venv/**,**/models/bge-m3/**,**/wheels/**" \
+  -Dsonar.host.url=http://localhost:9000 \
+  -Dsonar.token=REVOKED_SONAR_TOKEN \
+  -Dsonar.scm.disabled=true 2>&1 | grep -E "EXECUTION|ERROR"
+
+# Check quality gate
+sleep 5
+STATUS=$(curl -s -u "admin:Sonarqube1234!" \
+  "http://localhost:9000/api/qualitygates/project_status?projectKey=knowledge-local" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['projectStatus']['status'])" 2>/dev/null)
+
+if [ "$STATUS" = "OK" ]; then
+  echo "✅ SonarQube Quality Gate: PASSED"
+  exit 0
+else
+  echo "❌ SonarQube Quality Gate: FAILED ($STATUS)"
+  echo "   Check: http://localhost:9000/dashboard?id=knowledge-local"
+  echo "   Skip with: SKIP_SONAR=1 git push"
+  exit 1
+fi
