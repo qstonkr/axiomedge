@@ -117,12 +117,26 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     state["usage_log_repo"] = UsageLogRepository(session_factory)
     state["_kb_registry_pending"] = KBRegistryRepository(db_url)
 
-    # Distill plugin (graceful — 테이블 없으면 무시)
+    # Distill plugin (graceful — 테이블/설정 없으면 무시)
     try:
         from src.distill.repository import DistillRepository
         state["distill_repo"] = DistillRepository(session_factory)
+
+        from src.distill.config import load_config
+        from src.distill.service import DistillService
+        distill_config = load_config()
+        state["distill_service"] = DistillService(
+            config=distill_config,
+            session_factory=session_factory,
+            sagemaker_client=state.get("llm"),
+            embedder=state.get("embedder"),
+            qdrant_url=state.get("qdrant_provider", {}).get("url", "http://localhost:6333")
+            if isinstance(state.get("qdrant_provider"), dict)
+            else "http://localhost:6333",
+        )
+        logger.info("Distill plugin initialized: %d profiles", len(distill_config.profiles))
     except Exception as e:
-        logger.warning("Distill repo init skipped: %s", e)
+        logger.warning("Distill plugin init skipped: %s", e)
 
 
 async def _init_database(state: AppState, settings) -> None:

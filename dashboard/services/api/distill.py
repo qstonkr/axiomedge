@@ -87,8 +87,9 @@ def get_training_data_stats(profile_name: str) -> dict:
 
 # ── 엣지 로그 ──
 
-def collect_edge_logs() -> dict:
-    return _post("/api/v1/distill/edge-logs/collect", timeout=60)
+def collect_edge_logs(profile_name: str | None = None) -> dict:
+    body = {"profile_name": profile_name} if profile_name else {}
+    return _post("/api/v1/distill/edge-logs/collect", body, timeout=60)
 
 
 @st.cache_data(ttl=30)

@@ -236,7 +236,10 @@ with tab2:
                     "Qwen/Qwen2.5-1.5B-Instruct",
                     "google/gemma-3-1b-it",
                 ]
-                form_model = st.selectbox("베이스 모델", options=model_options)
+                default_model_idx = 0
+                if editing.get("base_model") in model_options:
+                    default_model_idx = model_options.index(editing["base_model"])
+                form_model = st.selectbox("베이스 모델", options=model_options, index=default_model_idx)
                 form_enabled = st.checkbox("활성화", value=editing.get("enabled", True))
 
                 st.markdown("**LoRA 설정**")
@@ -322,7 +325,7 @@ with tab3:
                 st.markdown("")
                 if st.button("📥 로그 수집", key="collect_logs"):
                     with st.spinner("S3에서 로그 수집 중..."):
-                        result = api_client.collect_edge_logs()
+                        result = api_client.collect_edge_logs(profile_name=selected)
                         if not api_failed(result):
                             st.success(f"수집 완료: {result.get('collected', 0)}건")
                             st.cache_data.clear()
@@ -487,6 +490,7 @@ with tab4:
                             if not api_failed(result):
                                 st.success(f"재학습 빌드 시작: {result.get('build_id', '')}")
                                 st.cache_data.clear()
+                                st.rerun()
                             else:
                                 st.error(f"실패: {result.get('error', '')}")
 

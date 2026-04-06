@@ -186,14 +186,16 @@ async def trigger_build(request: BuildTriggerRequest):
         config_snapshot=_json.dumps(profile, ensure_ascii=False, default=str),
     )
 
-    # 학습 파이프라인은 별도 프로세스로 실행 (Phase 4에서 구현)
-    # distill_service = _get_state().get("distill_service")
-    # if distill_service:
-    #     task = asyncio.create_task(
-    #         distill_service.run_pipeline(build_id, request.profile_name, request.steps)
-    #     )
-    #     _background_tasks.add(task)
-    #     task.add_done_callback(_background_tasks.discard)
+    # 학습 파이프라인 백그라운드 실행
+    distill_service = _get_state().get("distill_service")
+    if distill_service:
+        task = asyncio.create_task(
+            distill_service.run_pipeline(build_id, request.profile_name, request.steps)
+        )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+    else:
+        logger.warning("Distill service not initialized, build %s will stay pending", build_id)
 
     return {"build_id": build_id, "version": version, "status": "pending"}
 

@@ -67,8 +67,7 @@ class EdgeLogCollector:
                                 "latency_ms": entry.get("latency_ms"),
                                 "success": entry.get("success", True),
                                 "model_version": entry.get("model_version"),
-                                "edge_timestamp": datetime.fromisoformat(entry["ts"])
-                                if "ts" in entry else datetime.now(timezone.utc),
+                                "edge_timestamp": self._parse_timestamp(entry.get("ts")),
                             })
                     except Exception as e:
                         logger.warning("Failed to process %s: %s", key, e)
@@ -97,3 +96,13 @@ class EdgeLogCollector:
 
         logger.info("Collected %d edge logs from S3", total_saved)
         return total_saved
+
+    @staticmethod
+    def _parse_timestamp(ts_str: str | None) -> datetime:
+        """타임스탬프 안전 파싱."""
+        if not ts_str:
+            return datetime.now(timezone.utc)
+        try:
+            return datetime.fromisoformat(ts_str)
+        except (ValueError, TypeError):
+            return datetime.now(timezone.utc)
