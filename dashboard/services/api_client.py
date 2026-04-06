@@ -13,3 +13,4 @@ from services.api.quality import *  # noqa: F401,F403
 from services.api.admin import *  # noqa: F401,F403
 from services.api.auth import *  # noqa: F401,F403
 from services.api.misc import *  # noqa: F401,F403
+from services.api.distill import *  # noqa: F401,F403

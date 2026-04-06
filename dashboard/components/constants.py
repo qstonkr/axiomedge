@@ -127,3 +127,21 @@ RUN_STATUS_ICONS: dict[str, str] = {
     "COMPLETED": "🟢 완료", "completed": "🟢 완료",
     "FAILED": "🔴 실패", "failed": "🔴 실패",
 }
+
+# ── Distill 빌드 상태 아이콘 ──
+DISTILL_STATUS_ICONS: dict[str, str] = {
+    "pending": "🟡 대기",
+    "generating": "📊 데이터 생성중",
+    "training": "🔄 학습중",
+    "evaluating": "🔍 평가중",
+    "quantizing": "📦 양자화중",
+    "deploying": "🚀 배포중",
+    "completed": "🟢 완료",
+    "failed": "🔴 실패",
+}
+
+# ── 엣지 로그 상태 ──
+EDGE_LOG_SUCCESS_ICON: dict[bool, str] = {
+    True: "✅",
+    False: "❌",
+}

@@ -117,6 +117,13 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     state["usage_log_repo"] = UsageLogRepository(session_factory)
     state["_kb_registry_pending"] = KBRegistryRepository(db_url)
 
+    # Distill plugin repo (sync 등록만, 시드/서비스 초기화는 _init_distill에서)
+    try:
+        from src.distill.repository import DistillRepository
+        state["distill_repo"] = DistillRepository(session_factory)
+    except Exception as e:
+        logger.warning("Distill repo init skipped: %s", e)
+
 
 async def _init_database(state: AppState, settings) -> None:
     """Initialize PostgreSQL + all repositories + domain services."""
@@ -712,6 +719,42 @@ async def _init_services():
     await _init_llm(_state, settings)
     await _init_search_services(_state)
     await _init_auth(_state, settings)
+    await _init_distill(_state, settings)
+
+
+async def _init_distill(state: AppState, settings) -> None:
+    """Distill 플러그인 초기화: yaml → DB 시드 + 서비스 등록."""
+    distill_repo = state.get("distill_repo")
+    if not distill_repo:
+        return
+
+    try:
+        from src.distill.config import load_config, profile_to_dict
+        from src.distill.service import DistillService
+
+        distill_config = load_config()
+
+        # distill.yaml → DB 시드 (DB에 없는 프로필만 자동 insert)
+        for name, profile in distill_config.profiles.items():
+            existing = await distill_repo.get_profile(name)
+            if not existing:
+                data = {"name": name, **profile_to_dict(profile)}
+                try:
+                    await distill_repo.create_profile(data)
+                    logger.info("Distill profile seeded from yaml: %s", name)
+                except Exception as e:
+                    logger.warning("Distill profile seed failed for %s: %s", name, e)
+
+        state["distill_service"] = DistillService(
+            config=distill_config,
+            session_factory=state.get("db_session_factory"),
+            sagemaker_client=state.get("llm"),
+            embedder=state.get("embedder"),
+            qdrant_url=settings.qdrant.url,
+        )
+        logger.info("Distill plugin initialized: %d profiles", len(distill_config.profiles))
+    except Exception as e:
+        logger.warning("Distill plugin init skipped: %s", e)
 
 
 async def _close_caches(state: AppState) -> None:
@@ -879,6 +922,9 @@ app.include_router(search_groups.router)
 
 from src.api.routes import auth as auth_routes  # noqa: E402
 app.include_router(auth_routes.router)
+
+from src.api.routes import distill as distill_routes  # noqa: E402
+app.include_router(distill_routes.router)
 
 # Auth middleware (adds user context + activity logging)
 from src.auth.middleware import AuthMiddleware  # noqa: E402
