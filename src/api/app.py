@@ -117,39 +117,12 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     state["usage_log_repo"] = UsageLogRepository(session_factory)
     state["_kb_registry_pending"] = KBRegistryRepository(db_url)
 
-    # Distill plugin (graceful — 테이블/설정 없으면 무시)
+    # Distill plugin repo (sync 등록만, 시드/서비스 초기화는 _init_distill에서)
     try:
         from src.distill.repository import DistillRepository
-        distill_repo = DistillRepository(session_factory)
-        state["distill_repo"] = distill_repo
-
-        from src.distill.config import load_config, profile_to_dict
-        from src.distill.service import DistillService
-        distill_config = load_config()
-
-        # distill.yaml → DB 시드 (yaml에 있지만 DB에 없는 프로필 자동 insert)
-        for name, profile in distill_config.profiles.items():
-            existing = await distill_repo.get_profile(name)
-            if not existing:
-                data = {"name": name, **profile_to_dict(profile)}
-                try:
-                    await distill_repo.create_profile(data)
-                    logger.info("Distill profile seeded from yaml: %s", name)
-                except Exception as e:
-                    logger.warning("Distill profile seed failed for %s: %s", name, e)
-
-        state["distill_service"] = DistillService(
-            config=distill_config,
-            session_factory=session_factory,
-            sagemaker_client=state.get("llm"),
-            embedder=state.get("embedder"),
-            qdrant_url=state.get("qdrant_provider", {}).get("url", "http://localhost:6333")
-            if isinstance(state.get("qdrant_provider"), dict)
-            else "http://localhost:6333",
-        )
-        logger.info("Distill plugin initialized: %d profiles", len(distill_config.profiles))
+        state["distill_repo"] = DistillRepository(session_factory)
     except Exception as e:
-        logger.warning("Distill plugin init skipped: %s", e)
+        logger.warning("Distill repo init skipped: %s", e)
 
 
 async def _init_database(state: AppState, settings) -> None:
@@ -746,6 +719,42 @@ async def _init_services():
     await _init_llm(_state, settings)
     await _init_search_services(_state)
     await _init_auth(_state, settings)
+    await _init_distill(_state, settings)
+
+
+async def _init_distill(state: AppState, settings) -> None:
+    """Distill 플러그인 초기화: yaml → DB 시드 + 서비스 등록."""
+    distill_repo = state.get("distill_repo")
+    if not distill_repo:
+        return
+
+    try:
+        from src.distill.config import load_config, profile_to_dict
+        from src.distill.service import DistillService
+
+        distill_config = load_config()
+
+        # distill.yaml → DB 시드 (DB에 없는 프로필만 자동 insert)
+        for name, profile in distill_config.profiles.items():
+            existing = await distill_repo.get_profile(name)
+            if not existing:
+                data = {"name": name, **profile_to_dict(profile)}
+                try:
+                    await distill_repo.create_profile(data)
+                    logger.info("Distill profile seeded from yaml: %s", name)
+                except Exception as e:
+                    logger.warning("Distill profile seed failed for %s: %s", name, e)
+
+        state["distill_service"] = DistillService(
+            config=distill_config,
+            session_factory=state.get("db_session_factory"),
+            sagemaker_client=state.get("llm"),
+            embedder=state.get("embedder"),
+            qdrant_url=settings.qdrant.url,
+        )
+        logger.info("Distill plugin initialized: %d profiles", len(distill_config.profiles))
+    except Exception as e:
+        logger.warning("Distill plugin init skipped: %s", e)
 
 
 async def _close_caches(state: AppState) -> None:
