@@ -1790,3 +1790,39 @@ class TestCliCrawl:
     def test_crawl_directory_missing_source(self, tmp_path):
         from cli.crawl import crawl_directory
         crawl_directory(str(tmp_path / "nonexistent"), str(tmp_path / "out"))
+
+
+class TestCliIngest:
+    @pytest.mark.asyncio
+    async def test_should_skip_file_force(self, tmp_path):
+        from cli.ingest import _should_skip_file
+        f = tmp_path / "test.txt"
+        f.write_text("hello")
+        result = await _should_skip_file(str(f), force=True, ingested_hashes={"abc"})
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_should_skip_file_existing(self, tmp_path):
+        import hashlib
+        from cli.ingest import _should_skip_file
+        f = tmp_path / "test.txt"
+        f.write_text("hello")
+        h = hashlib.sha256(b"hello").hexdigest()[:32]
+        result = await _should_skip_file(str(f), force=False, ingested_hashes={h})
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_skip_file_new(self, tmp_path):
+        from cli.ingest import _should_skip_file
+        f = tmp_path / "test.txt"
+        f.write_text("hello")
+        result = await _should_skip_file(str(f), force=False, ingested_hashes={"other"})
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_should_skip_empty_hashes(self, tmp_path):
+        from cli.ingest import _should_skip_file
+        f = tmp_path / "test.txt"
+        f.write_text("hello")
+        result = await _should_skip_file(str(f), force=False, ingested_hashes=set())
+        assert result is False
