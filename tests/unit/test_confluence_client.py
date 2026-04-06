@@ -4889,3 +4889,125 @@ class TestFallbackStandardOcr:
             result = AttachmentParser._fallback_standard_ocr(img, 1)
 
         assert result is None
+
+
+# ===================================================================
+# Additional coverage: _process_one_shape_ocr, _try_cli_doc_extract
+# ===================================================================
+
+class TestProcessOneShapeOcr:
+    def test_deferred_when_budget_exceeded(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=1,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        attempted = {1}  # already at limit
+        result = AttachmentParser._process_one_shape_ocr(
+            2, b"img", policy, 5, None, False, False, attempted, set(),
+        )
+        assert result == {"deferred": 1}
+
+    def test_none_when_no_ocr(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        with patch.object(AttachmentParser, '_get_ocr_instance', return_value=None):
+            result = AttachmentParser._process_one_shape_ocr(
+                1, b"img", policy, 5, None, False, False, set(), set(),
+            )
+        assert result is None
+
+    def test_success_with_text(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        with (
+            patch.object(AttachmentParser, '_get_ocr_instance', return_value=MagicMock()),
+            patch.object(AttachmentParser, '_ocr_single_shape_image', return_value=("OCR text here", 0.9, False)),
+        ):
+            extracted = set()
+            result = AttachmentParser._process_one_shape_ocr(
+                1, b"img", policy, 5, None, False, False, set(), extracted,
+            )
+        assert result["text"] is not None
+        assert result["extracted"] == 1
+        assert 1 in extracted
+
+    def test_timed_out(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        with (
+            patch.object(AttachmentParser, '_get_ocr_instance', return_value=MagicMock()),
+            patch.object(AttachmentParser, '_ocr_single_shape_image', return_value=(None, 0.0, True)),
+        ):
+            result = AttachmentParser._process_one_shape_ocr(
+                1, b"img", policy, 5, None, False, False, set(), set(),
+            )
+        assert result["timed_out_item"] == (1, b"img")
+
+    def test_exception(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        with (
+            patch.object(AttachmentParser, '_get_ocr_instance', return_value=MagicMock()),
+            patch.object(AttachmentParser, '_ocr_single_shape_image', side_effect=RuntimeError("fail")),
+        ):
+            result = AttachmentParser._process_one_shape_ocr(
+                1, b"img", policy, 5, None, False, False, set(), set(),
+            )
+        assert result["text"] is None
+
+
+class TestTryCliDocExtract:
+    def test_no_tool_path(self):
+        from src.connectors.confluence.attachment_parser import _try_cli_doc_extract
+        result = _try_cli_doc_extract(None, Path("/fake"), confidence=0.5)
+        assert result is None
+
+    def test_success(self):
+        from src.connectors.confluence.attachment_parser import _try_cli_doc_extract
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="Extracted text")
+            result = _try_cli_doc_extract("/usr/bin/antiword", Path("/fake.doc"), confidence=0.7)
+        assert result is not None
+        assert result.extracted_text == "Extracted text"
+
+    def test_failure(self):
+        from src.connectors.confluence.attachment_parser import _try_cli_doc_extract
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1, stdout="")
+            result = _try_cli_doc_extract("/usr/bin/antiword", Path("/fake.doc"), confidence=0.7)
+        assert result is None
+
+    def test_exception(self):
+        from src.connectors.confluence.attachment_parser import _try_cli_doc_extract
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = Exception("timeout")
+            result = _try_cli_doc_extract("/usr/bin/antiword", Path("/fake.doc"), confidence=0.7)
+        assert result is None
