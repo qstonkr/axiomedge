@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def main():
     settings = get_settings()
-    db_url = settings.database.url
+    db_url = settings.database.database_url
     logger.info("Creating distill tables at: %s", db_url.split("@")[-1])
 
     engine = create_async_engine(db_url)
