@@ -1730,3 +1730,63 @@ class TestCrawlSpaceFunction:
 
         mock_setup.assert_called_once()
         mock_restore.assert_called_once()
+
+
+# ===================================================================
+# CLI modules coverage (crawl.py, ingest.py)
+# ===================================================================
+
+class TestCliCrawl:
+    def test_load_crawl_state_no_file(self, tmp_path):
+        from cli.crawl import _load_crawl_state
+        assert _load_crawl_state(tmp_path) == {}
+
+    def test_save_and_load_crawl_state(self, tmp_path):
+        from cli.crawl import _save_crawl_state, _load_crawl_state
+        state = {"file.txt": "abc123"}
+        _save_crawl_state(tmp_path, state)
+        loaded = _load_crawl_state(tmp_path)
+        assert loaded == state
+
+    def test_read_text_content_txt(self, tmp_path):
+        from cli.crawl import _read_text_content
+        f = tmp_path / "test.txt"
+        f.write_text("hello", encoding="utf-8")
+        assert _read_text_content(f) == "hello"
+
+    def test_read_text_content_non_text(self, tmp_path):
+        from cli.crawl import _read_text_content
+        f = tmp_path / "test.pdf"
+        f.write_bytes(b"binary")
+        assert _read_text_content(f) == ""
+
+    def test_build_doc(self, tmp_path):
+        from cli.crawl import _build_doc
+        f = tmp_path / "test.txt"
+        f.write_text("content", encoding="utf-8")
+        doc = _build_doc(f, tmp_path, "hash123")
+        assert doc["title"] == "test.txt"
+        assert doc["content_hash"] == "hash123"
+
+    def test_crawl_directory(self, tmp_path):
+        from cli.crawl import crawl_directory
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "test.txt").write_text("hello")
+        output = tmp_path / "output"
+        crawl_directory(str(source), str(output))
+        assert (output / "crawl_results.jsonl").exists()
+
+    def test_crawl_directory_incremental(self, tmp_path):
+        from cli.crawl import crawl_directory
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "test.txt").write_text("hello")
+        output = tmp_path / "output"
+        crawl_directory(str(source), str(output))
+        # Second run should skip unchanged
+        crawl_directory(str(source), str(output))
+
+    def test_crawl_directory_missing_source(self, tmp_path):
+        from cli.crawl import crawl_directory
+        crawl_directory(str(tmp_path / "nonexistent"), str(tmp_path / "out"))
