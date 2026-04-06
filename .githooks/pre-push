@@ -11,10 +11,25 @@ fi
 
 echo "🔍 Running SonarQube scan..."
 
-# Generate coverage
-uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py \
-  $(ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') \
-  --cov=src --cov=cli --cov-report=xml:coverage.xml -q --tb=no 2>&1 | tail -1
+# Detect changed source files vs main
+CHANGED_SRC=$(git diff --name-only origin/main...HEAD -- 'src/' 'cli/' | tr '\n' ',' | sed 's/,$//')
+CHANGED_TESTS=$(git diff --name-only origin/main...HEAD -- 'tests/' | tr '\n' ' ')
+
+if [ -z "$CHANGED_SRC" ]; then
+  echo "⚠️  No source changes detected. Skipping scan."
+  exit 0
+fi
+
+echo "📂 Changed sources: $CHANGED_SRC"
+
+# Generate coverage (only run changed test files, or all if none changed)
+if [ -n "$CHANGED_TESTS" ]; then
+  uv run pytest $CHANGED_TESTS --cov=src --cov=cli --cov-report=xml:coverage.xml -q --tb=no 2>&1 | tail -1
+else
+  uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py \
+    $(ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') \
+    --cov=src --cov=cli --cov-report=xml:coverage.xml -q --tb=no 2>&1 | tail -1
+fi
 
 # Fix coverage paths
 python3 -c "
@@ -36,10 +51,12 @@ for pkg in root.iter('package'):
 tree.write('coverage.xml', xml_declaration=True)
 "
 
-# Run scan
+# Run scan (only changed files via inclusions)
+CHANGED_INCLUSIONS=$(echo "$CHANGED_SRC" | sed 's/,/,**/g; s/^/**/; s/$//')
 docker run --rm --network host -v "$(pwd):/usr/src" -w /usr/src sonarsource/sonar-scanner-cli \
   -Dsonar.projectKey=knowledge-local \
   -Dsonar.sources=src,cli -Dsonar.tests=tests \
+  -Dsonar.inclusions="$CHANGED_SRC" \
   -Dsonar.python.version=3.12 -Dsonar.python.coverage.reportPaths=coverage.xml \
   -Dsonar.exclusions="**/__pycache__/**,**/node_modules/**,.venv/**,**/models/bge-m3/**,**/wheels/**" \
   -Dsonar.host.url=http://localhost:9000 \
