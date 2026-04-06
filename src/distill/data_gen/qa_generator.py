@@ -113,11 +113,16 @@ class QAGenerator:
         session_factory,
         kb_ids: list[str],
         group_name: str,
+        min_crag_confidence: float = 0.75,
     ) -> list[dict[str, Any]]:
-        """usage_log에서 answer+chunks 포함 로그를 QA로 변환."""
+        """usage_log에서 CRAG correct + 고 confidence 응답만 선별하여 QA로 변환.
+
+        RAG가 실제로 잘 답변한 것만 학습 데이터로 사용 (메인 소스).
+        """
         from sqlalchemy import text
 
         qa_pairs: list[dict[str, Any]] = []
+        skipped_low_quality = 0
 
         async with session_factory() as session:
             result = await session.execute(
@@ -128,7 +133,7 @@ class QAGenerator:
                     AND context LIKE :group_filter
                     AND context LIKE '%"answer"%'
                     ORDER BY created_at DESC
-                    LIMIT 5000
+                    LIMIT 10000
                 """),
                 {"group_filter": f'%"group_name": "{group_name}"%'},
             )
@@ -147,12 +152,25 @@ class QAGenerator:
             if not answer or not query:
                 continue
 
+            # CRAG correct + 고 confidence만 선별
+            crag_action = ctx.get("crag_action", "")
+            crag_confidence = ctx.get("crag_confidence", 0)
+
+            if crag_action != "correct" or crag_confidence < min_crag_confidence:
+                skipped_low_quality += 1
+                continue
+
             qa_pairs.append({
                 "question": query,
                 "answer": answer,
                 "source_type": "usage_log",
                 "kb_id": ",".join(kb_ids[:3]),
+                "crag_confidence": crag_confidence,
             })
 
-        logger.info("Extracted %d QA pairs from usage logs", len(qa_pairs))
+        logger.info(
+            "Extracted %d high-quality QA pairs from usage logs "
+            "(skipped %d low-quality, threshold: crag_confidence >= %.2f)",
+            len(qa_pairs), skipped_low_quality, min_crag_confidence,
+        )
         return qa_pairs

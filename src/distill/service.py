@@ -124,24 +124,35 @@ class DistillService:
         if not kb_ids:
             raise ValueError(f"Search group '{profile.search_group}' has no KBs")
 
-        # 청크에서 QA 생성
-        chunk_qa = await generator.generate_from_chunks(kb_ids)
-
-        # Usage log에서 QA 추출
+        # ── 메인 소스: RAG 실응답 (CRAG correct + 고 confidence) ──
         log_qa = await generator.generate_from_usage_logs(
             self.session_factory, kb_ids, profile.search_group,
         )
+        logger.info("Main source (usage_log): %d high-quality QA pairs", len(log_qa))
 
-        # 재학습 데이터 (DB에서)
+        # ── 보조 소스: 청크 기반 QA 생성 (로그 부족 시) ──
+        min_samples = self.config.defaults.min_training_samples
+        chunk_qa: list[dict] = []
+        if len(log_qa) < min_samples:
+            shortage = min_samples - len(log_qa)
+            logger.info(
+                "Usage log insufficient (%d < %d), generating %d chunk QA pairs",
+                len(log_qa), min_samples, shortage,
+            )
+            chunk_qa = await generator.generate_from_chunks(
+                kb_ids, max_chunks_per_kb=max(shortage // len(kb_ids), 50),
+            )
+
+        # ── 재학습 데이터 (DB에서) ──
         retrain_result = await repo.list_training_data(
             profile_name=profile_name, source_type="retrain", limit=5000,
         )
         retrain_qa = retrain_result.get("items", [])
 
-        # 병합 + 중복 제거
-        all_qa = await generator.merge_and_deduplicate(chunk_qa, log_qa, retrain_qa)
+        # 병합 (메인 → 보조 → 재학습 순서로 우선)
+        all_qa = await generator.merge_and_deduplicate(log_qa, chunk_qa, retrain_qa)
 
-        # Augmentation
+        # Augmentation (다양한 표현으로 질문 증강)
         all_qa = await generator.augment_questions(all_qa)
 
         # 밸런싱

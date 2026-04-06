@@ -873,6 +873,7 @@ async def _step_log_usage(
     follow_ups: list[str],
     rerank_applied: bool,
     state: dict[str, Any],
+    crag_evaluation: Any = None,
 ) -> None:
     """Log search usage to repository."""
     usage_repo = state.get("usage_log_repo")
@@ -888,6 +889,12 @@ async def _step_log_usage(
             "follow_up_generated": len(follow_ups) > 0,
             "rerank_applied": rerank_applied,
         }
+        # CRAG 평가 결과 (distill 학습 데이터 품질 필터용)
+        if crag_evaluation:
+            context["crag_action"] = crag_evaluation.action.value
+            context["crag_confidence"] = crag_evaluation.confidence_score
+
+        # Distill 학습 데이터용 (answer + chunks)
         from src.config import get_settings
         if get_settings().distill.log_full_context:
             context["answer"] = answer
@@ -1010,6 +1017,7 @@ async def hub_search(request: HubSearchRequest):
     await _step_log_usage(
         query, display_query, all_chunks, elapsed, collections,
         request, answer, follow_ups, rerank_applied, state,
+        crag_evaluation=crag_evaluation,
     )
 
     response = HubSearchResponse(
