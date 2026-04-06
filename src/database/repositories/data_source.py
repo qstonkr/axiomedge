@@ -95,6 +95,36 @@ class DataSourceRepository(BaseRepository):
                 await session.rollback()
                 raise
 
+    async def complete_sync(
+        self,
+        source_id: str,
+        status: str,
+        sync_result: dict[str, Any] | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Update data source after sync completion (success or failure)."""
+        async with await self._get_session() as session:
+            try:
+                now = _utc_now()
+                values: dict[str, Any] = {
+                    "status": status,
+                    "error_message": error_message,
+                    "updated_at": now,
+                    "last_sync_at": now,
+                }
+                if sync_result is not None:
+                    values["last_sync_result"] = json.dumps(sync_result)
+                stmt = (
+                    update(DataSourceModel)
+                    .where(DataSourceModel.id == source_id)
+                    .values(**values)
+                )
+                await session.execute(stmt)
+                await session.commit()
+            except SQLAlchemyError:
+                await session.rollback()
+                raise
+
     async def delete(self, source_id: str) -> bool:
         async with await self._get_session() as session:
             try:

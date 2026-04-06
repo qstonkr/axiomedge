@@ -178,16 +178,30 @@ def list_search_groups() -> dict:
     return _get("/api/v1/search-groups")
 
 
+def _clear_group_cache() -> None:
+    """Safely clear search groups cache (no-op if not in Streamlit runtime)."""
+    try:
+        list_search_groups.clear()
+    except AttributeError:
+        pass
+
+
 def create_search_group(body: dict) -> dict:
-    return _post("/api/v1/search-groups", body)
+    result = _post("/api/v1/search-groups", body)
+    _clear_group_cache()
+    return result
 
 
 def update_search_group(group_id: str, body: dict) -> dict:
-    return _put(f"/api/v1/search-groups/{group_id}", body)
+    result = _put(f"/api/v1/search-groups/{group_id}", body)
+    _clear_group_cache()
+    return result
 
 
 def delete_search_group(group_id: str) -> dict:
-    return _delete(f"/api/v1/search-groups/{group_id}")
+    result = _delete(f"/api/v1/search-groups/{group_id}")
+    _clear_group_cache()
+    return result
 
 
 # ============================================================================

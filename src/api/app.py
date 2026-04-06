@@ -764,7 +764,7 @@ async def _shutdown_services():
     """Clean up on shutdown with graceful drain of active jobs."""
     import asyncio as _aio
 
-    from src.api.routes.jobs import _jobs
+    from src.api.routes.jobs import get_active_job_count
 
     # Set shutdown flag to prevent new ingestion jobs
     _state["_shutting_down"] = True
@@ -775,16 +775,16 @@ async def _shutdown_services():
     poll_interval = 0.5
     elapsed = 0.0
     while elapsed < deadline:
-        active = [j for j in _jobs.values() if j.get("status") == "processing"]
-        if not active:
+        active_count = await get_active_job_count()
+        if active_count == 0:
             break
-        logger.info("Waiting for %d active job(s) to finish (%.0fs remaining)", len(active), deadline - elapsed)
+        logger.info("Waiting for %d active job(s) to finish (%.0fs remaining)", active_count, deadline - elapsed)
         await _aio.sleep(poll_interval)
         elapsed += poll_interval
 
-    active_remaining = [j for j in _jobs.values() if j.get("status") == "processing"]
+    active_remaining = await get_active_job_count()
     if active_remaining:
-        logger.warning("Shutdown deadline reached with %d job(s) still active", len(active_remaining))
+        logger.warning("Shutdown deadline reached with %d job(s) still active", active_remaining)
 
     await _close_caches(_state)
     await _close_connections(_state)
