@@ -1345,3 +1345,388 @@ class TestSaveResultsFromJsonl:
         save_results_from_jsonl(jsonl_path, out_path, source_info=None)
         data = json.loads(out_path.read_text(encoding="utf-8"))
         assert data["source_info"] is None
+
+
+# ---------------------------------------------------------------------------
+# __init__.py — crawl_space and helpers
+# ---------------------------------------------------------------------------
+import signal
+from unittest.mock import AsyncMock
+
+
+class TestCrawlSpaceBFSMode:
+    """Test BFS vs DFS mode selection in _run_crawl."""
+
+    @pytest.mark.asyncio
+    async def test_bfs_mode_selected(self):
+        """BFS mode when use_bfs=True, not resume, max_pages=None."""
+        from src.connectors.confluence import _run_crawl
+
+        client = MagicMock()
+        client.crawl_bfs = AsyncMock()
+        client.crawl_recursive = AsyncMock()
+
+        await _run_crawl(
+            client, "123", "src",
+            use_bfs=True, resume=False, max_pages=None,
+            download_attachments=True, max_attachments_per_page=20,
+        )
+        client.crawl_bfs.assert_awaited_once()
+        client.crawl_recursive.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dfs_when_resume(self):
+        """DFS mode when resume=True."""
+        from src.connectors.confluence import _run_crawl
+
+        client = MagicMock()
+        client.crawl_bfs = AsyncMock()
+        client.crawl_recursive = AsyncMock()
+
+        await _run_crawl(
+            client, "123", "src",
+            use_bfs=True, resume=True, max_pages=None,
+            download_attachments=True, max_attachments_per_page=20,
+        )
+        client.crawl_recursive.assert_awaited_once()
+        client.crawl_bfs.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dfs_when_max_pages_set(self):
+        """DFS mode when max_pages is set."""
+        from src.connectors.confluence import _run_crawl
+
+        client = MagicMock()
+        client.crawl_bfs = AsyncMock()
+        client.crawl_recursive = AsyncMock()
+
+        await _run_crawl(
+            client, "123", "src",
+            use_bfs=True, resume=False, max_pages=50,
+            download_attachments=True, max_attachments_per_page=20,
+        )
+        client.crawl_recursive.assert_awaited_once()
+        client.crawl_bfs.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dfs_when_use_bfs_false(self):
+        """DFS mode when use_bfs=False."""
+        from src.connectors.confluence import _run_crawl
+
+        client = MagicMock()
+        client.crawl_bfs = AsyncMock()
+        client.crawl_recursive = AsyncMock()
+
+        await _run_crawl(
+            client, "123", "src",
+            use_bfs=False, resume=False, max_pages=None,
+            download_attachments=True, max_attachments_per_page=20,
+        )
+        client.crawl_recursive.assert_awaited_once()
+        client.crawl_bfs.assert_not_awaited()
+
+
+class TestSignalHandlers:
+    """Test _setup_signal_handlers and _restore_signal_handlers."""
+
+    def test_setup_registers_handlers(self):
+        from src.connectors.confluence import _setup_signal_handlers
+
+        client = MagicMock()
+        client.request_shutdown = MagicMock()
+
+        with patch("signal.signal") as mock_signal, \
+             patch("signal.getsignal", return_value=signal.SIG_DFL):
+            interrupted, prev_term, prev_int = _setup_signal_handlers(client)
+
+        assert interrupted is False
+        assert mock_signal.call_count == 2  # SIGTERM + SIGINT
+
+    def test_restore_handlers(self):
+        from src.connectors.confluence import _restore_signal_handlers
+
+        sentinel_term = MagicMock()
+        sentinel_int = MagicMock()
+
+        with patch("signal.signal") as mock_signal:
+            _restore_signal_handlers(sentinel_term, sentinel_int)
+
+        assert mock_signal.call_count == 2
+        mock_signal.assert_any_call(signal.SIGTERM, sentinel_term)
+        mock_signal.assert_any_call(signal.SIGINT, sentinel_int)
+
+    def test_graceful_shutdown_handler_calls_client(self):
+        """The installed signal handler should call client.request_shutdown."""
+        from src.connectors.confluence import _setup_signal_handlers
+
+        client = MagicMock()
+        client.request_shutdown = MagicMock()
+
+        installed_handler = None
+
+        def capture_handler(sig, handler):
+            nonlocal installed_handler
+            if sig == signal.SIGTERM:
+                installed_handler = handler
+            return signal.SIG_DFL
+
+        with patch("signal.signal", side_effect=capture_handler), \
+             patch("signal.getsignal", return_value=signal.SIG_DFL):
+            _setup_signal_handlers(client)
+
+        assert installed_handler is not None
+        # Simulate SIGTERM
+        installed_handler(signal.SIGTERM, None)
+        client.request_shutdown.assert_called_once()
+
+    def test_graceful_shutdown_handler_idempotent(self):
+        """Second signal invocation should be ignored."""
+        from src.connectors.confluence import _setup_signal_handlers
+
+        client = MagicMock()
+        installed_handler = None
+
+        def capture_handler(sig, handler):
+            nonlocal installed_handler
+            if sig == signal.SIGTERM:
+                installed_handler = handler
+            return signal.SIG_DFL
+
+        with patch("signal.signal", side_effect=capture_handler), \
+             patch("signal.getsignal", return_value=signal.SIG_DFL):
+            _setup_signal_handlers(client)
+
+        installed_handler(signal.SIGTERM, None)
+        installed_handler(signal.SIGTERM, None)  # second call
+        client.request_shutdown.assert_called_once()
+
+
+class TestCrawlSpaceFunction:
+    """Test the high-level crawl_space function."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_space_normal_completion(self):
+        from src.connectors.confluence import crawl_space
+        from src.connectors.confluence.config import CrawlerConfig
+
+        config = CrawlerConfig(
+            base_url="https://test.example.com",
+            pat="test-pat",
+            output_dir=Path("/tmp/test_crawl"),
+            attachments_dir=Path("/tmp/test_crawl/att"),
+            knowledge_sources={},
+        )
+
+        with (
+            patch("src.connectors.confluence.attachment_parser.AttachmentParser.configure_run"),
+            patch("src.connectors.confluence.ConfluenceFullClient") as MockClient,
+        ):
+            client_instance = MagicMock()
+            client_instance.crawl_bfs = AsyncMock()
+            client_instance.save_incremental = MagicMock()
+            client_instance.shutdown_requested = False
+            client_instance.finalize_from_incremental = MagicMock(return_value=[])
+            client_instance.write_runtime_stats = MagicMock()
+            client_instance.all_pages = []
+            client_instance._total_pages_crawled = 5
+            client_instance.clear_checkpoint = MagicMock()
+            client_instance.clear_incremental = MagicMock()
+            client_instance.close = AsyncMock()
+            MockClient.return_value = client_instance
+
+            result = await crawl_space(
+                config, page_id="123", source_name="test",
+                source_key="test_src", use_bfs=True,
+            )
+
+        assert result.interrupted is False
+        client_instance.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_crawl_space_resume_with_checkpoint(self):
+        from src.connectors.confluence import crawl_space
+        from src.connectors.confluence.config import CrawlerConfig
+
+        config = CrawlerConfig(
+            base_url="https://test.example.com",
+            pat="test-pat",
+            output_dir=Path("/tmp/test_crawl"),
+            attachments_dir=Path("/tmp/test_crawl/att"),
+            knowledge_sources={},
+        )
+
+        with (
+            patch("src.connectors.confluence.attachment_parser.AttachmentParser.configure_run"),
+            patch("src.connectors.confluence.ConfluenceFullClient") as MockClient,
+        ):
+            client_instance = MagicMock()
+            client_instance.crawl_recursive = AsyncMock()
+            client_instance.save_incremental = MagicMock()
+            client_instance.shutdown_requested = False
+            client_instance.load_checkpoint = MagicMock(return_value=True)
+            client_instance.load_incremental = MagicMock(return_value=5)
+            client_instance.finalize_from_incremental = MagicMock(return_value=[])
+            client_instance.write_runtime_stats = MagicMock()
+            client_instance.all_pages = []
+            client_instance._total_pages_crawled = 10
+            client_instance.close = AsyncMock()
+            MockClient.return_value = client_instance
+
+            result = await crawl_space(
+                config, page_id="123", source_name="test",
+                source_key="test_src", resume=True,
+            )
+
+        client_instance.load_incremental.assert_called_once_with("test_src")
+        client_instance.load_checkpoint.assert_called_once_with("test_src")
+        assert result.interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_crawl_space_resume_no_checkpoint(self):
+        from src.connectors.confluence import crawl_space
+        from src.connectors.confluence.config import CrawlerConfig
+
+        config = CrawlerConfig(
+            base_url="https://test.example.com",
+            pat="test-pat",
+            output_dir=Path("/tmp/test_crawl"),
+            attachments_dir=Path("/tmp/test_crawl/att"),
+            knowledge_sources={},
+        )
+
+        with (
+            patch("src.connectors.confluence.attachment_parser.AttachmentParser.configure_run"),
+            patch("src.connectors.confluence.ConfluenceFullClient") as MockClient,
+        ):
+            client_instance = MagicMock()
+            client_instance.crawl_recursive = AsyncMock()
+            client_instance.save_incremental = MagicMock()
+            client_instance.shutdown_requested = False
+            client_instance.load_checkpoint = MagicMock(return_value=False)
+            client_instance.load_incremental = MagicMock(return_value=0)
+            client_instance.finalize_from_incremental = MagicMock(return_value=[])
+            client_instance.write_runtime_stats = MagicMock()
+            client_instance.all_pages = []
+            client_instance.close = AsyncMock()
+            MockClient.return_value = client_instance
+
+            result = await crawl_space(
+                config, page_id="123", source_name="test",
+                source_key="test_src", resume=True,
+            )
+
+        assert result.interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_crawl_space_resume_with_incremental_only(self):
+        from src.connectors.confluence import crawl_space
+        from src.connectors.confluence.config import CrawlerConfig
+
+        config = CrawlerConfig(
+            base_url="https://test.example.com",
+            pat="test-pat",
+            output_dir=Path("/tmp/test_crawl"),
+            attachments_dir=Path("/tmp/test_crawl/att"),
+            knowledge_sources={},
+        )
+
+        with (
+            patch("src.connectors.confluence.attachment_parser.AttachmentParser.configure_run"),
+            patch("src.connectors.confluence.ConfluenceFullClient") as MockClient,
+        ):
+            client_instance = MagicMock()
+            client_instance.crawl_recursive = AsyncMock()
+            client_instance.save_incremental = MagicMock()
+            client_instance.shutdown_requested = False
+            client_instance.load_checkpoint = MagicMock(return_value=False)
+            client_instance.load_incremental = MagicMock(return_value=3)
+            client_instance.finalize_from_incremental = MagicMock(return_value=[])
+            client_instance.write_runtime_stats = MagicMock()
+            client_instance.all_pages = []
+            client_instance.close = AsyncMock()
+            MockClient.return_value = client_instance
+
+            result = await crawl_space(
+                config, page_id="123", source_name="test",
+                source_key="test_src", resume=True,
+            )
+
+        assert result.interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_crawl_space_interrupted(self):
+        from src.connectors.confluence import crawl_space
+        from src.connectors.confluence.config import CrawlerConfig
+
+        config = CrawlerConfig(
+            base_url="https://test.example.com",
+            pat="test-pat",
+            output_dir=Path("/tmp/test_crawl"),
+            attachments_dir=Path("/tmp/test_crawl/att"),
+            knowledge_sources={},
+        )
+
+        with (
+            patch("src.connectors.confluence.attachment_parser.AttachmentParser.configure_run"),
+            patch("src.connectors.confluence.ConfluenceFullClient") as MockClient,
+        ):
+            client_instance = MagicMock()
+            client_instance.crawl_bfs = AsyncMock()
+            client_instance.save_incremental = MagicMock()
+            client_instance.shutdown_requested = True
+            client_instance.save_checkpoint = MagicMock()
+            client_instance.finalize_from_incremental = MagicMock(return_value=[])
+            client_instance.write_runtime_stats = MagicMock()
+            client_instance.all_pages = []
+            client_instance.clear_checkpoint = MagicMock()
+            client_instance.clear_incremental = MagicMock()
+            client_instance.close = AsyncMock()
+            MockClient.return_value = client_instance
+
+            result = await crawl_space(
+                config, page_id="123", source_name="test",
+                source_key="test_src", use_bfs=True,
+            )
+
+        assert result.interrupted is True
+        client_instance.save_checkpoint.assert_called_once_with("test_src")
+
+    @pytest.mark.asyncio
+    async def test_crawl_space_with_signal_registration(self):
+        from src.connectors.confluence import crawl_space
+        from src.connectors.confluence.config import CrawlerConfig
+
+        config = CrawlerConfig(
+            base_url="https://test.example.com",
+            pat="test-pat",
+            output_dir=Path("/tmp/test_crawl"),
+            attachments_dir=Path("/tmp/test_crawl/att"),
+            knowledge_sources={},
+        )
+
+        with (
+            patch("src.connectors.confluence.attachment_parser.AttachmentParser.configure_run"),
+            patch("src.connectors.confluence.ConfluenceFullClient") as MockClient,
+            patch("src.connectors.confluence._setup_signal_handlers") as mock_setup,
+            patch("src.connectors.confluence._restore_signal_handlers") as mock_restore,
+        ):
+            mock_setup.return_value = (False, signal.SIG_DFL, signal.SIG_DFL)
+            client_instance = MagicMock()
+            client_instance.crawl_bfs = AsyncMock()
+            client_instance.save_incremental = MagicMock()
+            client_instance.shutdown_requested = False
+            client_instance.finalize_from_incremental = MagicMock(return_value=[])
+            client_instance.write_runtime_stats = MagicMock()
+            client_instance.all_pages = []
+            client_instance.clear_checkpoint = MagicMock()
+            client_instance.clear_incremental = MagicMock()
+            client_instance.close = AsyncMock()
+            MockClient.return_value = client_instance
+
+            await crawl_space(
+                config, page_id="123", source_name="test",
+                source_key="test_src", register_signals=True,
+            )
+
+        mock_setup.assert_called_once()
+        mock_restore.assert_called_once()

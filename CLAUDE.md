@@ -21,8 +21,12 @@ make dashboard          # Streamlit :8501
 make ingest ARGS="--source ./docs/ --kb-id my-kb"
 make crawl ARGS="--source ./docs/ --output ./crawl_results/"
 
+# Confluence Crawler
+CONFLUENCE_PAT=your_pat uv run python scripts/confluence_crawler.py --page-id 373865276 --full
+uv run python scripts/confluence_crawler.py --source faq --sample 10
+
 # Tests
-make test-unit          # 4,352 tests, no services needed (~50s)
+make test-unit          # 5,000+ tests, no services needed (~50s)
 uv run pytest tests/unit/test_foo.py::test_bar -v --no-cov  # single test
 
 # Deploy
@@ -61,6 +65,7 @@ Dashboard ────┼──▶ FastAPI API (:8000)
 | Embedding | `USE_CLOUD_EMBEDDING=true` | TEI (`BGE_TEI_URL`) | Ollama → ONNX |
 | Reranker | `RERANKER_TEI_URL` | TEI (bge-reranker-v2-m3) | Local cross-encoder |
 | LLM | `USE_SAGEMAKER_LLM=true` | SageMaker (EXAONE) | Ollama |
+| OCR | `PADDLEOCR_API_URL` | EC2 on-demand (`PADDLEOCR_INSTANCE_ID`) | Local PaddleOCR |
 
 ### Module Structure (refactored)
 
@@ -75,6 +80,7 @@ Large files are split into helpers/sub-modules with **facade re-exports** for ba
 | `src/pipeline/graphrag_extractor.py` | → `graphrag/` pkg | GraphRAG (extractor, models, prompts) |
 | `src/search/enhanced_similarity_matcher.py` | → `similarity/` pkg | Similarity matching (matcher, strategies, utils) |
 | `dashboard/services/api_client.py` | → `api/` pkg (8 modules) | Frontend API client (core, kb, search, glossary, quality, admin, auth, misc) |
+| `src/connectors/confluence/` | 8-module pkg | Confluence crawler (client, models, html_parsers, attachment_parser, config, output, structured_ir) |
 
 **All existing imports continue to work** — original files are facades.
 
@@ -120,6 +126,8 @@ Stage 2: JSONL → chunk → passage clean → contextual prefix → embed → d
 
 - Incremental: `cli/crawl.py` tracks `.crawl_state.json`, `cli/ingest.py` checks Qdrant content_hash
 - Batch OCR cleaning: `scripts/batch_clean_chunks.py` (payload update, no re-embedding)
+- **Confluence crawl**: `src/connectors/confluence/` — BFS parallel crawl + `CrawlResultConnector` → `IngestionPipeline`
+- **Data source trigger**: Dashboard or API trigger → crawl → ingest → KB auto-register (see `docs/CONFLUENCE_CRAWLER.md`)
 
 ## Code Conventions
 
@@ -127,7 +135,8 @@ Stage 2: JSONL → chunk → passage clean → contextual prefix → embed → d
 - **Ruff**: target `py312`, line-length 100. E402 exempt for Streamlit pages.
 - **No bare except**: always log exceptions, never `except: pass`.
 - **Route pattern**: thin handler in `routes/X.py`, business logic in `routes/X_helpers.py`.
-- **Tests**: `tests/unit/` (4,352 tests, ~50s). New code must have tests.
+- **Tests**: `tests/unit/` (5,000+ tests, ~50s). New code must have tests.
+- **Data source trigger**: `POST /api/v1/admin/data-sources/{id}/trigger` → background crawl + ingest.
 
 ## Parallel Development (Multi-Agent Workflow)
 
@@ -166,7 +175,7 @@ kl-home                            # return to main
 
 - `agent/<name>` — worktree-isolated feature branches
 - PR required for merge to `main`
-- CI runs lint + 4,352 unit tests on every PR
+- CI runs lint + 5,000+ unit tests on every PR (Bitbucket Pipelines + SonarQube)
 
 ## Evaluation
 
@@ -191,5 +200,6 @@ AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py g-espa   # 
 | `docs/DEPLOYMENT.md` | K8s deployment guide |
 | `docs/CONFIGURATION.md` | All env vars + tuning parameters |
 | `docs/TROUBLESHOOTING.md` | Common issues + solutions |
+| `docs/CONFLUENCE_CRAWLER.md` | Confluence crawler pipeline, PaddleOCR EC2, data source trigger |
 | `CONTRIBUTING.md` | Dev setup, code style, PR process |
 | `CHANGELOG.md` | Version history |

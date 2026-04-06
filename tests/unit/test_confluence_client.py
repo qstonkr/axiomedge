@@ -6,6 +6,7 @@ Covers the main code paths with mocked external dependencies (httpx, fitz, openp
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 from pathlib import Path
@@ -2566,3 +2567,2325 @@ class TestApiWrappers:
         client = _make_client(tmp_output)
         client._http_get_with_retry = AsyncMock(side_effect=Exception("err"))
         assert await client.get_attachments("pg1") == []
+
+
+# ===================================================================
+# attachment_parser.py — parse_pdf with OCR page
+# ===================================================================
+
+
+class TestParsePdfOcr:
+    def test_parse_pdf_textless_page_with_ocr(self, tmp_path, _clean_env):
+        """Test textless PDF page triggers OCR fallback."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+
+        # Page 1: has text. Page 2: textless (triggers OCR).
+        page1 = MagicMock()
+        page1.get_text.return_value = "Real text"
+        page1.find_tables.return_value = []
+
+        page2 = MagicMock()
+        page2.get_text.return_value = ""  # textless
+        page2.find_tables.return_value = []
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([page1, page2]))
+        mock_doc.__len__ = MagicMock(return_value=2)
+
+        mock_fitz = MagicMock()
+        mock_fitz.open.return_value = mock_doc
+
+        with (
+            patch.dict("sys.modules", {"fitz": mock_fitz}),
+            patch.object(
+                AttachmentParser, "_ocr_pdf_page", return_value="OCR extracted text",
+            ),
+        ):
+            result = AttachmentParser.parse_pdf(tmp_path / "mixed.pdf")
+
+        assert "Real text" in result.extracted_text
+        assert "OCR extracted text" in result.extracted_text
+        assert result.ocr_applied is True
+        assert result.ocr_units_extracted == 1
+
+    def test_parse_pdf_table_extraction(self, tmp_path, _clean_env):
+        """Test PDF table extraction from page."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+
+        mock_table = MagicMock()
+        mock_table.extract.return_value = [
+            ["Col1", "Col2"],
+            ["v1", "v2"],
+        ]
+
+        mock_tables = MagicMock()
+        mock_tables.__iter__ = MagicMock(return_value=iter([mock_table]))
+
+        page = MagicMock()
+        page.get_text.return_value = "Some text"
+        page.find_tables.return_value = mock_tables
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+        mock_doc.__len__ = MagicMock(return_value=1)
+
+        mock_fitz = MagicMock()
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict("sys.modules", {"fitz": mock_fitz}):
+            result = AttachmentParser.parse_pdf(tmp_path / "tables.pdf")
+
+        assert len(result.extracted_tables) == 1
+        assert result.extracted_tables[0]["headers"] == ["Col1", "Col2"]
+
+    def test_parse_pdf_ocr_mode_off(self, tmp_path, _clean_env):
+        """When OCR mode is off, textless pages should set skip_reason."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        page = MagicMock()
+        page.get_text.return_value = ""  # textless
+        page.find_tables.return_value = []
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+        mock_doc.__len__ = MagicMock(return_value=1)
+
+        mock_fitz = MagicMock()
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict("sys.modules", {"fitz": mock_fitz}):
+            result = AttachmentParser.parse_pdf(tmp_path / "ocr_off.pdf")
+
+        assert result.ocr_skip_reason == "disabled"
+        assert result.ocr_applied is False
+
+    def test_parse_pdf_ocr_budget_exceeded(self, tmp_path, _clean_env):
+        """When OCR budget is exceeded, deferred pages set budget_exceeded skip reason."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run(
+            "test", overrides={"ocr_max_pdf_pages": 0},
+        )
+
+        page = MagicMock()
+        page.get_text.return_value = ""  # textless
+        page.find_tables.return_value = []
+
+        mock_doc = MagicMock()
+        mock_doc.__iter__ = MagicMock(return_value=iter([page]))
+        mock_doc.__len__ = MagicMock(return_value=1)
+
+        mock_fitz = MagicMock()
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict("sys.modules", {"fitz": mock_fitz}):
+            result = AttachmentParser.parse_pdf(tmp_path / "budget.pdf")
+
+        assert result.ocr_skip_reason == "budget_exceeded"
+        assert result.ocr_units_deferred == 1
+
+
+# ===================================================================
+# attachment_parser.py — parse_word .doc fallback
+# ===================================================================
+
+
+class TestParseWordDoc:
+    def test_parse_legacy_doc_antiword(self, tmp_path):
+        """Test .doc parsing with antiword available."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake_result = AttachmentParseResult(
+            extracted_text="antiword output",
+            extracted_tables=[],
+            confidence=0.7,
+        )
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_cli_doc_extract",
+            return_value=fake_result,
+        ):
+            result = AttachmentParser.parse_word(tmp_path / "test.doc")
+
+        assert result.extracted_text == "antiword output"
+        assert result.confidence == 0.7
+
+    def test_parse_docx_with_tables_and_text(self, tmp_path):
+        """Test .docx with both paragraphs and tables."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_para = MagicMock()
+        mock_para.text = "Paragraph text"
+
+        mock_cell_h = MagicMock()
+        mock_cell_h.text = "Header"
+        mock_cell_v = MagicMock()
+        mock_cell_v.text = "Value"
+        mock_row_h = MagicMock()
+        mock_row_h.cells = [mock_cell_h]
+        mock_row_v = MagicMock()
+        mock_row_v.cells = [mock_cell_v]
+
+        mock_table = MagicMock()
+        mock_table.rows = [mock_row_h, mock_row_v]
+
+        mock_doc = MagicMock()
+        mock_doc.paragraphs = [mock_para]
+        mock_doc.tables = [mock_table]
+
+        mock_docx_module = MagicMock()
+        mock_docx_module.Document.return_value = mock_doc
+
+        with patch.dict("sys.modules", {"docx": mock_docx_module}):
+            result = AttachmentParser.parse_word(tmp_path / "both.docx")
+
+        assert "Paragraph text" in result.extracted_text
+        assert len(result.extracted_tables) == 1
+        assert result.confidence == 0.9
+
+
+# ===================================================================
+# attachment_parser.py — _build_ppt_result
+# ===================================================================
+
+
+class TestBuildPptResult:
+    def test_with_text(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+
+        result = AttachmentParser._build_ppt_result(
+            "Slide content", [{"slide": 1}], policy,
+            should_ocr=True,
+            ocr_units_attempted=3,
+            ocr_units_extracted=2,
+            ocr_units_deferred=0,
+            native_text_chars=100,
+            ocr_text_chars=50,
+        )
+
+        assert result.confidence == 0.85
+        assert result.ocr_applied is True
+        assert result.ocr_units_attempted == 3
+        assert result.native_text_chars == 100
+
+    def test_with_empty_text(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+
+        result = AttachmentParser._build_ppt_result(
+            "", [], policy,
+            should_ocr=False,
+            ocr_units_attempted=0,
+            ocr_units_extracted=0,
+            ocr_units_deferred=0,
+            native_text_chars=0,
+            ocr_text_chars=0,
+        )
+
+        assert result.confidence == 0.0
+        assert result.ocr_applied is False
+
+    def test_with_deferred_budget(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+
+        result = AttachmentParser._build_ppt_result(
+            "Some text", [], policy,
+            should_ocr=True,
+            ocr_units_attempted=5,
+            ocr_units_extracted=3,
+            ocr_units_deferred=2,
+            native_text_chars=50,
+            ocr_text_chars=100,
+        )
+
+        assert result.ocr_skip_reason == "budget_exceeded"
+
+
+# ===================================================================
+# attachment_parser.py — _apply_pdf_fallback_if_needed
+# ===================================================================
+
+
+class TestApplyPdfFallback:
+    def test_no_fallback_when_text_sufficient(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        text, tables, chars = AttachmentParser._apply_pdf_fallback_if_needed(
+            should_ocr=True,
+            full_text="A" * 100,
+            tables=[],
+            ocr_text_chars=0,
+            file_path=Path("/tmp/test.pptx"),
+            heartbeat_fn=None,
+        )
+
+        assert text == "A" * 100
+
+    def test_no_fallback_when_should_ocr_false(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        text, tables, chars = AttachmentParser._apply_pdf_fallback_if_needed(
+            should_ocr=False,
+            full_text="short",
+            tables=[],
+            ocr_text_chars=0,
+            file_path=Path("/tmp/test.pptx"),
+            heartbeat_fn=None,
+        )
+
+        assert text == "short"
+
+    def test_fallback_applied_when_sparse(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        with patch.object(
+            AttachmentParser, "_ppt_pdf_fallback",
+            return_value=("Fallback text with more content", [{"t": 1}], 30),
+        ):
+            text, tables, chars = AttachmentParser._apply_pdf_fallback_if_needed(
+                should_ocr=True,
+                full_text="x",
+                tables=[],
+                ocr_text_chars=0,
+                file_path=Path("/tmp/test.pptx"),
+                heartbeat_fn=None,
+            )
+
+        assert text == "Fallback text with more content"
+        assert len(tables) == 1
+        assert chars == 30
+
+    def test_fallback_returns_none(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        with patch.object(
+            AttachmentParser, "_ppt_pdf_fallback",
+            return_value=None,
+        ):
+            text, tables, chars = AttachmentParser._apply_pdf_fallback_if_needed(
+                should_ocr=True,
+                full_text="x",
+                tables=[{"old": 1}],
+                ocr_text_chars=5,
+                file_path=Path("/tmp/test.pptx"),
+                heartbeat_fn=None,
+            )
+
+        assert text == "x"
+        assert tables == [{"old": 1}]
+
+
+# ===================================================================
+# attachment_parser.py — _accumulate_ocr_result
+# ===================================================================
+
+
+class TestAccumulateOcrResult:
+    def test_accumulate_basic(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        totals = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+        text_parts = []
+
+        item = {
+            "attempted": 1, "extracted": 1, "deferred": 0, "chars": 50,
+            "text": "[Slide 1] content",
+        }
+        AttachmentParser._accumulate_ocr_result(item, totals, text_parts)
+
+        assert totals["attempted"] == 1
+        assert totals["extracted"] == 1
+        assert totals["chars"] == 50
+        assert len(text_parts) == 1
+
+    def test_accumulate_with_timed_out(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        totals = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+        text_parts = []
+        timed_out = []
+
+        item = {
+            "attempted": 1, "extracted": 0, "deferred": 0, "chars": 0,
+            "timed_out_item": (3, b"png_data"),
+        }
+        AttachmentParser._accumulate_ocr_result(item, totals, text_parts, timed_out)
+
+        assert len(timed_out) == 1
+        assert timed_out[0] == (3, b"png_data")
+
+    def test_accumulate_no_text(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        totals = {"attempted": 1, "extracted": 0, "deferred": 0, "chars": 0}
+        text_parts = []
+
+        item = {"attempted": 0, "extracted": 0, "deferred": 1, "chars": 0}
+        AttachmentParser._accumulate_ocr_result(item, totals, text_parts)
+
+        assert totals["deferred"] == 1
+        assert len(text_parts) == 0
+
+
+# ===================================================================
+# attachment_parser.py — _resize_image_if_needed edge cases
+# ===================================================================
+
+
+class TestResizeImageEdgeCases:
+    def test_normal_image_passes_through(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_img = MagicMock()
+        mock_img.size = (500, 400)
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._pad_extreme_aspect_ratio",
+            return_value=mock_img,
+        ):
+            result = AttachmentParser._resize_image_if_needed(mock_img)
+        assert result is mock_img
+
+    def test_too_small_image_returns_none(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_img = MagicMock()
+        mock_img.size = (20, 20)  # Below _OCR_MIN_DIMENSION (32)
+
+        result = AttachmentParser._resize_image_if_needed(mock_img)
+        assert result is None
+
+    def test_too_small_width_returns_none(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_img = MagicMock()
+        mock_img.size = (10, 500)
+
+        result = AttachmentParser._resize_image_if_needed(mock_img)
+        assert result is None
+
+    def test_large_image_downscaled(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_img = MagicMock()
+        mock_img.size = (4000, 3000)
+
+        resized_img = MagicMock()
+        resized_img.size = (2048, 1536)
+        mock_img.resize.return_value = resized_img
+
+        with (
+            patch(
+                "src.connectors.confluence.attachment_parser._downscale_image",
+                return_value=resized_img,
+            ),
+            patch(
+                "src.connectors.confluence.attachment_parser._pad_extreme_aspect_ratio",
+                return_value=resized_img,
+            ),
+        ):
+            result = AttachmentParser._resize_image_if_needed(mock_img)
+        assert result is resized_img
+
+    def test_large_image_downscale_too_small(self, _clean_env):
+        """If downscaling would make image too small, returns None."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_img = MagicMock()
+        mock_img.size = (3000, 10)  # Very thin image
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._downscale_image",
+            return_value=None,
+        ):
+            result = AttachmentParser._resize_image_if_needed(mock_img)
+        assert result is None
+
+
+# ===================================================================
+# attachment_parser.py — _compute_pdf_confidence
+# ===================================================================
+
+
+class TestComputePdfConfidence:
+    def test_text_only(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(True, 0) == 0.9
+
+    def test_text_with_ocr(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(True, 3) == 0.7
+
+    def test_no_text(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(False, 0) == 0.0
+
+
+# ===================================================================
+# attachment_parser.py — _filter_ocr_noise
+# ===================================================================
+
+
+class TestFilterOcrNoise:
+    def test_removes_repeated_chars(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "Good line\n폐폐폐폐폐\nAnother good line"
+        result = _filter_ocr_noise(text)
+        assert "폐폐폐폐폐" not in result
+        assert "Good line" in result
+        assert "Another good line" in result
+
+    def test_keeps_short_lines(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "OK\naaaa\nHello"
+        result = _filter_ocr_noise(text)
+        assert "OK" in result
+        assert "aaaa" in result  # len < 5 so not filtered
+
+    def test_keeps_diverse_chars(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "Hello World"
+        result = _filter_ocr_noise(text)
+        assert "Hello World" in result
+
+    def test_empty_lines_removed(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "\n\n\n"
+        result = _filter_ocr_noise(text)
+        assert result == ""
+
+
+# ===================================================================
+# attachment_parser.py — _determine_ppt_skip_reason
+# ===================================================================
+
+
+class TestDeterminePptSkipReason:
+    def test_off_mode(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="off",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+        assert AttachmentParser._determine_ppt_skip_reason(policy, True, 0) == "disabled"
+
+    def test_auto_with_sufficient_text(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+        assert AttachmentParser._determine_ppt_skip_reason(policy, False, 0) == "native_text_sufficient"
+
+    def test_budget_exceeded(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+        assert AttachmentParser._determine_ppt_skip_reason(policy, True, 5) == "budget_exceeded"
+
+    def test_no_skip_reason(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force",
+            ocr_min_text_chars=100,
+            ocr_max_pdf_pages=100,
+            ocr_max_ppt_slides=100,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True,
+            layout_analysis_enabled=True,
+        )
+        assert AttachmentParser._determine_ppt_skip_reason(policy, True, 0) is None
+
+
+# ===================================================================
+# attachment_parser.py — _extract_pdf_page_tables
+# ===================================================================
+
+
+class TestExtractPdfPageTables:
+    def test_extracts_tables(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_table = MagicMock()
+        mock_table.extract.return_value = [
+            ["H1", "H2"],
+            ["a", "b"],
+        ]
+        page = MagicMock()
+        page.find_tables.return_value = [mock_table]
+
+        tables = AttachmentParser._extract_pdf_page_tables(page, 1)
+        assert len(tables) == 1
+        assert tables[0]["page"] == 1
+        assert tables[0]["headers"] == ["H1", "H2"]
+
+    def test_skips_single_row_tables(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_table = MagicMock()
+        mock_table.extract.return_value = [["H1"]]  # only header
+        page = MagicMock()
+        page.find_tables.return_value = [mock_table]
+
+        tables = AttachmentParser._extract_pdf_page_tables(page, 1)
+        assert tables == []
+
+    def test_handles_exception(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        page = MagicMock()
+        page.find_tables.side_effect = Exception("corrupt")
+
+        tables = AttachmentParser._extract_pdf_page_tables(page, 1)
+        assert tables == []
+
+
+# ===================================================================
+# attachment_parser.py — _extract_word_tables
+# ===================================================================
+
+
+class TestExtractWordTables:
+    def test_multiple_tables(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        cells_h = [MagicMock(text="A"), MagicMock(text="B")]
+        cells_v = [MagicMock(text="1"), MagicMock(text="2")]
+        row_h = MagicMock(cells=cells_h)
+        row_v = MagicMock(cells=cells_v)
+        table = MagicMock(rows=[row_h, row_v])
+        doc = MagicMock(tables=[table])
+
+        tables = AttachmentParser._extract_word_tables(doc)
+        assert len(tables) == 1
+        assert tables[0]["table_index"] == 1
+        assert tables[0]["headers"] == ["A", "B"]
+
+    def test_empty_table(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        table = MagicMock(rows=[])
+        doc = MagicMock(tables=[table])
+
+        tables = AttachmentParser._extract_word_tables(doc)
+        assert tables == []
+
+
+# ===================================================================
+# attachment_parser.py — _filter_ocr_noise
+# ===================================================================
+
+
+class TestFilterOcrNoise:
+    def test_removes_repeated_chars(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "Good line\n폐폐폐폐폐\nAnother good"
+        result = _filter_ocr_noise(text)
+        assert "폐폐폐폐폐" not in result
+        assert "Good line" in result
+        assert "Another good" in result
+
+    def test_keeps_short_lines(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "Hi\nAAAA\nOK"
+        result = _filter_ocr_noise(text)
+        # "AAAA" is only 4 chars, below the 5-char threshold
+        assert "AAAA" in result
+
+    def test_removes_five_char_repeated(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "AAAAA"
+        result = _filter_ocr_noise(text)
+        assert result == ""
+
+    def test_keeps_normal_text(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "Normal text here\nAnother line"
+        result = _filter_ocr_noise(text)
+        assert "Normal text here" in result
+        assert "Another line" in result
+
+    def test_empty_input(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        assert _filter_ocr_noise("") == ""
+
+    def test_skips_blank_lines(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        text = "Hello\n\n\nWorld"
+        result = _filter_ocr_noise(text)
+        assert "Hello" in result
+        assert "World" in result
+
+
+# ===================================================================
+# attachment_parser.py — _should_ocr_ppt
+# ===================================================================
+
+
+class TestShouldOcrPpt:
+    def test_off_mode(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="off", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+        assert _should_ocr_ppt(policy, 200) is False
+
+    def test_force_mode(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+        assert _should_ocr_ppt(policy, 200) is True
+
+    def test_auto_mode_sufficient_text(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+        assert _should_ocr_ppt(policy, 200) is False
+
+    def test_auto_mode_insufficient_text(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="auto", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+        assert _should_ocr_ppt(policy, 50) is True
+
+
+# ===================================================================
+# attachment_parser.py — _determine_ppt_skip_reason
+# ===================================================================
+
+
+class TestDeterminePptSkipReason:
+    def _make_policy(self, mode="force"):
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        return AttachmentOCRPolicy(
+            attachment_ocr_mode=mode, ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+
+    def test_off_mode(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy("off")
+        assert AttachmentParser._determine_ppt_skip_reason(policy, True, 0) == "disabled"
+
+    def test_auto_mode_sufficient_text(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy("auto")
+        result = AttachmentParser._determine_ppt_skip_reason(policy, False, 0)
+        assert result == "native_text_sufficient"
+
+    def test_budget_exceeded(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy("force")
+        result = AttachmentParser._determine_ppt_skip_reason(policy, True, 5)
+        assert result == "budget_exceeded"
+
+    def test_no_skip_reason(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy("force")
+        result = AttachmentParser._determine_ppt_skip_reason(policy, True, 0)
+        assert result is None
+
+
+# ===================================================================
+# attachment_parser.py — parse_ppt
+# ===================================================================
+
+
+class TestParsePpt:
+    def _make_policy(self, mode="force", slide_render=False):
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        return AttachmentOCRPolicy(
+            attachment_ocr_mode=mode, ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=slide_render, layout_analysis_enabled=False,
+        )
+
+    def test_parse_pptx_text_shapes(self, tmp_path, _clean_env):
+        """PPTX with text shapes extracts text correctly."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        mock_shape = MagicMock()
+        mock_shape.text = "Slide text content"
+        mock_shape.has_table = False
+        mock_shape.shape_type = 0  # not GROUP, not PICTURE
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [mock_shape]
+        mock_slide.has_notes_slide = False
+
+        mock_prs = MagicMock()
+        mock_prs.slides = [mock_slide]
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": mock_enum,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "test.pptx")
+
+        assert "Slide text content" in result.extracted_text
+        assert result.confidence == 0.85
+
+    def test_parse_pptx_with_table(self, tmp_path, _clean_env):
+        """PPTX with table shapes extracts table data."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        mock_cell_h1 = MagicMock()
+        mock_cell_h1.text = "Header1"
+        mock_cell_h2 = MagicMock()
+        mock_cell_h2.text = "Header2"
+        mock_row_h = MagicMock()
+        mock_row_h.cells = [mock_cell_h1, mock_cell_h2]
+
+        mock_cell_v1 = MagicMock()
+        mock_cell_v1.text = "Value1"
+        mock_cell_v2 = MagicMock()
+        mock_cell_v2.text = "Value2"
+        mock_row_v = MagicMock()
+        mock_row_v.cells = [mock_cell_v1, mock_cell_v2]
+
+        mock_table = MagicMock()
+        mock_table.rows = [mock_row_h, mock_row_v]
+
+        mock_shape = MagicMock()
+        mock_shape.text = ""
+        mock_shape.has_table = True
+        mock_shape.table = mock_table
+        mock_shape.shape_type = 0
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [mock_shape]
+        mock_slide.has_notes_slide = False
+
+        mock_prs = MagicMock()
+        mock_prs.slides = [mock_slide]
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": mock_enum,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "test.pptx")
+
+        assert len(result.extracted_tables) == 1
+        assert result.extracted_tables[0]["headers"] == ["Header1", "Header2"]
+
+    def test_parse_pptx_with_notes(self, tmp_path, _clean_env):
+        """PPTX with slide notes extracts notes text."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        mock_shape = MagicMock()
+        mock_shape.text = "Main content"
+        mock_shape.has_table = False
+        mock_shape.shape_type = 0
+
+        mock_notes_frame = MagicMock()
+        mock_notes_frame.text = "Speaker notes here"
+
+        mock_notes_slide = MagicMock()
+        mock_notes_slide.notes_text_frame = mock_notes_frame
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [mock_shape]
+        mock_slide.has_notes_slide = True
+        mock_slide.notes_slide = mock_notes_slide
+
+        mock_prs = MagicMock()
+        mock_prs.slides = [mock_slide]
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": mock_enum,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "test.pptx")
+
+        assert "[Notes] Speaker notes here" in result.extracted_text
+
+    def test_parse_pptx_empty_slides(self, tmp_path, _clean_env):
+        """PPTX with empty slides returns zero confidence."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = []
+        mock_slide.has_notes_slide = False
+
+        mock_prs = MagicMock()
+        mock_prs.slides = [mock_slide]
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": mock_enum,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "test.pptx")
+
+        assert result.confidence == 0.0
+
+    def test_parse_pptx_exception(self, tmp_path, _clean_env):
+        """PPTX parse error returns error result."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.side_effect = Exception("corrupt pptx")
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": MagicMock(),
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "bad.pptx")
+
+        assert result.confidence == 0.0
+        assert "오류" in result.extracted_text or "corrupt" in result.extracted_text
+
+    def test_parse_legacy_ppt_path(self, tmp_path, _clean_env):
+        """Legacy .ppt file delegates to _parse_legacy_ppt."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        AttachmentParser.configure_run("test")
+        fake_result = AttachmentParseResult(
+            extracted_text="legacy text", extracted_tables=[], confidence=0.5,
+        )
+        with patch.object(
+            AttachmentParser, "_parse_legacy_ppt", return_value=fake_result
+        ):
+            result = AttachmentParser.parse_ppt(tmp_path / "old.ppt")
+
+        assert result.extracted_text == "legacy text"
+
+    def test_parse_pptx_ocr_disabled(self, tmp_path, _clean_env):
+        """OCR disabled mode still extracts native text."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        mock_shape = MagicMock()
+        mock_shape.text = "Native text only"
+        mock_shape.has_table = False
+        mock_shape.shape_type = 0
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [mock_shape]
+        mock_slide.has_notes_slide = False
+
+        mock_prs = MagicMock()
+        mock_prs.slides = [mock_slide]
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": mock_enum,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "test.pptx")
+
+        assert "Native text only" in result.extracted_text
+        assert result.ocr_applied is False
+        assert result.ocr_skip_reason == "disabled"
+
+    def test_parse_pptx_multiple_slides(self, tmp_path, _clean_env):
+        """PPTX with multiple slides."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        slides = []
+        for i in range(3):
+            shape = MagicMock()
+            shape.text = f"Slide {i + 1} text"
+            shape.has_table = False
+            shape.shape_type = 0
+            slide = MagicMock()
+            slide.shapes = [shape]
+            slide.has_notes_slide = False
+            slides.append(slide)
+
+        mock_prs = MagicMock()
+        mock_prs.slides = slides
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx,
+            "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": mock_enum,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "multi.pptx")
+
+        assert "Slide 1 text" in result.extracted_text
+        assert "Slide 3 text" in result.extracted_text
+        assert result.confidence == 0.85
+
+
+# ===================================================================
+# attachment_parser.py — _ocr_slide_image
+# ===================================================================
+
+
+class TestOcrSlideImage:
+    def test_successful_ocr_with_layout(self, _clean_env):
+        """OCR with layout analysis succeeding."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_img = MagicMock()
+        mock_img.mode = "RGB"
+        mock_img.copy.return_value = mock_img
+
+        # Create a minimal valid PNG
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            return_value="Layout OCR text",
+        ), patch(
+            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            side_effect=lambda x: x,
+        ), patch(
+            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            side_effect=lambda img, sn: img,
+        ):
+            result = AttachmentParser._ocr_slide_image(
+                png_bytes, 1, preprocess=True, layout_analysis=True, postprocess=False,
+            )
+
+        assert result == "Layout OCR text"
+
+    def test_fallback_to_standard_ocr(self, _clean_env):
+        """Falls back to standard OCR when layout analysis returns nothing."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            return_value=None,
+        ), patch.object(
+            AttachmentParser, "_fallback_standard_ocr", return_value="Standard OCR text",
+        ), patch(
+            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            side_effect=lambda x: x,
+        ), patch(
+            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            side_effect=lambda img, sn: img,
+        ):
+            result = AttachmentParser._ocr_slide_image(
+                png_bytes, 1, preprocess=True, layout_analysis=True, postprocess=False,
+            )
+
+        assert result == "Standard OCR text"
+
+    def test_returns_none_when_no_ocr(self, _clean_env):
+        """Returns None when both layout and standard OCR fail."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            return_value=None,
+        ), patch.object(
+            AttachmentParser, "_fallback_standard_ocr", return_value=None,
+        ), patch(
+            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            side_effect=lambda img, sn: img,
+        ):
+            result = AttachmentParser._ocr_slide_image(
+                png_bytes, 1, preprocess=True, layout_analysis=True, postprocess=False,
+            )
+
+        assert result is None
+
+    def test_postprocess_applied(self, _clean_env):
+        """Post-processing is applied when postprocess=True."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            return_value="Raw text",
+        ), patch(
+            "src.connectors.confluence.attachment_parser._postprocess_slide_text",
+            return_value="Processed text",
+        ), patch(
+            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            side_effect=lambda x: x,
+        ), patch(
+            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            side_effect=lambda img, sn: img,
+        ):
+            result = AttachmentParser._ocr_slide_image(
+                png_bytes, 1, preprocess=True, layout_analysis=True, postprocess=True,
+            )
+
+        assert result == "Processed text"
+
+    def test_exception_returns_none(self, _clean_env):
+        """Exception during OCR returns None."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        # Invalid PNG bytes
+        result = AttachmentParser._ocr_slide_image(
+            b"not a png", 1, preprocess=True, layout_analysis=True, postprocess=False,
+        )
+        assert result is None
+
+    def test_no_preprocess(self, _clean_env):
+        """Skips preprocessing when preprocess=False."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            return_value="OCR text",
+        ), patch(
+            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+        ) as mock_preprocess, patch(
+            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            side_effect=lambda x: x,
+        ):
+            result = AttachmentParser._ocr_slide_image(
+                png_bytes, 1, preprocess=False, layout_analysis=True, postprocess=False,
+            )
+
+        mock_preprocess.assert_not_called()
+        assert result == "OCR text"
+
+    def test_noise_filtered(self, _clean_env):
+        """Noise filtering is applied to OCR text."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+
+        with patch(
+            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            return_value="Good text\n폐폐폐폐폐",
+        ), patch(
+            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            side_effect=lambda img, sn: img,
+        ):
+            result = AttachmentParser._ocr_slide_image(
+                png_bytes, 1, preprocess=True, layout_analysis=True, postprocess=False,
+            )
+
+        assert "Good text" in result
+        assert "폐폐폐폐폐" not in result
+
+
+# ===================================================================
+# attachment_parser.py — _shape_ocr_pass
+# ===================================================================
+
+
+class TestShapeOcrPass:
+    def test_no_images(self, _clean_env):
+        """Empty image list returns empty results."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        text_parts, attempted, extracted, deferred, chars = (
+            AttachmentParser._shape_ocr_pass(
+                [], policy, 5, None, True, True, set(),
+            )
+        )
+        assert text_parts == []
+        assert attempted == 0
+        assert extracted == 0
+
+    def test_ocr_not_available(self, _clean_env):
+        """OCR unavailable breaks out of loop."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        with patch.object(
+            AttachmentParser, "_process_one_shape_ocr", return_value=None,
+        ):
+            text_parts, attempted, extracted, deferred, chars = (
+                AttachmentParser._shape_ocr_pass(
+                    [(1, b"img")], policy, 5, None, True, True, set(),
+                )
+            )
+        assert attempted == 0
+
+    def test_processes_images(self, _clean_env):
+        """Processes image shapes and accumulates results."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        item_result = {
+            "attempted": 1, "extracted": 1, "deferred": 0, "chars": 50,
+            "text": "[Slide 1 Image OCR]\nSome text", "timed_out_item": None,
+        }
+        with patch.object(
+            AttachmentParser, "_process_one_shape_ocr", return_value=item_result,
+        ), patch.object(
+            AttachmentParser, "_retry_timed_out_images",
+            return_value={"text_parts": [], "attempted": 0, "extracted": 0,
+                          "deferred": 0, "chars": 0},
+        ):
+            text_parts, attempted, extracted, deferred, chars = (
+                AttachmentParser._shape_ocr_pass(
+                    [(1, b"img")], policy, 5, None, True, True, set(),
+                )
+            )
+        assert attempted == 1
+        assert extracted == 1
+        assert len(text_parts) == 1
+
+
+# ===================================================================
+# attachment_parser.py — _retry_timed_out_images
+# ===================================================================
+
+
+class TestRetryTimedOutImages:
+    def test_empty_list_returns_zeros(self, _clean_env):
+        """Empty timed-out list returns empty result."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        result = AttachmentParser._retry_timed_out_images(
+            [], policy, True, set(), set(), None,
+        )
+        assert result["attempted"] == 0
+        assert result["extracted"] == 0
+
+    def test_retries_timed_out(self, _clean_env):
+        """Retries timed-out images."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        retry_item = {
+            "attempted": 1, "extracted": 1, "deferred": 0, "chars": 30,
+            "text": "[Slide 1 Image OCR]\nRetried text",
+        }
+        with patch.object(
+            AttachmentParser, "_retry_one_image", return_value=retry_item,
+        ):
+            result = AttachmentParser._retry_timed_out_images(
+                [(1, b"img")], policy, True, set(), set(), None,
+            )
+        assert result["extracted"] == 1
+        assert len(result["text_parts"]) == 1
+
+
+# ===================================================================
+# attachment_parser.py — _retry_one_image
+# ===================================================================
+
+
+class TestRetryOneImage:
+    def _make_policy(self, max_slides=10):
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        return AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=max_slides,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+
+    def test_successful_retry(self, _clean_env):
+        """Successful retry returns text and increments extracted."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy()
+        with patch.object(
+            AttachmentParser, "_ocr_extract_safe",
+            return_value=("Retried text", 0.8, []),
+        ):
+            result = AttachmentParser._retry_one_image(
+                1, b"png_bytes", policy, False, set(), set(),
+            )
+        assert result["text"] is not None
+        assert "Retried text" in result["text"]
+        assert result["extracted"] == 1
+        assert result["attempted"] == 1
+
+    def test_deferred_budget_exceeded(self, _clean_env):
+        """Budget exceeded defers the image."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy(max_slides=1)
+        attempted = {99}  # already 1 attempted, budget is 1
+        result = AttachmentParser._retry_one_image(
+            2, b"png_bytes", policy, False, attempted, set(),
+        )
+        assert result["deferred"] == 1
+
+    def test_low_confidence_fails(self, _clean_env):
+        """Low confidence OCR result is not extracted."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy()
+        with patch.object(
+            AttachmentParser, "_ocr_extract_safe",
+            return_value=("bad text", 0.1, []),
+        ):
+            result = AttachmentParser._retry_one_image(
+                1, b"png_bytes", policy, False, set(), set(),
+            )
+        assert result["text"] is None
+        assert result["extracted"] == 0
+
+    def test_exception_handled(self, _clean_env):
+        """Exception during retry is caught gracefully."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        policy = self._make_policy()
+        with patch.object(
+            AttachmentParser, "_ocr_extract_safe",
+            side_effect=Exception("OCR crash"),
+        ):
+            result = AttachmentParser._retry_one_image(
+                1, b"png_bytes", policy, False, set(), set(),
+            )
+        assert result["text"] is None
+        assert result["extracted"] == 0
+
+
+# ===================================================================
+# attachment_parser.py — _extract_ppt_slide_content
+# ===================================================================
+
+
+class TestExtractPptSlideContent:
+    def test_extracts_text_table_and_image(self, _clean_env):
+        """Extracts text, tables, and image shapes from a slide."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        # Text shape
+        text_shape = MagicMock()
+        text_shape.text = "Text content"
+        text_shape.has_table = False
+        text_shape.shape_type = 0
+
+        # Table shape
+        mock_cell_h = MagicMock()
+        mock_cell_h.text = "H"
+        mock_row_h = MagicMock()
+        mock_row_h.cells = [mock_cell_h]
+        mock_table = MagicMock()
+        mock_table.rows = [mock_row_h]
+
+        table_shape = MagicMock()
+        table_shape.text = ""
+        table_shape.has_table = True
+        table_shape.table = mock_table
+        table_shape.shape_type = 0
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [text_shape, table_shape]
+        mock_slide.has_notes_slide = False
+
+        with patch.dict("sys.modules", {"pptx.enum.shapes": mock_enum}):
+            texts, tables, images = AttachmentParser._extract_ppt_slide_content(
+                mock_slide, 1,
+            )
+
+        assert "Text content" in texts
+        assert len(tables) == 1
+
+    def test_empty_slide(self, _clean_env):
+        """Empty slide returns empty lists."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_enum = MagicMock()
+        mock_enum.MSO_SHAPE_TYPE.GROUP = 999
+        mock_enum.MSO_SHAPE_TYPE.PICTURE = 998
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = []
+        mock_slide.has_notes_slide = False
+
+        with patch.dict("sys.modules", {"pptx.enum.shapes": mock_enum}):
+            texts, tables, images = AttachmentParser._extract_ppt_slide_content(
+                mock_slide, 1,
+            )
+
+        assert texts == []
+        assert tables == []
+        assert images == []
+
+
+# ===================================================================
+# attachment_parser.py — _render_and_ocr_slides
+# ===================================================================
+
+
+class TestRenderAndOcrSlides:
+    def test_render_success(self, tmp_path, _clean_env):
+        """Successful slide rendering and OCR."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=False,
+        )
+
+        mock_render = MagicMock(return_value=[(1, b"png1"), (2, b"png2")])
+        with patch.dict("sys.modules", {
+            "scripts": MagicMock(),
+            "scripts.slide_renderer": MagicMock(render_slides_as_images=mock_render),
+        }), patch.object(
+            AttachmentParser, "_ocr_slide_image", return_value="OCR result",
+        ):
+            result = AttachmentParser._render_and_ocr_slides(
+                tmp_path / "test.pptx", policy, None, True, True,
+            )
+
+        slide_rendered, text_parts, attempted, extracted, deferred, chars, slides = result
+        assert slide_rendered is True
+        assert extracted == 2
+
+    def test_render_no_slides(self, tmp_path, _clean_env):
+        """Rendering returns empty list."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=False,
+        )
+
+        mock_render = MagicMock(return_value=[])
+        with patch.dict("sys.modules", {
+            "scripts": MagicMock(),
+            "scripts.slide_renderer": MagicMock(render_slides_as_images=mock_render),
+        }):
+            result = AttachmentParser._render_and_ocr_slides(
+                tmp_path / "test.pptx", policy, None, True, True,
+            )
+
+        slide_rendered, text_parts, attempted, extracted, deferred, chars, slides = result
+        assert slide_rendered is False
+
+    def test_render_exception_fallback(self, tmp_path, _clean_env):
+        """Rendering exception falls back gracefully."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=False,
+        )
+
+        with patch.dict("sys.modules", {
+            "scripts": MagicMock(),
+            "scripts.slide_renderer": MagicMock(
+                render_slides_as_images=MagicMock(side_effect=Exception("render fail")),
+            ),
+        }):
+            result = AttachmentParser._render_and_ocr_slides(
+                tmp_path / "test.pptx", policy, None, True, True,
+            )
+
+        slide_rendered = result[0]
+        assert slide_rendered is False
+
+
+# ===================================================================
+# attachment_parser.py — parse_excel more paths
+# ===================================================================
+
+
+class TestParseExcelPaths:
+    def test_multiple_sheets(self, tmp_path):
+        """Excel with multiple sheets extracts all sheets."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        sheets = {}
+        for name in ["Sheet1", "Sheet2"]:
+            sheet = MagicMock()
+            sheet.iter_rows.return_value = [
+                (f"{name}_H1", f"{name}_H2"),
+                (f"{name}_V1", f"{name}_V2"),
+            ]
+            sheets[name] = sheet
+
+        mock_wb = MagicMock()
+        mock_wb.sheetnames = ["Sheet1", "Sheet2"]
+        mock_wb.__getitem__ = MagicMock(side_effect=lambda k: sheets[k])
+
+        mock_openpyxl = MagicMock()
+        mock_openpyxl.load_workbook.return_value = mock_wb
+
+        with patch.dict("sys.modules", {"openpyxl": mock_openpyxl}):
+            result = AttachmentParser.parse_excel(tmp_path / "multi.xlsx")
+
+        assert len(result.extracted_tables) == 2
+        assert result.confidence == 0.95
+
+    def test_more_than_10_rows_truncated(self, tmp_path):
+        """Excel with >10 data rows shows truncation message."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        rows = [("H1", "H2")] + [(f"r{i}", f"v{i}") for i in range(15)]
+        mock_sheet = MagicMock()
+        mock_sheet.iter_rows.return_value = rows
+
+        mock_wb = MagicMock()
+        mock_wb.sheetnames = ["Sheet1"]
+        mock_wb.__getitem__ = MagicMock(return_value=mock_sheet)
+
+        mock_openpyxl = MagicMock()
+        mock_openpyxl.load_workbook.return_value = mock_wb
+
+        with patch.dict("sys.modules", {"openpyxl": mock_openpyxl}):
+            result = AttachmentParser.parse_excel(tmp_path / "big.xlsx")
+
+        assert "외 5행" in result.extracted_text
+
+
+# ===================================================================
+# attachment_parser.py — parse_word more paths
+# ===================================================================
+
+
+class TestParseWordPaths:
+    def test_parse_doc_legacy(self, tmp_path, _clean_env):
+        """Legacy .doc delegates to _parse_legacy_doc."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake_result = AttachmentParseResult(
+            extracted_text="Legacy doc text", extracted_tables=[], confidence=0.7,
+        )
+        with patch.object(
+            AttachmentParser, "_parse_legacy_doc", return_value=fake_result,
+        ):
+            result = AttachmentParser.parse_word(tmp_path / "old.doc")
+
+        assert result.extracted_text == "Legacy doc text"
+
+    def test_parse_docx_empty_paragraphs(self, tmp_path):
+        """Docx with only whitespace paragraphs returns zero confidence."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_para = MagicMock()
+        mock_para.text = "   "  # whitespace only
+
+        mock_doc = MagicMock()
+        mock_doc.paragraphs = [mock_para]
+        mock_doc.tables = []
+
+        mock_docx_module = MagicMock()
+        mock_docx_module.Document.return_value = mock_doc
+
+        with patch.dict("sys.modules", {"docx": mock_docx_module}):
+            result = AttachmentParser.parse_word(tmp_path / "empty.docx")
+
+        assert result.confidence == 0.0
+
+
+# ===================================================================
+# attachment_parser.py — _parse_image_sync
+# ===================================================================
+
+
+class TestParseImageSync:
+    def test_ocr_off_mode(self, tmp_path, _clean_env):
+        """OCR off returns metadata-only result."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        content = buf.getvalue()
+
+        result = AttachmentParser._parse_image_sync(
+            tmp_path / "test.png", content, use_ocr=True,
+        )
+        assert result.ocr_skip_reason == "disabled"
+        assert result.confidence == 0.5
+
+    def test_ocr_disabled_by_use_ocr_flag(self, tmp_path, _clean_env):
+        """use_ocr=False returns metadata-only result."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "force"})
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        content = buf.getvalue()
+
+        result = AttachmentParser._parse_image_sync(
+            tmp_path / "test.png", content, use_ocr=False,
+        )
+        assert result.ocr_skip_reason == "disabled"
+
+    def test_image_too_large(self, tmp_path, _clean_env):
+        """Large image is skipped."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "force"})
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        small_content = buf.getvalue()
+
+        # Fake large content but with valid PIL header
+        large_content = small_content + b"\x00" * (10_000_001 - len(small_content))
+
+        result = AttachmentParser._parse_image_sync(
+            tmp_path / "big.png", large_content, use_ocr=True,
+        )
+        assert result.ocr_skip_reason == "image_too_large"
+
+    def test_budget_zero_images(self, tmp_path, _clean_env):
+        """Zero budget for images returns deferred."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run(
+            "test",
+            overrides={
+                "attachment_ocr_mode": "force",
+                "ocr_max_images_per_attachment": 0,
+            },
+        )
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        content = buf.getvalue()
+
+        result = AttachmentParser._parse_image_sync(
+            tmp_path / "test.png", content, use_ocr=True,
+        )
+        assert result.ocr_skip_reason == "budget_exceeded"
+        assert result.ocr_units_deferred == 1
+
+    def test_exception_returns_error(self, tmp_path, _clean_env):
+        """Exception returns error result."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+
+        result = AttachmentParser._parse_image_sync(
+            tmp_path / "bad.png", b"not an image", use_ocr=True,
+        )
+        assert result.confidence == 0.0
+        assert "오류" in result.extracted_text
+
+    def test_ocr_performed_successfully(self, tmp_path, _clean_env):
+        """Successful OCR returns extracted text."""
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "force"})
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        content = buf.getvalue()
+
+        fake_result = MagicMock()
+        fake_result.extracted_text = "OCR text"
+        with patch.object(
+            AttachmentParser, "_perform_image_ocr", return_value=fake_result,
+        ):
+            result = AttachmentParser._parse_image_sync(
+                tmp_path / "test.png", content, use_ocr=True,
+            )
+
+        assert result.extracted_text == "OCR text"
+
+
+# ===================================================================
+# attachment_parser.py — _accumulate_ocr_result
+# ===================================================================
+
+
+class TestAccumulateOcrResult:
+    def test_accumulates_basic(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        totals = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+        text_parts = []
+        item = {"attempted": 1, "extracted": 1, "deferred": 0, "chars": 50,
+                "text": "OCR text", "timed_out_item": None}
+        AttachmentParser._accumulate_ocr_result(item, totals, text_parts)
+        assert totals["attempted"] == 1
+        assert totals["extracted"] == 1
+        assert totals["chars"] == 50
+        assert text_parts == ["OCR text"]
+
+    def test_accumulates_timed_out(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        totals = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+        text_parts = []
+        timed_out = []
+        item = {"attempted": 1, "extracted": 0, "deferred": 0, "chars": 0,
+                "text": None, "timed_out_item": (1, b"img")}
+        AttachmentParser._accumulate_ocr_result(item, totals, text_parts, timed_out)
+        assert timed_out == [(1, b"img")]
+        assert text_parts == []
+
+    def test_no_text(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        totals = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+        text_parts = []
+        item = {"attempted": 0, "extracted": 0, "deferred": 1, "chars": 0}
+        AttachmentParser._accumulate_ocr_result(item, totals, text_parts)
+        assert totals["deferred"] == 1
+        assert text_parts == []
+
+
+# ===================================================================
+# attachment_parser.py — _collect_image_shape
+# ===================================================================
+
+
+class TestCollectImageShape:
+    def test_collects_large_image(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        shape = MagicMock()
+        shape.image.blob = b"x" * 20_000
+        images = []
+        AttachmentParser._collect_image_shape(shape, 1, images)
+        assert len(images) == 1
+        assert images[0] == (1, b"x" * 20_000)
+
+    def test_skips_small_image(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        shape = MagicMock()
+        shape.image.blob = b"x" * 5_000
+        images = []
+        AttachmentParser._collect_image_shape(shape, 1, images)
+        assert len(images) == 0
+
+    def test_handles_exception(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        shape = MagicMock()
+        shape.image.blob = property(lambda s: (_ for _ in ()).throw(Exception("fail")))
+        type(shape.image).blob = property(lambda s: (_ for _ in ()).throw(Exception("fail")))
+        images = []
+        # Should not raise
+        AttachmentParser._collect_image_shape(shape, 1, images)
+        assert len(images) == 0
+
+
+# ===================================================================
+# attachment_parser.py — _extract_pptx_table
+# ===================================================================
+
+
+class TestExtractPptxTable:
+    def test_basic_table(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_cell_h1 = MagicMock()
+        mock_cell_h1.text = "Name"
+        mock_cell_h2 = MagicMock()
+        mock_cell_h2.text = "Age"
+        mock_row_h = MagicMock()
+        mock_row_h.cells = [mock_cell_h1, mock_cell_h2]
+
+        mock_cell_v1 = MagicMock()
+        mock_cell_v1.text = "Alice"
+        mock_cell_v2 = MagicMock()
+        mock_cell_v2.text = "30"
+        mock_row_v = MagicMock()
+        mock_row_v.cells = [mock_cell_v1, mock_cell_v2]
+
+        mock_table = MagicMock()
+        mock_table.rows = [mock_row_h, mock_row_v]
+
+        result = AttachmentParser._extract_pptx_table(mock_table, 1)
+        assert result is not None
+        assert result["slide"] == 1
+        assert result["headers"] == ["Name", "Age"]
+        assert len(result["rows"]) == 1
+
+    def test_empty_table(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_table = MagicMock()
+        mock_table.rows = []
+
+        result = AttachmentParser._extract_pptx_table(mock_table, 1)
+        assert result is None
+
+    def test_header_only_table(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_cell = MagicMock()
+        mock_cell.text = "Header"
+        mock_row = MagicMock()
+        mock_row.cells = [mock_cell]
+
+        mock_table = MagicMock()
+        mock_table.rows = [mock_row]
+
+        result = AttachmentParser._extract_pptx_table(mock_table, 1)
+        assert result is not None
+        assert result["rows"] == []
+
+
+# ===================================================================
+# attachment_parser.py — _resize_image_if_needed
+# ===================================================================
+
+
+class TestResizeImageIfNeeded:
+    def test_small_image_rejected(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (10, 10))
+        result = AttachmentParser._resize_image_if_needed(img)
+        assert result is None
+
+    def test_normal_image_unchanged(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (200, 200))
+        result = AttachmentParser._resize_image_if_needed(img)
+        assert result is not None
+        assert result.size == (200, 200)
+
+    def test_large_image_downscaled(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (4000, 4000))
+        result = AttachmentParser._resize_image_if_needed(img, max_size=2048)
+        assert result is not None
+        assert result.size[0] <= 2048
+        assert result.size[1] <= 2048
+
+    def test_extreme_aspect_ratio_padded(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (1000, 50))
+        result = AttachmentParser._resize_image_if_needed(img)
+        assert result is not None
+        # Should have been padded to fix extreme aspect ratio
+        assert result.size[1] > 50
+
+
+# ===================================================================
+# attachment_parser.py — _build_ppt_result
+# ===================================================================
+
+
+class TestBuildPptResult:
+    def test_with_content(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+        result = AttachmentParser._build_ppt_result(
+            "Full text here", [{"t": 1}], policy, True,
+            5, 3, 2, 100, 50,
+        )
+        assert result.confidence == 0.85
+        assert result.ocr_applied is True
+        assert result.ocr_units_attempted == 5
+        assert result.ocr_units_extracted == 3
+        assert result.ocr_units_deferred == 2
+
+    def test_empty_content(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=True, layout_analysis_enabled=True,
+        )
+        result = AttachmentParser._build_ppt_result(
+            "", [], policy, True, 0, 0, 0, 0, 0,
+        )
+        assert result.confidence == 0.0
+
+
+# ===================================================================
+# attachment_parser.py — _compute_pdf_confidence
+# ===================================================================
+
+
+class TestComputePdfConfidence:
+    def test_text_only(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(True, 0) == 0.9
+
+    def test_text_with_ocr(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(True, 3) == 0.7
+
+    def test_no_text(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(False, 0) == 0.0
+
+
+# ===================================================================
+# attachment_parser.py — _process_textless_pdf_page
+# ===================================================================
+
+
+class TestProcessTextlessPdfPage:
+    def test_off_mode_returns_early(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="off", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        text_parts = []
+        counters = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+        AttachmentParser._process_textless_pdf_page(
+            MagicMock(), 1, 5, policy, None, text_parts, counters,
+        )
+        assert counters["attempted"] == 0
+
+    def test_budget_exceeded_defers(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=2, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        text_parts = []
+        counters = {"attempted": 2, "extracted": 0, "deferred": 0, "chars": 0}
+        AttachmentParser._process_textless_pdf_page(
+            MagicMock(), 3, 5, policy, None, text_parts, counters,
+        )
+        assert counters["deferred"] == 1
+        assert counters["attempted"] == 2
+
+    def test_ocr_succeeds(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        text_parts = []
+        counters = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+
+        with patch.object(
+            AttachmentParser, "_ocr_pdf_page", return_value="OCR page text",
+        ):
+            AttachmentParser._process_textless_pdf_page(
+                MagicMock(), 1, 5, policy, None, text_parts, counters,
+            )
+
+        assert counters["attempted"] == 1
+        assert counters["extracted"] == 1
+        assert len(text_parts) == 1
+        assert "OCR page text" in text_parts[0]
+
+    def test_ocr_exception_caught(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        policy = AttachmentOCRPolicy(
+            attachment_ocr_mode="force", ocr_min_text_chars=100,
+            ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+            ocr_max_images_per_attachment=1,
+            slide_render_enabled=False, layout_analysis_enabled=False,
+        )
+        text_parts = []
+        counters = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
+
+        with patch.object(
+            AttachmentParser, "_ocr_pdf_page", side_effect=Exception("OCR crash"),
+        ):
+            AttachmentParser._process_textless_pdf_page(
+                MagicMock(), 1, 5, policy, None, text_parts, counters,
+            )
+
+        assert counters["attempted"] == 1
+        assert counters["extracted"] == 0
+
+
+# ===================================================================
+# attachment_parser.py — module-level helpers
+# ===================================================================
+
+
+class TestModuleLevelHelpers:
+    def test_resolve_ocr_mode_from_overrides(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import _resolve_ocr_mode
+
+        result = _resolve_ocr_mode({"attachment_ocr_mode": "auto"}, {})
+        assert result == "auto"
+
+    def test_resolve_ocr_mode_invalid_falls_back(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import _resolve_ocr_mode
+
+        result = _resolve_ocr_mode({"attachment_ocr_mode": "banana"}, {})
+        assert result == "force"
+
+    def test_resolve_int_field_from_overrides(self):
+        from src.connectors.confluence.attachment_parser import _resolve_int_field
+
+        result = _resolve_int_field(
+            {"ocr_max_pdf_pages": 42}, {}, "ocr_max_pdf_pages",
+            "KNOWLEDGE_CRAWL_OCR_MAX_PDF_PAGES", 100,
+        )
+        assert result == 42
+
+    def test_resolve_int_field_from_source_defaults(self):
+        from src.connectors.confluence.attachment_parser import _resolve_int_field
+
+        result = _resolve_int_field(
+            {}, {"ocr_max_pdf_pages": 7}, "ocr_max_pdf_pages",
+            "KNOWLEDGE_CRAWL_OCR_MAX_PDF_PAGES", 100,
+        )
+        assert result == 7
+
+    def test_resolve_bool_field_from_overrides(self):
+        from src.connectors.confluence.attachment_parser import _resolve_bool_field
+
+        result = _resolve_bool_field(
+            {"slide_render_enabled": False}, {},
+            "slide_render_enabled", "KNOWLEDGE_CRAWL_SLIDE_RENDER_ENABLED", True,
+        )
+        assert result is False
+
+    def test_get_ocr_feature_flags_import_error(self, monkeypatch):
+        """Falls back to env when FeatureFlags not importable."""
+        from src.connectors.confluence.attachment_parser import _get_ocr_feature_flags
+
+        monkeypatch.setenv("KNOWLEDGE_OCR_PREPROCESS_ENABLED", "false")
+        monkeypatch.setenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "true")
+
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if "feature_flags" in name:
+                raise ImportError("no flags")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            pre, post = _get_ocr_feature_flags()
+        assert pre is False
+        assert post is True
+
+    def test_get_ocr_postprocess_flag_import_error(self, monkeypatch):
+        from src.connectors.confluence.attachment_parser import _get_ocr_postprocess_flag
+
+        monkeypatch.setenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "false")
+
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if "feature_flags" in name:
+                raise ImportError("no flags")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            result = _get_ocr_postprocess_flag()
+        assert result is False
+
+
+# ===================================================================
+# attachment_parser.py — _fallback_standard_ocr
+# ===================================================================
+
+
+class TestFallbackStandardOcr:
+    def test_successful_ocr(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+
+        with patch.object(
+            AttachmentParser, "_ocr_extract_safe",
+            return_value=("Standard text", 0.8, []),
+        ):
+            result = AttachmentParser._fallback_standard_ocr(img, 1)
+
+        assert result == "Standard text"
+
+    def test_low_confidence_returns_none(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+
+        with patch.object(
+            AttachmentParser, "_ocr_extract_safe",
+            return_value=("bad text", 0.2, []),
+        ):
+            result = AttachmentParser._fallback_standard_ocr(img, 1)
+
+        assert result is None
+
+    def test_none_text_returns_none(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        from PIL import Image as _PilImage
+        img = _PilImage.new("RGB", (100, 100), (255, 255, 255))
+
+        with patch.object(
+            AttachmentParser, "_ocr_extract_safe",
+            return_value=(None, 0.0, []),
+        ):
+            result = AttachmentParser._fallback_standard_ocr(img, 1)
+
+        assert result is None
