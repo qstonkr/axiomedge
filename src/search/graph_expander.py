@@ -190,14 +190,14 @@ class GraphSearchExpander:
                 scope_kb_ids=scope_kb_ids,
             )
 
-            # Cross-KB expansion (unscoped) — find relationships across all KBs
+            # Cross-KB expansion (scoped to selected KBs only)
             cross_kb_uris: set[str] = set()
             try:
                 cross_kb_uris = await self._graph_repo.find_related_chunks(
                     entity_names,
                     max_hops=self._max_hops,
                     max_results=self._max_expansion // 2,
-                    scope_kb_ids=None,  # No KB scope = cross-KB
+                    scope_kb_ids=scope_kb_ids,  # Respect KB scope from search group
                 )
                 cross_kb_uris -= related_uris  # Remove already found
             except Exception as _xkb_err:
