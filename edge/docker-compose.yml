@@ -1,0 +1,23 @@
+services:
+  edge-model:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models
+      - ./logs:/logs
+    environment:
+      - STORE_ID=${STORE_ID:-pilot-test}
+      - EDGE_API_KEY=${EDGE_API_KEY:-}
+      - MODEL_PATH=/models/current/model.gguf
+      - LOG_DIR=/logs
+      - EDGE_N_CTX=512
+      - EDGE_N_THREADS=4
+      - EDGE_MAX_TOKENS=256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Any
 
@@ -879,18 +880,29 @@ async def _step_log_usage(
     if not usage_repo:
         return
     try:
+        context: dict[str, Any] = {
+            "query": query, "display_query": display_query,
+            "total_chunks": len(all_chunks), "search_time_ms": elapsed,
+            "mode": request.mode, "group_name": request.group_name,
+            "embed_calls": 1, "llm_calls": 1 if answer else 0,
+            "cross_encoder_calls": 1 if all_chunks else 0,
+            "follow_up_generated": len(follow_ups) > 0,
+            "rerank_applied": rerank_applied,
+        }
+        if os.getenv("DISTILL_LOG_FULL_CONTEXT", "false").lower() == "true":
+            context["answer"] = answer
+            context["chunks"] = [
+                {
+                    "content": c.get("content", "")[:500],
+                    "document_name": c.get("document_name", ""),
+                    "score": round(c.get("score", 0), 4),
+                }
+                for c in all_chunks[:5]
+            ]
         await usage_repo.log_search(
             knowledge_id=query, kb_id=",".join(collections),
             user_id="local-user", usage_type="hub_search",
-            context={
-                "query": query, "display_query": display_query,
-                "total_chunks": len(all_chunks), "search_time_ms": elapsed,
-                "mode": request.mode, "group_name": request.group_name,
-                "embed_calls": 1, "llm_calls": 1 if answer else 0,
-                "cross_encoder_calls": 1 if all_chunks else 0,
-                "follow_up_generated": len(follow_ups) > 0,
-                "rerank_applied": rerank_applied,
-            },
+            context=context,
         )
     except Exception:
         pass

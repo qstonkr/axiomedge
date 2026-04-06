@@ -117,6 +117,13 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     state["usage_log_repo"] = UsageLogRepository(session_factory)
     state["_kb_registry_pending"] = KBRegistryRepository(db_url)
 
+    # Distill plugin (graceful — 테이블 없으면 무시)
+    try:
+        from src.distill.repository import DistillRepository
+        state["distill_repo"] = DistillRepository(session_factory)
+    except Exception as e:
+        logger.warning("Distill repo init skipped: %s", e)
+
 
 async def _init_database(state: AppState, settings) -> None:
     """Initialize PostgreSQL + all repositories + domain services."""
@@ -879,6 +886,9 @@ app.include_router(search_groups.router)
 
 from src.api.routes import auth as auth_routes  # noqa: E402
 app.include_router(auth_routes.router)
+
+from src.api.routes import distill as distill_routes  # noqa: E402
+app.include_router(distill_routes.router)
 
 # Auth middleware (adds user context + activity logging)
 from src.auth.middleware import AuthMiddleware  # noqa: E402

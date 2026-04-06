@@ -52,7 +52,6 @@ def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
                 st.page_link("pages/search_groups.py", label="📂 검색 그룹")
                 st.page_link("pages/owners.py", label="👥 담당자 관리")
                 st.page_link("pages/doc_lifecycle.py", label="📋 문서 라이프사이클")
-                st.page_link("pages/data_sources.py", label="📁 데이터 소스")
 
         # -- Group 4: 품질/평가 --
         if ff.admin_enabled:
@@ -63,6 +62,12 @@ def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
                 st.page_link("pages/conflicts.py", label="⚠️ 충돌/중복")
                 st.page_link("pages/verification.py", label="✅ 검증 관리")
                 st.page_link("pages/graph_explorer.py", label="🔗 지식 그래프")
+
+        # -- Group 4.5: 외부 연동 --
+        if ff.admin_enabled:
+            with st.expander("외부 연동", expanded=False):
+                st.page_link("pages/data_sources.py", label="📁 데이터 소스")
+                st.page_link("pages/edge_models.py", label="🤖 엣지 모델")
 
         # -- Group 5: 시스템 운영 --
         if ff.operations_enabled:
