@@ -120,11 +120,24 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     # Distill plugin (graceful — 테이블/설정 없으면 무시)
     try:
         from src.distill.repository import DistillRepository
-        state["distill_repo"] = DistillRepository(session_factory)
+        distill_repo = DistillRepository(session_factory)
+        state["distill_repo"] = distill_repo
 
-        from src.distill.config import load_config
+        from src.distill.config import load_config, profile_to_dict
         from src.distill.service import DistillService
         distill_config = load_config()
+
+        # distill.yaml → DB 시드 (yaml에 있지만 DB에 없는 프로필 자동 insert)
+        for name, profile in distill_config.profiles.items():
+            existing = await distill_repo.get_profile(name)
+            if not existing:
+                data = {"name": name, **profile_to_dict(profile)}
+                try:
+                    await distill_repo.create_profile(data)
+                    logger.info("Distill profile seeded from yaml: %s", name)
+                except Exception as e:
+                    logger.warning("Distill profile seed failed for %s: %s", name, e)
+
         state["distill_service"] = DistillService(
             config=distill_config,
             session_factory=session_factory,
