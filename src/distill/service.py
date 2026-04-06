@@ -63,7 +63,7 @@ class DistillService:
             # Step 1: 데이터 생성
             if "generate" in all_steps:
                 await repo.update_build(build_id, status="generating")
-                data_path = await self._generate_data(build_id, profile, repo, build_dir)
+                data_path = await self._generate_data(build_id, profile_name, profile, repo, build_dir)
 
             # Step 2: 학습
             if "train" in all_steps:
@@ -107,7 +107,7 @@ class DistillService:
                 shutil.rmtree(build_dir, ignore_errors=True)
 
     async def _generate_data(
-        self, build_id: str, profile: DistillProfile,
+        self, build_id: str, profile_name: str, profile: DistillProfile,
         repo: DistillRepository, build_dir: Path,
     ) -> str:
         """QA 데이터 생성."""
@@ -132,13 +132,9 @@ class DistillService:
             self.session_factory, kb_ids, profile.search_group,
         )
 
-        # 재학습 데이터 (DB에서 — profile_name은 빌드 프로필 이름)
-        # _generate_data는 profile 객체를 받지만 profile_name은 별도 전달 필요
-        profile_key = next(
-            (k for k, v in self.config.profiles.items() if v == profile), ""
-        )
+        # 재학습 데이터 (DB에서)
         retrain_result = await repo.list_training_data(
-            profile_name=profile_key, source_type="retrain", limit=5000,
+            profile_name=profile_name, source_type="retrain", limit=5000,
         )
         retrain_qa = retrain_result.get("items", [])
 
