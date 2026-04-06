@@ -1132,3 +1132,1437 @@ class TestShutdown:
         assert client.shutdown_requested is False
         client.request_shutdown()
         assert client.shutdown_requested is True
+
+
+# ===================================================================
+# client.py — _http_get_with_retry (additional edge cases)
+# ===================================================================
+
+
+class TestHttpGetWithRetryEdgeCases:
+    @pytest.mark.asyncio
+    async def test_max_retries_exceeded_timeout(self, tmp_output):
+        """All retries fail with TimeoutException -> raises last error."""
+        client = _make_client(tmp_output)
+        client.client.get = AsyncMock(
+            side_effect=httpx.TimeoutException("always times out")
+        )
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(httpx.TimeoutException, match="always times out"):
+                await client._http_get_with_retry(
+                    "https://test.example.com/api", max_retries=3
+                )
+        assert client.client.get.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_max_retries_exceeded_connect_error(self, tmp_output):
+        """All retries fail with ConnectError -> raises last error."""
+        client = _make_client(tmp_output)
+        client.client.get = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(httpx.ConnectError):
+                await client._http_get_with_retry(
+                    "https://test.example.com/api", max_retries=2
+                )
+        assert client.client.get.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_on_429(self, tmp_output):
+        """429 Too Many Requests should be retried."""
+        client = _make_client(tmp_output)
+        request = httpx.Request("GET", "https://test.example.com/api")
+        error_resp = httpx.Response(429, request=request)
+        error = httpx.HTTPStatusError("429", request=request, response=error_resp)
+
+        ok_resp = MagicMock(spec=httpx.Response)
+        ok_resp.status_code = 200
+        ok_resp.raise_for_status = MagicMock()
+
+        client.client.get = AsyncMock(side_effect=[error, ok_resp])
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await client._http_get_with_retry(
+                "https://test.example.com/api", max_retries=3
+            )
+        assert result is ok_resp
+
+    @pytest.mark.asyncio
+    async def test_retry_on_500(self, tmp_output):
+        """500 Internal Server Error should be retried."""
+        client = _make_client(tmp_output)
+        request = httpx.Request("GET", "https://test.example.com/api")
+        error_resp = httpx.Response(500, request=request)
+        error = httpx.HTTPStatusError("500", request=request, response=error_resp)
+
+        ok_resp = MagicMock(spec=httpx.Response)
+        ok_resp.status_code = 200
+        ok_resp.raise_for_status = MagicMock()
+
+        client.client.get = AsyncMock(side_effect=[error, ok_resp])
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await client._http_get_with_retry(
+                "https://test.example.com/api", max_retries=2
+            )
+        assert result is ok_resp
+
+    @pytest.mark.asyncio
+    async def test_pool_timeout_retried(self, tmp_output):
+        """PoolTimeout should be retried like TimeoutException."""
+        client = _make_client(tmp_output)
+        ok_resp = MagicMock(spec=httpx.Response)
+        ok_resp.status_code = 200
+        ok_resp.raise_for_status = MagicMock()
+
+        client.client.get = AsyncMock(
+            side_effect=[httpx.PoolTimeout("pool full"), ok_resp]
+        )
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            result = await client._http_get_with_retry(
+                "https://test.example.com/api", max_retries=2
+            )
+        assert result is ok_resp
+
+
+# ===================================================================
+# client.py — _do_process_page
+# ===================================================================
+
+
+class TestDoProcessPage:
+    @pytest.mark.asyncio
+    async def test_successful_page_processing(self, tmp_output):
+        client = _make_client(tmp_output)
+        fake_page = _make_fake_page("pg1", "Test Page")
+        client.get_page_full = AsyncMock(return_value=fake_page)
+        client.get_child_pages = AsyncMock(return_value=["c1", "c2"])
+        client.get_attachments = AsyncMock(return_value=[])
+
+        page, child_ids = await client._do_process_page(
+            "pg1", False, 20, None, None, "test-src"
+        )
+        assert page is fake_page
+        assert child_ids == ["c1", "c2"]
+        assert client._total_pages_crawled == 1
+        assert fake_page in client.all_pages
+
+    @pytest.mark.asyncio
+    async def test_failed_page_still_returns_children(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.get_page_full = AsyncMock(return_value=None)
+        client.get_child_pages = AsyncMock(return_value=["c1"])
+
+        page, child_ids = await client._do_process_page(
+            "pg1", False, 20, None, None, "test-src"
+        )
+        assert page is None
+        assert child_ids == ["c1"]
+        assert client._total_pages_crawled == 0
+
+    @pytest.mark.asyncio
+    async def test_skip_children_flag(self, tmp_output):
+        client = _make_client(tmp_output)
+        fake_page = _make_fake_page("pg1", "Test Page")
+        client.get_page_full = AsyncMock(return_value=fake_page)
+        client.get_attachments = AsyncMock(return_value=[])
+
+        page, child_ids = await client._do_process_page(
+            "pg1", False, 20, None, None, "test-src", skip_children=True
+        )
+        assert page is fake_page
+        assert child_ids == []
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_triggered_at_interval(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.CHECKPOINT_INTERVAL = 1
+        fake_page = _make_fake_page("pg1", "Page")
+        client.get_page_full = AsyncMock(return_value=fake_page)
+        client.get_child_pages = AsyncMock(return_value=[])
+        client.get_attachments = AsyncMock(return_value=[])
+        client.save_checkpoint = MagicMock()
+        client.save_incremental = MagicMock()
+
+        await client._do_process_page("pg1", False, 20, None, None, "test-src")
+        client.save_checkpoint.assert_called_once_with("test-src")
+        client.save_incremental.assert_called_once_with("test-src")
+
+    @pytest.mark.asyncio
+    async def test_downloads_attachments_when_requested(self, tmp_output):
+        from src.connectors.confluence.models import AttachmentContent
+
+        client = _make_client(tmp_output)
+        fake_page = _make_fake_page("pg1", "Page")
+        client.get_page_full = AsyncMock(return_value=fake_page)
+        client.get_child_pages = AsyncMock(return_value=[])
+        att_meta = [{"id": "a1", "title": "test.pdf",
+                     "extensions": {"mediaType": "application/pdf"}}]
+        client.get_attachments = AsyncMock(return_value=att_meta)
+        fake_att = AttachmentContent(
+            id="a1", filename="test.pdf",
+            media_type="application/pdf", file_size=100,
+        )
+        client.download_attachment = AsyncMock(return_value=fake_att)
+
+        page, _ = await client._do_process_page(
+            "pg1", True, 20, None, None, "test-src"
+        )
+        assert page is not None
+        assert len(page.attachments) == 1
+
+
+# ===================================================================
+# client.py — crawl_recursive
+# ===================================================================
+
+
+class TestCrawlRecursive:
+    @pytest.mark.asyncio
+    async def test_dfs_traversal(self, tmp_output):
+        client = _make_client(tmp_output)
+        visited_order = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            visited_order.append(pid)
+            if pid == "root":
+                return _make_fake_page("root", "Root"), ["c1", "c2"]
+            return _make_fake_page(pid, f"Page {pid}"), []
+
+        client._process_single_page = mock_process
+        await client.crawl_recursive("root", depth=0, max_depth=5, source_key="test")
+        assert "root" in visited_order
+        assert "c1" in visited_order
+        assert "c2" in visited_order
+
+    @pytest.mark.asyncio
+    async def test_max_depth_respected(self, tmp_output):
+        client = _make_client(tmp_output)
+        visited = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            visited.append(pid)
+            return _make_fake_page(pid), [f"child_of_{pid}"]
+
+        client._process_single_page = mock_process
+        await client.crawl_recursive("root", depth=0, max_depth=0, source_key="test")
+        assert "root" in visited
+        assert "child_of_root" not in visited
+
+    @pytest.mark.asyncio
+    async def test_shutdown_stops_crawl(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._shutdown_requested = True
+        calls = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            calls.append(pid)
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        result = await client.crawl_recursive("root", depth=0, max_depth=5, source_key="test")
+        assert result is None
+        assert calls == []
+
+    @pytest.mark.asyncio
+    async def test_already_visited_explores_children(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.visited_pages.add("root")
+        child_calls = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            child_calls.append(pid)
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        client.get_child_pages = AsyncMock(return_value=["c1"])
+        await client.crawl_recursive("root", depth=0, max_depth=5, source_key="test")
+        assert "c1" in child_calls
+        assert "root" not in child_calls
+
+
+# ===================================================================
+# client.py — crawl_flat
+# ===================================================================
+
+
+class TestCrawlFlat:
+    @pytest.mark.asyncio
+    async def test_processes_all_page_ids(self, tmp_output):
+        client = _make_client(tmp_output)
+        processed = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            processed.append(pid)
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        await client.crawl_flat(page_ids=["p1", "p2", "p3"], source_key="test")
+        assert processed == ["p1", "p2", "p3"]
+
+    @pytest.mark.asyncio
+    async def test_skips_already_visited(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.visited_pages.add("p2")
+        processed = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            processed.append(pid)
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        await client.crawl_flat(page_ids=["p1", "p2", "p3"], source_key="test")
+        assert processed == ["p1", "p3"]
+
+    @pytest.mark.asyncio
+    async def test_max_pages_limit(self, tmp_output):
+        client = _make_client(tmp_output)
+        processed = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            processed.append(pid)
+            client._total_pages_crawled += 1
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        await client.crawl_flat(
+            page_ids=["p1", "p2", "p3"], max_pages=2, source_key="test"
+        )
+        assert len(processed) == 2
+
+    @pytest.mark.asyncio
+    async def test_shutdown_stops_flat_crawl(self, tmp_output):
+        client = _make_client(tmp_output)
+        processed = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, **kw):
+            processed.append(pid)
+            client._shutdown_requested = True
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        await client.crawl_flat(page_ids=["p1", "p2", "p3"], source_key="test")
+        assert processed == ["p1"]
+
+    @pytest.mark.asyncio
+    async def test_skip_children_flag_used(self, tmp_output):
+        client = _make_client(tmp_output)
+        skip_values = []
+
+        async def mock_process(pid, dl, maxatt, prog, tid, skey, skip_children=False, **kw):
+            skip_values.append(skip_children)
+            return _make_fake_page(pid), []
+
+        client._process_single_page = mock_process
+        await client.crawl_flat(page_ids=["p1"], source_key="test")
+        assert skip_values == [True]
+
+
+# ===================================================================
+# client.py — download_attachment
+# ===================================================================
+
+
+class TestDownloadAttachment:
+    @pytest.mark.asyncio
+    async def test_download_and_parse(self, tmp_output):
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        client = _make_client(tmp_output)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.content = b"fake pdf content"
+        client.client.get = AsyncMock(return_value=mock_resp)
+
+        parse_result = AttachmentParseResult(
+            extracted_text="Parsed text from PDF",
+            extracted_tables=[], confidence=0.9, native_text_chars=20,
+        )
+        with patch.object(client, "_parse_attachment_content",
+                          new_callable=AsyncMock, return_value=parse_result):
+            att_meta = {
+                "id": "a1", "title": "test.pdf",
+                "extensions": {"mediaType": "application/pdf", "fileSize": 1000},
+                "_links": {"download": "/download/test.pdf"},
+            }
+            result = await client.download_attachment(att_meta, "pg1")
+
+        assert result.filename == "test.pdf"
+        assert result.extracted_text == "Parsed text from PDF"
+        assert result.ocr_confidence == 0.9
+
+    @pytest.mark.asyncio
+    async def test_file_size_limit(self, tmp_output):
+        client = _make_client(tmp_output)
+        att_meta = {
+            "id": "a2", "title": "huge.pdf",
+            "extensions": {"mediaType": "application/pdf",
+                           "fileSize": 60 * 1024 * 1024},
+            "_links": {"download": "/download/huge.pdf"},
+        }
+        result = await client.download_attachment(att_meta, "pg1")
+        assert result.parse_error is not None
+        assert "exceeded" in result.parse_error.lower()
+
+    @pytest.mark.asyncio
+    async def test_download_error_captured(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.client.get = AsyncMock(side_effect=Exception("network failure"))
+        att_meta = {
+            "id": "a3", "title": "doc.pdf",
+            "extensions": {"mediaType": "application/pdf", "fileSize": 1000},
+            "_links": {"download": "/download/doc.pdf"},
+        }
+        result = await client.download_attachment(att_meta, "pg1")
+        assert result.parse_error == "network failure"
+
+
+# ===================================================================
+# client.py — _extract_content_elements
+# ===================================================================
+
+
+class TestExtractContentElements:
+    def test_extracts_text_from_html(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        result = ConfluenceFullClient._extract_content_elements(
+            "<p>Hello <b>World</b></p>", "Test"
+        )
+        assert "Hello" in result["content_text"]
+        assert "World" in result["content_text"]
+        assert isinstance(result["tables"], list)
+        assert isinstance(result["mentions"], list)
+
+    def test_handles_empty_html(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        result = ConfluenceFullClient._extract_content_elements("", "Empty")
+        assert isinstance(result["content_text"], str)
+
+    def test_handles_malformed_html(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        result = ConfluenceFullClient._extract_content_elements(
+            "<p>Unclosed<div>Mixed</p></div>", "Malformed"
+        )
+        assert "Unclosed" in result["content_text"] or "Mixed" in result["content_text"]
+
+
+# ===================================================================
+# client.py — _extract_page_metadata
+# ===================================================================
+
+
+class TestExtractPageMetadata:
+    @pytest.mark.asyncio
+    async def test_extracts_metadata(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.get_user_details = AsyncMock(return_value={"email": "user@test.com"})
+        data = {
+            "history": {
+                "createdBy": {"displayName": "Creator", "accountId": "acc1"},
+                "createdDate": "2024-01-01T00:00:00Z",
+                "lastUpdated": {
+                    "by": {"displayName": "Editor"},
+                    "when": "2024-02-01T00:00:00Z",
+                },
+            },
+            "version": {"number": 5, "when": "2024-02-01",
+                        "by": {"displayName": "Editor"}, "message": "update"},
+            "space": {"key": "DEV"},
+            "ancestors": [{"id": "100", "title": "Parent Page"}],
+        }
+        meta = await client._extract_page_metadata(data, "42")
+        assert meta["creator"] == "Creator"
+        assert meta["creator_email"] == "user@test.com"
+        assert meta["last_modifier"] == "Editor"
+        assert meta["version"] == 5
+        assert meta["space_key"] == "DEV"
+        assert len(meta["ancestors"]) == 1
+        assert "42" in meta["url"]
+
+    @pytest.mark.asyncio
+    async def test_missing_creator_account_id(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.get_user_details = AsyncMock()
+        data = {
+            "history": {
+                "createdBy": {"displayName": "NoAccount"},
+                "createdDate": "2024-01-01T00:00:00Z",
+                "lastUpdated": {},
+            },
+            "version": {"number": 1},
+            "space": {},
+            "ancestors": [],
+        }
+        meta = await client._extract_page_metadata(data, "99")
+        assert meta["creator_email"] is None
+        client.get_user_details.assert_not_awaited()
+
+
+# ===================================================================
+# client.py — _extract_restrictions
+# ===================================================================
+
+
+class TestExtractRestrictions:
+    def test_extracts_user_and_group_restrictions(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        data = {
+            "restrictions": {
+                "read": {"restrictions": {
+                    "user": {"results": [{"displayName": "Alice", "accountId": "a1"}]},
+                    "group": {"results": [{"name": "developers"}]},
+                }},
+                "update": {"restrictions": {
+                    "user": {"results": []}, "group": {"results": []},
+                }},
+            }
+        }
+        restrictions = ConfluenceFullClient._extract_restrictions(data)
+        assert len(restrictions) == 2
+        assert restrictions[0].operation == "read"
+        assert restrictions[0].restriction_type == "user"
+        assert restrictions[0].name == "Alice"
+        assert restrictions[1].restriction_type == "group"
+
+    def test_empty_restrictions(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        restrictions = ConfluenceFullClient._extract_restrictions({"restrictions": {}})
+        assert restrictions == []
+
+
+# ===================================================================
+# client.py — save_incremental / finalize (edge cases)
+# ===================================================================
+
+
+class TestIncrementalEdgeCases:
+    def test_finalize_deduplicates_pages(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.all_pages = [_make_fake_page("p1", "Page 1")]
+        client.save_incremental("src")
+        client.all_pages = [_make_fake_page("p1", "Page 1 v2")]
+        result = client.finalize_from_incremental("src")
+        page_ids = [d["page_id"] for d in result]
+        assert page_ids.count("p1") == 1
+
+    def test_finalize_merges_jsonl_and_memory(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.all_pages = [_make_fake_page("p1", "Disk Page")]
+        client.save_incremental("src")
+        client.all_pages = [_make_fake_page("p2", "Memory Page")]
+        result = client.finalize_from_incremental("src")
+        ids = {d["page_id"] for d in result}
+        assert ids == {"p1", "p2"}
+
+    def test_save_incremental_write_error_truncates(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.all_pages = [_make_fake_page("p1", "Page")]
+        client._incremental_saved_count = 0
+        jsonl_path = client._get_incremental_path("src")
+
+        with patch("builtins.open", side_effect=IOError("disk full")):
+            with patch.object(client, "_truncate_partial_jsonl_tail") as mock_trunc:
+                with pytest.raises(IOError):
+                    client.save_incremental("src")
+                mock_trunc.assert_called_once_with(jsonl_path)
+
+    def test_load_incremental_skips_no_page_id(self, tmp_output):
+        client = _make_client(tmp_output)
+        jsonl_path = client._get_incremental_path("src")
+        jsonl_path.write_text(
+            json.dumps({"content_text": "no id"}) + "\n"
+            + json.dumps({"page_id": "p1", "content_text": "valid"}) + "\n"
+        )
+        loaded = client.load_incremental("src")
+        assert loaded == 1
+        assert "p1" in client.visited_pages
+
+    def test_load_incremental_json_error(self, tmp_output):
+        """load_incremental warns and returns 0 on corrupted JSON."""
+        client = _make_client(tmp_output)
+        jsonl_path = client._get_incremental_path("src")
+        jsonl_path.write_text(
+            "not valid json\n"
+            + json.dumps({"page_id": "p1", "content_text": "ok"}) + "\n"
+        )
+        loaded = client.load_incremental("src")
+        # Corrupted first line causes json.loads to raise, caught by outer except
+        assert loaded == 0
+
+    def test_truncate_partial_jsonl_tail_no_file(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._truncate_partial_jsonl_tail(tmp_output / "nonexistent.jsonl")
+
+    def test_truncate_partial_jsonl_tail_complete_file(self, tmp_output):
+        client = _make_client(tmp_output)
+        jsonl_path = tmp_output / "complete.jsonl"
+        jsonl_path.write_text('{"page_id": "p1"}\n')
+        original = jsonl_path.read_text()
+        client._truncate_partial_jsonl_tail(jsonl_path)
+        assert jsonl_path.read_text() == original
+
+    def test_truncate_partial_jsonl_tail_incomplete(self, tmp_output):
+        client = _make_client(tmp_output)
+        jsonl_path = tmp_output / "incomplete.jsonl"
+        jsonl_path.write_text('{"page_id": "p1"}\n{"page_id": "p2", "broken')
+        client._truncate_partial_jsonl_tail(jsonl_path)
+        assert jsonl_path.read_text() == '{"page_id": "p1"}\n'
+
+
+# ===================================================================
+# client.py — _validate_page_content
+# ===================================================================
+
+
+class TestValidatePageContent:
+    def test_no_warning_for_valid_page(self, tmp_output, caplog):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        page = _make_fake_page("1", "Good Page")
+        page.content_text = "Some content"
+        page.content_html = "<p>Some content</p>"
+        ConfluenceFullClient._validate_page_content(page, "1")
+        assert "empty" not in caplog.text.lower()
+
+    def test_warns_empty_body(self, tmp_output, caplog):
+        import logging
+
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        page = _make_fake_page("2", "Empty Page")
+        page.content_text = ""
+        page.content_html = ""
+        with caplog.at_level(logging.WARNING):
+            ConfluenceFullClient._validate_page_content(page, "2")
+        assert "empty" in caplog.text.lower() or "permission" in caplog.text.lower()
+
+    def test_warns_html_but_no_text(self, tmp_output, caplog):
+        import logging
+
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        page = _make_fake_page("3", "HTML Only")
+        page.content_text = ""
+        page.content_html = "<p>Something</p>"
+        with caplog.at_level(logging.WARNING):
+            ConfluenceFullClient._validate_page_content(page, "3")
+        assert "empty" in caplog.text.lower() or "html" in caplog.text.lower()
+
+
+# ===================================================================
+# client.py — _decode_text_attachment
+# ===================================================================
+
+
+class TestDecodeTextAttachment:
+    def test_utf8_content(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        result = ConfluenceFullClient._decode_text_attachment(b"Hello UTF-8", 1.0)
+        assert result.extracted_text == "Hello UTF-8"
+        assert result.confidence == 1.0
+
+    def test_cp949_fallback(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        cp949_bytes = "한글 텍스트".encode("cp949")
+        result = ConfluenceFullClient._decode_text_attachment(cp949_bytes, 0.95)
+        assert "한글" in result.extracted_text
+        assert result.confidence == 0.8
+
+
+# ===================================================================
+# client.py — _apply_parse_result
+# ===================================================================
+
+
+class TestApplyParseResult:
+    def test_copies_fields(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentContent, AttachmentParseResult
+
+        att = AttachmentContent(id="a1", filename="f.pdf",
+                                media_type="application/pdf", file_size=100)
+        pr = AttachmentParseResult(
+            extracted_text="parsed", extracted_tables=[{"h": 1}],
+            confidence=0.85, ocr_mode="force", ocr_applied=True,
+            ocr_units_attempted=3, ocr_units_extracted=2,
+            ocr_units_deferred=1, native_text_chars=50, ocr_text_chars=30,
+        )
+        ConfluenceFullClient._apply_parse_result(att, pr)
+        assert att.extracted_text == "parsed"
+        assert att.ocr_confidence == 0.85
+        assert att.ocr_applied is True
+
+    def test_none_parse_result(self, tmp_output):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentContent
+
+        att = AttachmentContent(id="a1", filename="f.pdf",
+                                media_type="application/pdf", file_size=100)
+        ConfluenceFullClient._apply_parse_result(att, None)
+        assert att.extracted_text == ""
+
+
+# ===================================================================
+# client.py — _parse_attachment_content dispatch
+# ===================================================================
+
+
+class TestParseAttachmentContent:
+    @pytest.mark.asyncio
+    async def test_dispatches_pdf(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake = AttachmentParseResult(extracted_text="pdf", extracted_tables=[], confidence=0.9)
+        with patch("src.connectors.confluence.attachment_parser.AttachmentParser.parse_pdf",
+                    return_value=fake):
+            result = await ConfluenceFullClient._parse_attachment_content(
+                tmp_path / "t.pdf", b"d", "application/pdf", "t.pdf")
+        assert result.extracted_text == "pdf"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_excel(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake = AttachmentParseResult(extracted_text="excel", extracted_tables=[], confidence=0.95)
+        with patch("src.connectors.confluence.attachment_parser.AttachmentParser.parse_excel",
+                    return_value=fake):
+            result = await ConfluenceFullClient._parse_attachment_content(
+                tmp_path / "t.xlsx", b"d", "application/vnd.spreadsheet", "t.xlsx")
+        assert result.extracted_text == "excel"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_ppt(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake = AttachmentParseResult(extracted_text="ppt", extracted_tables=[], confidence=0.85)
+        with patch("src.connectors.confluence.attachment_parser.AttachmentParser.parse_ppt",
+                    return_value=fake):
+            result = await ConfluenceFullClient._parse_attachment_content(
+                tmp_path / "t.pptx", b"d", "application/vnd.presentation", "t.pptx")
+        assert result.extracted_text == "ppt"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_word(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake = AttachmentParseResult(extracted_text="word", extracted_tables=[], confidence=0.9)
+        with patch("src.connectors.confluence.attachment_parser.AttachmentParser.parse_word",
+                    return_value=fake):
+            result = await ConfluenceFullClient._parse_attachment_content(
+                tmp_path / "t.docx", b"d", "application/msword", "t.docx")
+        assert result.extracted_text == "word"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_image(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+        from src.connectors.confluence.models import AttachmentParseResult
+
+        fake = AttachmentParseResult(extracted_text="img", extracted_tables=[], confidence=0.7)
+        with patch("src.connectors.confluence.attachment_parser.AttachmentParser.parse_image_async",
+                    new_callable=AsyncMock, return_value=fake):
+            result = await ConfluenceFullClient._parse_attachment_content(
+                tmp_path / "t.png", b"d", "image/png", "t.png")
+        assert result.extracted_text == "img"
+
+    @pytest.mark.asyncio
+    async def test_dispatches_text_file(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        result = await ConfluenceFullClient._parse_attachment_content(
+            tmp_path / "r.txt", b"plain text", "text/plain", "r.txt")
+        assert result.extracted_text == "plain text"
+        assert result.confidence == 1.0
+
+    @pytest.mark.asyncio
+    async def test_dispatches_csv_file(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        # CSV with "text/csv" media type matches "text" check first -> confidence 1.0
+        result = await ConfluenceFullClient._parse_attachment_content(
+            tmp_path / "d.csv", b"a,b\n1,2", "text/csv", "d.csv")
+        assert "a,b" in result.extracted_text
+        assert result.confidence == 1.0
+
+    @pytest.mark.asyncio
+    async def test_dispatches_csv_by_filename(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        # CSV with non-text media type dispatches via filename -> confidence 0.95
+        result = await ConfluenceFullClient._parse_attachment_content(
+            tmp_path / "d.csv", b"a,b\n1,2", "application/octet-stream", "d.csv")
+        assert "a,b" in result.extracted_text
+        assert result.confidence == 0.95
+
+    @pytest.mark.asyncio
+    async def test_unsupported_format(self, tmp_path):
+        from src.connectors.confluence.client import ConfluenceFullClient
+
+        result = await ConfluenceFullClient._parse_attachment_content(
+            tmp_path / "v.mp4", b"bin", "video/mp4", "v.mp4")
+        assert result.confidence == 0.0
+        assert "Unsupported" in result.extracted_text
+
+
+# ===================================================================
+# client.py — _should_stop_crawl
+# ===================================================================
+
+
+class TestShouldStopCrawl:
+    def test_shutdown_stops(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._shutdown_requested = True
+        assert client._should_stop_crawl(None) is True
+
+    def test_max_pages_reached(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._total_pages_crawled = 10
+        assert client._should_stop_crawl(10) is True
+        assert client._should_stop_crawl(11) is False
+
+    def test_no_limit(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._total_pages_crawled = 1000
+        assert client._should_stop_crawl(None) is False
+
+
+# ===================================================================
+# client.py — get_all_descendant_page_ids_via_cql
+# ===================================================================
+
+
+class TestCqlDescendants:
+    @pytest.mark.asyncio
+    async def test_collects_all_descendants(self, tmp_output):
+        client = _make_client(tmp_output)
+
+        async def mock_fetch_cql(url, params):
+            start = params.get("start", 0)
+            if start == 0:
+                return [{"id": "p1"}, {"id": "p2"}], 200
+            if start == 100:
+                return [{"id": "p3"}], 200
+            return [], 200
+
+        client._fetch_cql_page = mock_fetch_cql
+        ids = await client.get_all_descendant_page_ids_via_cql("root")
+        assert ids == {"p1", "p2", "p3"}
+
+    @pytest.mark.asyncio
+    async def test_stops_on_shutdown(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._shutdown_requested = True
+        ids = await client.get_all_descendant_page_ids_via_cql("root")
+        assert ids == set()
+
+    @pytest.mark.asyncio
+    async def test_handles_cql_error(self, tmp_output):
+        client = _make_client(tmp_output)
+
+        async def mock_fetch_cql(url, params):
+            return None
+
+        client._fetch_cql_page = mock_fetch_cql
+        ids = await client.get_all_descendant_page_ids_via_cql("root")
+        assert ids == set()
+
+
+# ===================================================================
+# attachment_parser.py — parse_ppt (mocked pptx)
+# ===================================================================
+
+
+class TestParsePpt:
+    def test_parse_ppt_basic_text(self, tmp_path, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        # Configure with OCR off so we only test native text extraction
+        AttachmentParser.configure_run("test", overrides={"attachment_ocr_mode": "off"})
+        mock_shape = MagicMock()
+        mock_shape.text = "Slide 1 text"
+        mock_shape.has_table = False
+        mock_shape.shape_type = 0
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [mock_shape]
+        mock_slide.has_notes_slide = False
+
+        mock_prs = MagicMock()
+        mock_prs.slides = [mock_slide]
+
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.return_value = mock_prs
+        mock_pptx.enum.shapes.MSO_SHAPE_TYPE.GROUP = 6
+        mock_pptx.enum.shapes.MSO_SHAPE_TYPE.PICTURE = 13
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx, "pptx.enum": mock_pptx.enum,
+            "pptx.enum.shapes": mock_pptx.enum.shapes,
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "test.pptx")
+        assert "Slide 1 text" in result.extracted_text
+        assert result.confidence > 0
+
+    def test_parse_ppt_exception(self, tmp_path, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+        mock_pptx = MagicMock()
+        mock_pptx.Presentation.side_effect = Exception("corrupt pptx")
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx, "pptx.enum": MagicMock(),
+            "pptx.enum.shapes": MagicMock(),
+        }):
+            result = AttachmentParser.parse_ppt(tmp_path / "bad.pptx")
+        assert result.confidence == 0.0
+
+    def test_parse_legacy_ppt_all_fail(self, tmp_path, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        with patch("src.connectors.confluence.attachment_parser._try_libreoffice_ppt_convert",
+                    return_value=None), \
+             patch("src.connectors.confluence.attachment_parser._try_catppt_extract",
+                    return_value=None), \
+             patch.object(AttachmentParser, "_extract_ppt_olefile", return_value=None):
+            result = AttachmentParser._parse_legacy_ppt(tmp_path / "old.ppt")
+        assert result.confidence == 0.0
+
+
+# ===================================================================
+# attachment_parser.py — _extract_ppt_slide_content
+# ===================================================================
+
+
+class TestExtractPptSlideContent:
+    def test_extracts_text_and_tables(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_pptx = MagicMock()
+        mock_pptx.enum.shapes.MSO_SHAPE_TYPE.GROUP = 6
+        mock_pptx.enum.shapes.MSO_SHAPE_TYPE.PICTURE = 13
+
+        text_shape = MagicMock()
+        text_shape.text = "Shape text"
+        text_shape.has_table = False
+        text_shape.shape_type = 0
+
+        cell1, cell2 = MagicMock(), MagicMock()
+        cell1.text = "H1"
+        cell2.text = "H2"
+        row1 = MagicMock()
+        row1.cells = [cell1, cell2]
+        table_obj = MagicMock()
+        table_obj.rows = [row1]
+        table_shape = MagicMock()
+        table_shape.text = ""
+        table_shape.has_table = True
+        table_shape.table = table_obj
+        table_shape.shape_type = 0
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = [text_shape, table_shape]
+        mock_slide.has_notes_slide = False
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx, "pptx.enum": mock_pptx.enum,
+            "pptx.enum.shapes": mock_pptx.enum.shapes,
+        }):
+            texts, tables, images = AttachmentParser._extract_ppt_slide_content(mock_slide, 1)
+        assert "Shape text" in texts
+        assert len(tables) == 1
+
+    def test_extracts_notes(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        mock_pptx = MagicMock()
+        mock_pptx.enum.shapes.MSO_SHAPE_TYPE.GROUP = 6
+        mock_pptx.enum.shapes.MSO_SHAPE_TYPE.PICTURE = 13
+
+        mock_slide = MagicMock()
+        mock_slide.shapes = []
+        mock_slide.has_notes_slide = True
+        mock_slide.notes_slide.notes_text_frame.text = "Speaker notes"
+
+        with patch.dict("sys.modules", {
+            "pptx": mock_pptx, "pptx.enum": mock_pptx.enum,
+            "pptx.enum.shapes": mock_pptx.enum.shapes,
+        }):
+            texts, tables, images = AttachmentParser._extract_ppt_slide_content(mock_slide, 1)
+        assert any("Notes" in t for t in texts)
+
+
+# ===================================================================
+# attachment_parser.py — _parse_image_sync
+# ===================================================================
+
+
+class TestParseImageSync:
+    def test_ocr_disabled(self, tmp_path, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        orig = AttachmentParser._ocr_policy
+        try:
+            AttachmentParser._ocr_policy = AttachmentOCRPolicy(
+                attachment_ocr_mode="off", ocr_min_text_chars=100,
+                ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+                ocr_max_images_per_attachment=1, slide_render_enabled=False,
+                layout_analysis_enabled=False,
+            )
+            from PIL import Image as _PilImage
+            import io
+
+            img = _PilImage.new("RGB", (100, 100), color="red")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+
+            result = AttachmentParser._parse_image_sync(
+                tmp_path / "test.png", buf.getvalue(), use_ocr=True
+            )
+            assert result.ocr_skip_reason == "disabled"
+        finally:
+            AttachmentParser._ocr_policy = orig
+
+    def test_use_ocr_false(self, tmp_path, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+        from PIL import Image as _PilImage
+        import io
+
+        img = _PilImage.new("RGB", (100, 100), color="blue")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+
+        result = AttachmentParser._parse_image_sync(
+            tmp_path / "test.png", buf.getvalue(), use_ocr=False
+        )
+        assert result.ocr_skip_reason == "disabled"
+
+    def test_image_too_large(self, tmp_path, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        AttachmentParser.configure_run("test")
+        from PIL import Image as _PilImage
+        import io
+
+        img = _PilImage.new("RGB", (100, 100), color="green")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        large_content = buf.getvalue() + b"\x00" * (10_000_000 - len(buf.getvalue()))
+
+        result = AttachmentParser._parse_image_sync(tmp_path / "large.png", large_content)
+        assert result.ocr_skip_reason == "image_too_large"
+
+
+# ===================================================================
+# attachment_parser.py — _resize_image_if_needed
+# ===================================================================
+
+
+class TestResizeImageIfNeeded:
+    def test_normal_image_unchanged(self, _clean_env):
+        from PIL import Image as _PilImage
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        img = _PilImage.new("RGB", (200, 200))
+        result = AttachmentParser._resize_image_if_needed(img)
+        assert result is not None
+        assert result.size == (200, 200)
+
+    def test_too_small_returns_none(self, _clean_env):
+        from PIL import Image as _PilImage
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        img = _PilImage.new("RGB", (20, 20))
+        assert AttachmentParser._resize_image_if_needed(img) is None
+
+    def test_large_image_downscaled(self, _clean_env):
+        from PIL import Image as _PilImage
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        img = _PilImage.new("RGB", (4096, 4096))
+        result = AttachmentParser._resize_image_if_needed(img, max_size=2048)
+        assert result is not None
+        assert result.size[0] <= 2048
+
+    def test_extreme_aspect_ratio_padded(self, _clean_env):
+        from PIL import Image as _PilImage
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        img = _PilImage.new("RGB", (1000, 50))
+        result = AttachmentParser._resize_image_if_needed(img)
+        assert result is not None
+        w, h = result.size
+        assert max(w, h) / max(min(w, h), 1) <= 8.1
+
+
+# ===================================================================
+# attachment_parser.py — _ocr_extract_safe
+# ===================================================================
+
+
+class TestOcrExtractSafe:
+    def test_timeout_handling(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        orig = AttachmentParser._ocr_process_pool
+        try:
+            mock_pool = MagicMock()
+            mock_future = MagicMock()
+            mock_future.result.side_effect = TimeoutError("timeout")
+            mock_pool.submit.return_value = mock_future
+            AttachmentParser._ocr_process_pool = mock_pool
+
+            text, conf, tables = AttachmentParser._ocr_extract_safe(b"img", "t.png", timeout=1)
+            assert text is None and conf == 0.0
+        finally:
+            AttachmentParser._ocr_process_pool = orig
+
+    def test_broken_pool_handling(self, _clean_env):
+        from concurrent.futures.process import BrokenProcessPool
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        orig = AttachmentParser._ocr_process_pool
+        try:
+            mock_pool = MagicMock()
+            mock_future = MagicMock()
+            mock_future.result.side_effect = BrokenProcessPool("sigsegv")
+            mock_pool.submit.return_value = mock_future
+            AttachmentParser._ocr_process_pool = mock_pool
+
+            text, conf, tables = AttachmentParser._ocr_extract_safe(b"crash", "crash.png")
+            assert text is None
+            assert AttachmentParser._ocr_process_pool is None
+        finally:
+            AttachmentParser._ocr_process_pool = orig
+
+    def test_generic_exception_handling(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        orig = AttachmentParser._ocr_process_pool
+        try:
+            mock_pool = MagicMock()
+            mock_future = MagicMock()
+            mock_future.result.side_effect = RuntimeError("unexpected")
+            mock_pool.submit.return_value = mock_future
+            AttachmentParser._ocr_process_pool = mock_pool
+
+            text, conf, tables = AttachmentParser._ocr_extract_safe(b"bad", "bad.png")
+            assert text is None and conf == 0.0
+        finally:
+            AttachmentParser._ocr_process_pool = orig
+
+
+# ===================================================================
+# attachment_parser.py — module-level helpers
+# ===================================================================
+
+
+class TestModuleLevelHelpers:
+    def test_filter_ocr_noise_removes_repeated(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        result = _filter_ocr_noise("정상\n폐폐폐폐폐\n또 다른")
+        assert "정상" in result
+        assert "폐폐폐폐폐" not in result
+
+    def test_filter_ocr_noise_keeps_short_lines(self):
+        from src.connectors.confluence.attachment_parser import _filter_ocr_noise
+
+        result = _filter_ocr_noise("OK\nHi")
+        assert "OK" in result
+
+    def test_should_ocr_ppt_force(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        p = AttachmentOCRPolicy(attachment_ocr_mode="force", ocr_min_text_chars=100,
+                                ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+                                ocr_max_images_per_attachment=1,
+                                slide_render_enabled=False, layout_analysis_enabled=False)
+        assert _should_ocr_ppt(p, 1000) is True
+
+    def test_should_ocr_ppt_off(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        p = AttachmentOCRPolicy(attachment_ocr_mode="off", ocr_min_text_chars=100,
+                                ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+                                ocr_max_images_per_attachment=1,
+                                slide_render_enabled=False, layout_analysis_enabled=False)
+        assert _should_ocr_ppt(p, 0) is False
+
+    def test_should_ocr_ppt_auto(self):
+        from src.connectors.confluence.attachment_parser import _should_ocr_ppt
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        p = AttachmentOCRPolicy(attachment_ocr_mode="auto", ocr_min_text_chars=100,
+                                ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+                                ocr_max_images_per_attachment=1,
+                                slide_render_enabled=False, layout_analysis_enabled=False)
+        assert _should_ocr_ppt(p, 50) is True
+        assert _should_ocr_ppt(p, 200) is False
+
+    def test_compute_pdf_confidence(self):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+
+        assert AttachmentParser._compute_pdf_confidence(True, 0) == 0.9
+        assert AttachmentParser._compute_pdf_confidence(True, 5) == 0.7
+        assert AttachmentParser._compute_pdf_confidence(False, 0) == 0.0
+
+    def test_determine_ppt_skip_reason(self, _clean_env):
+        from src.connectors.confluence.attachment_parser import AttachmentParser
+        from src.connectors.confluence.models import AttachmentOCRPolicy
+
+        off = AttachmentOCRPolicy(attachment_ocr_mode="off", ocr_min_text_chars=100,
+                                  ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+                                  ocr_max_images_per_attachment=1,
+                                  slide_render_enabled=False, layout_analysis_enabled=False)
+        assert AttachmentParser._determine_ppt_skip_reason(off, True, 0) == "disabled"
+
+        auto = AttachmentOCRPolicy(attachment_ocr_mode="auto", ocr_min_text_chars=100,
+                                   ocr_max_pdf_pages=10, ocr_max_ppt_slides=10,
+                                   ocr_max_images_per_attachment=1,
+                                   slide_render_enabled=False, layout_analysis_enabled=False)
+        assert AttachmentParser._determine_ppt_skip_reason(auto, False, 0) == "native_text_sufficient"
+        assert AttachmentParser._determine_ppt_skip_reason(auto, True, 5) == "budget_exceeded"
+        assert AttachmentParser._determine_ppt_skip_reason(auto, True, 0) is None
+
+
+# ===================================================================
+# output.py — save_results
+# ===================================================================
+
+
+class TestSaveResults:
+    def test_save_results_writes_json(self, tmp_path):
+        from src.connectors.confluence.output import save_results
+
+        page = _make_fake_page("p1", "Page 1")
+        output_path = tmp_path / "output.json"
+        save_results([page], output_path, source_info={"key": "TEST"})
+
+        assert output_path.exists()
+        data = json.loads(output_path.read_text())
+        assert data["source_info"]["key"] == "TEST"
+        assert data["statistics"]["total_pages"] == 1
+        assert data["pages"][0]["page_id"] == "p1"
+
+    def test_save_results_with_page_dicts(self, tmp_path):
+        from src.connectors.confluence.output import save_results
+
+        page_dicts = [{"page_id": "p1", "title": "P1", "content_text": "hi", "attachments": []}]
+        output_path = tmp_path / "output2.json"
+        save_results([], output_path, page_dicts=page_dicts)
+
+        data = json.loads(output_path.read_text())
+        assert data["statistics"]["total_pages"] == 1
+
+
+# ===================================================================
+# output.py — save_results_from_jsonl
+# ===================================================================
+
+
+class TestSaveResultsFromJsonl:
+    def test_streams_jsonl_to_json(self, tmp_path):
+        from src.connectors.confluence.output import save_results_from_jsonl
+
+        jsonl_path = tmp_path / "pages.jsonl"
+        jsonl_path.write_text(
+            json.dumps({"page_id": "p1", "title": "P1", "content_text": "hi", "attachments": []}) + "\n"
+            + json.dumps({"page_id": "p2", "title": "P2", "content_text": "there", "attachments": []}) + "\n"
+            + json.dumps({"page_id": "p1", "title": "P1 dup", "content_text": "dup", "attachments": []}) + "\n"
+        )
+        output_path = tmp_path / "output.json"
+        count = save_results_from_jsonl(jsonl_path, output_path, source_info={"s": "v"})
+        assert count == 2
+
+    def test_empty_jsonl(self, tmp_path):
+        from src.connectors.confluence.output import save_results_from_jsonl
+
+        jsonl_path = tmp_path / "empty.jsonl"
+        jsonl_path.write_text("")
+        count = save_results_from_jsonl(jsonl_path, tmp_path / "output.json")
+        assert count == 0
+
+
+# ===================================================================
+# output.py — helper functions
+# ===================================================================
+
+
+class TestOutputHelpers:
+    def test_classify_attachment_types(self):
+        from src.connectors.confluence.output import _classify_attachment, _new_parsed_stats
+
+        stats = _new_parsed_stats()
+        _classify_attachment({"media_type": "application/pdf"}, stats)
+        _classify_attachment({"media_type": "application/excel"}, stats)
+        _classify_attachment({"media_type": "application/word"}, stats)
+        _classify_attachment({"media_type": "image/png"}, stats)
+        _classify_attachment({"media_type": "application/zip"}, stats)
+        _classify_attachment({"media_type": "text", "parse_error": "err"}, stats)
+        assert stats["pdf"] == 1
+        assert stats["excel"] == 1
+        assert stats["word"] == 1
+        assert stats["image"] == 1
+        assert stats["other"] == 1
+        assert stats["failed"] == 1
+
+    def test_accumulate_page_text_length(self):
+        from src.connectors.confluence.output import _accumulate_page_text_length
+
+        page = {"content_text": "hello",
+                "attachments": [{"extracted_text": "world"}, {"extracted_text": None}]}
+        assert _accumulate_page_text_length(page) == 10
+
+    def test_count_extra_fields(self):
+        from src.connectors.confluence.output import _count_extra_fields
+
+        pages = [
+            {"labels": ["a", "b"], "comments": ["c"], "emails": []},
+            {"labels": ["d"], "macros": ["m1", "m2"]},
+        ]
+        counts = _count_extra_fields(pages)
+        assert counts["total_labels"] == 3
+        assert counts["total_macros"] == 2
+
+
+# ===================================================================
+# attachment_parser.py — _resolve_* policy helpers
+# ===================================================================
+
+
+class TestPolicyResolvers:
+    def test_resolve_ocr_mode_override(self):
+        from src.connectors.confluence.attachment_parser import _resolve_ocr_mode
+
+        assert _resolve_ocr_mode({"attachment_ocr_mode": "auto"}, {}) == "auto"
+        assert _resolve_ocr_mode({"attachment_ocr_mode": "off"}, {}) == "off"
+        assert _resolve_ocr_mode({"attachment_ocr_mode": "force"}, {}) == "force"
+
+    def test_resolve_ocr_mode_invalid(self):
+        from src.connectors.confluence.attachment_parser import _resolve_ocr_mode
+
+        assert _resolve_ocr_mode({"attachment_ocr_mode": "invalid"}, {}) == "force"
+
+    def test_resolve_int_field_priority(self):
+        from src.connectors.confluence.attachment_parser import _resolve_int_field
+
+        assert _resolve_int_field({"f": 42}, {}, "f", "ENV_KEY", 10) == 42
+        assert _resolve_int_field({}, {"f": 7}, "f", "MISSING_ENV", 10) == 7
+        assert _resolve_int_field({}, {}, "f", "MISSING_ENV", 99) == 99
+
+    def test_resolve_bool_field_priority(self):
+        from src.connectors.confluence.attachment_parser import _resolve_bool_field
+
+        assert _resolve_bool_field({"f": True}, {}, "f", "ENV", False) is True
+        assert _resolve_bool_field({}, {"f": False}, "f", "MISSING_ENV", True) is False
+        assert _resolve_bool_field({}, {}, "f", "MISSING_ENV", True) is True
+
+
+# ===================================================================
+# client.py — API wrappers
+# ===================================================================
+
+
+class TestApiWrappers:
+    @pytest.mark.asyncio
+    async def test_get_user_details_empty_id(self, tmp_output):
+        client = _make_client(tmp_output)
+        assert await client.get_user_details("") is None
+
+    @pytest.mark.asyncio
+    async def test_get_user_details_success(self, tmp_output):
+        client = _make_client(tmp_output)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "displayName": "Test User", "email": "test@test.com",
+            "profilePicture": {"path": "/avatar.png"},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        client.client.get = AsyncMock(return_value=mock_resp)
+
+        result = await client.get_user_details("acc1")
+        assert result["display_name"] == "Test User"
+        assert result["email"] == "test@test.com"
+
+    @pytest.mark.asyncio
+    async def test_get_user_details_error(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.client.get = AsyncMock(side_effect=Exception("api error"))
+        assert await client.get_user_details("acc1") is None
+
+    @pytest.mark.asyncio
+    async def test_get_comments_success(self, tmp_output):
+        client = _make_client(tmp_output)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "results": [{
+                "id": "c1",
+                "history": {"createdBy": {"displayName": "Author"}, "createdDate": "2024-01-01"},
+                "body": {"storage": {"value": "<p>Comment text</p>"}},
+            }]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        client.client.get = AsyncMock(return_value=mock_resp)
+
+        comments = await client.get_comments("pg1")
+        assert len(comments) == 1
+        assert comments[0].author == "Author"
+
+    @pytest.mark.asyncio
+    async def test_get_comments_error(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.client.get = AsyncMock(side_effect=Exception("err"))
+        assert await client.get_comments("pg1") == []
+
+    @pytest.mark.asyncio
+    async def test_get_labels_success(self, tmp_output):
+        client = _make_client(tmp_output)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "results": [{"name": "tag1", "prefix": "global"}, {"name": "tag2", "prefix": None}]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        client.client.get = AsyncMock(return_value=mock_resp)
+
+        labels = await client.get_labels("pg1")
+        assert len(labels) == 2
+        assert labels[0].name == "tag1"
+
+    @pytest.mark.asyncio
+    async def test_get_labels_error(self, tmp_output):
+        client = _make_client(tmp_output)
+        client.client.get = AsyncMock(side_effect=Exception("err"))
+        assert await client.get_labels("pg1") == []
+
+    @pytest.mark.asyncio
+    async def test_get_attachments_success(self, tmp_output):
+        client = _make_client(tmp_output)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"results": [{"id": "att1", "title": "file.pdf"}]}
+        client._http_get_with_retry = AsyncMock(return_value=mock_resp)
+
+        attachments = await client.get_attachments("pg1")
+        assert len(attachments) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_attachments_error(self, tmp_output):
+        client = _make_client(tmp_output)
+        client._http_get_with_retry = AsyncMock(side_effect=Exception("err"))
+        assert await client.get_attachments("pg1") == []

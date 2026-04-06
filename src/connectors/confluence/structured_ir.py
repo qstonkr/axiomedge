@@ -101,7 +101,18 @@ def generate_structured_ir(
                 "content": para.strip(),
             })
 
-    # IR 구조 반환
+    return _build_ir_dict(title, chunks, sections, tables, code_blocks, mentions)
+
+
+def _build_ir_dict(
+    title: str,
+    chunks: list[dict],
+    sections: list[dict],
+    tables: list,
+    code_blocks: list[dict],
+    mentions: list,
+) -> dict:
+    """Build the final IR dictionary from extracted components."""
     return {
         "title": title,
         "chunk_count": len(chunks),
@@ -136,6 +147,7 @@ def generate_structured_ir(
     }
 
 
+
 def _table_to_markdown(table: ExtractedTable) -> str:
     """테이블을 Markdown 형식으로 변환 (RAG용)"""
     lines = []
@@ -148,26 +160,30 @@ def _table_to_markdown(table: ExtractedTable) -> str:
     return "\n".join(lines)
 
 
+def _split_long_paragraph(para: str) -> list[str]:
+    """Split a long paragraph into sentence-based chunks (~800 chars)."""
+    sentences = re.split(r"(?<=[.!?])\s+", para)
+    parts: list[str] = []
+    current = ""
+    for sent in sentences:
+        if len(current) + len(sent) > 800:
+            if current:
+                parts.append(current)
+            current = sent
+        else:
+            current += (" " if current else "") + sent
+    if current:
+        parts.append(current)
+    return parts
+
+
 def _split_into_paragraphs(text: str) -> list[str]:
-    """본문을 단락으로 분리"""
-    # 빈 줄 2개 이상으로 분리
+    """Split text into paragraphs."""
     paragraphs = re.split(r"\n\n+", text)
-    # 너무 긴 단락은 추가 분리
     result = []
     for para in paragraphs:
         if len(para) > 1000:
-            # 문장 단위로 분리
-            sentences = re.split(r"(?<=[.!?])\s+", para)
-            current = ""
-            for sent in sentences:
-                if len(current) + len(sent) > 800:
-                    if current:
-                        result.append(current)
-                    current = sent
-                else:
-                    current += (" " if current else "") + sent
-            if current:
-                result.append(current)
+            result.extend(_split_long_paragraph(para))
         else:
             result.append(para)
     return result
@@ -175,7 +191,7 @@ def _split_into_paragraphs(text: str) -> list[str]:
 
 def extract_creator_info(creator: str) -> tuple[str | None, str | None]:
     """작성자에서 이름/팀 추출"""
-    match = re.search(r"([가-힣]+)/([가-힣A-Za-z0-9]+(?:팀|스쿼드|실|부문|센터))", creator)
+    match = re.search(r"([가-힣]{1,10})/([가-힣A-Za-z0-9]{1,30}(?:팀|스쿼드|실|부문|센터))", creator)
     if match:
         return match.group(1), match.group(2)
     return None, None

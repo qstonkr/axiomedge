@@ -409,6 +409,25 @@ class ConfluenceFullClient:
     async def close(self) -> None:
         await self.client.aclose()
 
+    _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+    @staticmethod
+    async def _backoff_and_log(
+        error: Exception, attempt: int, max_retries: int, url: str,
+        base_delay: int, max_delay: int,
+    ) -> None:
+        """Log a retry warning and sleep with exponential backoff."""
+        if attempt >= max_retries - 1:
+            return
+        wait = min(2**attempt * base_delay, max_delay)
+        label = (
+            f"HTTP {error.response.status_code}"  # type: ignore[union-attr]
+            if isinstance(error, httpx.HTTPStatusError)
+            else type(error).__name__
+        )
+        logger.warning("%s retry %d/%d: %s", label, attempt + 1, max_retries, url[:80])
+        await asyncio.sleep(wait)
+
     async def _http_get_with_retry(
         self,
         url: str,
@@ -430,31 +449,12 @@ class ConfluenceFullClient:
                 httpx.PoolTimeout,
             ) as e:
                 last_error = e
-                if attempt < max_retries - 1:
-                    wait = min(2**attempt * 2, 30)
-                    logger.warning(
-                        "HTTP retry %d/%d (%s): %s",
-                        attempt + 1,
-                        max_retries,
-                        type(e).__name__,
-                        url[:80],
-                    )
-                    await asyncio.sleep(wait)
+                await self._backoff_and_log(e, attempt, max_retries, url, 2, 30)
             except httpx.HTTPStatusError as e:
-                if e.response.status_code in (429, 500, 502, 503, 504):
-                    last_error = e
-                    if attempt < max_retries - 1:
-                        wait = min(2**attempt * 5, 60)
-                        logger.warning(
-                            "HTTP %d retry %d/%d: %s",
-                            e.response.status_code,
-                            attempt + 1,
-                            max_retries,
-                            url[:80],
-                        )
-                        await asyncio.sleep(wait)
-                else:
+                if e.response.status_code not in self._RETRYABLE_STATUS_CODES:
                     raise
+                last_error = e
+                await self._backoff_and_log(e, attempt, max_retries, url, 5, 60)
         if last_error is not None:
             raise last_error
         raise RuntimeError("Unreachable: HTTP retry exhausted without error")

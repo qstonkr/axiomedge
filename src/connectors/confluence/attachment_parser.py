@@ -941,6 +941,21 @@ class AttachmentParser:
             logger.warning("[OCR Warning] Slide %d image: %s", slide_num, ocr_err)
         return result
 
+    @staticmethod
+    def _accumulate_ocr_result(
+        item: dict, totals: dict, text_parts: list[str],
+        timed_out_images: list[tuple[int, bytes]] | None = None,
+    ) -> None:
+        """Accumulate a single OCR item result into running totals."""
+        totals["attempted"] += item.get("attempted", 0)
+        totals["extracted"] += item.get("extracted", 0)
+        totals["deferred"] += item.get("deferred", 0)
+        totals["chars"] += item.get("chars", 0)
+        if item.get("text"):
+            text_parts.append(item["text"])
+        if timed_out_images is not None and item.get("timed_out_item"):
+            timed_out_images.append(item["timed_out_item"])
+
     @classmethod
     def _shape_ocr_pass(
         cls, image_shapes, policy, prs_slides_count, heartbeat_fn,
@@ -953,10 +968,7 @@ class AttachmentParser:
         """
         text_parts: list[str] = []
         timed_out_images: list[tuple[int, bytes]] = []
-        ocr_units_attempted = 0
-        ocr_units_extracted = 0
-        ocr_units_deferred = 0
-        ocr_text_chars = 0
+        totals = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
         ocr_processed = 0
         ocr_total = len(image_shapes)
         attempted_slides: set[int] = set()
@@ -968,14 +980,7 @@ class AttachmentParser:
             )
             if item_result is None:
                 break  # OCR not available
-            ocr_units_attempted += item_result.get("attempted", 0)
-            ocr_units_extracted += item_result.get("extracted", 0)
-            ocr_units_deferred += item_result.get("deferred", 0)
-            ocr_text_chars += item_result.get("chars", 0)
-            if item_result.get("text"):
-                text_parts.append(item_result["text"])
-            if item_result.get("timed_out_item"):
-                timed_out_images.append(item_result["timed_out_item"])
+            cls._accumulate_ocr_result(item_result, totals, text_parts, timed_out_images)
             ocr_processed += 1
             if heartbeat_fn and ocr_processed % 10 == 0:
                 heartbeat_fn(f"ocr: {ocr_processed}/{ocr_total} images, slide_{slide_num}")
@@ -986,12 +991,15 @@ class AttachmentParser:
             attempted_slides, extracted_slides, heartbeat_fn,
         )
         text_parts.extend(retry_results["text_parts"])
-        ocr_units_attempted += retry_results["attempted"]
-        ocr_units_extracted += retry_results["extracted"]
-        ocr_units_deferred += retry_results["deferred"]
-        ocr_text_chars += retry_results["chars"]
+        totals["attempted"] += retry_results["attempted"]
+        totals["extracted"] += retry_results["extracted"]
+        totals["deferred"] += retry_results["deferred"]
+        totals["chars"] += retry_results["chars"]
 
-        return text_parts, ocr_units_attempted, ocr_units_extracted, ocr_units_deferred, ocr_text_chars
+        return (
+            text_parts, totals["attempted"], totals["extracted"],
+            totals["deferred"], totals["chars"],
+        )
 
     @classmethod
     def _retry_timed_out_images(
@@ -1021,12 +1029,7 @@ class AttachmentParser:
                 slide_num, png_bytes, policy, ocr_postprocess,
                 attempted_slides, extracted_slides,
             )
-            result["attempted"] += item.get("attempted", 0)
-            result["extracted"] += item.get("extracted", 0)
-            result["deferred"] += item.get("deferred", 0)
-            result["chars"] += item.get("chars", 0)
-            if item.get("text"):
-                result["text_parts"].append(item["text"])
+            cls._accumulate_ocr_result(item, result, result["text_parts"])
 
         return result
 
@@ -1125,6 +1128,50 @@ class AttachmentParser:
         return None
 
     @classmethod
+    def _apply_pdf_fallback_if_needed(
+        cls, should_ocr, full_text, tables, ocr_text_chars, file_path, heartbeat_fn,
+    ):
+        """Apply PDF fallback if OCR results are too sparse."""
+        if not (should_ocr and len(full_text.strip()) < 50):
+            return full_text, tables, ocr_text_chars
+        logger.info(
+            "[PPT] Empty result after all extraction (%d chars), trying PDF fallback",
+            len(full_text),
+        )
+        fb = cls._ppt_pdf_fallback(file_path, heartbeat_fn)
+        if fb is not None:
+            fb_text, fb_tables, fb_chars = fb
+            if len(fb_text.strip()) > len(full_text.strip()):
+                full_text = fb_text
+                tables = fb_tables or tables
+                ocr_text_chars = max(ocr_text_chars, fb_chars)
+                logger.info("[PPT] PDF fallback produced %d chars", len(full_text))
+        return full_text, tables, ocr_text_chars
+
+    @classmethod
+    def _build_ppt_result(
+        cls, full_text, tables, policy, should_ocr,
+        ocr_units_attempted, ocr_units_extracted,
+        ocr_units_deferred, native_text_chars, ocr_text_chars,
+    ) -> AttachmentParseResult:
+        """Build the final AttachmentParseResult for PPT parsing."""
+        return AttachmentParseResult(
+            extracted_text=full_text,
+            extracted_tables=tables,
+            confidence=0.85 if full_text.strip() else 0.0,
+            ocr_mode=policy.attachment_ocr_mode,
+            ocr_applied=ocr_units_extracted > 0,
+            ocr_skip_reason=cls._determine_ppt_skip_reason(
+                policy, should_ocr, ocr_units_deferred,
+            ),
+            ocr_units_attempted=ocr_units_attempted,
+            ocr_units_extracted=ocr_units_extracted,
+            ocr_units_deferred=ocr_units_deferred,
+            native_text_chars=native_text_chars,
+            ocr_text_chars=ocr_text_chars,
+        )
+
+    @classmethod
     def parse_ppt(cls, file_path: Path, heartbeat_fn=None) -> AttachmentParseResult:
         """PPT에서 슬라이드 텍스트 추출 (.pptx: python-pptx, .ppt: catppt)"""
         try:
@@ -1198,19 +1245,10 @@ class AttachmentParser:
             full_text = "\n\n".join(text_parts)
 
             # Stage 4: PDF fallback for empty results
-            if should_ocr and len(full_text.strip()) < 50:
-                logger.info(
-                    "[PPT] Empty result after all extraction (%d chars), trying PDF fallback",
-                    len(full_text),
-                )
-                fb = cls._ppt_pdf_fallback(file_path, heartbeat_fn)
-                if fb is not None:
-                    fb_text, fb_tables, fb_chars = fb
-                    if len(fb_text.strip()) > len(full_text.strip()):
-                        full_text = fb_text
-                        tables = fb_tables or tables
-                        ocr_text_chars = max(ocr_text_chars, fb_chars)
-                        logger.info("[PPT] PDF fallback produced %d chars", len(full_text))
+            full_text, tables, ocr_text_chars = cls._apply_pdf_fallback_if_needed(
+                should_ocr, full_text, tables, ocr_text_chars,
+                file_path, heartbeat_fn,
+            )
 
             if ocr_units_deferred > 0:
                 cls._emit_status(
@@ -1218,20 +1256,10 @@ class AttachmentParser:
                     f"ocr_skipped_budget ppt deferred={ocr_units_deferred}",
                 )
 
-            return AttachmentParseResult(
-                extracted_text=full_text,
-                extracted_tables=tables,
-                confidence=0.85 if full_text.strip() else 0.0,
-                ocr_mode=policy.attachment_ocr_mode,
-                ocr_applied=ocr_units_extracted > 0,
-                ocr_skip_reason=cls._determine_ppt_skip_reason(
-                    policy, should_ocr, ocr_units_deferred,
-                ),
-                ocr_units_attempted=ocr_units_attempted,
-                ocr_units_extracted=ocr_units_extracted,
-                ocr_units_deferred=ocr_units_deferred,
-                native_text_chars=native_text_chars,
-                ocr_text_chars=ocr_text_chars,
+            return cls._build_ppt_result(
+                full_text, tables, policy, should_ocr,
+                ocr_units_attempted, ocr_units_extracted,
+                ocr_units_deferred, native_text_chars, ocr_text_chars,
             )
 
         except Exception as e:

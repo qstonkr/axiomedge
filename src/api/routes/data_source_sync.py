@@ -168,7 +168,7 @@ async def _start_ocr_instance() -> str | None:
 async def _wait_for_health(url: str, max_wait: int = 180) -> bool:
     """Poll health endpoint until ready or max_wait seconds."""
     deadline = asyncio.get_event_loop().time() + max_wait
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:  # NOSONAR
         while asyncio.get_event_loop().time() < deadline:
             try:
                 resp = await client.get(f"{url}/health")

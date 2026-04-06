@@ -105,7 +105,7 @@ async def _run_crawl(
 async def crawl_space(
     config: CrawlerConfig,
     page_id: str,
-    source_name: str,  # NOSONAR — required by callers
+    source_name: str,
     source_key: str,
     max_pages: int | None = None,
     download_attachments: bool = True,
@@ -187,7 +187,10 @@ async def crawl_space(
         page_dicts = client.finalize_from_incremental(source_key)
         client.write_runtime_stats()
 
-        logger.info("Crawl complete: %d pages", client._total_pages_crawled)
+        logger.info(
+            "Crawl complete: %d pages for source '%s'",
+            client._total_pages_crawled, source_name,
+        )
         return CrawlSpaceResult(
             pages=client.all_pages,
             page_dicts=page_dicts,
