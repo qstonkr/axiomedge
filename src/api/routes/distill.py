@@ -54,6 +54,16 @@ class BuildTriggerRequest(BaseModel):
     profile_name: str
     steps: list[str] | None = None  # None=전체
 
+    @classmethod
+    def validate_steps(cls, v):
+        if v is not None:
+            from src.distill.config import VALID_BUILD_STEPS
+            unknown = set(v) - VALID_BUILD_STEPS
+            if unknown:
+                msg = f"Unknown steps: {unknown}"
+                raise ValueError(msg)
+        return v
+
 
 class TrainingDataAddRequest(BaseModel):
     profile_name: str
@@ -418,8 +428,8 @@ async def trigger_retrain(request: RetrainRequest):
     logs_by_id = {lg["id"]: lg for lg in logs_result.get("items", [])}
 
     entries_to_save: list[dict] = []
-    import os as _os
-    rag_url = _os.getenv("RAG_API_URL", "http://localhost:8000")
+    from src.config import get_settings
+    rag_url = get_settings().distill.rag_api_url
 
     for log_id in request.edge_log_ids:
         edge_log = logs_by_id.get(log_id)

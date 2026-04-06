@@ -153,6 +153,21 @@ class DashboardSettings(BaseSettings):
     search_timeout: int = Field(default=60)
 
 
+class DistillSettings(BaseSettings):
+    """Distill Plugin 인프라 설정. 프로필(학습 파라미터)은 distill.yaml/DB에서 관리."""
+
+    model_config = SettingsConfigDict(env_prefix="DISTILL_")
+
+    enabled: bool = Field(default=True, description="Distill 플러그인 활성화")
+    config_path: str = Field(default="distill.yaml", description="프로필 YAML 경로")
+    work_dir: str = Field(default="/tmp/distill", description="빌드 작업 디렉토리")
+    llm_concurrency: int = Field(default=3, ge=1, le=10, description="Teacher LLM 동시 호출 수")
+    llm_timeout_sec: int = Field(default=120, ge=10, description="Teacher LLM 호출 타임아웃")
+    build_timeout_sec: int = Field(default=7200, ge=300, description="빌드 전체 타임아웃")
+    log_full_context: bool = Field(default=False, description="usage_log에 answer+chunks 저장")
+    rag_api_url: str = Field(default="http://localhost:8000", description="재학습 시 Teacher RAG URL")
+
+
 class Settings(BaseSettings):
     """Top-level aggregated settings."""
 
@@ -166,6 +181,7 @@ class Settings(BaseSettings):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
+    distill: DistillSettings = Field(default_factory=DistillSettings)
 
 
 @lru_cache(maxsize=1)

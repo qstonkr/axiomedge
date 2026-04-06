@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from typing import Any
 
@@ -889,7 +888,8 @@ async def _step_log_usage(
             "follow_up_generated": len(follow_ups) > 0,
             "rerank_applied": rerank_applied,
         }
-        if os.getenv("DISTILL_LOG_FULL_CONTEXT", "false").lower() == "true":
+        from src.config import get_settings
+        if get_settings().distill.log_full_context:
             context["answer"] = answer
             context["chunks"] = [
                 {

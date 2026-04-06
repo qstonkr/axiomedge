@@ -50,7 +50,9 @@ class DistillService:
             return
 
         all_steps = steps or ["generate", "train", "evaluate", "quantize", "deploy"]
-        build_dir = Path(f"/tmp/distill/{build_id}")
+        from src.config import get_settings
+        work_dir = Path(get_settings().distill.work_dir)
+        build_dir = work_dir / build_id
         build_dir.mkdir(parents=True, exist_ok=True)
 
         try:

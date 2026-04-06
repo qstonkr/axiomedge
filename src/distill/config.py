@@ -1,6 +1,9 @@
 """Distill 빌드 프로필 설정 관리.
 
 distill.yaml 로드/저장/검증. DB 저장 시 시드 데이터로 사용.
+
+인프라 설정(work_dir, timeout 등)은 src/config.py의 DistillSettings(SSOT).
+이 파일은 프로필(학습 파라미터) 스키마만 담당.
 """
 
 from __future__ import annotations
@@ -14,7 +17,27 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-DISTILL_YAML_PATH = Path("distill.yaml")
+# ---------------------------------------------------------------------------
+# 빌드 상태 상수 (SSOT — 매직 스트링 제거)
+# ---------------------------------------------------------------------------
+
+BUILD_STATUS_PENDING = "pending"
+BUILD_STATUS_GENERATING = "generating"
+BUILD_STATUS_TRAINING = "training"
+BUILD_STATUS_EVALUATING = "evaluating"
+BUILD_STATUS_QUANTIZING = "quantizing"
+BUILD_STATUS_DEPLOYING = "deploying"
+BUILD_STATUS_COMPLETED = "completed"
+BUILD_STATUS_FAILED = "failed"
+BUILD_STATUSES_RUNNING = (
+    BUILD_STATUS_GENERATING, BUILD_STATUS_TRAINING,
+    BUILD_STATUS_EVALUATING, BUILD_STATUS_QUANTIZING, BUILD_STATUS_DEPLOYING,
+)
+VALID_BUILD_STEPS = frozenset({"generate", "train", "evaluate", "quantize", "deploy"})
+
+# 데이터 생성 상수
+MIN_CHUNK_LENGTH = 50
+ESTIMATED_CHARS_PER_TOKEN = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -22,26 +45,26 @@ DISTILL_YAML_PATH = Path("distill.yaml")
 # ---------------------------------------------------------------------------
 
 class LoRAConfig(BaseModel):
-    r: int = 8
-    alpha: int = 16
-    dropout: float = 0.05
+    r: int = Field(8, ge=4, le=64)
+    alpha: int = Field(16, ge=8, le=128)
+    dropout: float = Field(0.05, ge=0.0, le=0.5)
     target_modules: list[str] = Field(
         default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"],
     )
 
 
 class TrainingConfig(BaseModel):
-    epochs: int = 3
-    batch_size: int = 4
-    gradient_accumulation: int = 8
-    learning_rate: float = 2e-4
-    max_seq_length: int = 512
+    epochs: int = Field(3, ge=1, le=50)
+    batch_size: int = Field(4, ge=1, le=128)
+    gradient_accumulation: int = Field(8, ge=1, le=64)
+    learning_rate: float = Field(2e-4, gt=0)
+    max_seq_length: int = Field(512, ge=128, le=4096)
 
 
 class QAStyleConfig(BaseModel):
     mode: str = "concise"  # concise | detailed
-    max_answer_tokens: int = 256
-    answer_only_ratio: float = 0.8
+    max_answer_tokens: int = Field(256, ge=64, le=2048)
+    answer_only_ratio: float = Field(0.8, ge=0.0, le=1.0)
     mix_ratio: dict[str, float] = Field(
         default_factory=lambda: {"memorize": 0.6, "rag_reference": 0.4},
     )
@@ -96,8 +119,11 @@ class DistillConfig(BaseModel):
 # YAML I/O
 # ---------------------------------------------------------------------------
 
-def load_config(path: Path = DISTILL_YAML_PATH) -> DistillConfig:
-    """distill.yaml 로드. 파일 없으면 빈 설정 반환."""
+def load_config(path: Path | None = None) -> DistillConfig:
+    """distill.yaml 로드. 경로 미지정 시 Settings.distill.config_path 사용."""
+    if path is None:
+        from src.config import get_settings
+        path = Path(get_settings().distill.config_path)
     if not path.exists():
         logger.info("distill.yaml not found at %s, using empty config", path)
         return DistillConfig()
@@ -112,8 +138,11 @@ def load_config(path: Path = DISTILL_YAML_PATH) -> DistillConfig:
         return DistillConfig()
 
 
-def save_config(config: DistillConfig, path: Path = DISTILL_YAML_PATH) -> None:
+def save_config(config: DistillConfig, path: Path | None = None) -> None:
     """설정을 distill.yaml로 저장."""
+    if path is None:
+        from src.config import get_settings
+        path = Path(get_settings().distill.config_path)
     data = config.model_dump()
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False, sort_keys=False)

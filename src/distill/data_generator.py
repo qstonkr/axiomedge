@@ -14,13 +14,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from rapidfuzz import fuzz
 
-from src.distill.config import DistillProfile
+from src.distill.config import (
+    ESTIMATED_CHARS_PER_TOKEN,
+    MIN_CHUNK_LENGTH,
+    DistillProfile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,12 @@ class DistillDataGenerator:
         self.embedder = embedder
         self.profile = profile
         self.qdrant_url = qdrant_url
+
+        # LLM 동시 호출 제한
+        from src.config import get_settings
+        concurrency = get_settings().distill.llm_concurrency
+        self._llm_semaphore = asyncio.Semaphore(concurrency)
+        self._llm_timeout = get_settings().distill.llm_timeout_sec
 
     # =====================================================================
     # Chunk 기반 QA 생성
@@ -59,7 +71,7 @@ class DistillDataGenerator:
 
             for i, chunk in enumerate(chunks):
                 content = chunk.get("content", "")
-                if len(content) < 50:
+                if len(content) < MIN_CHUNK_LENGTH:
                     continue
 
                 try:
@@ -106,7 +118,6 @@ class DistillDataGenerator:
 
             # Answer-only 변환
             if self.profile.qa_style.answer_only_ratio > 0:
-                import random
                 if random.random() < self.profile.qa_style.answer_only_ratio:
                     answer = await self._convert_to_answer_only(question, answer)
 
@@ -309,8 +320,7 @@ class DistillDataGenerator:
     async def _normalize_answer_length(self, answer: str) -> str:
         """max_answer_tokens 초과 시 요약."""
         max_tokens = self.profile.qa_style.max_answer_tokens
-        # 대략적 토큰 추정 (한국어: 1토큰 ≈ 2~3자)
-        estimated_tokens = len(answer) // 2
+        estimated_tokens = int(len(answer) / ESTIMATED_CHARS_PER_TOKEN)
         if estimated_tokens <= max_tokens:
             return answer
 
@@ -359,9 +369,6 @@ class DistillDataGenerator:
         self, data: list[dict[str, Any]], max_per_type: int = 500,
     ) -> list[dict[str, Any]]:
         """source_type별 균형 맞추기."""
-        from collections import defaultdict
-        import random
-
         by_type: dict[str, list] = defaultdict(list)
         for item in data:
             by_type[item.get("source_type", "unknown")].append(item)
@@ -453,27 +460,27 @@ class DistillDataGenerator:
     # LLM 호출 헬퍼
     # =====================================================================
 
-    async def _call_llm(self, prompt: str, temperature: float = 0.7,
-                        timeout_sec: int = 120) -> str:
-        """Teacher LLM 호출 (타임아웃 포함)."""
-        try:
-            coro = None
-            if hasattr(self.llm, "generate"):
-                coro = self.llm.generate(prompt, temperature=temperature)
-            elif hasattr(self.llm, "generate_response"):
-                coro = self.llm.generate_response(
-                    query=prompt, context=[], system_prompt="",
-                )
-            if coro is None:
+    async def _call_llm(self, prompt: str, temperature: float = 0.7) -> str:
+        """Teacher LLM 호출 (세마포어 + 타임아웃)."""
+        async with self._llm_semaphore:
+            try:
+                coro = None
+                if hasattr(self.llm, "generate"):
+                    coro = self.llm.generate(prompt, temperature=temperature)
+                elif hasattr(self.llm, "generate_response"):
+                    coro = self.llm.generate_response(
+                        query=prompt, context=[], system_prompt="",
+                    )
+                if coro is None:
+                    return ""
+                result = await asyncio.wait_for(coro, timeout=self._llm_timeout)
+                return result if isinstance(result, str) else str(result)
+            except asyncio.TimeoutError:
+                logger.warning("LLM call timed out after %ds", self._llm_timeout)
                 return ""
-            result = await asyncio.wait_for(coro, timeout=timeout_sec)
-            return result if isinstance(result, str) else str(result)
-        except asyncio.TimeoutError:
-            logger.warning("LLM call timed out after %ds", timeout_sec)
+            except Exception as e:
+                logger.warning("LLM call failed: %s", e)
             return ""
-        except Exception as e:
-            logger.warning("LLM call failed: %s", e)
-        return ""
 
     @staticmethod
     def _parse_qa_json(response: str) -> list[dict[str, Any]]:
