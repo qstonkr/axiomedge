@@ -14,6 +14,7 @@ from src.api.app import _get_state
 logger = logging.getLogger(__name__)
 
 _DS_NOT_FOUND = "Data source not found"
+_background_tasks: set[asyncio.Task] = set()  # prevent premature GC of fire-and-forget tasks
 router = APIRouter(prefix="/api/v1/admin/data-sources", tags=["Data Sources"])
 
 
@@ -142,10 +143,12 @@ async def trigger_data_source_sync(
 
             # Launch background sync task
             from src.api.routes.data_source_sync import run_data_source_sync
-            asyncio.create_task(
+            task = asyncio.create_task(
                 run_data_source_sync(existing, state, sync_mode=sync_mode),
                 name=f"ds-sync-{source_id[:8]}",
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
             return {
                 "success": True,

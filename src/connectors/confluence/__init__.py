@@ -37,10 +37,75 @@ __all__ = [
 ]
 
 
+def _setup_signal_handlers(
+    client: ConfluenceFullClient,
+) -> tuple[bool, object, object]:
+    """Register SIGTERM/SIGINT handlers for graceful shutdown.
+
+    Returns (interrupted_flag, previous_sigterm, previous_sigint).
+    The ``interrupted_flag`` is always False initially; the returned signal
+    handlers mutate the client's shutdown state.
+    """
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    previous_sigint = signal.getsignal(signal.SIGINT)
+    _interrupted = False
+
+    def _graceful_shutdown(signum, _frame):
+        nonlocal _interrupted
+        if _interrupted:
+            return
+        _interrupted = True
+        client.request_shutdown()
+        sig_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
+        logger.warning("%s received — finishing current work then stopping", sig_name)
+
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+    signal.signal(signal.SIGINT, _graceful_shutdown)
+    return _interrupted, previous_sigterm, previous_sigint
+
+
+def _restore_signal_handlers(previous_sigterm: object, previous_sigint: object) -> None:
+    """Restore original signal handlers."""
+    signal.signal(signal.SIGTERM, previous_sigterm)
+    signal.signal(signal.SIGINT, previous_sigint)
+
+
+async def _run_crawl(
+    client: ConfluenceFullClient,
+    page_id: str,
+    source_key: str,
+    *,
+    use_bfs: bool,
+    resume: bool,
+    max_pages: int | None,
+    download_attachments: bool,
+    max_attachments_per_page: int,
+) -> None:
+    """Select and run the appropriate crawl mode (BFS or DFS)."""
+    if use_bfs and not resume and max_pages is None:
+        await client.crawl_bfs(
+            root_page_id=page_id,
+            max_depth=10,
+            max_pages=max_pages,
+            download_attachments=download_attachments,
+            max_attachments_per_page=max_attachments_per_page,
+            source_key=source_key,
+        )
+    else:
+        await client.crawl_recursive(
+            page_id,
+            max_depth=10,
+            max_pages=max_pages,
+            download_attachments=download_attachments,
+            max_attachments_per_page=max_attachments_per_page,
+            source_key=source_key,
+        )
+
+
 async def crawl_space(
     config: CrawlerConfig,
     page_id: str,
-    source_name: str,
+    source_name: str,  # NOSONAR — required by callers
     source_key: str,
     max_pages: int | None = None,
     download_attachments: bool = True,
@@ -56,7 +121,7 @@ async def crawl_space(
     Args:
         config: Crawler configuration (base_url, pat, output_dir, etc.)
         page_id: Root Confluence page ID to crawl from.
-        source_name: Human-readable source name.
+        source_name: Human-readable source name (reserved for future use).
         source_key: Machine key for checkpoint/output files.
         max_pages: Limit number of pages to crawl (None = unlimited).
         download_attachments: Whether to download and parse attachments.
@@ -79,23 +144,9 @@ async def crawl_space(
         kb_id=kb_id,
     )
 
-    interrupted = False
-
+    previous_sigterm = previous_sigint = None
     if register_signals:
-        previous_sigterm = signal.getsignal(signal.SIGTERM)
-        previous_sigint = signal.getsignal(signal.SIGINT)
-
-        def _graceful_shutdown(signum, _frame):
-            nonlocal interrupted
-            if interrupted:
-                return
-            interrupted = True
-            client.request_shutdown()
-            sig_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
-            logger.warning("%s received — finishing current work then stopping", sig_name)
-
-        signal.signal(signal.SIGTERM, _graceful_shutdown)
-        signal.signal(signal.SIGINT, _graceful_shutdown)
+        _, previous_sigterm, previous_sigint = _setup_signal_handlers(client)
 
     if resume:
         loaded = client.load_incremental(source_key)
@@ -110,26 +161,14 @@ async def crawl_space(
         client.clear_incremental(source_key)
 
     try:
-        if use_bfs and not resume and max_pages is None:
-            # BFS for full crawls — better parallelism
-            await client.crawl_bfs(
-                root_page_id=page_id,
-                max_depth=10,
-                max_pages=max_pages,
-                download_attachments=download_attachments,
-                max_attachments_per_page=max_attachments_per_page,
-                source_key=source_key,
-            )
-        else:
-            # DFS for resume, sample crawls, or explicit request
-            await client.crawl_recursive(
-                page_id,
-                max_depth=10,
-                max_pages=max_pages,
-                download_attachments=download_attachments,
-                max_attachments_per_page=max_attachments_per_page,
-                source_key=source_key,
-            )
+        await _run_crawl(
+            client, page_id, source_key,
+            use_bfs=use_bfs,
+            resume=resume,
+            max_pages=max_pages,
+            download_attachments=download_attachments,
+            max_attachments_per_page=max_attachments_per_page,
+        )
 
         client.save_incremental(source_key)
 
@@ -156,6 +195,5 @@ async def crawl_space(
         )
     finally:
         if register_signals:
-            signal.signal(signal.SIGTERM, previous_sigterm)
-            signal.signal(signal.SIGINT, previous_sigint)
+            _restore_signal_handlers(previous_sigterm, previous_sigint)
         await client.close()

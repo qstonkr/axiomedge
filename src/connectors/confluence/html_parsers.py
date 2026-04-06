@@ -18,6 +18,16 @@ from .models import (
     ExtractedTable,
 )
 
+# Confluence HTML tag constants
+TAG_AC_LINK = "ac:link"
+TAG_AC_STRUCTURED_MACRO = "ac:structured-macro"
+TAG_AC_NAME = "ac:name"
+TAG_AC_PARAMETER = "ac:parameter"
+TAG_AC_PLAIN_TEXT_BODY = "ac:plain-text-body"
+
+# URL prefix constants
+PREFIX_MAILTO = "mailto:"
+
 
 class TableExtractor(HTMLParser):
     """HTML에서 테이블 추출"""
@@ -48,25 +58,7 @@ class TableExtractor(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "table" and self.current_table:
-            if self.current_table["headers"] or self.current_table["rows"]:
-                # 첫 번째 행이 헤더일 수 있음
-                if not self.current_table["headers"] and self.current_table["rows"]:
-                    self.current_table["headers"] = self.current_table["rows"].pop(0) if self.current_table["rows"] else []
-
-                # 테이블 타입 추론
-                table_type = self._infer_table_type(self.current_table["headers"])
-
-                self.tables.append(ExtractedTable(
-                    headers=self.current_table["headers"],
-                    rows=[
-                        dict(zip(self.current_table["headers"], row))
-                        for row in self.current_table["rows"]
-                        if len(row) == len(self.current_table["headers"])
-                    ],
-                    table_type=table_type,
-                ))
-            self.in_table = False
-            self.current_table = None
+            self._finalize_table()
         elif tag == "thead":
             self.in_header = False
         elif tag == "tr" and self.current_table:
@@ -78,6 +70,30 @@ class TableExtractor(HTMLParser):
         elif tag in ("td", "th"):
             self.current_row.append(self.current_cell.strip())
             self.in_cell = False
+
+    def _finalize_table(self):
+        """현재 테이블 데이터를 ExtractedTable로 변환하여 저장"""
+        if self.current_table["headers"] or self.current_table["rows"]:
+            # 첫 번째 행이 헤더일 수 있음
+            if not self.current_table["headers"] and self.current_table["rows"]:
+                self.current_table["headers"] = (
+                    self.current_table["rows"].pop(0) if self.current_table["rows"] else []
+                )
+
+            # 테이블 타입 추론
+            table_type = self._infer_table_type(self.current_table["headers"])
+
+            self.tables.append(ExtractedTable(
+                headers=self.current_table["headers"],
+                rows=[
+                    dict(zip(self.current_table["headers"], row))
+                    for row in self.current_table["rows"]
+                    if len(row) == len(self.current_table["headers"])
+                ],
+                table_type=table_type,
+            ))
+        self.in_table = False
+        self.current_table = None
 
     def handle_data(self, data):
         if self.in_cell:
@@ -119,11 +135,11 @@ class MentionExtractor(HTMLParser):
                 display_name=None,
                 context="",
             ))
-        elif tag == "ac:link":
+        elif tag == TAG_AC_LINK:
             self.in_link = True
 
     def handle_endtag(self, tag):
-        if tag == "ac:link":
+        if tag == TAG_AC_LINK:
             self.in_link = False
             self.current_user_id = None
 
@@ -156,8 +172,8 @@ class EmailExtractor(HTMLParser):
         attrs_dict = dict(attrs)
         if tag == "a":
             href = attrs_dict.get("href", "")
-            if href.startswith("mailto:"):
-                self.current_email = href.replace("mailto:", "").split("?")[0]  # ?subject= 등 제거
+            if href.startswith(PREFIX_MAILTO):
+                self.current_email = href.replace(PREFIX_MAILTO, "").split("?")[0]  # ?subject= 등 제거
                 self.in_mailto_link = True
                 self.link_text = ""
 
@@ -196,8 +212,8 @@ class MacroExtractor(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
 
-        if tag == "ac:structured-macro":
-            macro_name = attrs_dict.get("ac:name", "")
+        if tag == TAG_AC_STRUCTURED_MACRO:
+            macro_name = attrs_dict.get(TAG_AC_NAME, "")
             if macro_name in self.TARGET_MACROS:
                 self.macro_stack.append({
                     "type": macro_name,
@@ -206,19 +222,15 @@ class MacroExtractor(HTMLParser):
                     "parameters": {},
                 })
 
-        elif tag == "ac:parameter" and self.macro_stack:
-            self.current_param_name = attrs_dict.get("ac:name")
+        elif tag == TAG_AC_PARAMETER and self.macro_stack:
+            self.current_param_name = attrs_dict.get(TAG_AC_NAME)
 
-        elif tag == "ac:rich-text-body" and self.macro_stack:
-            self.in_body = True
-            self.body_content = ""
-
-        elif tag == "ac:plain-text-body" and self.macro_stack:
+        elif tag in ("ac:rich-text-body", TAG_AC_PLAIN_TEXT_BODY) and self.macro_stack:
             self.in_body = True
             self.body_content = ""
 
     def handle_endtag(self, tag):
-        if tag == "ac:structured-macro" and self.macro_stack:
+        if tag == TAG_AC_STRUCTURED_MACRO and self.macro_stack:
             macro_data = self.macro_stack.pop()
             self.macros.append(ExtractedMacro(
                 macro_type=macro_data["type"],
@@ -227,10 +239,10 @@ class MacroExtractor(HTMLParser):
                 parameters=macro_data["parameters"],
             ))
 
-        elif tag == "ac:parameter":
+        elif tag == TAG_AC_PARAMETER:
             self.current_param_name = None
 
-        elif tag in ("ac:rich-text-body", "ac:plain-text-body"):
+        elif tag in ("ac:rich-text-body", TAG_AC_PLAIN_TEXT_BODY):
             if self.macro_stack:
                 self.macro_stack[-1]["content"] = self.body_content.strip()
             self.in_body = False
@@ -266,7 +278,7 @@ class LinkExtractor(HTMLParser):
         attrs_dict = dict(attrs)
 
         # Confluence 내부 링크: ac:link + ri:page
-        if tag == "ac:link":
+        if tag == TAG_AC_LINK:
             self.current_link = {"type": "internal", "page_id": None, "anchor": None}
             self.in_link = True
             self.link_text = ""
@@ -284,68 +296,88 @@ class LinkExtractor(HTMLParser):
 
         # 일반 a 태그 링크
         elif tag == "a":
-            href = attrs_dict.get("href", "")
+            self._handle_anchor_start(attrs_dict)
 
-            # 무시할 패턴 체크
-            if any(href.startswith(p) for p in self.IGNORE_PATTERNS):
-                return
+    def _handle_anchor_start(self, attrs_dict: dict):
+        """일반 <a> 태그의 href를 분석하여 내부/외부 링크로 분류"""
+        href = attrs_dict.get("href", "")
 
-            # mailto는 EmailExtractor에서 처리
-            if href.startswith("mailto:"):
-                return
+        # 무시할 패턴 체크
+        if any(href.startswith(p) for p in self.IGNORE_PATTERNS):
+            return
 
-            self.in_link = True
-            self.link_text = ""
+        # mailto는 EmailExtractor에서 처리
+        if href.startswith(PREFIX_MAILTO):
+            return
 
-            # 내부 링크 판별
-            if "/pages/viewpage.action" in href or "/display/" in href:
-                # Confluence 내부 링크
-                page_id = None
-                if "pageId=" in href:
-                    try:
-                        page_id = href.split("pageId=")[1].split("&")[0]
-                    except (IndexError, ValueError):
-                        pass
-                self.current_link = {"type": "internal", "page_id": page_id, "url": href}
-            elif href.startswith("http://") or href.startswith("https://"):
-                # 외부 링크
-                self.current_link = {"type": "external", "url": href}
-            elif href.startswith("/"):
-                # 상대 경로 (내부)
-                self.current_link = {"type": "internal", "url": self.base_url + href, "page_id": None}
+        self.in_link = True
+        self.link_text = ""
+
+        # 내부 링크 판별
+        if "/pages/viewpage.action" in href or "/display/" in href:
+            self.current_link = self._parse_confluence_link(href)
+        elif href.startswith("http://") or href.startswith("https://"):
+            self.current_link = {"type": "external", "url": href}
+        elif href.startswith("/"):
+            self.current_link = {"type": "internal", "url": self.base_url + href, "page_id": None}
+
+    def _parse_confluence_link(self, href: str) -> dict:
+        """Confluence 내부 링크에서 페이지 ID를 추출"""
+        page_id = None
+        if "pageId=" in href:
+            try:
+                page_id = href.split("pageId=")[1].split("&")[0]
+            except (IndexError, ValueError):
+                pass
+        return {"type": "internal", "page_id": page_id, "url": href}
+
+    def _get_anchor_text(self) -> str | None:
+        """현재 링크 텍스트를 정제하여 반환"""
+        stripped = self.link_text.strip()
+        return stripped if stripped else None
+
+    def _get_context(self) -> str:
+        """현재 컨텍스트 버퍼에서 최근 100자를 반환"""
+        return self.context_buffer[-100:] if self.context_buffer else ""
 
     def handle_endtag(self, tag):
-        if tag == "ac:link" and self.current_link and self.current_link.get("page_id"):
+        if tag == TAG_AC_LINK and self.current_link and self.current_link.get("page_id"):
             self.internal_links.append(ExtractedLink(
                 link_type="internal",
                 target_page_id=self.current_link.get("page_id"),
-                anchor_text=self.link_text.strip() if self.link_text.strip() else None,
-                context=self.context_buffer[-100:] if self.context_buffer else "",
+                anchor_text=self._get_anchor_text(),
+                context=self._get_context(),
             ))
             self.current_link = None
             self.in_link = False
 
         elif tag == "a" and self.current_link:
-            link_type = self.current_link.get("type", "external")
+            self._finalize_anchor_link()
 
-            if link_type == "internal":
-                self.internal_links.append(ExtractedLink(
-                    link_type="internal",
-                    target_page_id=self.current_link.get("page_id"),
-                    target_url=self.current_link.get("url"),
-                    anchor_text=self.link_text.strip() if self.link_text.strip() else None,
-                    context=self.context_buffer[-100:] if self.context_buffer else "",
-                ))
-            else:
-                self.external_links.append(ExtractedLink(
-                    link_type="external",
-                    target_url=self.current_link.get("url"),
-                    anchor_text=self.link_text.strip() if self.link_text.strip() else None,
-                    context=self.context_buffer[-100:] if self.context_buffer else "",
-                ))
+    def _finalize_anchor_link(self):
+        """<a> 태그 종료 시 링크를 내부/외부 목록에 추가"""
+        link_type = self.current_link.get("type", "external")
+        anchor_text = self._get_anchor_text()
+        context = self._get_context()
 
-            self.current_link = None
-            self.in_link = False
+        if link_type == "internal":
+            self.internal_links.append(ExtractedLink(
+                link_type="internal",
+                target_page_id=self.current_link.get("page_id"),
+                target_url=self.current_link.get("url"),
+                anchor_text=anchor_text,
+                context=context,
+            ))
+        else:
+            self.external_links.append(ExtractedLink(
+                link_type="external",
+                target_url=self.current_link.get("url"),
+                anchor_text=anchor_text,
+                context=context,
+            ))
+
+        self.current_link = None
+        self.in_link = False
 
     def handle_data(self, data):
         self.context_buffer += data
@@ -431,12 +463,12 @@ class CodeBlockExtractor(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
         # Confluence 코드 매크로 패턴
-        if tag == "ac:structured-macro" and attrs_dict.get("ac:name") == "code":
+        if tag == TAG_AC_STRUCTURED_MACRO and attrs_dict.get(TAG_AC_NAME) == "code":
             self.current_block = {"language": None, "content": ""}
-        elif tag == "ac:parameter" and self.current_block is not None:
-            if attrs_dict.get("ac:name") == "language":
+        elif tag == TAG_AC_PARAMETER and self.current_block is not None:
+            if attrs_dict.get(TAG_AC_NAME) == "language":
                 pass  # handle_data에서 언어 추출
-        elif tag == "ac:plain-text-body" and self.current_block is not None:
+        elif tag == TAG_AC_PLAIN_TEXT_BODY and self.current_block is not None:
             self.in_code = True
             self.code_content = ""
         # 일반 pre/code 태그
@@ -452,7 +484,7 @@ class CodeBlockExtractor(HTMLParser):
             self.code_content = ""
 
     def handle_endtag(self, tag):
-        if tag in ("ac:plain-text-body", "pre", "code") and self.current_block is not None:
+        if tag in (TAG_AC_PLAIN_TEXT_BODY, "pre", "code") and self.current_block is not None:
             self.current_block["content"] = self.code_content.strip()
             if self.current_block["content"]:  # 빈 코드 블록 제외
                 self.code_blocks.append(self.current_block)

@@ -1,0 +1,85 @@
+image: python:3.12
+
+definitions:
+  caches:
+    uv: ~/.cache/uv
+  services:
+    postgres:
+      image: postgres:16
+      variables:
+        POSTGRES_USER: knowledge
+        POSTGRES_PASSWORD: knowledge
+        POSTGRES_DB: knowledge_db
+    redis:
+      image: redis:7-alpine
+
+  steps:
+    - step: &lint
+        name: Lint
+        caches:
+          - uv
+        script:
+          - pip install uv
+          - uv sync --frozen
+          - uvx ruff check src/ scripts/ cli/ dashboard/
+
+    - step: &test
+        name: Test
+        caches:
+          - uv
+        services:
+          - postgres
+          - redis
+        script:
+          - pip install uv
+          - uv sync --frozen
+          - uv run pytest tests/unit/ -v --no-cov --tb=short
+        artifacts:
+          - coverage.xml
+
+    - step: &sonarqube
+        name: SonarQube Scan
+        caches:
+          - uv
+        services:
+          - postgres
+          - redis
+        script:
+          - pip install uv
+          - uv sync --frozen
+          # Generate coverage for changed files
+          - >
+            uv run pytest tests/unit/
+            --ignore=tests/unit/test_jobs.py
+            --cov=src --cov=cli --cov-report=xml:coverage.xml
+            -q --tb=no
+          # Fix coverage paths for SonarQube
+          - >
+            python3 -c "
+            import xml.etree.ElementTree as ET;
+            tree = ET.parse('coverage.xml');
+            root = tree.getroot();
+            sources = root.find('sources');
+            [sources.remove(s) for s in list(sources)] if sources is not None else None;
+            ET.SubElement(sources, 'source').text = '.';
+            tree.write('coverage.xml', xml_declaration=True)
+            "
+          - pipe: sonarsource/sonarqube-scan:3.0.2
+            variables:
+              SONAR_HOST_URL: ${SONAR_HOST_URL}
+              SONAR_TOKEN: ${SONAR_TOKEN}
+          - pipe: sonarsource/sonarqube-quality-gate:1.1.0
+            variables:
+              SONAR_TOKEN: ${SONAR_TOKEN}
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *lint
+      - step: *test
+      - step: *sonarqube
+
+  branches:
+    main:
+      - step: *lint
+      - step: *test

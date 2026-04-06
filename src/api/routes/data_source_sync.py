@@ -83,60 +83,50 @@ async def _get_instance_ip(instance_id: str) -> str | None:
     return ip if ip and ip != "None" else None
 
 
-async def _start_ocr_instance() -> str | None:
-    """Start PaddleOCR EC2 instance and wait for health check.
+async def _wait_for_instance_stopped(instance_id: str, retries: int = 30) -> None:
+    """Poll until instance reaches 'stopped' state."""
+    logger.info("Waiting for instance to fully stop...")
+    for _ in range(retries):
+        await asyncio.sleep(5)
+        if await _get_instance_state(instance_id) == "stopped":
+            return
 
-    Returns the API base URL (with potentially new IP) or None if not configured.
-    """
-    if not _PADDLEOCR_INSTANCE_ID:
-        return _PADDLEOCR_API_URL or None
 
-    instance_state = await _get_instance_state(_PADDLEOCR_INSTANCE_ID)
-    logger.info("PaddleOCR instance %s state: %s", _PADDLEOCR_INSTANCE_ID, instance_state)
+async def _wait_for_instance_running(instance_id: str, retries: int = 60) -> bool:
+    """Poll until instance reaches 'running' state. Returns True if reached."""
+    for _ in range(retries):
+        await asyncio.sleep(5)
+        if await _get_instance_state(instance_id) == "running":
+            return True
+    return False
 
-    if instance_state == "running":
-        # Already running — just resolve current IP
-        ip = await _get_instance_ip(_PADDLEOCR_INSTANCE_ID)
-        if ip:
-            url = f"http://{ip}:8866"
-            if await _wait_for_health(url, timeout=60):
-                return url
-        return _PADDLEOCR_API_URL or None
 
-    if instance_state not in ("stopped", "stopping"):
-        logger.warning("PaddleOCR instance in unexpected state: %s", instance_state)
-        return _PADDLEOCR_API_URL or None
+async def _resolve_running_instance_url(instance_id: str) -> str | None:
+    """Get health-checked URL from an already-running instance."""
+    ip = await _get_instance_ip(instance_id)
+    if ip:
+        url = f"http://{ip}:8866"
+        if await _wait_for_health(url, timeout=60):
+            return url
+    return _PADDLEOCR_API_URL or None
 
-    # Wait for "stopped" if currently "stopping"
-    if instance_state == "stopping":
-        logger.info("Waiting for instance to fully stop...")
-        for _ in range(30):
-            await asyncio.sleep(5)
-            if await _get_instance_state(_PADDLEOCR_INSTANCE_ID) == "stopped":
-                break
 
-    # Start instance
-    logger.info("Starting PaddleOCR instance %s", _PADDLEOCR_INSTANCE_ID)
+async def _boot_and_resolve_url(instance_id: str) -> str | None:
+    """Start the EC2 instance, wait for running, and return health-checked URL."""
+    logger.info("Starting PaddleOCR instance %s", instance_id)
     proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 start-instances --instance-ids {_PADDLEOCR_INSTANCE_ID} "
+        f"aws ec2 start-instances --instance-ids {instance_id} "
         f"--region {_AWS_REGION}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     await proc.communicate()
 
-    # Wait for running state
-    for _ in range(60):
-        await asyncio.sleep(5)
-        state = await _get_instance_state(_PADDLEOCR_INSTANCE_ID)
-        if state == "running":
-            break
-    else:
+    if not await _wait_for_instance_running(instance_id):
         logger.error("PaddleOCR instance did not reach running state")
         return None
 
-    # Get new public IP (changes after stop/start without Elastic IP)
-    ip = await _get_instance_ip(_PADDLEOCR_INSTANCE_ID)
+    ip = await _get_instance_ip(instance_id)
     if not ip:
         logger.error("PaddleOCR instance has no public IP")
         return None
@@ -151,10 +141,34 @@ async def _start_ocr_instance() -> str | None:
     return None
 
 
-async def _wait_for_health(url: str, timeout: int = 180) -> bool:
-    """Poll health endpoint until ready or timeout."""
-    deadline = asyncio.get_event_loop().time() + timeout
-    async with httpx.AsyncClient(timeout=10) as client:
+async def _start_ocr_instance() -> str | None:
+    """Start PaddleOCR EC2 instance and wait for health check.
+
+    Returns the API base URL (with potentially new IP) or None if not configured.
+    """
+    if not _PADDLEOCR_INSTANCE_ID:
+        return _PADDLEOCR_API_URL or None
+
+    instance_state = await _get_instance_state(_PADDLEOCR_INSTANCE_ID)
+    logger.info("PaddleOCR instance %s state: %s", _PADDLEOCR_INSTANCE_ID, instance_state)
+
+    if instance_state == "running":
+        return await _resolve_running_instance_url(_PADDLEOCR_INSTANCE_ID)
+
+    if instance_state not in ("stopped", "stopping"):
+        logger.warning("PaddleOCR instance in unexpected state: %s", instance_state)
+        return _PADDLEOCR_API_URL or None
+
+    if instance_state == "stopping":
+        await _wait_for_instance_stopped(_PADDLEOCR_INSTANCE_ID)
+
+    return await _boot_and_resolve_url(_PADDLEOCR_INSTANCE_ID)
+
+
+async def _wait_for_health(url: str, max_wait: int = 180) -> bool:
+    """Poll health endpoint until ready or max_wait seconds."""
+    deadline = asyncio.get_event_loop().time() + max_wait
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:
         while asyncio.get_event_loop().time() < deadline:
             try:
                 resp = await client.get(f"{url}/health")
@@ -196,6 +210,245 @@ def _extract_page_id_from_url(url: str) -> str | None:
     return None
 
 
+def _resolve_page_id(source: dict[str, Any]) -> str:
+    """Extract page_id from data source config or URL. Raises ValueError if missing."""
+    metadata = source.get("metadata") or {}
+    page_id = (
+        metadata.get("root_page_id")
+        or source.get("crawl_config", {}).get("root_page_id")
+    )
+    if not page_id and metadata.get("url"):
+        page_id = _extract_page_id_from_url(metadata["url"])
+    if not page_id:
+        raise ValueError("No page_id found in data source config or URL")
+    return page_id
+
+
+def _resolve_pat() -> str:
+    """Resolve Confluence PAT from env. Raises ValueError if missing."""
+    pat = _CONFLUENCE_PAT
+    if not pat:
+        raise ValueError(
+            "CONFLUENCE_PAT not configured. "
+            "Set CONFLUENCE_PAT or CONF_PAT environment variable."
+        )
+    return pat
+
+
+async def _run_crawl_pipeline(
+    *,
+    page_id: str,
+    source_name: str,
+    safe_name: str,
+    pat: str,
+    kb_id: str,
+    sync_mode: str,
+    ocr_url: str | None,
+) -> Path:
+    """Run the Confluence crawler and save results. Returns output path."""
+    crawl_output_dir = _CRAWL_OUTPUT_DIR / kb_id
+    crawl_output_dir.mkdir(parents=True, exist_ok=True)
+
+    if ocr_url:
+        os.environ["PADDLEOCR_API_URL"] = ocr_url
+
+    from src.connectors.confluence import CrawlerConfig, crawl_space, save_results
+
+    crawler_config = CrawlerConfig(
+        base_url=os.getenv("CONFLUENCE_BASE_URL", "https://wiki.gsretail.com"),
+        pat=pat,
+        output_dir=crawl_output_dir,
+        attachments_dir=crawl_output_dir / "attachments",
+        knowledge_sources={},
+    )
+
+    max_pages = None if sync_mode == "full" else 50
+    logger.info("Running crawler: page_id=%s, output=%s", page_id, crawl_output_dir)
+
+    crawl_result = await crawl_space(
+        config=crawler_config,
+        page_id=page_id,
+        source_name=source_name,
+        source_key=safe_name,
+        max_pages=max_pages,
+        download_attachments=True,
+        max_concurrent=3,
+        kb_id=kb_id,
+        use_bfs=True,
+        register_signals=False,
+    )
+
+    output_path = crawl_output_dir / f"crawl_{safe_name}.json"
+    save_results(
+        crawl_result.pages, output_path,
+        source_info={"page_id": page_id, "name": source_name, "key": safe_name},
+        page_dicts=crawl_result.page_dicts,
+    )
+    logger.info("Crawler completed for %s", source_name)
+    return crawl_output_dir
+
+
+async def _fetch_documents(
+    crawl_output_dir: Path, safe_name: str, source_name: str,
+) -> list[Any]:
+    """Read crawl output via CrawlResultConnector. Returns document list."""
+    from src.connectors.crawl_result import CrawlResultConnector
+
+    connector = CrawlResultConnector(default_output_dir=str(crawl_output_dir))
+    connector_config = {
+        "entry_point": str(crawl_output_dir),
+        "source": safe_name,
+        "name": source_name,
+    }
+    result = await connector.fetch(connector_config, force=True)
+
+    if not result.success:
+        raise RuntimeError(f"CrawlResultConnector failed: {result.error}")
+    return result.documents or []
+
+
+async def _run_ingestion(
+    state: Any, documents: list[Any], kb_id: str,
+) -> tuple[int, int, list[str]]:
+    """Ingest documents via IngestionPipeline. Returns (docs_ingested, total_chunks, errors)."""
+    store = state.get("qdrant_store")
+    embedder = state.get("embedder")
+    if not store or not embedder:
+        raise RuntimeError("Ingestion services not initialized (qdrant_store/embedder)")
+
+    collections = state.get("qdrant_collections")
+    if collections:
+        await collections.ensure_collection(kb_id)
+
+    from src.pipeline.ingestion import IngestionPipeline
+
+    sparse_embedder = _OnnxSparseEmbedder(embedder)
+    pipeline = IngestionPipeline(
+        embedder=embedder,
+        sparse_embedder=sparse_embedder,
+        vector_store=store,
+        graph_store=state.get("graph_repo"),
+        dedup_cache=state.get("dedup_cache"),
+        dedup_pipeline=state.get("dedup_pipeline"),
+        enable_ingestion_gate=True,
+        enable_term_extraction=True,
+        enable_graphrag=True,
+        term_extractor=state.get("term_extractor"),
+        graphrag_extractor=state.get("graphrag_extractor"),
+    )
+
+    semaphore = asyncio.Semaphore(4)
+    total_chunks = 0
+    docs_ingested = 0
+    errors: list[str] = []
+
+    async def _ingest_one(doc: Any) -> None:
+        nonlocal total_chunks, docs_ingested
+        async with semaphore:
+            try:
+                r = await pipeline.ingest(doc, collection_name=kb_id)
+                if r.chunks_stored > 0:
+                    total_chunks += r.chunks_stored
+                    docs_ingested += 1
+            except Exception as e:
+                errors.append(f"{doc.title}: {e}")
+
+    await asyncio.gather(*[_ingest_one(doc) for doc in documents])
+
+    logger.info(
+        "Ingestion complete: %d docs, %d chunks, %d errors",
+        docs_ingested, total_chunks, len(errors),
+    )
+    return docs_ingested, total_chunks, errors
+
+
+async def _ensure_kb_and_update_counts(
+    state: Any, kb_id: str, source_name: str, metadata: dict,
+    docs_ingested: int, total_chunks: int,
+) -> None:
+    """Ensure KB exists in registry and update document/chunk counts."""
+    kb_registry = state.get("kb_registry")
+    if not kb_registry or docs_ingested <= 0:
+        return
+    try:
+        existing_kb = await kb_registry.get_kb(kb_id)
+        if not existing_kb:
+            await kb_registry.create_kb({
+                "id": kb_id,
+                "name": source_name,
+                "description": metadata.get("description", ""),
+                "tier": "global",
+                "data_classification": "internal",
+                "dataset_ids_by_env": {},
+                "storage_backend": "qdrant",
+                "sync_sources": [],
+                "status": "active",
+                "settings": {},
+                "document_count": 0,
+                "chunk_count": 0,
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            })
+            logger.info("Auto-created KB '%s' in registry", kb_id)
+        await kb_registry.update_counts(kb_id, docs_ingested, total_chunks)
+    except Exception as e:
+        logger.warning("KB registry update failed: %s", e)
+
+
+async def _update_sync_status(
+    ds_repo: Any, run_repo: Any, source_id: str, run_id: str,
+    docs_ingested: int, documents_total: int, total_chunks: int,
+    errors: list[str],
+) -> None:
+    """Update data source and ingestion run records on success."""
+    sync_result = {
+        "documents_synced": docs_ingested,
+        "documents_total": documents_total,
+        "chunks_stored": total_chunks,
+        "errors": errors[:10],
+        "completed_at": datetime.now(UTC).isoformat(),
+    }
+
+    if ds_repo:
+        await ds_repo.complete_sync(source_id, "active", sync_result=sync_result)
+
+    if run_repo:
+        try:
+            await run_repo.complete(run_id, {
+                "status": "completed",
+                "documents_ingested": docs_ingested,
+                "documents_fetched": documents_total,
+                "chunks_stored": total_chunks,
+                "errors": errors[:10],
+                "completed_at": datetime.now(UTC),
+            })
+        except Exception as e:
+            logger.warning("Failed to complete ingestion run record: %s", e)
+
+
+async def _report_sync_failure(
+    ds_repo: Any, run_repo: Any, source_id: str, run_id: str, exc: Exception,
+) -> None:
+    """Update data source and ingestion run records on failure."""
+    logger.error("Data source sync failed for %s: %s", source_id, exc)
+    if ds_repo:
+        try:
+            await ds_repo.complete_sync(
+                source_id, "error", error_message=str(exc)[:500],
+            )
+        except Exception:
+            pass
+    if run_repo:
+        try:
+            await run_repo.complete(run_id, {
+                "status": "failed",
+                "errors": [str(exc)[:500]],
+                "completed_at": datetime.now(UTC),
+            })
+        except Exception:
+            pass
+
+
 async def run_data_source_sync(
     source: dict[str, Any],
     state: Any,
@@ -205,8 +458,8 @@ async def run_data_source_sync(
 
     Steps:
     1. Extract page_id from data source config/metadata
-    2. Run confluence_full_crawler.py subprocess → JSONL output
-    3. CrawlResultConnector reads JSONL → RawDocument list
+    2. Run confluence crawler → save output
+    3. CrawlResultConnector reads output → RawDocument list
     4. IngestionPipeline ingests each document
     5. Update data source status with results
     """
@@ -221,33 +474,17 @@ async def run_data_source_sync(
     ocr_started = False
 
     try:
-        # --- Step 1: Determine page_id ---
-        page_id = (
-            metadata.get("root_page_id")
-            or source.get("crawl_config", {}).get("root_page_id")
-        )
-        if not page_id and metadata.get("url"):
-            page_id = _extract_page_id_from_url(metadata["url"])
-
-        if not page_id:
-            raise ValueError("No page_id found in data source config or URL")
-
-        # Resolve PAT
-        pat = _CONFLUENCE_PAT
-        if not pat:
-            raise ValueError(
-                "CONFLUENCE_PAT not configured. "
-                "Set CONFLUENCE_PAT or CONF_PAT environment variable."
-            )
+        page_id = _resolve_page_id(source)
+        pat = _resolve_pat()
 
         logger.info(
             "Starting sync for source %s (kb=%s, page_id=%s)",
             source_name, kb_id, page_id,
         )
 
-        # --- Step 0: Start PaddleOCR EC2 if configured ---
+        # Start PaddleOCR EC2 if configured
         ocr_url = await _start_ocr_instance()
-        ocr_started = ocr_url is not None and _PADDLEOCR_INSTANCE_ID
+        ocr_started = ocr_url is not None and bool(_PADDLEOCR_INSTANCE_ID)
         if ocr_url:
             logger.info("PaddleOCR available at %s", ocr_url)
         else:
@@ -267,69 +504,16 @@ async def run_data_source_sync(
             except Exception as e:
                 logger.warning("Failed to create ingestion run record: %s", e)
 
-        # --- Step 2: Run crawler (direct call, no subprocess) ---
-        crawl_output_dir = _CRAWL_OUTPUT_DIR / kb_id
-        crawl_output_dir.mkdir(parents=True, exist_ok=True)
-
         safe_name = re.sub(r"[^\w]", "_", source_name)
 
-        # Set OCR URL for attachment parsing if available
-        if ocr_url:
-            os.environ["PADDLEOCR_API_URL"] = ocr_url
-
-        from src.connectors.confluence import CrawlerConfig, crawl_space, save_results
-
-        crawler_config = CrawlerConfig(
-            base_url=os.getenv("CONFLUENCE_BASE_URL", "https://wiki.gsretail.com"),
-            pat=pat,
-            output_dir=crawl_output_dir,
-            attachments_dir=crawl_output_dir / "attachments",
-            knowledge_sources={},
+        # Run crawler
+        crawl_output_dir = await _run_crawl_pipeline(
+            page_id=page_id, source_name=source_name, safe_name=safe_name,
+            pat=pat, kb_id=kb_id, sync_mode=sync_mode, ocr_url=ocr_url,
         )
 
-        max_pages = None if sync_mode == "full" else 50
-        download_attachments = True  # Always download; parser handles OCR availability
-
-        logger.info("Running crawler: page_id=%s, output=%s", page_id, crawl_output_dir)
-
-        crawl_result = await crawl_space(
-            config=crawler_config,
-            page_id=page_id,
-            source_name=source_name,
-            source_key=safe_name,
-            max_pages=max_pages,
-            download_attachments=download_attachments,
-            max_concurrent=3,
-            kb_id=kb_id,
-            use_bfs=True,
-            register_signals=False,
-        )
-
-        # Save crawl output for CrawlResultConnector
-        output_path = crawl_output_dir / f"crawl_{safe_name}.json"
-        save_results(
-            crawl_result.pages, output_path,
-            source_info={"page_id": page_id, "name": source_name, "key": safe_name},
-            page_dicts=crawl_result.page_dicts,
-        )
-
-        logger.info("Crawler completed for %s", source_name)
-
-        # --- Step 3: Ingest crawl output via CrawlResultConnector ---
-        from src.connectors.crawl_result import CrawlResultConnector
-
-        connector = CrawlResultConnector(default_output_dir=str(crawl_output_dir))
-        connector_config = {
-            "entry_point": str(crawl_output_dir),
-            "source": safe_name,
-            "name": source_name,
-        }
-        result = await connector.fetch(connector_config, force=True)
-
-        if not result.success:
-            raise RuntimeError(f"CrawlResultConnector failed: {result.error}")
-
-        documents = result.documents
+        # Fetch documents from crawl output
+        documents = await _fetch_documents(crawl_output_dir, safe_name, source_name)
         if not documents:
             logger.warning("No documents found from crawl output")
             if ds_repo:
@@ -341,131 +525,25 @@ async def run_data_source_sync(
 
         logger.info("Connector produced %d documents, starting ingestion", len(documents))
 
-        # --- Step 4: Ingest documents ---
-        store = state.get("qdrant_store")
-        embedder = state.get("embedder")
-        if not store or not embedder:
-            raise RuntimeError("Ingestion services not initialized (qdrant_store/embedder)")
-
-        # Ensure collection exists
-        collections = state.get("qdrant_collections")
-        if collections:
-            await collections.ensure_collection(kb_id)
-
-        from src.pipeline.ingestion import IngestionPipeline
-
-        sparse_embedder = _OnnxSparseEmbedder(embedder)
-        pipeline = IngestionPipeline(
-            embedder=embedder,
-            sparse_embedder=sparse_embedder,
-            vector_store=store,
-            graph_store=state.get("graph_repo"),
-            dedup_cache=state.get("dedup_cache"),
-            dedup_pipeline=state.get("dedup_pipeline"),
-            enable_ingestion_gate=True,
-            enable_term_extraction=True,
-            enable_graphrag=True,
-            term_extractor=state.get("term_extractor"),
-            graphrag_extractor=state.get("graphrag_extractor"),
+        # Ingest documents
+        docs_ingested, total_chunks, errors = await _run_ingestion(
+            state, documents, kb_id,
         )
 
-        semaphore = asyncio.Semaphore(4)
-        total_chunks = 0
-        docs_ingested = 0
-        errors: list[str] = []
-
-        async def _ingest_one(doc):
-            nonlocal total_chunks, docs_ingested
-            async with semaphore:
-                try:
-                    r = await pipeline.ingest(doc, collection_name=kb_id)
-                    if r.chunks_stored > 0:
-                        total_chunks += r.chunks_stored
-                        docs_ingested += 1
-                except Exception as e:
-                    errors.append(f"{doc.title}: {e}")
-
-        tasks = [_ingest_one(doc) for doc in documents]
-        await asyncio.gather(*tasks)
-
-        logger.info(
-            "Ingestion complete: %d docs, %d chunks, %d errors",
-            docs_ingested, total_chunks, len(errors),
+        # Update KB registry
+        await _ensure_kb_and_update_counts(
+            state, kb_id, source_name, metadata, docs_ingested, total_chunks,
         )
 
-        # --- Step 5: Update KB counts and data source status ---
-        kb_registry = state.get("kb_registry")
-        if kb_registry and docs_ingested > 0:
-            try:
-                # Ensure KB exists in registry (auto-create if missing)
-                existing_kb = await kb_registry.get_kb(kb_id)
-                if not existing_kb:
-                    await kb_registry.create_kb({
-                        "id": kb_id,
-                        "name": source_name,
-                        "description": metadata.get("description", ""),
-                        "tier": "global",
-                        "data_classification": "internal",
-                        "dataset_ids_by_env": {},
-                        "storage_backend": "qdrant",
-                        "sync_sources": [],
-                        "status": "active",
-                        "settings": {},
-                        "document_count": 0,
-                        "chunk_count": 0,
-                        "created_at": datetime.now(UTC),
-                        "updated_at": datetime.now(UTC),
-                    })
-                    logger.info("Auto-created KB '%s' in registry", kb_id)
-                await kb_registry.update_counts(kb_id, docs_ingested, total_chunks)
-            except Exception as e:
-                logger.warning("KB registry update failed: %s", e)
-
-        sync_result = {
-            "documents_synced": docs_ingested,
-            "documents_total": len(documents),
-            "chunks_stored": total_chunks,
-            "errors": errors[:10],
-            "completed_at": datetime.now(UTC).isoformat(),
-        }
-
-        if ds_repo:
-            await ds_repo.complete_sync(source_id, "active", sync_result=sync_result)
-
-        if run_repo:
-            try:
-                await run_repo.complete(run_id, {
-                    "status": "completed",
-                    "documents_ingested": docs_ingested,
-                    "documents_fetched": len(documents),
-                    "chunks_stored": total_chunks,
-                    "errors": errors[:10],
-                    "completed_at": datetime.now(UTC),
-                })
-            except Exception as e:
-                logger.warning("Failed to complete ingestion run record: %s", e)
+        # Update sync status
+        await _update_sync_status(
+            ds_repo, run_repo, source_id, run_id,
+            docs_ingested, len(documents), total_chunks, errors,
+        )
 
     except Exception as exc:
-        logger.error("Data source sync failed for %s: %s", source_id, exc)
-        if ds_repo:
-            try:
-                await ds_repo.complete_sync(
-                    source_id, "error",
-                    error_message=str(exc)[:500],
-                )
-            except Exception:
-                pass
-        if run_repo:
-            try:
-                await run_repo.complete(run_id, {
-                    "status": "failed",
-                    "errors": [str(exc)[:500]],
-                    "completed_at": datetime.now(UTC),
-                })
-            except Exception:
-                pass
+        await _report_sync_failure(ds_repo, run_repo, source_id, run_id, exc)
     finally:
-        # Stop PaddleOCR EC2 to save costs
         if ocr_started:
             try:
                 await _stop_ocr_instance()

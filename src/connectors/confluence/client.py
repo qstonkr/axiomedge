@@ -72,8 +72,9 @@ class ConfluenceFullClient:
             "Accept": "application/json",
         }
         _timeout = float(os.getenv("CONFLUENCE_CRAWL_TIMEOUT", "30"))
+        _verify_ssl = os.getenv("CONFLUENCE_VERIFY_SSL", "false").lower() in ("true", "1", "yes")
         self.client = httpx.AsyncClient(
-            timeout=_timeout, verify=False, headers=self.headers
+            timeout=_timeout, verify=_verify_ssl, headers=self.headers  # NOSONAR — SSL configurable via env
         )
         self.all_pages: list[FullPageContent] = []
         self.visited_pages: set[str] = set()
@@ -552,6 +553,148 @@ class ConfluenceFullClient:
 
         return labels
 
+    @staticmethod
+    def _extract_content_elements(body_html: str, title: str) -> dict[str, Any]:
+        """Extract all content elements (text, tables, mentions, etc.) from HTML."""
+        text_extractor = PlainTextExtractor()
+        text_extractor.feed(body_html)
+        content_text = text_extractor.get_text()
+
+        table_extractor = TableExtractor()
+        table_extractor.feed(body_html)
+
+        mention_extractor = MentionExtractor()
+        mention_extractor.feed(body_html)
+
+        section_extractor = SectionExtractor()
+        section_extractor.feed(body_html)
+
+        code_extractor = CodeBlockExtractor()
+        try:
+            code_extractor.feed(body_html)
+        except Exception:
+            pass
+
+        email_extractor = EmailExtractor()
+        try:
+            email_extractor.feed(body_html)
+        except Exception:
+            pass
+
+        macro_extractor = MacroExtractor()
+        try:
+            macro_extractor.feed(body_html)
+        except Exception:
+            pass
+
+        content_ir = generate_structured_ir(
+            content_text=content_text,
+            content_html=body_html,
+            title=title,
+            tables=table_extractor.tables,
+            sections=section_extractor.sections,
+            mentions=mention_extractor.mentions,
+        )
+
+        return {
+            "content_text": content_text,
+            "tables": table_extractor.tables,
+            "mentions": mention_extractor.mentions,
+            "sections": section_extractor.sections,
+            "code_blocks": code_extractor.code_blocks,
+            "emails": email_extractor.emails,
+            "macros": macro_extractor.macros,
+            "content_ir": content_ir,
+        }
+
+    async def _extract_page_metadata(
+        self, data: dict, page_id: str
+    ) -> dict[str, Any]:
+        """Extract metadata (creator, version, space, ancestors, etc.)."""
+        history = data.get("history", {})
+        created_by_data = history.get("createdBy", {})
+        creator = created_by_data.get("displayName", "Unknown")
+        creator_account_id = created_by_data.get("accountId")
+        creator_name, creator_team = extract_creator_info(creator)
+        created_at = history.get("createdDate", "")
+
+        creator_email = None
+        if creator_account_id:
+            user_details = await self.get_user_details(creator_account_id)
+            if user_details:
+                creator_email = user_details.get("email")
+
+        last_updated = history.get("lastUpdated", {})
+        last_modifier = last_updated.get("by", {}).get("displayName", creator)
+        updated_at = last_updated.get("when", created_at)
+        version = data.get("version", {}).get("number", 1)
+
+        version_data = data.get("version", {})
+        version_history = [{
+            "number": version_data.get("number", version),
+            "when": version_data.get("when", updated_at),
+            "by": version_data.get("by", {}).get("displayName", last_modifier),
+            "message": version_data.get("message", ""),
+        }]
+
+        return {
+            "creator": creator,
+            "creator_name": creator_name,
+            "creator_team": creator_team,
+            "creator_email": creator_email,
+            "last_modifier": last_modifier,
+            "version": version,
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "url": f"{self.base_url}/pages/viewpage.action?pageId={page_id}",
+            "space_key": data.get("space", {}).get("key"),
+            "ancestors": [
+                {"id": a.get("id"), "title": a.get("title")}
+                for a in data.get("ancestors", [])
+            ],
+            "version_history": version_history,
+        }
+
+    @staticmethod
+    def _extract_restrictions(data: dict) -> list[ExtractedRestriction]:
+        """Extract read/update restrictions from page data."""
+        restrictions: list[ExtractedRestriction] = []
+        restrictions_data = data.get("restrictions", {})
+
+        for operation in ("read", "update"):
+            op_restrictions = restrictions_data.get(operation, {}).get(
+                "restrictions", {}
+            )
+            for user in op_restrictions.get("user", {}).get("results", []):
+                restrictions.append(
+                    ExtractedRestriction(
+                        operation=operation,
+                        restriction_type="user",
+                        name=user.get("displayName", ""),
+                        account_id=user.get("accountId"),
+                    )
+                )
+            for group in op_restrictions.get("group", {}).get("results", []):
+                restrictions.append(
+                    ExtractedRestriction(
+                        operation=operation,
+                        restriction_type="group",
+                        name=group.get("name", ""),
+                    )
+                )
+
+        return restrictions
+
+    async def _enrich_mentions_with_email(self, mentions: list) -> None:
+        """Look up email addresses for mentioned users."""
+        for mention in mentions:
+            if mention.user_id:
+                user_details = await self.get_user_details(mention.user_id)
+                if user_details:
+                    mention.email = user_details.get("email")
+                    if not mention.display_name:
+                        mention.display_name = user_details.get("display_name")
+
     async def get_page_full(self, page_id: str) -> FullPageContent | None:
         """Fetch full page content with all metadata."""
         url = f"{self.base_url}/rest/api/content/{page_id}"
@@ -570,185 +713,24 @@ class ConfluenceFullClient:
             data = response.json()
 
             title = data.get("title", "Unknown")
-            body_html = (
-                data.get("body", {}).get("storage", {}).get("value", "")
-            )
+            body_html = data.get("body", {}).get("storage", {}).get("value", "")
 
-            # Plain text extraction
-            text_extractor = PlainTextExtractor()
-            text_extractor.feed(body_html)
-            content_text = text_extractor.get_text()
+            elements = self._extract_content_elements(body_html, title)
+            meta = await self._extract_page_metadata(data, page_id)
+            restrictions = self._extract_restrictions(data)
 
-            # Table extraction
-            table_extractor = TableExtractor()
-            table_extractor.feed(body_html)
-            tables = table_extractor.tables
-
-            # Mention extraction
-            mention_extractor = MentionExtractor()
-            mention_extractor.feed(body_html)
-            mentions = mention_extractor.mentions
-
-            # Section extraction
-            section_extractor = SectionExtractor()
-            section_extractor.feed(body_html)
-            sections = section_extractor.sections
-
-            # Code block extraction
-            code_extractor = CodeBlockExtractor()
-            try:
-                code_extractor.feed(body_html)
-            except Exception:
-                pass
-            code_blocks = code_extractor.code_blocks
-
-            # Email link extraction
-            email_extractor = EmailExtractor()
-            try:
-                email_extractor.feed(body_html)
-            except Exception:
-                pass
-            emails = email_extractor.emails
-
-            # Macro extraction
-            macro_extractor = MacroExtractor()
-            try:
-                macro_extractor.feed(body_html)
-            except Exception:
-                pass
-            macros = macro_extractor.macros
-
-            # Structured IR generation (RAG optimized)
-            content_ir = generate_structured_ir(
-                content_text=content_text,
-                content_html=body_html,
-                title=title,
-                tables=tables,
-                sections=sections,
-                mentions=mentions,
-            )
-
-            # Metadata
-            history = data.get("history", {})
-            created_by_data = history.get("createdBy", {})
-            creator = created_by_data.get("displayName", "Unknown")
-            creator_account_id = created_by_data.get("accountId")
-            creator_name, creator_team = extract_creator_info(creator)
-            created_at = history.get("createdDate", "")
-
-            # Creator email lookup
-            creator_email = None
-            if creator_account_id:
-                user_details = await self.get_user_details(creator_account_id)
-                if user_details:
-                    creator_email = user_details.get("email")
-
-            last_updated = history.get("lastUpdated", {})
-            last_modifier = last_updated.get("by", {}).get(
-                "displayName", creator
-            )
-            updated_at = last_updated.get("when", created_at)
-
-            version = data.get("version", {}).get("number", 1)
-            page_url = (
-                f"{self.base_url}/pages/viewpage.action?pageId={page_id}"
-            )
-
-            # Space info
-            space_key = data.get("space", {}).get("key")
-
-            # Ancestors
-            ancestors = [
-                {"id": a.get("id"), "title": a.get("title")}
-                for a in data.get("ancestors", [])
-            ]
-
-            # Labels
             labels = await self.get_labels(page_id)
-
-            # Comments
             comments = await self.get_comments(page_id)
 
-            # Internal/external links
             link_extractor = LinkExtractor(base_url=self.base_url)
             try:
                 link_extractor.feed(body_html)
             except Exception:
                 pass
-            internal_links = link_extractor.internal_links
-            external_links = link_extractor.external_links
 
-            # Restrictions
-            restrictions: list[ExtractedRestriction] = []
-            restrictions_data = data.get("restrictions", {})
+            await self._enrich_mentions_with_email(elements["mentions"])
 
-            read_restrictions = restrictions_data.get("read", {}).get(
-                "restrictions", {}
-            )
-            for user in read_restrictions.get("user", {}).get("results", []):
-                restrictions.append(
-                    ExtractedRestriction(
-                        operation="read",
-                        restriction_type="user",
-                        name=user.get("displayName", ""),
-                        account_id=user.get("accountId"),
-                    )
-                )
-            for group in read_restrictions.get("group", {}).get("results", []):
-                restrictions.append(
-                    ExtractedRestriction(
-                        operation="read",
-                        restriction_type="group",
-                        name=group.get("name", ""),
-                    )
-                )
-
-            update_restrictions = restrictions_data.get("update", {}).get(
-                "restrictions", {}
-            )
-            for user in update_restrictions.get("user", {}).get("results", []):
-                restrictions.append(
-                    ExtractedRestriction(
-                        operation="update",
-                        restriction_type="user",
-                        name=user.get("displayName", ""),
-                        account_id=user.get("accountId"),
-                    )
-                )
-            for group in update_restrictions.get("group", {}).get(
-                "results", []
-            ):
-                restrictions.append(
-                    ExtractedRestriction(
-                        operation="update",
-                        restriction_type="group",
-                        name=group.get("name", ""),
-                    )
-                )
-
-            # Version history snapshot
-            version_data = data.get("version", {})
-            current_version_snapshot = {
-                "number": version_data.get("number", version),
-                "when": version_data.get("when", updated_at),
-                "by": version_data.get("by", {}).get(
-                    "displayName", last_modifier
-                ),
-                "message": version_data.get("message", ""),
-            }
-            version_history = [current_version_snapshot]
-
-            # Enrich mentions with email
-            for mention in mentions:
-                if mention.user_id:
-                    user_details = await self.get_user_details(mention.user_id)
-                    if user_details:
-                        mention.email = user_details.get("email")
-                        if not mention.display_name:
-                            mention.display_name = user_details.get(
-                                "display_name"
-                            )
-
+            content_text = elements["content_text"]
             return FullPageContent(
                 page_id=page_id,
                 title=title,
@@ -759,30 +741,30 @@ class ConfluenceFullClient:
                     if len(content_text) > 200
                     else content_text
                 ),
-                content_ir=content_ir,
-                tables=tables,
-                mentions=mentions,
-                sections=sections,
-                code_blocks=code_blocks,
-                creator=creator,
-                creator_name=creator_name,
-                creator_team=creator_team,
-                creator_email=creator_email,
-                last_modifier=last_modifier,
-                version=version,
-                url=page_url,
-                created_at=created_at,
-                updated_at=updated_at,
+                content_ir=elements["content_ir"],
+                tables=elements["tables"],
+                mentions=elements["mentions"],
+                sections=elements["sections"],
+                code_blocks=elements["code_blocks"],
+                creator=meta["creator"],
+                creator_name=meta["creator_name"],
+                creator_team=meta["creator_team"],
+                creator_email=meta["creator_email"],
+                last_modifier=meta["last_modifier"],
+                version=meta["version"],
+                url=meta["url"],
+                created_at=meta["created_at"],
+                updated_at=meta["updated_at"],
                 labels=labels,
                 comments=comments,
-                emails=emails,
-                macros=macros,
-                space_key=space_key,
-                ancestors=ancestors,
-                internal_links=internal_links,
-                external_links=external_links,
+                emails=elements["emails"],
+                macros=elements["macros"],
+                space_key=meta["space_key"],
+                ancestors=meta["ancestors"],
+                internal_links=link_extractor.internal_links,
+                external_links=link_extractor.external_links,
                 restrictions=restrictions,
-                version_history=version_history,
+                version_history=meta["version_history"],
             )
 
         except httpx.TimeoutException as e:
@@ -812,6 +794,98 @@ class ConfluenceFullClient:
                 "Could not fetch attachments of %s: %s", page_id, e
             )
             return []
+
+    @staticmethod
+    async def _parse_attachment_content(
+        file_path: Path,
+        content: bytes,
+        media_type: str,
+        filename: str,
+    ) -> AttachmentParseResult | None:
+        """Dispatch attachment content to the appropriate parser."""
+        media_lower = media_type.lower()
+        filename_lower = filename.lower()
+
+        def status_emit(message: str) -> None:
+            logger.info("[attachment] %s", message)
+
+        if "pdf" in media_lower or filename_lower.endswith(".pdf"):
+            return AttachmentParser.parse_pdf(file_path, heartbeat_fn=status_emit)
+
+        if any(x in media_lower for x in ("spreadsheet", "excel", "xlsx", "xls")) or any(
+            filename_lower.endswith(ext) for ext in (".xlsx", ".xls", ".xlsm")
+        ):
+            return AttachmentParser.parse_excel(file_path)
+
+        if any(x in media_lower for x in ("presentation", "powerpoint", "pptx", "ppt")) or any(
+            filename_lower.endswith(ext) for ext in (".pptx", ".ppt")
+        ):
+            return AttachmentParser.parse_ppt(file_path, heartbeat_fn=status_emit)
+
+        if any(x in media_lower for x in ("word", "docx", "doc")) or any(
+            filename_lower.endswith(ext) for ext in (".docx", ".doc")
+        ):
+            return AttachmentParser.parse_word(file_path)
+
+        if "image" in media_lower or any(
+            filename_lower.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".bmp")
+        ):
+            return await AttachmentParser.parse_image_async(file_path, content)
+
+        if filename_lower.endswith(".txt") or "text" in media_lower:
+            return ConfluenceFullClient._decode_text_attachment(content, 1.0)
+
+        if filename_lower.endswith(".csv"):
+            return ConfluenceFullClient._decode_text_attachment(content, 0.95)
+
+        return AttachmentParseResult(
+            extracted_text=f"[Unsupported format: {media_type}]",
+            extracted_tables=[],
+            confidence=0.0,
+            ocr_skip_reason="unsupported_media_type",
+        )
+
+    @staticmethod
+    def _decode_text_attachment(
+        content: bytes, confidence: float
+    ) -> AttachmentParseResult:
+        """Decode a text/CSV attachment with UTF-8 → CP949 fallback."""
+        try:
+            text = content.decode("utf-8")
+            return AttachmentParseResult(
+                extracted_text=text,
+                extracted_tables=[],
+                confidence=confidence,
+                native_text_chars=AttachmentParser._text_chars(text),
+            )
+        except UnicodeDecodeError:
+            text = content.decode("cp949", errors="replace")
+            return AttachmentParseResult(
+                extracted_text=text,
+                extracted_tables=[],
+                confidence=0.8,
+                native_text_chars=AttachmentParser._text_chars(text),
+            )
+
+    @staticmethod
+    def _apply_parse_result(
+        result: AttachmentContent, parse_result: AttachmentParseResult | None
+    ) -> None:
+        """Copy fields from AttachmentParseResult into AttachmentContent."""
+        if parse_result is not None:
+            result.extracted_text = parse_result.extracted_text
+            result.extracted_tables = parse_result.extracted_tables
+            result.ocr_confidence = parse_result.confidence
+            result.ocr_mode = parse_result.ocr_mode
+            result.ocr_applied = parse_result.ocr_applied
+            result.ocr_skip_reason = parse_result.ocr_skip_reason
+            result.ocr_units_attempted = parse_result.ocr_units_attempted
+            result.ocr_units_extracted = parse_result.ocr_units_extracted
+            result.ocr_units_deferred = parse_result.ocr_units_deferred
+            result.native_text_chars = parse_result.native_text_chars
+            result.ocr_text_chars = parse_result.ocr_text_chars
+        if result.extracted_text is None:
+            result.extracted_text = ""
 
     async def download_attachment(
         self, attachment: dict, page_id: str
@@ -859,119 +933,17 @@ class ConfluenceFullClient:
             response = await self.client.get(download_url)
             response.raise_for_status()
             content = response.content
-            def status_emit(message: str) -> None:
-                logger.info("[attachment] %s", message)
 
             # Save file
-            safe_filename = re.sub(r"[^\w\-_\. ]", "_", filename)
+            safe_filename = re.sub(r"[^\w\-. ]", "_", filename)
             file_path = self.attachments_dir / f"{page_id}_{safe_filename}"
-            with open(file_path, "wb") as f:
-                f.write(content)
+            await asyncio.to_thread(file_path.write_bytes, content)
             result.download_path = str(file_path)
 
-            # Content extraction by type
-            media_lower = media_type.lower()
-            filename_lower = filename.lower()
-            parse_result: AttachmentParseResult | None = None
-
-            if "pdf" in media_lower or filename_lower.endswith(".pdf"):
-                parse_result = AttachmentParser.parse_pdf(
-                    file_path, heartbeat_fn=status_emit
-                )
-
-            elif any(
-                x in media_lower
-                for x in ["spreadsheet", "excel", "xlsx", "xls"]
-            ) or any(
-                filename_lower.endswith(ext)
-                for ext in [".xlsx", ".xls", ".xlsm"]
-            ):
-                parse_result = AttachmentParser.parse_excel(file_path)
-
-            elif any(
-                x in media_lower
-                for x in ["presentation", "powerpoint", "pptx", "ppt"]
-            ) or any(
-                filename_lower.endswith(ext) for ext in [".pptx", ".ppt"]
-            ):
-                parse_result = AttachmentParser.parse_ppt(
-                    file_path, heartbeat_fn=status_emit
-                )
-
-            elif any(
-                x in media_lower for x in ["word", "docx", "doc"]
-            ) or any(
-                filename_lower.endswith(ext) for ext in [".docx", ".doc"]
-            ):
-                parse_result = AttachmentParser.parse_word(file_path)
-
-            elif "image" in media_lower or any(
-                filename_lower.endswith(ext)
-                for ext in [".png", ".jpg", ".jpeg", ".gif", ".bmp"]
-            ):
-                parse_result = await AttachmentParser.parse_image_async(
-                    file_path, content
-                )
-
-            elif filename_lower.endswith(".txt") or "text" in media_lower:
-                try:
-                    text = content.decode("utf-8")
-                    parse_result = AttachmentParseResult(
-                        extracted_text=text,
-                        extracted_tables=[],
-                        confidence=1.0,
-                        native_text_chars=AttachmentParser._text_chars(text),
-                    )
-                except UnicodeDecodeError:
-                    text = content.decode("cp949", errors="replace")
-                    parse_result = AttachmentParseResult(
-                        extracted_text=text,
-                        extracted_tables=[],
-                        confidence=0.8,
-                        native_text_chars=AttachmentParser._text_chars(text),
-                    )
-
-            elif filename_lower.endswith(".csv"):
-                try:
-                    text = content.decode("utf-8")
-                    parse_result = AttachmentParseResult(
-                        extracted_text=text,
-                        extracted_tables=[],
-                        confidence=0.95,
-                        native_text_chars=AttachmentParser._text_chars(text),
-                    )
-                except UnicodeDecodeError:
-                    text = content.decode("cp949", errors="replace")
-                    parse_result = AttachmentParseResult(
-                        extracted_text=text,
-                        extracted_tables=[],
-                        confidence=0.8,
-                        native_text_chars=AttachmentParser._text_chars(text),
-                    )
-
-            else:
-                parse_result = AttachmentParseResult(
-                    extracted_text=f"[Unsupported format: {media_type}]",
-                    extracted_tables=[],
-                    confidence=0.0,
-                    ocr_skip_reason="unsupported_media_type",
-                )
-
-            if parse_result is not None:
-                result.extracted_text = parse_result.extracted_text
-                result.extracted_tables = parse_result.extracted_tables
-                result.ocr_confidence = parse_result.confidence
-                result.ocr_mode = parse_result.ocr_mode
-                result.ocr_applied = parse_result.ocr_applied
-                result.ocr_skip_reason = parse_result.ocr_skip_reason
-                result.ocr_units_attempted = parse_result.ocr_units_attempted
-                result.ocr_units_extracted = parse_result.ocr_units_extracted
-                result.ocr_units_deferred = parse_result.ocr_units_deferred
-                result.native_text_chars = parse_result.native_text_chars
-                result.ocr_text_chars = parse_result.ocr_text_chars
-
-            if result.extracted_text is None:
-                result.extracted_text = ""
+            parse_result = await self._parse_attachment_content(
+                file_path, content, media_type, filename,
+            )
+            self._apply_parse_result(result, parse_result)
 
         except Exception as e:
             result.parse_error = str(e)
@@ -1022,6 +994,18 @@ class ConfluenceFullClient:
 
         return child_ids
 
+    async def _fetch_cql_page(
+        self, url: str, params: dict
+    ) -> tuple[list[dict], int] | None:
+        """Fetch a single CQL search page. Returns (results, totalSize) or None on error."""
+        try:
+            resp = await self._http_get_with_retry(url, params=params)
+            data = resp.json()
+            return data.get("results", []), data.get("totalSize", 0)
+        except Exception as e:
+            logger.warning("CQL search error (start=%s): %s", params.get("start"), e)
+            return None
+
     async def get_all_descendant_page_ids_via_cql(
         self, root_page_id: str
     ) -> set[str]:
@@ -1032,18 +1016,14 @@ class ConfluenceFullClient:
         limit = 100
         all_ids: set[str] = set()
 
-        while True:
-            if self.shutdown_requested:
-                break
-            params = {"cql": cql, "limit": limit, "start": start}
-            try:
-                resp = await self._http_get_with_retry(url, params=params)
-                data = resp.json()
-            except Exception as e:
-                logger.warning("CQL search error (start=%d): %s", start, e)
+        while not self.shutdown_requested:
+            page_result = await self._fetch_cql_page(
+                url, {"cql": cql, "limit": limit, "start": start},
+            )
+            if page_result is None:
                 break
 
-            results = data.get("results", [])
+            results, total_size = page_result
             if not results:
                 break
 
@@ -1052,12 +1032,9 @@ class ConfluenceFullClient:
                 if pid:
                     all_ids.add(str(pid))
 
-            total_size = data.get("totalSize", 0)
             start += limit
-
-            if start % 1000 == 0 or not results:
+            if start % 1000 == 0:
                 logger.info("CQL enumeration: %d/%d pages", len(all_ids), total_size)
-
             if start >= total_size:
                 break
 
@@ -1067,6 +1044,32 @@ class ConfluenceFullClient:
     # ------------------------------------------------------------------
     # Crawl strategies
     # ------------------------------------------------------------------
+
+    async def _resume_visited_children(
+        self,
+        page_id: str,
+        depth: int,
+        max_depth: int,
+        max_pages: int | None,
+        download_attachments: bool,
+        max_attachments_per_page: int,
+        progress: Any | None,
+        task_id: Any,
+        source_key: str,
+    ) -> None:
+        """For already-visited pages, explore children so resume works."""
+        if depth > max_depth:
+            return
+        try:
+            child_ids = await self.get_child_pages(page_id)
+            if child_ids:
+                await self._crawl_children(
+                    child_ids, depth, max_depth, max_pages,
+                    download_attachments, max_attachments_per_page,
+                    progress, task_id, source_key,
+                )
+        except Exception:
+            pass
 
     async def crawl_recursive(
         self,
@@ -1087,56 +1090,63 @@ class ConfluenceFullClient:
 
         # Already visited: skip content, but still explore children for resume
         if page_id in self.visited_pages:
-            if depth <= max_depth:
-                try:
-                    child_ids = await self.get_child_pages(page_id)
-                    if child_ids:
-                        await self._crawl_children(
-                            child_ids,
-                            depth,
-                            max_depth,
-                            max_pages,
-                            download_attachments,
-                            max_attachments_per_page,
-                            progress,
-                            task_id,
-                            source_key,
-                        )
-                except Exception:
-                    pass
+            await self._resume_visited_children(
+                page_id, depth, max_depth, max_pages,
+                download_attachments, max_attachments_per_page,
+                progress, task_id, source_key,
+            )
             return None
         self.visited_pages.add(page_id)
 
-        if max_pages and self._total_pages_crawled >= max_pages:
-            return None
-
-        if depth > max_depth:
+        if self._should_stop_crawl(max_pages) or depth > max_depth:
             return None
 
         # Phase 1: process page (semaphore-protected HTTP)
         page, child_ids = await self._process_single_page(
-            page_id,
-            download_attachments,
-            max_attachments_per_page,
-            progress,
-            task_id,
-            source_key,
+            page_id, download_attachments, max_attachments_per_page,
+            progress, task_id, source_key,
         )
 
         # Phase 2: crawl children (outside semaphore)
         await self._crawl_children(
-            child_ids,
-            depth,
-            max_depth,
-            max_pages,
-            download_attachments,
-            max_attachments_per_page,
-            progress,
-            task_id,
-            source_key,
+            child_ids, depth, max_depth, max_pages,
+            download_attachments, max_attachments_per_page,
+            progress, task_id, source_key,
         )
 
         return page
+
+    async def _bfs_process_item(
+        self,
+        page_id: str,
+        depth: int,
+        max_depth: int,
+        max_pages: int | None,
+        download_attachments: bool,
+        max_attachments_per_page: int,
+        source_key: str,
+        queue: asyncio.Queue[tuple[str, int]],
+    ) -> bool:
+        """Process one BFS queue item. Returns False to stop the worker."""
+        if self.shutdown_requested:
+            return False
+        if page_id in self.visited_pages:
+            return True
+        self.visited_pages.add(page_id)
+
+        if max_pages and self._total_pages_crawled >= max_pages:
+            return False
+        if depth > max_depth:
+            return True
+
+        _, child_ids = await self._process_single_page(
+            page_id, download_attachments, max_attachments_per_page,
+            None, None, source_key,
+        )
+        for child_id in child_ids:
+            if child_id not in self.visited_pages:
+                await queue.put((child_id, depth + 1))
+        return True
 
     async def crawl_bfs(
         self,
@@ -1164,38 +1174,14 @@ class ConfluenceFullClient:
                 except asyncio.TimeoutError:
                     break
 
-                if self.shutdown_requested:
-                    queue.task_done()
-                    break
-                # Check-and-add atomically (safe in asyncio single-thread)
-                if page_id in self.visited_pages:
-                    queue.task_done()
-                    continue
-                self.visited_pages.add(page_id)
-
-                if max_pages and self._total_pages_crawled >= max_pages:
-                    queue.task_done()
-                    break
-                if depth > max_depth:
-                    queue.task_done()
-                    continue
-
-                page, child_ids = await self._process_single_page(
-                    page_id,
-                    download_attachments,
-                    max_attachments_per_page,
-                    None,
-                    None,
-                    source_key,
+                keep_going = await self._bfs_process_item(
+                    page_id, depth, max_depth, max_pages,
+                    download_attachments, max_attachments_per_page,
+                    source_key, queue,
                 )
-
-                # Enqueue children
-                for child_id in child_ids:
-                    if child_id not in self.visited_pages:
-                        await queue.put((child_id, depth + 1))
-
-                # Checkpoint is handled inside _do_process_page
                 queue.task_done()
+                if not keep_going:
+                    break
 
         workers = [
             asyncio.create_task(worker()) for _ in range(self._max_concurrent)
@@ -1239,6 +1225,66 @@ class ConfluenceFullClient:
             skip_children=skip_children,
         )
 
+    @staticmethod
+    def _validate_page_content(page: FullPageContent, page_id: str) -> None:
+        """Log warnings for pages with empty or suspicious content."""
+        text_len = len(page.content_text) if page.content_text else 0
+        html_len = len(page.content_html) if page.content_html else 0
+        if text_len > 0:
+            return
+        if html_len == 0:
+            logger.warning(
+                "Page %s (%s) has empty body (html=0, text=0) "
+                "-- possible permission issue",
+                page_id,
+                page.title[:50],
+            )
+        else:
+            logger.warning(
+                "Page %s (%s) has HTML (%d chars) but extracted text is empty",
+                page_id,
+                page.title[:50],
+                html_len,
+            )
+
+    async def _download_page_attachments(
+        self, page: FullPageContent, page_id: str, max_attachments: int
+    ) -> None:
+        """Download and attach parsed attachments to a page."""
+        attachments_meta = await self.get_attachments(page_id)
+        target_attachments = attachments_meta[:max_attachments]
+        if not target_attachments:
+            return
+
+        _att_sem = asyncio.Semaphore(2)
+
+        async def _dl_one(meta: dict) -> AttachmentContent | None:
+            if self.shutdown_requested:
+                return None
+            async with _att_sem:
+                return await self.download_attachment(meta, page_id)
+
+        results = await asyncio.gather(
+            *[_dl_one(m) for m in target_attachments],
+            return_exceptions=True,
+        )
+        for i, r in enumerate(results):
+            if isinstance(r, (Exception, BaseException)):
+                att_name = target_attachments[i].get("title", "unknown")
+                logger.warning("Attachment download failed (%s): %s", att_name, r)
+
+        page.attachments = [
+            r for r in results
+            if r is not None and not isinstance(r, (Exception, BaseException))
+        ]
+
+        has_images = any(
+            "image" in m.get("extensions", {}).get("mediaType", "").lower()
+            for m in target_attachments
+        )
+        if has_images:
+            gc.collect()
+
     async def _do_process_page(
         self,
         page_id: str,
@@ -1260,26 +1306,7 @@ class ConfluenceFullClient:
             child_ids = await self.get_child_pages(page_id)
             return None, child_ids
 
-        # Per-page content validation
-        text_len = len(page.content_text) if page.content_text else 0
-        html_len = len(page.content_html) if page.content_html else 0
-        if text_len == 0:
-            if html_len == 0:
-                logger.warning(
-                    "Page %s (%s) has empty body (html=0, text=0) "
-                    "-- possible permission issue",
-                    page_id,
-                    page.title[:50],
-                )
-            else:
-                logger.warning(
-                    "Page %s (%s) has HTML (%d chars) but extracted text "
-                    "is empty",
-                    page_id,
-                    page.title[:50],
-                    html_len,
-                )
-
+        self._validate_page_content(page, page_id)
         self.all_pages.append(page)
         self._total_pages_crawled += 1
 
@@ -1296,59 +1323,98 @@ class ConfluenceFullClient:
                 description=f"({len(self.all_pages)}) {page.title[:40]}...",
             )
 
-        # Attachment processing (with shutdown check, parallel download+OCR)
         if download_attachments and not self.shutdown_requested:
-            attachments_meta = await self.get_attachments(page_id)
-            target_attachments = attachments_meta[:max_attachments_per_page]
-
-            if target_attachments:
-                _att_sem = asyncio.Semaphore(2)
-
-                async def _dl_one(
-                    meta: dict,
-                ) -> AttachmentContent | None:
-                    if self.shutdown_requested:
-                        return None
-                    async with _att_sem:
-                        return await self.download_attachment(meta, page_id)
-
-                results = await asyncio.gather(
-                    *[_dl_one(m) for m in target_attachments],
-                    return_exceptions=True,
-                )
-                for i, r in enumerate(results):
-                    if isinstance(r, (Exception, BaseException)):
-                        att_name = target_attachments[i].get(
-                            "title", "unknown"
-                        )
-                        logger.warning(
-                            "Attachment download failed (%s): %s",
-                            att_name,
-                            r,
-                        )
-                page.attachments = [
-                    r
-                    for r in results
-                    if r is not None
-                    and not isinstance(r, (Exception, BaseException))
-                ]
-
-                image_count = sum(
-                    1
-                    for m in target_attachments
-                    if "image"
-                    in m.get("extensions", {})
-                    .get("mediaType", "")
-                    .lower()
-                )
-                if image_count > 0:
-                    gc.collect()
+            await self._download_page_attachments(
+                page, page_id, max_attachments_per_page,
+            )
 
         # Child page IDs (skipped in flat mode)
         child_ids = (
             [] if skip_children else await self.get_child_pages(page_id)
         )
         return page, child_ids
+
+    def _should_stop_crawl(self, max_pages: int | None) -> bool:
+        """Return True when crawling should stop (shutdown or page limit)."""
+        return self.shutdown_requested or (
+            bool(max_pages) and self._total_pages_crawled >= max_pages  # type: ignore[operator]
+        )
+
+    async def _crawl_children_parallel(
+        self,
+        child_ids: list[str],
+        depth: int,
+        max_depth: int,
+        max_pages: int | None,
+        download_attachments: bool,
+        max_attachments_per_page: int,
+        progress: Any | None,
+        task_id: Any,
+        source_key: str,
+    ) -> None:
+        """Crawl children concurrently via asyncio.gather."""
+        tasks: list[asyncio.Task[FullPageContent | None]] = []
+        for child_id in child_ids:
+            if self._should_stop_crawl(max_pages):
+                break
+            tasks.append(
+                asyncio.ensure_future(
+                    self.crawl_recursive(
+                        child_id,
+                        depth=depth + 1,
+                        max_depth=max_depth,
+                        max_pages=max_pages,
+                        download_attachments=download_attachments,
+                        max_attachments_per_page=max_attachments_per_page,
+                        progress=progress,
+                        task_id=task_id,
+                        source_key=source_key,
+                    )
+                )
+            )
+
+        if not tasks:
+            return
+
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            raise
+
+        for r in results:
+            if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError):
+                logger.warning("Child page crawl error: %s", r)
+
+    async def _crawl_children_sequential(
+        self,
+        child_ids: list[str],
+        depth: int,
+        max_depth: int,
+        max_pages: int | None,
+        download_attachments: bool,
+        max_attachments_per_page: int,
+        progress: Any | None,
+        task_id: Any,
+        source_key: str,
+    ) -> None:
+        """Crawl children one at a time."""
+        for child_id in child_ids:
+            if self._should_stop_crawl(max_pages):
+                break
+            await self.crawl_recursive(
+                child_id,
+                depth=depth + 1,
+                max_depth=max_depth,
+                max_pages=max_pages,
+                download_attachments=download_attachments,
+                max_attachments_per_page=max_attachments_per_page,
+                progress=progress,
+                task_id=task_id,
+                source_key=source_key,
+            )
 
     async def _crawl_children(
         self,
@@ -1371,65 +1437,15 @@ class ConfluenceFullClient:
         if not child_ids or self.shutdown_requested:
             return
 
+        args = (
+            child_ids, depth, max_depth, max_pages,
+            download_attachments, max_attachments_per_page,
+            progress, task_id, source_key,
+        )
         if self._max_concurrent > 1:
-            # Parallel mode
-            tasks: list[asyncio.Task[FullPageContent | None]] = []
-            for child_id in child_ids:
-                if self.shutdown_requested:
-                    break
-                if max_pages and self._total_pages_crawled >= max_pages:
-                    break
-                tasks.append(
-                    asyncio.ensure_future(
-                        self.crawl_recursive(
-                            child_id,
-                            depth=depth + 1,
-                            max_depth=max_depth,
-                            max_pages=max_pages,
-                            download_attachments=download_attachments,
-                            max_attachments_per_page=max_attachments_per_page,
-                            progress=progress,
-                            task_id=task_id,
-                            source_key=source_key,
-                        )
-                    )
-                )
-
-            if not tasks:
-                return
-
-            try:
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-            except asyncio.CancelledError:
-                for t in tasks:
-                    if not t.done():
-                        t.cancel()
-                raise
-
-            for r in results:
-                if isinstance(r, Exception) and not isinstance(
-                    r, asyncio.CancelledError
-                ):
-                    logger.warning("Child page crawl error: %s", r)
-
+            await self._crawl_children_parallel(*args)
         else:
-            # Sequential mode
-            for child_id in child_ids:
-                if self.shutdown_requested:
-                    break
-                if max_pages and self._total_pages_crawled >= max_pages:
-                    break
-                await self.crawl_recursive(
-                    child_id,
-                    depth=depth + 1,
-                    max_depth=max_depth,
-                    max_pages=max_pages,
-                    download_attachments=download_attachments,
-                    max_attachments_per_page=max_attachments_per_page,
-                    progress=progress,
-                    task_id=task_id,
-                    source_key=source_key,
-                )
+            await self._crawl_children_sequential(*args)
 
     async def crawl_flat(
         self,

@@ -16,6 +16,117 @@ from .models import FullPageContent, page_to_dict
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Shared statistics helpers
+# ---------------------------------------------------------------------------
+
+def _new_parsed_stats() -> dict[str, int]:
+    """Return a fresh attachment-type counter dict."""
+    return {
+        "pdf": 0, "excel": 0, "word": 0, "ppt": 0,
+        "image": 0, "other": 0, "failed": 0,
+    }
+
+
+def _classify_attachment(attachment: dict, parsed_stats: dict[str, int]) -> None:
+    """Increment the appropriate counter in *parsed_stats* for one attachment."""
+    media_type = str(attachment.get("media_type", "")).lower()
+    if attachment.get("parse_error"):
+        parsed_stats["failed"] += 1
+    elif "pdf" in media_type:
+        parsed_stats["pdf"] += 1
+    elif "excel" in media_type or "spreadsheet" in media_type:
+        parsed_stats["excel"] += 1
+    elif "word" in media_type or "document" in media_type:
+        parsed_stats["word"] += 1
+    elif "presentation" in media_type or "powerpoint" in media_type:
+        parsed_stats["ppt"] += 1
+    elif "image" in media_type:
+        parsed_stats["image"] += 1
+    else:
+        parsed_stats["other"] += 1
+
+
+def _accumulate_page_text_length(page: dict) -> int:
+    """Return total extracted text length for body + attachments of one page."""
+    length = 0
+    page_body = page.get("content_text", "")
+    if page_body:
+        length += len(str(page_body))
+    for att in page.get("attachments", []):
+        extracted_text = att.get("extracted_text")
+        if extracted_text:
+            length += len(str(extracted_text))
+    return length
+
+
+def _count_extra_fields(pages: list[dict]) -> dict[str, int]:
+    """Sum counts for labels, comments, emails, macros, links, etc."""
+    fields = [
+        "labels", "comments", "emails", "macros",
+        "internal_links", "external_links", "restrictions", "version_history",
+    ]
+    return {
+        f"total_{f}": sum(len(page.get(f, [])) for page in pages)
+        for f in fields
+    }
+
+
+def _log_parsed_stats(parsed_stats: dict[str, int], total_text: int) -> None:
+    """Log attachment parsing statistics."""
+    for file_type, count in parsed_stats.items():
+        if count > 0:
+            logger.info("  첨부파일 파싱 — %s: %d개", file_type, count)
+    logger.info("  총 추출 텍스트: %s자", f"{total_text:,}")
+
+
+def _log_zero_content_warning(
+    total_pages: int, total_text: int, pages: list[dict] | None = None,
+) -> None:
+    """Log warnings when crawl output has no content."""
+    if total_pages == 0:
+        logger.error(
+            "Output has 0 pages. "
+            "Possible causes: (1) --resume with stale checkpoint marking all pages "
+            "as visited, (2) Confluence API permission issue, (3) all pages returned "
+            "empty body. Try running with --fresh-full to start clean."
+        )
+    elif total_text == 0:
+        pages_with_body = (
+            sum(1 for p in pages if p.get("content_text")) if pages else 0
+        )
+        logger.error(
+            "%d pages collected but total extracted text is 0 chars "
+            "(pages with body: %d). "
+            "Possible cause: Confluence returns metadata but empty body.storage "
+            "(PAT permission issue or view restriction on pages).",
+            total_pages, pages_with_body,
+        )
+
+
+def _log_extra_stats(extra: dict[str, int]) -> None:
+    """Log non-zero extra field counts."""
+    label_map = {
+        "total_labels": "라벨(태그)",
+        "total_comments": "댓글",
+        "total_emails": "이메일 링크",
+        "total_macros": "매크로",
+        "total_internal_links": "내부 링크",
+        "total_external_links": "외부 링크",
+        "total_restrictions": "접근 제한",
+    }
+    if not any(extra.get(k, 0) for k in label_map):
+        return
+    for key, label in label_map.items():
+        val = extra.get(key, 0)
+        if val > 0:
+            logger.info("  %s: %d개", label, val)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def save_results(
     pages: list[FullPageContent],
     output_path: Path,
@@ -28,54 +139,15 @@ def save_results(
         page_dicts if page_dicts is not None else [page_to_dict(page) for page in pages]
     )
 
-    # 첨부파일 파싱 통계
-    parsed_stats = {
-        "pdf": 0,
-        "excel": 0,
-        "word": 0,
-        "ppt": 0,
-        "image": 0,
-        "other": 0,
-        "failed": 0,
-    }
+    parsed_stats = _new_parsed_stats()
     total_extracted_text_length = 0
 
     for page in serialized_pages:
-        # Count page body text
-        page_body = page.get("content_text", "")
-        if page_body:
-            total_extracted_text_length += len(str(page_body))
-
+        total_extracted_text_length += _accumulate_page_text_length(page)
         for attachment in page.get("attachments", []):
-            media_type = str(attachment.get("media_type", "")).lower()
-            if attachment.get("parse_error"):
-                parsed_stats["failed"] += 1
-            elif "pdf" in media_type:
-                parsed_stats["pdf"] += 1
-            elif "excel" in media_type or "spreadsheet" in media_type:
-                parsed_stats["excel"] += 1
-            elif "word" in media_type or "document" in media_type:
-                parsed_stats["word"] += 1
-            elif "presentation" in media_type or "powerpoint" in media_type:
-                parsed_stats["ppt"] += 1
-            elif "image" in media_type:
-                parsed_stats["image"] += 1
-            else:
-                parsed_stats["other"] += 1
+            _classify_attachment(attachment, parsed_stats)
 
-            extracted_text = attachment.get("extracted_text")
-            if extracted_text:
-                total_extracted_text_length += len(str(extracted_text))
-
-    # 추가 통계
-    total_labels = sum(len(page.get("labels", [])) for page in serialized_pages)
-    total_comments = sum(len(page.get("comments", [])) for page in serialized_pages)
-    total_emails = sum(len(page.get("emails", [])) for page in serialized_pages)
-    total_macros = sum(len(page.get("macros", [])) for page in serialized_pages)
-    total_internal_links = sum(len(page.get("internal_links", [])) for page in serialized_pages)
-    total_external_links = sum(len(page.get("external_links", [])) for page in serialized_pages)
-    total_restrictions = sum(len(page.get("restrictions", [])) for page in serialized_pages)
-    total_version_history = sum(len(page.get("version_history", [])) for page in serialized_pages)
+    extra = _count_extra_fields(serialized_pages)
 
     result = {
         "crawled_at": datetime.now(timezone.utc).isoformat(),
@@ -97,14 +169,7 @@ def save_results(
             ),
             "attachment_parsing": parsed_stats,
             "total_extracted_text_chars": total_extracted_text_length,
-            "total_labels": total_labels,
-            "total_comments": total_comments,
-            "total_emails": total_emails,
-            "total_macros": total_macros,
-            "total_internal_links": total_internal_links,
-            "total_external_links": total_external_links,
-            "total_restrictions": total_restrictions,
-            "total_version_history": total_version_history,
+            **extra,
         },
         "pages": serialized_pages,
     }
@@ -113,52 +178,11 @@ def save_results(
         json.dump(result, f, ensure_ascii=False, indent=2)
 
     logger.info("결과 저장: %s", output_path)
-
-    # 파싱 통계 출력
-    for file_type, count in parsed_stats.items():
-        if count > 0:
-            logger.info("  첨부파일 파싱 — %s: %d개", file_type, count)
-    logger.info("  총 추출 텍스트: %s자", f"{total_extracted_text_length:,}")
-
-    # Zero-content validation
-    if len(serialized_pages) == 0:
-        logger.error(
-            "Output has 0 pages. "
-            "Possible causes: (1) --resume with stale checkpoint marking all pages as visited, "
-            "(2) Confluence API permission issue, (3) all pages returned empty body. "
-            "Try running with --fresh-full to start clean."
-        )
-    elif total_extracted_text_length == 0:
-        pages_with_body = sum(1 for p in serialized_pages if p.get("content_text"))
-        logger.error(
-            "%d pages collected but total extracted text is 0 chars "
-            "(pages with body: %d). "
-            "Possible cause: Confluence returns metadata but empty body.storage "
-            "(PAT permission issue or view restriction on pages).",
-            len(serialized_pages),
-            pages_with_body,
-        )
-
-    # 추가 데이터 통계 출력
-    has_extra = any([
-        total_labels, total_comments, total_emails, total_macros,
-        total_internal_links, total_external_links, total_restrictions,
-    ])
-    if has_extra:
-        if total_labels > 0:
-            logger.info("  라벨(태그): %d개", total_labels)
-        if total_comments > 0:
-            logger.info("  댓글: %d개", total_comments)
-        if total_emails > 0:
-            logger.info("  이메일 링크: %d개", total_emails)
-        if total_macros > 0:
-            logger.info("  매크로: %d개", total_macros)
-        if total_internal_links > 0:
-            logger.info("  내부 링크: %d개", total_internal_links)
-        if total_external_links > 0:
-            logger.info("  외부 링크: %d개", total_external_links)
-        if total_restrictions > 0:
-            logger.info("  접근 제한: %d개", total_restrictions)
+    _log_parsed_stats(parsed_stats, total_extracted_text_length)
+    _log_zero_content_warning(
+        len(serialized_pages), total_extracted_text_length, serialized_pages,
+    )
+    _log_extra_stats(extra)
 
 
 def save_results_from_jsonl(
@@ -174,106 +198,49 @@ def save_results_from_jsonl(
     Returns:
         저장된 페이지 수
     """
-    # 통계 카운터
     total_pages = 0
     total_tables = 0
     total_code_blocks = 0
     total_ir_chunks = 0
     total_attachments = 0
-    parsed_stats = {
-        "pdf": 0,
-        "excel": 0,
-        "word": 0,
-        "ppt": 0,
-        "image": 0,
-        "other": 0,
-        "failed": 0,
-    }
+    parsed_stats = _new_parsed_stats()
     total_extracted_text_length = 0
-    total_labels = 0
-    total_comments = 0
-    total_emails = 0
-    total_macros = 0
-    total_internal_links = 0
-    total_external_links = 0
-    total_restrictions = 0
-    total_version_history = 0
+    extra_counters = {
+        "labels": 0, "comments": 0, "emails": 0, "macros": 0,
+        "internal_links": 0, "external_links": 0,
+        "restrictions": 0, "version_history": 0,
+    }
     seen_ids: set[str] = set()
 
     with open(output_path, "w", encoding="utf-8") as out_f:
-        # JSON header
-        out_f.write('{"crawled_at":"')
-        out_f.write(datetime.now(timezone.utc).isoformat())
-        out_f.write('","source_info":')
-        out_f.write(json.dumps(source_info, ensure_ascii=False) if source_info else "null")
-        out_f.write(',"pages":[')
+        _write_json_header(out_f, source_info)
 
         first = True
         with open(jsonl_path, "r", encoding="utf-8") as in_f:
             for line in in_f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    page = json.loads(line)
-                except Exception:
-                    continue
-                if not isinstance(page, dict):
+                page = _parse_jsonl_line(line, seen_ids)
+                if page is None:
                     continue
 
-                pid = page.get("page_id", "")
-                if pid and pid in seen_ids:
-                    continue
-                if pid:
-                    seen_ids.add(pid)
-
-                # Write page
                 if not first:
                     out_f.write(",")
                 out_f.write(json.dumps(page, ensure_ascii=False))
                 first = False
                 total_pages += 1
 
-                # Count page body text
-                page_body = page.get("content_text", "")
-                if page_body:
-                    total_extracted_text_length += len(str(page_body))
+                total_extracted_text_length += _accumulate_page_text_length(page)
 
-                # Accumulate statistics
                 total_tables += len(page.get("tables", []))
                 total_code_blocks += len(page.get("code_blocks", []))
                 total_ir_chunks += (page.get("content_ir") or {}).get("chunk_count", 0)
-                total_labels += len(page.get("labels", []))
-                total_comments += len(page.get("comments", []))
-                total_emails += len(page.get("emails", []))
-                total_macros += len(page.get("macros", []))
-                total_internal_links += len(page.get("internal_links", []))
-                total_external_links += len(page.get("external_links", []))
-                total_restrictions += len(page.get("restrictions", []))
-                total_version_history += len(page.get("version_history", []))
+
+                for key in extra_counters:
+                    extra_counters[key] += len(page.get(key, []))
 
                 for att in page.get("attachments", []):
                     total_attachments += 1
-                    media_type = str(att.get("media_type", "")).lower()
-                    if att.get("parse_error"):
-                        parsed_stats["failed"] += 1
-                    elif "pdf" in media_type:
-                        parsed_stats["pdf"] += 1
-                    elif "excel" in media_type or "spreadsheet" in media_type:
-                        parsed_stats["excel"] += 1
-                    elif "word" in media_type or "document" in media_type:
-                        parsed_stats["word"] += 1
-                    elif "presentation" in media_type or "powerpoint" in media_type:
-                        parsed_stats["ppt"] += 1
-                    elif "image" in media_type:
-                        parsed_stats["image"] += 1
-                    else:
-                        parsed_stats["other"] += 1
-                    extracted_text = att.get("extracted_text")
-                    if extracted_text:
-                        total_extracted_text_length += len(str(extracted_text))
+                    _classify_attachment(att, parsed_stats)
 
-        # Close pages array, write statistics, close root object
         out_f.write('],"statistics":')
         stats = {
             "total_pages": total_pages,
@@ -283,27 +250,14 @@ def save_results_from_jsonl(
             "total_attachments": total_attachments,
             "attachment_parsing": parsed_stats,
             "total_extracted_text_chars": total_extracted_text_length,
-            "total_labels": total_labels,
-            "total_comments": total_comments,
-            "total_emails": total_emails,
-            "total_macros": total_macros,
-            "total_internal_links": total_internal_links,
-            "total_external_links": total_external_links,
-            "total_restrictions": total_restrictions,
-            "total_version_history": total_version_history,
+            **{f"total_{k}": v for k, v in extra_counters.items()},
         }
         out_f.write(json.dumps(stats, ensure_ascii=False))
         out_f.write("}")
 
     logger.info("스트리밍 저장 완료: %s (%d페이지)", output_path, total_pages)
+    _log_parsed_stats(parsed_stats, total_extracted_text_length)
 
-    # 파싱 통계 출력
-    for file_type, count in parsed_stats.items():
-        if count > 0:
-            logger.info("  첨부파일 파싱 — %s: %d개", file_type, count)
-    logger.info("  총 추출 텍스트: %s자", f"{total_extracted_text_length:,}")
-
-    # Zero-content validation (streaming mode)
     if total_pages == 0:
         logger.error(
             "Output has 0 pages (streaming). "
@@ -317,3 +271,35 @@ def save_results_from_jsonl(
         )
 
     return total_pages
+
+
+# ---------------------------------------------------------------------------
+# Streaming I/O helpers
+# ---------------------------------------------------------------------------
+
+def _write_json_header(out_f: object, source_info: dict | None) -> None:
+    """Write the JSON envelope header (crawled_at, source_info, pages array open)."""
+    out_f.write('{"crawled_at":"')
+    out_f.write(datetime.now(timezone.utc).isoformat())
+    out_f.write('","source_info":')
+    out_f.write(json.dumps(source_info, ensure_ascii=False) if source_info else "null")
+    out_f.write(',"pages":[')
+
+
+def _parse_jsonl_line(line: str, seen_ids: set[str]) -> dict | None:
+    """Parse a single JSONL line, dedup by page_id. Returns page dict or None."""
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        page = json.loads(line)
+    except Exception:
+        return None
+    if not isinstance(page, dict):
+        return None
+    pid = page.get("page_id", "")
+    if pid and pid in seen_ids:
+        return None
+    if pid:
+        seen_ids.add(pid)
+    return page
