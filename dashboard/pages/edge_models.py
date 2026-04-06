@@ -395,6 +395,7 @@ with tab_ops:
 
             # ── 실사용 로그 ──
             st.subheader("실사용 로그")
+            selected_for_retrain = []
 
             fc1, fc2, fc3 = st.columns(3)
             with fc1:
