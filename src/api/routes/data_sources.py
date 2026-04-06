@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Annotated, Any
@@ -129,7 +130,7 @@ async def trigger_data_source_sync(
     source_id: str,
     sync_mode: Annotated[str, Query()] = "resume",
 ):
-    """Trigger data source sync."""
+    """Trigger data source sync (crawl → ingest pipeline)."""
     state = _get_state()
     repo = state.get("data_source_repo")
     if repo:
@@ -138,7 +139,20 @@ async def trigger_data_source_sync(
             if not existing:
                 raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
             await repo.update_status(source_id, "syncing")
-            return {"success": True, "source_id": source_id, "sync_mode": sync_mode, "message": "Sync triggered"}
+
+            # Launch background sync task
+            from src.api.routes.data_source_sync import run_data_source_sync
+            asyncio.create_task(
+                run_data_source_sync(existing, state, sync_mode=sync_mode),
+                name=f"ds-sync-{source_id[:8]}",
+            )
+
+            return {
+                "success": True,
+                "source_id": source_id,
+                "sync_mode": sync_mode,
+                "message": "Sync triggered — crawling and ingestion started in background",
+            }
         except HTTPException:
             raise
         except Exception as e:

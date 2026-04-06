@@ -105,6 +105,21 @@ async def get_job(job_id: str) -> dict | None:
     return _deserialize(raw)
 
 
+async def get_active_job_count() -> int:
+    """Return the number of jobs currently in 'processing' status."""
+    try:
+        r = await _get_redis()
+        job_ids = await r.lrange(_INDEX_KEY, 0, -1)
+        count = 0
+        for jid in job_ids:
+            status = await r.hget(_job_key(jid), "status")
+            if status == "processing":
+                count += 1
+        return count
+    except Exception:
+        return 0
+
+
 async def is_cancelled(job_id: str) -> bool:
     """Check if a job has been cancelled."""
     r = await _get_redis()
