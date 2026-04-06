@@ -78,33 +78,39 @@ async def get_group(group_id: str):
     return group
 
 
-@router.put("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
+@router.put("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})
 async def update_group(group_id: str, request: UpdateGroupRequest):
     """검색 그룹 수정 (KB 추가/제거)."""
     repo = _get_state().get("search_group_repo")
     if not repo:
         raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
-    group = await repo.update(
-        group_id=group_id,
-        name=request.name,
-        kb_ids=request.kb_ids,
-        description=request.description,
-        is_default=request.is_default,
-    )
+    try:
+        group = await repo.update(
+            group_id=group_id,
+            name=request.name,
+            kb_ids=request.kb_ids,
+            description=request.description,
+            is_default=request.is_default,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid group ID: {group_id}") from e
     if not group:
         raise HTTPException(status_code=404, detail=_GROUP_NOT_FOUND)
     return group
 
 
-@router.delete("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
+@router.delete("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})
 async def delete_group(group_id: str):
     """검색 그룹 삭제."""
     repo = _get_state().get("search_group_repo")
     if not repo:
         raise HTTPException(status_code=503, detail=_DB_NOT_INIT)
 
-    deleted = await repo.delete(group_id)
+    try:
+        deleted = await repo.delete(group_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid group ID: {group_id}") from e
     if not deleted:
         raise HTTPException(status_code=404, detail=_GROUP_NOT_FOUND)
     return {"success": True, "message": f"Group {group_id} deleted"}

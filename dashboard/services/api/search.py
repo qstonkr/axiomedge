@@ -179,15 +179,21 @@ def list_search_groups() -> dict:
 
 
 def create_search_group(body: dict) -> dict:
-    return _post("/api/v1/search-groups", body)
+    result = _post("/api/v1/search-groups", body)
+    list_search_groups.clear()
+    return result
 
 
 def update_search_group(group_id: str, body: dict) -> dict:
-    return _put(f"/api/v1/search-groups/{group_id}", body)
+    result = _put(f"/api/v1/search-groups/{group_id}", body)
+    list_search_groups.clear()
+    return result
 
 
 def delete_search_group(group_id: str) -> dict:
-    return _delete(f"/api/v1/search-groups/{group_id}")
+    result = _delete(f"/api/v1/search-groups/{group_id}")
+    list_search_groups.clear()
+    return result
 
 
 # ============================================================================

@@ -106,7 +106,7 @@ async def _resolve_running_instance_url(instance_id: str) -> str | None:
     ip = await _get_instance_ip(instance_id)
     if ip:
         url = f"http://{ip}:8866"
-        if await _wait_for_health(url, timeout=60):
+        if await _wait_for_health(url, max_wait=60):
             return url
     return _PADDLEOCR_API_URL or None
 
@@ -134,7 +134,7 @@ async def _boot_and_resolve_url(instance_id: str) -> str | None:
     url = f"http://{ip}:8866"
     logger.info("PaddleOCR instance started, waiting for health at %s", url)
 
-    if await _wait_for_health(url, timeout=180):
+    if await _wait_for_health(url, max_wait=180):
         return url
 
     logger.error("PaddleOCR health check timed out at %s", url)
