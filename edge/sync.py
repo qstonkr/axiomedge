@@ -159,7 +159,8 @@ def upload_logs() -> int:
         logger.error("Rename failed: %s", e)
         return 0
 
-    line_count = sum(1 for _ in open(upload_file, encoding="utf-8"))
+    with open(upload_file, encoding="utf-8") as f:
+        line_count = sum(1 for _ in f)
     try:
         with open(upload_file, "rb") as f:
             resp = httpx.put(LOG_UPLOAD_URL, content=f.read(), timeout=60)

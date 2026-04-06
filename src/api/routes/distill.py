@@ -228,23 +228,30 @@ async def deploy_build(build_id: str):
 
     await repo.update_build(build_id, status="deploying")
 
-    # S3 manifest 갱신 (deployer 사용)
+    # S3 manifest 갱신
     try:
         profile = await repo.get_profile(build["profile_name"])
-        if profile:
-            from src.distill.config import dict_to_profile
-            from src.distill.deployer import DistillDeployer
-            dp = dict_to_profile(profile)
-            deployer = DistillDeployer(dp)
-            if build.get("s3_uri"):
-                await deployer.create_and_upload_manifest(
-                    build["s3_uri"], build["version"], build,
-                )
-        from datetime import timezone as _tz
+        if not profile:
+            await repo.update_build(build_id, status="completed")
+            raise HTTPException(status_code=404, detail=f"Profile '{build['profile_name']}' not found")
+
+        s3_uri = build.get("s3_uri")
+        if not s3_uri:
+            await repo.update_build(build_id, status="completed")
+            raise HTTPException(status_code=400, detail="Build has no S3 URI")
+
+        from src.distill.config import dict_to_profile
+        from src.distill.deployer import DistillDeployer
+        dp = dict_to_profile(profile)
+        deployer = DistillDeployer(dp)
+        await deployer.create_and_upload_manifest(s3_uri, build["version"], build)
+
         await repo.update_build(
             build_id, status="completed",
-            deployed_at=datetime.now(_tz.utc),
+            deployed_at=datetime.now(timezone.utc),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         await repo.update_build(build_id, status="completed",
                                 error_message=f"Deploy failed: {e}")
@@ -263,16 +270,18 @@ async def rollback_build(build_id: str):
     if not build.get("s3_uri"):
         raise HTTPException(status_code=400, detail="Build has no S3 URI")
 
+    profile = await repo.get_profile(build["profile_name"])
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Profile '{build['profile_name']}' not found")
+
     try:
-        profile = await repo.get_profile(build["profile_name"])
-        if profile:
-            from src.distill.config import dict_to_profile
-            from src.distill.deployer import DistillDeployer
-            dp = dict_to_profile(profile)
-            deployer = DistillDeployer(dp)
-            await deployer.create_and_upload_manifest(
-                build["s3_uri"], build["version"], build,
-            )
+        from src.distill.config import dict_to_profile
+        from src.distill.deployer import DistillDeployer
+        dp = dict_to_profile(profile)
+        deployer = DistillDeployer(dp)
+        await deployer.create_and_upload_manifest(
+            build["s3_uri"], build["version"], build,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rollback failed: {e}")
 
@@ -398,25 +407,23 @@ async def trigger_retrain(request: RetrainRequest):
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    # 실패 로그에서 질문 추출 + 학습 데이터 추가
-    added = 0
+    # 실패 로그를 한 번에 조회하여 id → log 매핑
+    logs_result = await repo.list_edge_logs(
+        profile_name=request.profile_name,
+        success=False,
+        limit=max(len(request.edge_log_ids), 100),
+    )
+    logs_by_id = {lg["id"]: lg for lg in logs_result.get("items", [])}
+
     entries_to_save: list[dict] = []
+    import os as _os
+    rag_url = _os.getenv("RAG_API_URL", "http://localhost:8000")
 
     for log_id in request.edge_log_ids:
-        # 로그에서 질문 조회
-        logs_result = await repo.list_edge_logs(
-            profile_name=request.profile_name, limit=1,
-        )
-        # edge_log 직접 조회 (id로)
-        edge_log = None
-        all_logs = logs_result.get("items", [])
-        for lg in all_logs:
-            if lg.get("id") == log_id:
-                edge_log = lg
-                break
-
+        edge_log = logs_by_id.get(log_id)
         question = edge_log.get("query", "") if edge_log else ""
         if not question:
+            logger.warning("Edge log %s not found or has no query", log_id)
             continue
 
         # 답변 결정: 수동 입력 > RAG 자동 생성
@@ -424,18 +431,17 @@ async def trigger_retrain(request: RetrainRequest):
         if corrected:
             answer = corrected
         elif request.generate_answers:
-            # RAG(Teacher)로 정답 생성
             try:
                 import httpx
                 resp = httpx.post(
-                    "http://localhost:8000/api/v1/search/hub",
+                    f"{rag_url}/api/v1/search/hub",
                     json={"query": question, "top_k": 5, "include_answer": True},
                     timeout=60,
                 )
                 resp.raise_for_status()
                 answer = resp.json().get("answer", "")
             except Exception as e:
-                logger.warning("Teacher answer generation failed: %s", e)
+                logger.warning("Teacher answer generation failed for '%s': %s", question[:30], e)
                 answer = ""
         else:
             continue
@@ -451,6 +457,7 @@ async def trigger_retrain(request: RetrainRequest):
             "source_id": log_id,
         })
 
+    added = 0
     if entries_to_save:
         added = await repo.save_training_data(entries_to_save)
 

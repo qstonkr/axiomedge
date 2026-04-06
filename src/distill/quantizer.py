@@ -48,10 +48,6 @@ class DistillQuantizer:
 
     def _convert_hf_to_gguf(self, model_path: Path, output_path: Path) -> None:
         """HuggingFace → GGUF f16 변환."""
-        # llama-cpp-python 내장 변환 가용성 확인
-        import importlib.util
-        _has_llama_quantize = importlib.util.find_spec("llama_cpp") is not None
-
         # llama.cpp CLI 사용 (convert_hf_to_gguf.py)
         convert_script = shutil.which("convert_hf_to_gguf.py")
         if convert_script:
