@@ -69,62 +69,182 @@ QA_GENERATION_PROMPT = (
 )
 
 
+CHUNK_QA_PROMPT = (
+    "다음 문서 내용을 바탕으로, 어느 매장에서든 통용되는 범용적인 질문을 1~3개 만들어주세요.\n\n"
+    "규칙:\n"
+    "- 특정 매장명, 날짜, 직원명을 포함하지 마세요\n"
+    "- '~절차 알려줘', '~방법이 뭐야?', '~제도가 뭐야?' 같은 범용적 형태로 작성\n"
+    "- 좋은 예: '폐기 절차 알려줘', '상생협력 지원제도가 뭐야?', '반품 처리 방법'\n"
+    "- 나쁜 예: '강남점 3월 매출은?', '김철수 매니저 연락처'\n\n"
+    "[문서 내용]\n{chunk}\n\n"
+    "범용적 질문 (한 줄에 하나씩):"
+)
+
+
 async def generate_test_qa(
     llm_client,
     qdrant_url: str,
     kb_ids: list[str],
     count: int = 50,
+    rag_api_url: str = "http://localhost:8000",
 ) -> list[dict[str, Any]]:
-    """테스트용 QA 쌍 생성.
+    """테스트용 QA 쌍 생성 (KB 청크 기반).
 
-    1. 질문 템플릿에서 count개 선택
-    2. 각 질문에 대해 KB 청크를 컨텍스트로 제공 (가능한 경우)
-    3. Teacher LLM으로 답변 생성
+    1. KB 청크를 랜덤 샘플링
+    2. Teacher LLM이 청크 내용 보고 질문 생성
+    3. Hub Search API로 답변 생성 (검색 + 리랭킹 + 그래프 + LLM)
+    4. 답변 품질 확인
     """
-    # 질문 선택 (카테고리별 균등 배분)
+    import httpx
+
+    # Step 1: KB 청크 샘플링
+    chunks_per_kb = max(count // max(len(kb_ids), 1), 10)
+    all_chunks = await _fetch_sample_chunks(qdrant_url, kb_ids, limit=chunks_per_kb)
+
+    flat_chunks: list[dict[str, str]] = []
+    for kb_id, contents in all_chunks.items():
+        for content in contents:
+            if len(content) >= 100:  # 너무 짧은 청크 제외
+                flat_chunks.append({"kb_id": kb_id, "content": content})
+
+    if not flat_chunks:
+        logger.warning(
+            "No chunks found in KBs: %s (checked collections: %s). Falling back to templates.",
+            kb_ids, [f"kb_{k.replace('-', '_')}" for k in kb_ids],
+        )
+        return await _generate_from_templates(llm_client, kb_ids, count, rag_api_url)
+
+    logger.info(
+        "Found %d usable chunks (>= 100 chars) from %d KBs",
+        len(flat_chunks), len(all_chunks),
+    )
+
+    sampled = random.sample(flat_chunks, min(count, len(flat_chunks)))
+    logger.info("Sampled %d chunks from %d KBs for QA generation", len(sampled), len(all_chunks))
+
+    # Step 2: 청크 → 질문 생성 + Step 3: Hub Search → 답변
+    results: list[dict[str, Any]] = []
+    async with httpx.AsyncClient(timeout=60) as client:
+        for i, chunk_info in enumerate(sampled):
+            try:
+                # 청크 기반 질문 생성 (LLM 직접 호출 또는 Hub Search 활용)
+                prompt = CHUNK_QA_PROMPT.format(chunk=chunk_info["content"][:1500])
+                q_response = None
+                if llm_client and hasattr(llm_client, "generate"):
+                    q_response = await llm_client.generate(prompt, temperature=0.7)
+                elif llm_client and hasattr(llm_client, "call"):
+                    q_response = await llm_client.call(prompt, temperature=0.7)
+
+                if not q_response:
+                    # LLM 없으면 Hub Search에 청크 내용으로 질문 생성 요청
+                    resp = await client.post(
+                        f"{rag_api_url}/api/v1/search/hub",
+                        json={
+                            "query": f"다음 내용에 대해 질문을 만들어줘: {chunk_info['content'][:300]}",
+                            "kb_ids": kb_ids,
+                            "top_k": 3,
+                            "include_answer": True,
+                        },
+                    )
+                    if resp.status_code == 200:
+                        sr = resp.json()
+                        # 답변에서 질문 추출 시도
+                        q_response = sr.get("answer", "")
+                    if not q_response:
+                        continue
+
+                if not q_response:
+                    continue
+
+                # 생성된 질문 파싱 (줄바꿈으로 분리)
+                questions = [
+                    line.strip().lstrip("0123456789.-) ")
+                    for line in q_response.split("\n")
+                    if line.strip() and len(line.strip()) > 5
+                ][:2]  # 청크당 최대 2개
+
+                for question in questions:
+                    # Hub Search API로 답변 생성
+                    resp = await client.post(
+                        f"{rag_api_url}/api/v1/search/hub",
+                        json={
+                            "query": question,
+                            "kb_ids": kb_ids,
+                            "top_k": 5,
+                            "include_answer": True,
+                        },
+                    )
+                    resp.raise_for_status()
+                    search_result = resp.json()
+
+                    answer = search_result.get("answer", "")
+                    if not answer:
+                        continue
+
+                    result_chunks = search_result.get("chunks", [])
+                    source_kbs = list({
+                        c.get("kb_id", "") for c in result_chunks if c.get("kb_id")
+                    })
+
+                    results.append({
+                        "question": question,
+                        "answer": answer.strip(),
+                        "source_type": "test_seed",
+                        "kb_id": ",".join(source_kbs) if source_kbs else chunk_info["kb_id"],
+                        "source_id": f"chunk_based_{search_result.get('query_type', '')}",
+                    })
+
+                    if len(results) >= count:
+                        break
+
+            except Exception as e:
+                logger.warning("Chunk QA generation failed: %s", e)
+
+            if len(results) >= count:
+                break
+            if (i + 1) % 10 == 0:
+                logger.info("Test data generation: %d/%d chunks, %d QA pairs", i + 1, len(sampled), len(results))
+
+    logger.info("Generated %d test QA pairs (chunk-based + Hub Search)", len(results))
+    return results
+
+
+async def _generate_from_templates(
+    llm_client, kb_ids: list[str], count: int, rag_api_url: str,
+) -> list[dict[str, Any]]:
+    """Fallback: 청크가 없을 때 템플릿 기반 생성."""
+    import httpx
+
     all_questions = []
     for category, questions in TEST_QUESTION_TEMPLATES.items():
         for q in questions:
             all_questions.append({"question": q, "category": category})
 
     selected = random.sample(all_questions, min(count, len(all_questions)))
-
-    # KB 청크 가져오기 (컨텍스트용)
-    chunks_by_kb = await _fetch_sample_chunks(qdrant_url, kb_ids)
-
     results: list[dict[str, Any]] = []
-    for i, item in enumerate(selected):
-        question = item["question"]
-        context = _find_relevant_context(question, chunks_by_kb)
 
-        try:
-            context_str = f"[참고 정보]\n{context}\n\n" if context else ""
-            prompt = QA_GENERATION_PROMPT.format(
-                question=question, context=context_str,
-            )
-            # SageMaker client: .generate() / Ollama: .generate()
-            if hasattr(llm_client, "generate"):
-                answer = await llm_client.generate(prompt, temperature=0.3)
-            elif hasattr(llm_client, "call"):
-                answer = await llm_client.call(prompt, temperature=0.3)
-            else:
-                logger.warning("LLM client has no generate/call method")
-                continue
-            if answer:
-                results.append({
-                    "question": question,
-                    "answer": answer.strip(),
-                    "source_type": "test_seed",
-                    "kb_id": ",".join(kb_ids[:3]) if kb_ids else "",
-                    "category": item["category"],
-                })
-        except Exception as e:
-            logger.warning("Test QA generation failed for '%s': %s", question[:30], e)
+    async with httpx.AsyncClient(timeout=60) as client:
+        for item in selected:
+            try:
+                resp = await client.post(
+                    f"{rag_api_url}/api/v1/search/hub",
+                    json={"query": item["question"], "kb_ids": kb_ids, "top_k": 5, "include_answer": True},
+                )
+                resp.raise_for_status()
+                sr = resp.json()
+                answer = sr.get("answer", "")
+                if answer:
+                    source_kbs = list({c.get("kb_id", "") for c in sr.get("chunks", []) if c.get("kb_id")})
+                    results.append({
+                        "question": item["question"],
+                        "answer": answer.strip(),
+                        "source_type": "test_seed",
+                        "kb_id": ",".join(source_kbs) if source_kbs else ",".join(kb_ids[:3]),
+                        "source_id": f"template_{sr.get('query_type', '')}",
+                    })
+            except Exception as e:
+                logger.warning("Template QA failed for '%s': %s", item["question"][:30], e)
 
-        if (i + 1) % 10 == 0:
-            logger.info("Test data generation: %d/%d", i + 1, len(selected))
-
-    logger.info("Generated %d test QA pairs", len(results))
     return results
 
 
@@ -136,10 +256,12 @@ async def _fetch_sample_chunks(
 
     chunks: dict[str, list[str]] = {}
     async with httpx.AsyncClient(timeout=30) as client:
-        for kb_id in kb_ids[:3]:
+        for kb_id in kb_ids[:5]:
+            # kb_id → Qdrant collection name 변환 (kb_ prefix + 하이픈→언더스코어)
+            collection = f"kb_{kb_id.replace('-', '_')}"
             try:
                 resp = await client.post(
-                    f"{qdrant_url}/collections/{kb_id}/points/scroll",
+                    f"{qdrant_url}/collections/{collection}/points/scroll",
                     json={"limit": limit, "with_payload": True},
                 )
                 if resp.status_code == 200:
@@ -149,8 +271,9 @@ async def _fetch_sample_chunks(
                         for p in points
                         if p.get("payload", {}).get("content")
                     ]
+                    logger.info("Fetched %d chunks from %s (%s)", len(chunks[kb_id]), kb_id, collection)
             except Exception as e:
-                logger.warning("Failed to fetch chunks from %s: %s", kb_id, e)
+                logger.warning("Failed to fetch chunks from %s (%s): %s", kb_id, collection, e)
 
     return chunks
 

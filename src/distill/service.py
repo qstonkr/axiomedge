@@ -43,25 +43,32 @@ class DistillService:
         from src.distill.data_generator import DistillDataGenerator
 
         repo = DistillRepository(self.session_factory)
-        profile = self.config.profiles.get(profile_name)
-        if not profile:
+        # DB에서 프로필 조회 (YAML 아닌 DB 기준 — 대시보드 수정 반영)
+        profile_dict = await repo.get_profile(profile_name)
+        if not profile_dict:
             raise ValueError(f"Profile not found: {profile_name}")
+
+        search_group = profile_dict.get("search_group", "")
+        from src.distill.config import dict_to_profile
+        profile = dict_to_profile(profile_dict)
 
         batch_id = str(uuid.uuid4())
         generator = DistillDataGenerator(
             self.llm, self.embedder, profile, self.qdrant_url,
         )
-        generality = GeneralityFilter(generator.llm_helper if hasattr(generator, "llm_helper") else None)
+        generality = GeneralityFilter(
+            generator.llm_helper if hasattr(generator, "llm_helper") else None
+        )
 
-        # KB IDs 확보
+        # KB IDs 확보 (DB 프로필의 search_group 사용)
         group_repo = SearchGroupRepository(self.session_factory)
-        kb_ids = await group_repo.resolve_kb_ids(group_name=profile.search_group)
+        kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
         if not kb_ids:
-            raise ValueError(f"Search group '{profile.search_group}' has no KBs")
+            raise ValueError(f"Search group '{search_group}' has no KBs")
 
         # QA 생성
         log_qa = await generator.generate_from_usage_logs(
-            self.session_factory, kb_ids, profile.search_group,
+            self.session_factory, kb_ids, search_group,
         )
         chunk_qa: list[dict] = []
         if len(log_qa) < self.config.defaults.min_training_samples:
@@ -108,22 +115,34 @@ class DistillService:
         from src.distill.data_gen.test_data_templates import generate_test_qa
 
         repo = DistillRepository(self.session_factory)
-        profile = self.config.profiles.get(profile_name)
-        if not profile:
+        # DB에서 프로필 조회 (YAML이 아닌 DB 기준 — 대시보드에서 수정된 값 반영)
+        profile_dict = await repo.get_profile(profile_name)
+        if not profile_dict:
             raise ValueError(f"Profile not found: {profile_name}")
+        search_group = profile_dict.get("search_group", "")
 
         batch_id = str(uuid.uuid4())
 
-        # KB IDs
+        # KB IDs (DB 프로필의 search_group 사용)
         group_repo = SearchGroupRepository(self.session_factory)
-        kb_ids = await group_repo.resolve_kb_ids(group_name=profile.search_group)
+        kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
+        if not kb_ids:
+            raise ValueError(f"Search group '{search_group}' has no KBs")
 
-        # 테스트 QA 생성
+        from src.config import get_settings
+        rag_url = get_settings().distill.rag_api_url
+        logger.info(
+            "generate_test_data: llm=%s, kb_ids=%s, search_group=%s",
+            type(self.llm).__name__ if self.llm else "None",
+            kb_ids, search_group,
+        )
+
         test_qa = await generate_test_qa(
             llm_client=self.llm,
             qdrant_url=self.qdrant_url,
             kb_ids=kb_ids,
             count=count,
+            rag_api_url=rag_url,
         )
 
         # 범용성 점수
@@ -150,11 +169,13 @@ class DistillService:
     ) -> None:
         """전체 파이프라인 실행 (별도 프로세스 또는 in-process)."""
         repo = DistillRepository(self.session_factory)
-        profile = self.config.profiles.get(profile_name)
-        if not profile:
+        profile_dict = await repo.get_profile(profile_name)
+        if not profile_dict:
             await repo.update_build(build_id, status="failed",
                                     error_message=f"Profile not found: {profile_name}")
             return
+        from src.distill.config import dict_to_profile
+        profile = dict_to_profile(profile_dict)
 
         all_steps = steps or ["generate", "train", "evaluate", "quantize", "deploy"]
         from src.config import get_settings
