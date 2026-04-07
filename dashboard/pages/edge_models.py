@@ -286,16 +286,42 @@ with tab_train:
             # ── 빌드 시작 ──
             st.subheader("모델 빌드")
 
-            bc1, bc2 = st.columns([3, 1])
-            with bc2:
-                if st.button("🚀 빌드 시작", type="primary", key="btn_build"):
+            # 승인 데이터 현황
+            approved_stats = api_client.get_training_data_stats(selected)
+            if not api_failed(approved_stats):
+                asc1, asc2, asc3 = st.columns(3)
+                with asc1:
+                    st.metric("승인 데이터", f"{approved_stats.get('total', 0):,}건")
+                with asc2:
+                    st.caption("큐레이션 탭에서 데이터를 준비하세요")
+
+            bc1, bc2, bc3 = st.columns(3)
+            with bc1:
+                if st.button("🚀 자동 생성 빌드", key="btn_build"):
                     result = api_client.trigger_distill_build({"profile_name": selected})
                     if not api_failed(result):
                         st.success(f"빌드 시작: {result.get('version', '')}")
                         st.cache_data.clear()
                         st.rerun()
-                    else:
-                        st.error(f"빌드 실패: {result.get('error', '')}")
+            with bc2:
+                approved_count = approved_stats.get("total", 0) if not api_failed(approved_stats) else 0
+                if approved_count > 0:
+                    if st.button("🚀 큐레이션 데이터 빌드", type="primary", key="btn_curated_build"):
+                        result = api_client.trigger_distill_build({
+                            "profile_name": selected,
+                            "use_curated_data": True,
+                        })
+                        if not api_failed(result):
+                            st.success(f"큐레이션 빌드 시작: {result.get('version', '')}")
+                            st.cache_data.clear()
+                            st.rerun()
+                else:
+                    st.button("🚀 큐레이션 데이터 빌드", disabled=True, key="btn_curated_build_disabled")
+            with bc3:
+                st.caption(
+                    "**자동 생성**: RAG 로그에서 자동 수집\n\n"
+                    "**큐레이션**: 승인된 데이터만 사용"
+                )
 
             # ── 빌드 이력 ──
             builds_result = api_client.list_distill_builds(profile_name=selected)
@@ -604,33 +630,7 @@ with tab_curation:
                                 st.caption(status_icon)
 
                 st.markdown("---")
-
-                # ── Step 3: 빌드 ──
-                st.subheader("승인 데이터로 빌드")
-                approved_stats = api_client.get_training_data_stats(selected)
-                if not api_failed(approved_stats):
-                    approved_count = approved_stats.get("total", 0)
-                    st.metric("승인 데이터", f"{approved_count:,}건")
-                    min_samples = profiles.get(selected, {}).get("config", {})
-                    if isinstance(min_samples, str):
-                        import json as _json
-                        try:
-                            min_samples = _json.loads(min_samples)
-                        except (ValueError, TypeError):
-                            min_samples = {}
-                    min_required = min_samples.get("training", {}).get("min_samples", 200) if isinstance(min_samples, dict) else 200
-                    if approved_count >= min_required:
-                        if st.button("🚀 승인 데이터로 빌드 시작", type="primary", key="btn_curated_build"):
-                            result = api_client.trigger_distill_build({
-                                "profile_name": selected,
-                                "use_curated_data": True,
-                            })
-                            if not api_failed(result):
-                                st.success(f"빌드 시작: {result.get('version', '')}")
-                                st.cache_data.clear()
-                                st.rerun()
-                    else:
-                        st.warning(f"승인 데이터가 부족합니다 ({approved_count}/{min_required}건)")
+                st.info("빌드는 **학습/모델관리** 탭에서 진행하세요.")
 
             # ==== 서브탭 2: 질문 변형 ====
             with sub_aug:
