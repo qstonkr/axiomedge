@@ -151,6 +151,16 @@ def review_edit_training_data(body: dict) -> dict:
     return _put("/api/v1/distill/training-data/review-edit", body)
 
 
+# ── 증강 + 용어 ──
+
+def augment_training_data(body: dict) -> dict:
+    return _post("/api/v1/distill/training-data/augment", body, timeout=10)
+
+
+def generate_term_qa(body: dict) -> dict:
+    return _post("/api/v1/distill/training-data/generate-term-qa", body, timeout=10)
+
+
 # ── 모델 리셋 ──
 
 def reset_to_base_model(profile_name: str) -> dict:

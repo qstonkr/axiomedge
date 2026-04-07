@@ -458,7 +458,7 @@ with tab_curation:
 
             # ── Step 1: 데이터 생성 ──
             st.subheader("데이터 생성")
-            gen_col1, gen_col2 = st.columns(2)
+            gen_col1, gen_col2, gen_col3, gen_col4 = st.columns(4)
             with gen_col1:
                 if st.button("🔄 데이터 생성 시작", key="btn_gen_data"):
                     result = api_client.generate_training_data({"profile_name": selected})
@@ -467,15 +467,32 @@ with tab_curation:
                         st.cache_data.clear()
                         st.rerun()
             with gen_col2:
-                if st.button("🧪 테스트 데이터 생성 (50건)", key="btn_gen_test"):
-                    with st.spinner("테스트 데이터 생성 중..."):
-                        result = api_client.generate_test_data({
-                            "profile_name": selected, "count": 50,
-                        })
-                        if not api_failed(result):
-                            st.success(f"테스트 데이터 {result.get('total', 0)}건 생성")
-                            st.cache_data.clear()
-                            st.rerun()
+                if st.button("🧪 테스트 데이터 생성", key="btn_gen_test"):
+                    result = api_client.generate_test_data({
+                        "profile_name": selected, "count": 50,
+                    })
+                    if not api_failed(result):
+                        st.success("테스트 데이터 생성 시작됨 (백그라운드)")
+                        st.cache_data.clear()
+                        st.rerun()
+            with gen_col3:
+                if st.button("🔄 질문 변형 생성", key="btn_augment"):
+                    result = api_client.augment_training_data({
+                        "profile_name": selected, "max_variants": 3,
+                    })
+                    if not api_failed(result):
+                        st.success("질문 변형 생성 시작됨 (승인 데이터 기준)")
+                        st.cache_data.clear()
+                        st.rerun()
+            with gen_col4:
+                if st.button("📚 용어 QA 생성", key="btn_term_qa"):
+                    result = api_client.generate_term_qa({
+                        "profile_name": selected, "top_n": 100,
+                    })
+                    if not api_failed(result):
+                        st.success("용어 QA 생성 시작됨 (상위 100개)")
+                        st.cache_data.clear()
+                        st.rerun()
 
             # 배치 현황
             stats = api_client.get_training_data_stats(selected)

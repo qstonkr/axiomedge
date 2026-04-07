@@ -160,6 +160,156 @@ class DistillService:
         saved = await repo.save_training_data_batch(test_qa)
         return {"batch_id": batch_id, "total": saved}
 
+    async def augment_approved_data(
+        self, profile_name: str, max_variants: int = 3,
+    ) -> dict:
+        """승인된 QA를 질문 변형으로 증강."""
+        from src.distill.data_gen.dataset_builder import DatasetBuilder
+        from src.distill.data_gen.llm_helper import LLMHelper
+
+        repo = DistillRepository(self.session_factory)
+        result = await repo.list_training_data(
+            profile_name=profile_name, status="approved", limit=10000,
+        )
+        approved = result.get("items", [])
+        if not approved:
+            raise ValueError("No approved data to augment")
+
+        batch_id = str(uuid.uuid4())
+
+        # LLM helper로 질문 변형 생성
+        profile_dict = await repo.get_profile(profile_name)
+        from src.distill.config import dict_to_profile
+        profile = dict_to_profile(profile_dict) if profile_dict else None
+
+        llm_helper = LLMHelper(self.llm, concurrency=3, timeout=60)
+        builder = DatasetBuilder(llm_helper, profile)
+
+        # ID 할당 (augmented_from 추적용)
+        for qa in approved:
+            if not qa.get("id"):
+                qa["id"] = str(uuid.uuid4())
+
+        # 질문 변형 생성
+        profile.data_quality.augmentation_count = max_variants
+        augmented = await builder.augment_questions(approved)
+        new_variants = [q for q in augmented if q.get("augmented_from")]
+
+        # Hub Search로 변형 질문 답변 검증
+        import httpx
+        from src.config import get_settings
+        rag_url = get_settings().distill.rag_api_url
+        search_group = (profile_dict or {}).get("search_group", "")
+
+        from src.database.repositories.search_group import SearchGroupRepository
+        group_repo = SearchGroupRepository(self.session_factory)
+        kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
+
+        verified: list[dict] = []
+        async with httpx.AsyncClient(timeout=60) as client:
+            for variant in new_variants:
+                try:
+                    resp = await client.post(
+                        f"{rag_url}/api/v1/search/hub",
+                        json={"query": variant["question"], "kb_ids": kb_ids,
+                              "top_k": 3, "include_answer": True},
+                    )
+                    resp.raise_for_status()
+                    sr = resp.json()
+                    answer = sr.get("answer", "")
+                    confidence = sr.get("confidence", "")
+
+                    if not answer or confidence in ("낮음", "low"):
+                        continue
+
+                    variant["answer"] = answer.strip()
+                    variant["id"] = str(uuid.uuid4())
+                    variant["profile_name"] = profile_name
+                    variant["status"] = "pending"
+                    variant["generation_batch_id"] = batch_id
+                    variant["augmentation_verified"] = True
+                    verified.append(variant)
+                except Exception as e:
+                    logger.warning("Augmentation verify failed: %s", e)
+
+        saved = await repo.save_training_data_batch(verified)
+        logger.info(
+            "Augmented %d approved → %d variants → %d verified (batch=%s)",
+            len(approved), len(new_variants), saved, batch_id,
+        )
+        return {"batch_id": batch_id, "original": len(approved),
+                "variants": len(new_variants), "verified": saved}
+
+    async def generate_term_qa(
+        self, profile_name: str, top_n: int = 100,
+    ) -> dict:
+        """PBU 핵심 용어 → QA 학습 데이터 생성."""
+        from sqlalchemy import text
+
+        repo = DistillRepository(self.session_factory)
+        profile_dict = await repo.get_profile(profile_name)
+        if not profile_dict:
+            raise ValueError(f"Profile not found: {profile_name}")
+
+        search_group = profile_dict.get("search_group", "")
+        from src.database.repositories.search_group import SearchGroupRepository
+        group_repo = SearchGroupRepository(self.session_factory)
+        kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
+
+        # PBU KB 용어 중 고빈도 용어 추출
+        batch_id = str(uuid.uuid4())
+        terms: list[dict] = []
+
+        async with self.session_factory() as session:
+            result = await session.execute(
+                text("""
+                    SELECT term, definition, kb_id, occurrence_count
+                    FROM glossary_terms
+                    WHERE kb_id = ANY(:kb_ids)
+                    AND status = 'approved'
+                    AND definition IS NOT NULL
+                    AND length(definition) > 20
+                    ORDER BY occurrence_count DESC
+                    LIMIT :limit
+                """),
+                {"kb_ids": kb_ids, "limit": top_n},
+            )
+            for row in result.fetchall():
+                terms.append({
+                    "term": row[0], "definition": row[1],
+                    "kb_id": row[2], "count": row[3],
+                })
+
+        if not terms:
+            raise ValueError(f"No terms found for KBs: {kb_ids}")
+
+        # 용어 → QA 변환
+        qa_pairs: list[dict] = []
+        for t in terms:
+            # 다양한 질문 형태
+            questions = [
+                f"{t['term']}이(가) 뭐야?",
+                f"{t['term']}에 대해 설명해줘",
+            ]
+            for q in questions:
+                qa_pairs.append({
+                    "id": str(uuid.uuid4()),
+                    "profile_name": profile_name,
+                    "question": q,
+                    "answer": t["definition"],
+                    "source_type": "term_qa",
+                    "source_id": f"glossary_{t['kb_id']}",
+                    "kb_id": t["kb_id"],
+                    "status": "pending",
+                    "generation_batch_id": batch_id,
+                    "generality_score": 1.0,  # 용어는 범용적
+                })
+
+        saved = await repo.save_training_data_batch(qa_pairs)
+        logger.info("Generated %d term QA pairs from %d terms (batch=%s)",
+                     saved, len(terms), batch_id)
+        return {"batch_id": batch_id, "terms": len(terms), "qa_pairs": saved}
+
     async def run_pipeline(
         self,
         build_id: str,

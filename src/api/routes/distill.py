@@ -89,6 +89,16 @@ class TrainingDataEditReviewRequest(BaseModel):
     updates: list[TrainingDataUpdateItem]
 
 
+class AugmentRequest(BaseModel):
+    profile_name: str
+    max_variants: int = 3
+
+
+class GenerateTermQARequest(BaseModel):
+    profile_name: str
+    top_n: int = 100  # 상위 빈도 용어 수
+
+
 class ServerUpdateRequest(BaseModel):
     update_type: str = "both"  # model | app | both
 
@@ -565,18 +575,24 @@ async def generate_training_data(request: GenerateDataRequest):
 
 @router.post("/training-data/generate-test")
 async def generate_test_data(request: GenerateTestDataRequest):
-    """테스트 시드 데이터 생성."""
+    """테스트 시드 데이터 생성 (백그라운드)."""
     distill_service = _get_state().get("distill_service")
     if not distill_service:
         raise HTTPException(status_code=503, detail="Distill service not initialized")
 
-    try:
-        result = await distill_service.generate_test_data(
-            request.profile_name, count=request.count,
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    async def _run():
+        try:
+            return await distill_service.generate_test_data(
+                request.profile_name, count=request.count,
+            )
+        except Exception as e:
+            logger.error("Test data generation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "generating", "profile_name": request.profile_name, "count": request.count}
 
 
 @router.get("/training-data/batches/{batch_id}")
@@ -645,6 +661,58 @@ async def reset_to_base_model(profile_name: str):
         "version": version,
         "message": "Base model reset initiated (quantize + deploy, no training)",
     }
+
+
+# ---------------------------------------------------------------------------
+# Augmentation (질문 변형)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/augment")
+async def augment_training_data(request: AugmentRequest):
+    """승인된 QA를 질문 변형으로 증강 (백그라운드)."""
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    async def _run():
+        try:
+            return await distill_service.augment_approved_data(
+                request.profile_name, max_variants=request.max_variants,
+            )
+        except Exception as e:
+            logger.error("Augmentation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "augmenting", "profile_name": request.profile_name}
+
+
+# ---------------------------------------------------------------------------
+# Term QA (용어 학습 데이터)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/generate-term-qa")
+async def generate_term_qa(request: GenerateTermQARequest):
+    """PBU 핵심 용어 → QA 학습 데이터 생성 (백그라운드)."""
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    async def _run():
+        try:
+            return await distill_service.generate_term_qa(
+                request.profile_name, top_n=request.top_n,
+            )
+        except Exception as e:
+            logger.error("Term QA generation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "generating_terms", "profile_name": request.profile_name, "top_n": request.top_n}
 
 
 # ---------------------------------------------------------------------------

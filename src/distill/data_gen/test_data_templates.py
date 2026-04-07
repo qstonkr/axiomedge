@@ -113,6 +113,37 @@ DEFAULT_CHUNK_QA_PROMPT = (
     "범용적 질문 (한 줄에 하나씩):"
 )
 
+# 답변 불가 / 일반론 감지 패턴
+_UNANSWERABLE_PATTERNS = [
+    "제공된 문서들에",
+    "제공된 문서에서",
+    "주어진 문서들에서",
+    "명시되어 있지 않",
+    "포함되어 있지 않",
+    "직접적인 정보가",
+    "직접적인 정보는",
+    "명확한 정보가",
+    "구체적인 정보가 부족",
+    "일반적인 의미를 바탕으로",
+]
+
+
+def _is_unanswerable(answer: str) -> bool:
+    """답변이 'KB에 없다'는 내용인지 감지."""
+    answer_prefix = answer[:200]
+    match_count = sum(1 for p in _UNANSWERABLE_PATTERNS if p in answer_prefix)
+    return match_count >= 2
+
+
+CHUNK_QA_PROMPT = (
+    "다음 문서 내용을 바탕으로, 어느 매장에서든 통용되는 범용적인 질문을 1~3개 만들어주세요.\n\n"
+    "규칙:\n"
+    "- 특정 매장명, 날짜, 직원명을 포함하지 마세요\n"
+    "- '~절차 알려줘', '~방법이 뭐야?', '~제도가 뭐야?' 같은 범용적 형태로 작성\n\n"
+    "[문서 내용]\n{chunk}\n\n"
+    "범용적 질문 (한 줄에 하나씩):"
+)
+
 
 async def generate_test_qa(
     llm_client,
@@ -213,7 +244,16 @@ async def generate_test_qa(
                     search_result = resp.json()
 
                     answer = search_result.get("answer", "")
+                    confidence = search_result.get("confidence", "")
+
+                    # 답변 불가 / 일반론 자동 제외
                     if not answer:
+                        continue
+                    if _is_unanswerable(answer):
+                        logger.debug("Skipped (unanswerable): %s", question[:40])
+                        continue
+                    if confidence in ("낮음", "low", "없음"):
+                        logger.debug("Skipped (low confidence): %s", question[:40])
                         continue
 
                     result_chunks = search_result.get("chunks", [])
