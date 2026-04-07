@@ -289,20 +289,68 @@ class DistillService:
                     "kb_id": row[2], "count": row[3],
                 })
 
-        # 품질 필터: 정의가 부실한 용어 제외
-        terms = [
-            t for t in terms
-            if t["definition"]
-            and "제공된 문맥에서" not in t["definition"]
-            and "명확한 정의를 도출하기 어렵" not in t["definition"]
-            and "직접적인 정의가" not in t["definition"]
-            and "구체적인 정의" not in t["definition"]
-            and "명확한 의미를 파악하기 어렵" not in t["definition"]
-            and "정확한 의미를 파악하기 어렵" not in t["definition"]
-            and "정확한 정의를 내리기 어렵" not in t["definition"]
-            and "명확한 정의를 제공하지 않" not in t["definition"]
-            and len(t["definition"]) >= 30
-        ]
+        # 일반어 제외 목록 (GS 도메인 특화가 아닌 한국어 일반 명사)
+        _COMMON_WORDS = {
+            "매출", "상품", "금액", "기간", "납부", "내역", "비교", "분류",
+            "문서", "첨부", "사실", "사업", "경쟁", "건수", "단가", "수량",
+            "현황", "항목", "내용", "결과", "방법", "절차", "기준", "대상",
+            "관련", "확인", "처리", "등록", "변경", "삭제", "조회", "관리",
+            "설명", "안내", "요청", "승인", "거부", "완료", "진행", "시작",
+            "종료", "이용", "사용", "제공", "포함", "제외", "적용", "해당",
+            "필요", "가능", "불가", "정상", "오류", "해지", "명의", "권장",
+            "숙지", "검토", "보고", "전달", "수정", "추가", "개선", "분석",
+        }
+
+        # 품질 필터
+        filtered_terms = []
+        for t in terms:
+            defn = t["definition"]
+            term = t["term"]
+
+            # 정의 부실 제외
+            bad_patterns = [
+                "제공된 문맥에서", "명확한 정의를 도출하기 어렵",
+                "직접적인 정의가", "구체적인 정의",
+                "명확한 의미를 파악하기 어렵", "정확한 의미를 파악하기 어렵",
+                "정확한 정의를 내리기 어렵", "명확한 정의를 제공하지 않",
+            ]
+            if any(p in defn for p in bad_patterns):
+                continue
+            if len(defn) < 30:
+                continue
+
+            # 일반어 제외
+            if term in _COMMON_WORDS:
+                continue
+
+            # 2글자 이하 한글 일반 명사 제외 (3글자+는 허용, 영문/약어는 유지)
+            if len(term) <= 2 and all("\uac00" <= c <= "\ud7a3" for c in term):
+                continue
+
+            # 매장명/사람명 제외
+            if term.endswith("점") and len(term) >= 3:
+                continue
+            if term.endswith(("님", "씨", "M")):
+                continue
+            # 한글 3자 사람 이름 제외 (대부분 성+이름)
+            if len(term) == 3 and all("\uac00" <= c <= "\ud7a3" for c in term):
+                # 용어 정의에 사람 관련 키워드가 있으면 사람 이름으로 판단
+                person_keywords = ["운영", "담당", "매니저", "점장", "점주", "매장",
+                                   "M이", "SC", "지점", "관리하", "수행"]
+                if any(w in defn[:150] for w in person_keywords):
+                    continue
+                # 한글 3자 + category가 noun이고 definition에 "~는 ~인"이 아닌 것도
+                # 사람 이름일 가능성 높음 (보수적 필터)
+                if t.get("count", 0) < 50:
+                    continue  # 빈도 낮은 3글자는 사람 이름 가능성 높음
+            # 일반 식품/물품명 제외
+            if term in {"아이스크림", "맥주", "음료", "과자", "라면", "담배",
+                        "우유", "빵", "김밥", "도시락", "커피", "물"}:
+                continue
+
+            filtered_terms.append(t)
+
+        terms = filtered_terms
 
         if not terms:
             raise ValueError(f"No quality terms found for KBs: {kb_ids}")
