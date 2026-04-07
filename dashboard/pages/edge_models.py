@@ -492,149 +492,145 @@ with tab_curation:
                 with mc4:
                     st.metric("수동/재학습", f"{stats.get('manual', 0) + stats.get('retrain', 0):,}")
 
-            st.markdown("---")
+                st.markdown("---")
 
-            # ── Step 2: 리뷰 ──
-            st.subheader("리뷰")
+                # ── Step 2: 리뷰 ──
+                st.subheader("리뷰")
 
-            # 필터
-            fc1, fc2, fc3, fc4 = st.columns(4)
-            with fc1:
-                filter_status = st.selectbox(
-                    "상태", options=["pending", "approved", "rejected", None],
-                    format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
-                    index=0, key="cur_status",
-                )
-            with fc2:
-                filter_sort = st.selectbox(
-                    "정렬", options=["consistency_score", "generality_score", "created_at"],
-                    format_func=lambda x: {"consistency_score": "일관성↑", "generality_score": "범용성↑", "created_at": "최신"}[x],
-                    key="cur_sort",
-                )
-            with fc3:
-                filter_source = st.selectbox(
-                    "소스 타입", options=[None, "usage_log", "chunk_qa", "test_seed", "manual", "retrain"],
-                    format_func=lambda x: "전체" if x is None else x,
-                    key="cur_source",
-                )
-            with fc4:
-                cur_page = st.number_input("페이지", value=1, min_value=1, key="cur_page")
-
-            # 자동 필터 버튼
-            af1, af2 = st.columns(2)
-            with af1:
-                if st.button("✅ 일관성 0.8↑ 전체 승인", key="btn_auto_approve"):
-                    td = api_client.list_training_data(
-                        selected, status="pending", limit=10000,
+                # 필터
+                fc1, fc2, fc3, fc4 = st.columns(4)
+                with fc1:
+                    filter_status = st.selectbox(
+                        "상태", options=["pending", "approved", "rejected", None],
+                        format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
+                        index=0, key="cur_status",
                     )
-                    if not api_failed(td):
-                        ids = [
-                            it["id"] for it in td.get("items", [])
-                            if (it.get("consistency_score") or 0) >= 0.8
-                        ]
-                        if ids:
-                            api_client.review_training_data({"ids": ids, "status": "approved"})
-                            st.success(f"{len(ids)}건 자동 승인")
-                            st.cache_data.clear()
-                            st.rerun()
-            with af2:
-                if st.button("❌ 범용성 0.3↓ 전체 거부", key="btn_auto_reject"):
-                    td = api_client.list_training_data(
-                        selected, status="pending", limit=10000,
+                with fc2:
+                    filter_sort = st.selectbox(
+                        "정렬", options=["consistency_score", "generality_score", "created_at"],
+                        format_func=lambda x: {"consistency_score": "일관성↑", "generality_score": "범용성↑", "created_at": "최신"}[x],
+                        key="cur_sort",
                     )
-                    if not api_failed(td):
-                        ids = [
-                            it["id"] for it in td.get("items", [])
-                            if (it.get("generality_score") or 1) <= 0.3
-                        ]
-                        if ids:
-                            api_client.review_training_data({"ids": ids, "status": "rejected"})
-                            st.success(f"{len(ids)}건 자동 거부")
-                            st.cache_data.clear()
-                            st.rerun()
+                with fc3:
+                    filter_source = st.selectbox(
+                        "소스 타입", options=[None, "usage_log", "chunk_qa", "test_seed", "manual", "retrain"],
+                        format_func=lambda x: "전체" if x is None else x,
+                        key="cur_source",
+                    )
+                with fc4:
+                    cur_page = st.number_input("페이지", value=1, min_value=1, key="cur_page")
 
-            # QA 카드 목록
-            page_size = 20
-            td_result = api_client.list_training_data(
-                selected, status=filter_status, source_type=filter_source,
-                limit=page_size, offset=(cur_page - 1) * page_size,
-            )
-            if not api_failed(td_result):
-                items = td_result.get("items", [])
-                total = td_result.get("total", 0)
-                st.caption(f"총 {total}건 (페이지 {cur_page}/{max(1, (total + page_size - 1) // page_size)})")
-
-                for item in items:
-                    with st.container(border=True):
-                        # 헤더: 점수 + 타입
-                        src_type = item.get("source_type", "")
-                        test_tag = " 🧪" if src_type == "test_seed" else ""
-                        hdr = (
-                            f"📊 일관성: {quality_badge(item.get('consistency_score'))}  "
-                            f"🌐 범용성: {quality_badge(item.get('generality_score'))}  "
-                            f"타입: {src_type}{test_tag}"
+                # 자동 필터 버튼
+                af1, af2 = st.columns(2)
+                with af1:
+                    if st.button("✅ 일관성 0.8↑ 전체 승인", key="btn_auto_approve"):
+                        td = api_client.list_training_data(
+                            selected, status="pending", limit=10000,
                         )
-                        if item.get("augmented_from"):
-                            hdr += "  🔗 변형"
-                            if item.get("augmentation_verified"):
-                                hdr += " ✅"
-                        st.markdown(hdr)
+                        if not api_failed(td):
+                            ids = [
+                                it["id"] for it in td.get("items", [])
+                                if (it.get("consistency_score") or 0) >= 0.8
+                            ]
+                            if ids:
+                                api_client.review_training_data({"ids": ids, "status": "approved"})
+                                st.success(f"{len(ids)}건 자동 승인")
+                                st.cache_data.clear()
+                                st.rerun()
+                with af2:
+                    if st.button("❌ 범용성 0.3↓ 전체 거부", key="btn_auto_reject"):
+                        td = api_client.list_training_data(
+                            selected, status="pending", limit=10000,
+                        )
+                        if not api_failed(td):
+                            ids = [
+                                it["id"] for it in td.get("items", [])
+                                if (it.get("generality_score") or 1) <= 0.3
+                            ]
+                            if ids:
+                                api_client.review_training_data({"ids": ids, "status": "rejected"})
+                                st.success(f"{len(ids)}건 자동 거부")
+                                st.cache_data.clear()
+                                st.rerun()
 
-                        st.markdown(f"**Q:** {item.get('question', '')}")
-                        st.caption(f"A: {item.get('answer', '')[:200]}")
+                # QA 카드 목록
+                page_size = 20
+                td_result = api_client.list_training_data(
+                    selected, status=filter_status, source_type=filter_source,
+                    limit=page_size, offset=(cur_page - 1) * page_size,
+                )
+                if not api_failed(td_result):
+                    items = td_result.get("items", [])
+                    total = td_result.get("total", 0)
+                    st.caption(f"총 {total}건 (페이지 {cur_page}/{max(1, (total + page_size - 1) // page_size)})")
 
-                        # 액션
-                        status_icon = CURATION_STATUS_ICONS.get(item.get("status", ""), "")
-                        ac1, ac2, ac3 = st.columns([1, 1, 2])
-                        with ac1:
-                            if item.get("status") != "approved":
-                                if st.button("✅ 승인", key=f"approve_{item['id']}"):
-                                    api_client.review_training_data(
-                                        {"ids": [item["id"]], "status": "approved"},
-                                    )
-                                    st.cache_data.clear()
-                                    st.rerun()
-                        with ac2:
-                            if item.get("status") != "rejected":
-                                if st.button("❌ 거부", key=f"reject_{item['id']}"):
-                                    api_client.review_training_data(
-                                        {"ids": [item["id"]], "status": "rejected"},
-                                    )
-                                    st.cache_data.clear()
-                                    st.rerun()
-                        with ac3:
-                            st.caption(status_icon)
+                    for item in items:
+                        with st.container(border=True):
+                            src_type = item.get("source_type", "")
+                            test_tag = " 🧪" if src_type == "test_seed" else ""
+                            hdr = (
+                                f"📊 일관성: {quality_badge(item.get('consistency_score'))}  "
+                                f"🌐 범용성: {quality_badge(item.get('generality_score'))}  "
+                                f"타입: {src_type}{test_tag}"
+                            )
+                            if item.get("augmented_from"):
+                                hdr += "  🔗 변형"
+                                if item.get("augmentation_verified"):
+                                    hdr += " ✅"
+                            st.markdown(hdr)
 
-            st.markdown("---")
+                            st.markdown(f"**Q:** {item.get('question', '')}")
+                            st.caption(f"A: {item.get('answer', '')[:200]}")
 
-            # ── Step 3: 빌드 ──
-            st.subheader("승인 데이터로 빌드")
-            approved_stats = api_client.get_training_data_stats(selected)
-            if not api_failed(approved_stats):
-                approved_count = approved_stats.get("total", 0)
-                st.metric("승인 데이터", f"{approved_count:,}건")
-                min_samples = profiles.get(selected, {}).get("config", {})
-                if isinstance(min_samples, str):
-                    import json as _json
-                    try:
-                        min_samples = _json.loads(min_samples)
-                    except (ValueError, TypeError):
-                        min_samples = {}
-                min_required = min_samples.get("training", {}).get("min_samples", 200) if isinstance(min_samples, dict) else 200
-                if approved_count >= min_required:
-                    if st.button("🚀 승인 데이터로 빌드 시작", type="primary", key="btn_curated_build"):
-                        result = api_client.trigger_distill_build({
-                            "profile_name": selected,
-                            "use_curated_data": True,
-                        })
-                        if not api_failed(result):
-                            st.success(f"빌드 시작: {result.get('version', '')}")
-                            st.cache_data.clear()
-                            st.rerun()
-                else:
-                    st.warning(f"승인 데이터가 부족합니다 ({approved_count}/{min_required}건)")
+                            status_icon = CURATION_STATUS_ICONS.get(item.get("status", ""), "")
+                            ac1, ac2, ac3 = st.columns([1, 1, 2])
+                            with ac1:
+                                if item.get("status") != "approved":
+                                    if st.button("✅ 승인", key=f"approve_{item['id']}"):
+                                        api_client.review_training_data(
+                                            {"ids": [item["id"]], "status": "approved"},
+                                        )
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac2:
+                                if item.get("status") != "rejected":
+                                    if st.button("❌ 거부", key=f"reject_{item['id']}"):
+                                        api_client.review_training_data(
+                                            {"ids": [item["id"]], "status": "rejected"},
+                                        )
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac3:
+                                st.caption(status_icon)
 
-            st.markdown("---")
+                st.markdown("---")
+
+                # ── Step 3: 빌드 ──
+                st.subheader("승인 데이터로 빌드")
+                approved_stats = api_client.get_training_data_stats(selected)
+                if not api_failed(approved_stats):
+                    approved_count = approved_stats.get("total", 0)
+                    st.metric("승인 데이터", f"{approved_count:,}건")
+                    min_samples = profiles.get(selected, {}).get("config", {})
+                    if isinstance(min_samples, str):
+                        import json as _json
+                        try:
+                            min_samples = _json.loads(min_samples)
+                        except (ValueError, TypeError):
+                            min_samples = {}
+                    min_required = min_samples.get("training", {}).get("min_samples", 200) if isinstance(min_samples, dict) else 200
+                    if approved_count >= min_required:
+                        if st.button("🚀 승인 데이터로 빌드 시작", type="primary", key="btn_curated_build"):
+                            result = api_client.trigger_distill_build({
+                                "profile_name": selected,
+                                "use_curated_data": True,
+                            })
+                            if not api_failed(result):
+                                st.success(f"빌드 시작: {result.get('version', '')}")
+                                st.cache_data.clear()
+                                st.rerun()
+                    else:
+                        st.warning(f"승인 데이터가 부족합니다 ({approved_count}/{min_required}건)")
 
             # ==== 서브탭 2: 질문 변형 ====
             with sub_aug:
