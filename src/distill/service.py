@@ -270,18 +270,19 @@ class DistillService:
         terms: list[dict] = []
 
         async with self.session_factory() as session:
+            # PBU_ 도메인 용어 사용 (GS 데이터 표준 용어)
             result = await session.execute(
                 text("""
                     SELECT term, definition, kb_id, occurrence_count
                     FROM glossary_terms
-                    WHERE kb_id = ANY(:kb_ids)
+                    WHERE kb_id LIKE 'PBU_%'
                     AND status = 'approved'
                     AND definition IS NOT NULL
                     AND length(definition) > 20
                     ORDER BY occurrence_count DESC
                     LIMIT :limit
                 """),
-                {"kb_ids": kb_ids, "limit": top_n},
+                {"limit": top_n},
             )
             for row in result.fetchall():
                 terms.append({
