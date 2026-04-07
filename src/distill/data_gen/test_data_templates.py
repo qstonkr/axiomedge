@@ -69,13 +69,46 @@ QA_GENERATION_PROMPT = (
 )
 
 
-CHUNK_QA_PROMPT = (
+# KB별 특화 프롬프트
+KB_PROMPTS: dict[str, str] = {
+    "g-espa": (
+        "다음은 GS25 매장의 ESPA(매장 성과 분석) 자료입니다.\n"
+        "이 자료를 바탕으로, 편의점 점주가 자기 매장의 문제를 해결하기 위해 물어볼 법한 질문을 1~3개 만들어주세요.\n\n"
+        "규칙:\n"
+        "- 특정 매장명, 점주명, 날짜를 포함하지 마세요\n"
+        "- 매출 부진, 카테고리 개선, 진열 효율 등 ESPA 인사이트와 매칭되는 질문\n"
+        "- 좋은 예: '육가공 카테고리 매출 개선 방안은?', '냉장 진열 효율 높이는 방법은?', '객단가 올리려면 어떻게 해야 해?'\n\n"
+        "[ESPA 자료]\n{chunk}\n\n"
+        "범용적 질문 (한 줄에 하나씩):"
+    ),
+    "drp": (
+        "다음은 GS25 가맹점 분쟁조정 답변서/사례입니다.\n"
+        "이 자료를 바탕으로, 점주가 유사한 분쟁 상황에서 물어볼 법한 질문을 1~3개 만들어주세요.\n\n"
+        "규칙:\n"
+        "- 특정 매장명, 점주명, 사건번호를 포함하지 마세요\n"
+        "- 분쟁 사유(임대료, 계약해지, 정산, 영업손실 등)에 대한 범용적 질문\n"
+        "- 좋은 예: '임대료 분쟁 시 조정 절차는?', '계약 해지 시 정산 기준은?', '영업손실 보상 기준이 뭐야?'\n\n"
+        "[분쟁조정 자료]\n{chunk}\n\n"
+        "범용적 질문 (한 줄에 하나씩):"
+    ),
+    "a-ari": (
+        "다음은 GS25 편의점 운영 매뉴얼/가이드 문서입니다.\n"
+        "이 자료를 바탕으로, 편의점 직원이나 점주가 실무에서 물어볼 법한 질문을 1~3개 만들어주세요.\n\n"
+        "규칙:\n"
+        "- 특정 매장명, 직원명, 날짜를 포함하지 마세요\n"
+        "- 운영 절차, 규정, 시스템 사용법 등 범용적 질문\n"
+        "- 좋은 예: '상품 폐기 절차 알려줘', 'POS 장애 대응 방법은?', '위생 관리 기준이 뭐야?'\n\n"
+        "[운영 매뉴얼]\n{chunk}\n\n"
+        "범용적 질문 (한 줄에 하나씩):"
+    ),
+}
+
+# 기본 프롬프트 (매칭 안 되는 KB용)
+DEFAULT_CHUNK_QA_PROMPT = (
     "다음 문서 내용을 바탕으로, 어느 매장에서든 통용되는 범용적인 질문을 1~3개 만들어주세요.\n\n"
     "규칙:\n"
     "- 특정 매장명, 날짜, 직원명을 포함하지 마세요\n"
-    "- '~절차 알려줘', '~방법이 뭐야?', '~제도가 뭐야?' 같은 범용적 형태로 작성\n"
-    "- 좋은 예: '폐기 절차 알려줘', '상생협력 지원제도가 뭐야?', '반품 처리 방법'\n"
-    "- 나쁜 예: '강남점 3월 매출은?', '김철수 매니저 연락처'\n\n"
+    "- '~절차 알려줘', '~방법이 뭐야?', '~제도가 뭐야?' 같은 범용적 형태로 작성\n\n"
     "[문서 내용]\n{chunk}\n\n"
     "범용적 질문 (한 줄에 하나씩):"
 )
@@ -127,8 +160,10 @@ async def generate_test_qa(
     async with httpx.AsyncClient(timeout=60) as client:
         for i, chunk_info in enumerate(sampled):
             try:
-                # 청크 기반 질문 생성 (LLM 직접 호출 또는 Hub Search 활용)
-                prompt = CHUNK_QA_PROMPT.format(chunk=chunk_info["content"][:1500])
+                # KB별 특화 프롬프트 선택
+                kb = chunk_info["kb_id"]
+                prompt_template = KB_PROMPTS.get(kb, DEFAULT_CHUNK_QA_PROMPT)
+                prompt = prompt_template.format(chunk=chunk_info["content"][:1500])
                 q_response = None
                 if llm_client and hasattr(llm_client, "generate"):
                     q_response = await llm_client.generate(prompt, temperature=0.7)
