@@ -137,12 +137,21 @@ class DistillService:
             kb_ids, search_group,
         )
 
+        # QualityFilter 생성 (추론 제거 + 답변 정규화용)
+        from src.distill.config import dict_to_profile
+        from src.distill.data_gen.llm_helper import LLMHelper
+        from src.distill.data_gen.quality_filter import QualityFilter
+        profile = dict_to_profile(profile_dict)
+        llm_helper = LLMHelper(self.llm, concurrency=3, timeout=60)
+        qf = QualityFilter(llm_helper, self.embedder, profile)
+
         test_qa = await generate_test_qa(
             llm_client=self.llm,
             qdrant_url=self.qdrant_url,
             kb_ids=kb_ids,
             count=count,
             rag_api_url=rag_url,
+            quality_filter=qf,
         )
 
         # 범용성 점수

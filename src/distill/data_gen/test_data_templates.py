@@ -157,6 +157,7 @@ async def generate_test_qa(
     kb_ids: list[str],
     count: int = 50,
     rag_api_url: str = "http://localhost:8000",
+    quality_filter=None,
 ) -> list[dict[str, Any]]:
     """테스트용 QA 쌍 생성 (KB 청크 기반).
 
@@ -261,6 +262,13 @@ async def generate_test_qa(
                     if confidence in ("낮음", "low", "없음"):
                         logger.debug("Skipped (low confidence): %s", question[:40])
                         continue
+
+                    # 추론 제거 + 답변 정규화 (QualityFilter 재사용)
+                    if quality_filter:
+                        answer = await quality_filter.convert_to_answer_only(
+                            question, answer,
+                        )
+                        answer = await quality_filter.normalize_answer_length(answer)
 
                     result_chunks = search_result.get("chunks", [])
                     source_kbs = list({
