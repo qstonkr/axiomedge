@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-04-07T09:54:44",
+  "token_efficiency": [
+    {
+      "model": "Qwen2.5-0.5B",
+      "text": "유통기한이 지난 상품은 매대에서 분리하고 POS에서 폐기 등록 후 폐기 ...",
+      "chars": 50,
+      "tokens": 35,
+      "chars_per_token": 1.43
+    },
+    {
+      "model": "Qwen2.5-0.5B",
+      "text": "GS25 편의점에서 카드 결제 오류가 발생하면 먼저 단말기를 재부팅하고,...",
+      "chars": 64,
+      "tokens": 44,
+      "chars_per_token": 1.45
+    },
+    {
+      "model": "Qwen2.5-0.5B",
+      "text": "야간 근무 시에는 매장 출입문 잠금을 확인하고, CCTV 작동 상태를 점...",
+      "chars": 62,
+      "tokens": 42,
+      "chars_per_token": 1.48
+    },
+    {
+      "model": "Qwen2.5-1.5B",
+      "text": "유통기한이 지난 상품은 매대에서 분리하고 POS에서 폐기 등록 후 폐기 ...",
+      "chars": 50,
+      "tokens": 35,
+      "chars_per_token": 1.43
+    },
+    {
+      "model": "Qwen2.5-1.5B",
+      "text": "GS25 편의점에서 카드 결제 오류가 발생하면 먼저 단말기를 재부팅하고,...",
+      "chars": 64,
+      "tokens": 44,
+      "chars_per_token": 1.45
+    },
+    {
+      "model": "Qwen2.5-1.5B",
+      "text": "야간 근무 시에는 매장 출입문 잠금을 확인하고, CCTV 작동 상태를 점...",
+      "chars": 62,
+      "tokens": 42,
+      "chars_per_token": 1.48
+    },
+    {
+      "model": "Gemma3-1B",
+      "text": "유통기한이 지난 상품은 매대에서 분리하고 POS에서 폐기 등록 후 폐기 ...",
+      "chars": 50,
+      "tokens": 30,
+      "chars_per_token": 1.67
+    },
+    {
+      "model": "Gemma3-1B",
+      "text": "GS25 편의점에서 카드 결제 오류가 발생하면 먼저 단말기를 재부팅하고,...",
+      "chars": 64,
+      "tokens": 34,
+      "chars_per_token": 1.88
+    },
+    {
+      "model": "Gemma3-1B",
+      "text": "야간 근무 시에는 매장 출입문 잠금을 확인하고, CCTV 작동 상태를 점...",
+      "chars": 62,
+      "tokens": 34,
+      "chars_per_token": 1.82
+    },
+    {
+      "model": "EXAONE-2.4B",
+      "text": "유통기한이 지난 상품은 매대에서 분리하고 POS에서 폐기 등록 후 폐기 ...",
+      "chars": 50,
+      "tokens": 23,
+      "chars_per_token": 2.17
+    },
+    {
+      "model": "EXAONE-2.4B",
+      "text": "GS25 편의점에서 카드 결제 오류가 발생하면 먼저 단말기를 재부팅하고,...",
+      "chars": 64,
+      "tokens": 30,
+      "chars_per_token": 2.13
+    },
+    {
+      "model": "EXAONE-2.4B",
+      "text": "야간 근무 시에는 매장 출입문 잠금을 확인하고, CCTV 작동 상태를 점...",
+      "chars": 62,
+      "tokens": 27,
+      "chars_per_token": 2.3
+    }
+  ]
+}
