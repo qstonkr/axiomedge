@@ -355,7 +355,14 @@ class DistillService:
 
             filtered_terms.append(t)
 
-        terms = filtered_terms
+        # 동일 용어(term_ko 기준) 중복 제거 — 첫 번째만 유지
+        seen_terms: set[str] = set()
+        unique_terms: list[dict] = []
+        for t in filtered_terms:
+            if t["term"] not in seen_terms:
+                seen_terms.add(t["term"])
+                unique_terms.append(t)
+        terms = unique_terms
 
         if not terms:
             raise ValueError(f"No quality terms found for KBs: {kb_ids}")
