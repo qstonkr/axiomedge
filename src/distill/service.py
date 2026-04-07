@@ -145,6 +145,15 @@ class DistillService:
         llm_helper = LLMHelper(self.llm, self.qdrant_url, concurrency=3, timeout_sec=60)
         qf = QualityFilter(llm_helper, self.embedder, profile)
 
+        # 기존 질문 가져오기 (중복 방지)
+        existing_result = await repo.list_training_data(
+            profile_name=profile_name, limit=10000,
+        )
+        existing_questions = {
+            it["question"] for it in existing_result.get("items", [])
+        }
+        logger.info("Existing questions for dedup: %d", len(existing_questions))
+
         test_qa = await generate_test_qa(
             llm_client=self.llm,
             qdrant_url=self.qdrant_url,
@@ -152,6 +161,7 @@ class DistillService:
             count=count,
             rag_api_url=rag_url,
             quality_filter=qf,
+            existing_questions=existing_questions,
         )
 
         # 범용성 점수

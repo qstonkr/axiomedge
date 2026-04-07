@@ -158,6 +158,7 @@ async def generate_test_qa(
     count: int = 50,
     rag_api_url: str = "http://localhost:8000",
     quality_filter=None,
+    existing_questions: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """테스트용 QA 쌍 생성 (KB 청크 기반).
 
@@ -190,8 +191,14 @@ async def generate_test_qa(
         len(flat_chunks), len(all_chunks),
     )
 
-    sampled = random.sample(flat_chunks, min(count, len(flat_chunks)))
-    logger.info("Sampled %d chunks from %d KBs for QA generation", len(sampled), len(all_chunks))
+    # 기존 질문 세트 (중복 방지용)
+    seen_questions = set(existing_questions or set())
+
+    # count보다 많이 샘플링 (중복/필터 탈락 대비)
+    sample_size = min(count * 2, len(flat_chunks))
+    sampled = random.sample(flat_chunks, sample_size)
+    logger.info("Sampled %d chunks from %d KBs for QA generation (existing: %d questions)",
+                len(sampled), len(all_chunks), len(seen_questions))
 
     # Step 2: 청크 → 질문 생성 + Step 3: Hub Search → 답변
     results: list[dict[str, Any]] = []
@@ -275,6 +282,17 @@ async def generate_test_qa(
                         c.get("kb_id", "") for c in result_chunks if c.get("kb_id")
                     })
 
+                    # 중복 체크 (기존 + 이번 생성분)
+                    from rapidfuzz import fuzz as _fuzz
+                    is_dup = any(
+                        _fuzz.token_sort_ratio(question, seen) > 85
+                        for seen in list(seen_questions)[-200:]
+                    )
+                    if is_dup:
+                        logger.debug("Skipped (duplicate): %s", question[:40])
+                        continue
+
+                    seen_questions.add(question)
                     results.append({
                         "question": question,
                         "answer": answer.strip(),
