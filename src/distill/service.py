@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,11 +36,117 @@ class DistillService:
         self.embedder = embedder
         self.qdrant_url = qdrant_url
 
+    async def generate_data_for_review(self, profile_name: str) -> dict:
+        """큐레이션용 QA 데이터 생성 → pending 상태로 DB 저장."""
+        from src.database.repositories.search_group import SearchGroupRepository
+        from src.distill.data_gen.generality_filter import GeneralityFilter
+        from src.distill.data_generator import DistillDataGenerator
+
+        repo = DistillRepository(self.session_factory)
+        profile = self.config.profiles.get(profile_name)
+        if not profile:
+            raise ValueError(f"Profile not found: {profile_name}")
+
+        batch_id = str(uuid.uuid4())
+        generator = DistillDataGenerator(
+            self.llm, self.embedder, profile, self.qdrant_url,
+        )
+        generality = GeneralityFilter(generator.llm_helper if hasattr(generator, "llm_helper") else None)
+
+        # KB IDs 확보
+        group_repo = SearchGroupRepository(self.session_factory)
+        kb_ids = await group_repo.resolve_kb_ids(group_name=profile.search_group)
+        if not kb_ids:
+            raise ValueError(f"Search group '{profile.search_group}' has no KBs")
+
+        # QA 생성
+        log_qa = await generator.generate_from_usage_logs(
+            self.session_factory, kb_ids, profile.search_group,
+        )
+        chunk_qa: list[dict] = []
+        if len(log_qa) < self.config.defaults.min_training_samples:
+            chunk_qa = await generator.generate_from_chunks(
+                kb_ids, max_chunks_per_kb=50,
+            )
+
+        all_qa = await generator.merge_and_deduplicate(log_qa, chunk_qa)
+
+        # 범용성 점수 부여
+        all_qa = await generality.batch_score(all_qa)
+
+        # Augmentation + 검증
+        all_qa = await generator.augment_questions(all_qa)
+        if hasattr(generator, "dataset_builder") and hasattr(generator, "quality_filter"):
+            all_qa = await generator.dataset_builder.verify_augmented_questions(
+                all_qa, generator.quality_filter,
+            )
+
+        # pending으로 DB 저장
+        for qa in all_qa:
+            qa["id"] = str(uuid.uuid4())
+            qa["profile_name"] = profile_name
+            qa["status"] = "pending"
+            qa["generation_batch_id"] = batch_id
+
+        saved = await repo.save_training_data_batch(all_qa)
+        logger.info(
+            "Generated %d QA pairs for review (batch=%s, profile=%s)",
+            saved, batch_id, profile_name,
+        )
+
+        return {
+            "batch_id": batch_id,
+            "total": saved,
+            "usage_log": len(log_qa),
+            "chunk_qa": len(chunk_qa),
+        }
+
+    async def generate_test_data(self, profile_name: str, count: int = 50) -> dict:
+        """테스트용 시드 데이터셋 생성 (SageMaker EXAONE Teacher)."""
+        from src.database.repositories.search_group import SearchGroupRepository
+        from src.distill.data_gen.generality_filter import GeneralityFilter
+        from src.distill.data_gen.test_data_templates import generate_test_qa
+
+        repo = DistillRepository(self.session_factory)
+        profile = self.config.profiles.get(profile_name)
+        if not profile:
+            raise ValueError(f"Profile not found: {profile_name}")
+
+        batch_id = str(uuid.uuid4())
+
+        # KB IDs
+        group_repo = SearchGroupRepository(self.session_factory)
+        kb_ids = await group_repo.resolve_kb_ids(group_name=profile.search_group)
+
+        # 테스트 QA 생성
+        test_qa = await generate_test_qa(
+            llm_client=self.llm,
+            qdrant_url=self.qdrant_url,
+            kb_ids=kb_ids,
+            count=count,
+        )
+
+        # 범용성 점수
+        generality = GeneralityFilter()
+        test_qa = await generality.batch_score(test_qa)
+
+        # pending으로 저장
+        for qa in test_qa:
+            qa["id"] = str(uuid.uuid4())
+            qa["profile_name"] = profile_name
+            qa["status"] = "pending"
+            qa["source_type"] = "test_seed"
+            qa["generation_batch_id"] = batch_id
+
+        saved = await repo.save_training_data_batch(test_qa)
+        return {"batch_id": batch_id, "total": saved}
+
     async def run_pipeline(
         self,
         build_id: str,
         profile_name: str,
         steps: list[str] | None = None,
+        use_curated_data: bool = False,
     ) -> None:
         """전체 파이프라인 실행 (별도 프로세스 또는 in-process)."""
         repo = DistillRepository(self.session_factory)
@@ -63,7 +170,10 @@ class DistillService:
             # Step 1: 데이터 생성
             if "generate" in all_steps:
                 await repo.update_build(build_id, status="generating")
-                data_path = await self._generate_data(build_id, profile_name, profile, repo, build_dir)
+                data_path = await self._generate_data(
+                    build_id, profile_name, profile, repo, build_dir,
+                    use_curated_data=use_curated_data,
+                )
 
             # Step 2: 학습
             if "train" in all_steps:
@@ -109,8 +219,38 @@ class DistillService:
     async def _generate_data(
         self, build_id: str, profile_name: str, profile: DistillProfile,
         repo: DistillRepository, build_dir: Path,
+        *, use_curated_data: bool = False,
     ) -> str:
-        """QA 데이터 생성."""
+        """QA 데이터 생성.
+
+        use_curated_data=True: DB에서 approved 데이터만 export (큐레이션 경로)
+        use_curated_data=False: 자동 생성 + auto-approve (기존 경로)
+        """
+        min_samples = self.config.defaults.min_training_samples
+
+        # ── 큐레이션 경로: DB에서 approved 데이터 export ──
+        if use_curated_data:
+            result = await repo.list_training_data(
+                profile_name=profile_name, status="approved", limit=100000,
+            )
+            approved = result.get("items", [])
+            if not approved:
+                raise ValueError("No approved training data. Run data curation first.")
+
+            data_path = str(build_dir / "train.jsonl")
+            from src.distill.data_gen.dataset_builder import DatasetBuilder
+            count = DatasetBuilder.export_jsonl(approved, data_path)
+
+            data_sources = {"approved": count, "source": "curated"}
+            await repo.update_build(
+                build_id, training_samples=count,
+                data_sources=json.dumps(data_sources, ensure_ascii=False),
+            )
+            if count < min_samples:
+                raise ValueError(f"Insufficient approved data: {count} < {min_samples}")
+            return data_path
+
+        # ── 기존 경로: 자동 생성 + auto-approve ──
         from src.database.repositories.search_group import SearchGroupRepository
         from src.distill.data_generator import DistillDataGenerator
 
@@ -118,20 +258,17 @@ class DistillService:
             self.llm, self.embedder, profile, self.qdrant_url,
         )
 
-        # search_group → KB IDs
         group_repo = SearchGroupRepository(self.session_factory)
         kb_ids = await group_repo.resolve_kb_ids(group_name=profile.search_group)
         if not kb_ids:
             raise ValueError(f"Search group '{profile.search_group}' has no KBs")
 
-        # ── 메인 소스: RAG 실응답 (CRAG correct + 고 confidence) ──
         log_qa = await generator.generate_from_usage_logs(
             self.session_factory, kb_ids, profile.search_group,
         )
         logger.info("Main source (usage_log): %d high-quality QA pairs", len(log_qa))
 
         # ── 보조 소스: 청크 기반 QA 생성 (로그 부족 시) ──
-        min_samples = self.config.defaults.min_training_samples
         chunk_qa: list[dict] = []
         if len(log_qa) < min_samples:
             shortage = min_samples - len(log_qa)
@@ -176,7 +313,6 @@ class DistillService:
         )
 
         # 최소 데이터 수 확인
-        min_samples = self.config.defaults.min_training_samples
         if count < min_samples:
             raise ValueError(f"Insufficient data: {count} < {min_samples}")
 
@@ -265,7 +401,9 @@ class DistillService:
         await repo.update_build(
             build_id,
             gguf_size_mb=validation.get("size_mb", 0),
+            gguf_sha256=validation.get("sha256", ""),
             quantize_method=profile.deploy.quantize,
+            model_name=profile.base_model.split("/")[-1] if profile.base_model else "",
         )
 
         return gguf_path

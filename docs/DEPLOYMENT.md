@@ -268,3 +268,57 @@ make api        # Start API server on :8000
 make dashboard  # Start Streamlit dashboard on :8501
 make stop       # Stop infrastructure
 ```
+
+## Edge Server Deployment
+
+매장 엣지 서버에 LLM 추론 서버를 배포합니다. Docker 없이 단일 바이너리로 동작.
+
+### 설치
+
+```bash
+# Linux / macOS
+curl -sL https://s3.../install.sh | \
+  STORE_ID=gangnam-01 \
+  EDGE_API_KEY=your-key \
+  MANIFEST_URL=https://s3.../pbu-store/manifest.json \
+  CENTRAL_API_URL=https://knowledge-api.gs.internal \
+  bash
+```
+
+```powershell
+# Windows (PowerShell)
+$env:STORE_ID="gangnam-01"
+$env:EDGE_API_KEY="your-key"
+$env:MANIFEST_URL="https://s3.../manifest.json"
+$env:CENTRAL_API_URL="https://knowledge-api.gs.internal"
+irm https://s3.../install.ps1 | iex
+```
+
+### 서비스 구조
+
+| OS | 추론 서버 | 주기적 sync (5분) |
+|------|----------|------------|
+| Linux | systemd `edge-server.service` | `edge-sync.timer` |
+| Windows | nssm Windows Service | Task Scheduler |
+| macOS | launchd plist | launchd plist |
+
+### Heartbeat
+
+엣지 서버는 5분마다 중앙 서버에 상태를 push합니다:
+- `POST /api/v1/distill/edge-servers/heartbeat` (Bearer 인증)
+- 응답에 `pending_model_update` / `pending_app_update` 플래그 포함
+- 플래그가 true이면 즉시 업데이트 수행
+
+### 앱 업데이트
+
+1. `sync.py`가 manifest에서 새 앱 버전 감지 → staging에 다운로드
+2. `update-edge.sh/ps1`이 서비스 중지 → 바이너리 교체 → 시작 → 헬스체크
+3. 헬스체크 실패 시 자동 롤백
+
+### 최소 사양
+
+| 모델 | GGUF | 최소 RAM | CPU |
+|------|------|---------|-----|
+| Qwen2.5-0.5B | 379MB | 2GB | 2코어 |
+| Gemma3-1B | 778MB | 2GB | 2코어 |
+| EXAONE-2.4B | 1.5GB | 4GB | 4코어 |

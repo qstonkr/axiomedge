@@ -145,3 +145,30 @@ EDGE_LOG_SUCCESS_ICON: dict[bool, str] = {
     True: "✅",
     False: "❌",
 }
+
+# ── 큐레이션 상태 ──
+CURATION_STATUS_ICONS: dict[str, str] = {
+    "pending": "🟡 대기",
+    "approved": "🟢 승인",
+    "rejected": "🔴 거부",
+}
+
+# ── 엣지 서버 상태 ──
+EDGE_SERVER_STATUS_ICONS: dict[str, str] = {
+    "online": "🟢",
+    "offline": "⚪",
+    "updating": "🔄",
+    "error": "🔴",
+    "unknown": "❓",
+}
+
+
+def quality_badge(score: float | None) -> str:
+    """품질 점수 뱃지."""
+    if score is None:
+        return "—"
+    if score >= 0.8:
+        return f"🟢 {score:.2f}"
+    if score >= 0.5:
+        return f"🟡 {score:.2f}"
+    return f"🔴 {score:.2f}"

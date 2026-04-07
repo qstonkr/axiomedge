@@ -22,6 +22,22 @@ class QualityFilter:
         self.embedder = embedder
         self.profile = profile
 
+    async def compute_similarity(self, text_a: str, text_b: str) -> float:
+        """두 텍스트 간 cosine similarity (임베딩 기반, fallback: fuzz)."""
+        try:
+            result = await asyncio.to_thread(
+                self.embedder.encode, [text_a, text_b], return_dense=True,
+                return_sparse=False, return_colbert_vecs=False,
+            )
+            vecs = np.array(result["dense_vecs"])
+            return float(
+                np.dot(vecs[0], vecs[1])
+                / (np.linalg.norm(vecs[0]) * np.linalg.norm(vecs[1]) + 1e-8)
+            )
+        except Exception as e:
+            logger.warning("Embedding similarity failed, falling back to fuzz: %s", e)
+            return fuzz.token_sort_ratio(text_a, text_b) / 100.0
+
     async def self_consistency_filter(
         self, question: str, chunk: str,
     ) -> tuple[str, float] | None:
@@ -35,52 +51,40 @@ class QualityFilter:
             f"[질문]\n{question}"
         )
 
-        answers = []
-        for _ in range(n):
-            answer = await self.llm.call(prompt, temperature=0.7)
-            if answer:
-                answers.append(answer)
+        results = await asyncio.gather(
+            *[self.llm.call(prompt, temperature=0.7) for _ in range(n)]
+        )
+        answers = [a for a in results if a]
 
         if len(answers) < 2:
             return None
 
-        # 임베딩 cosine similarity
-        try:
-            result = await asyncio.to_thread(
-                self.embedder.encode, answers, return_dense=True,
-                return_sparse=False, return_colbert_vecs=False,
-            )
-            vecs = np.array(result["dense_vecs"])
+        # 임베딩 cosine similarity (compute_similarity 재사용)
+        similarities = []
+        for i in range(len(answers)):
+            for j in range(i + 1, len(answers)):
+                sim = await self.compute_similarity(answers[i], answers[j])
+                similarities.append(sim)
 
-            similarities = []
-            for i in range(len(vecs)):
-                for j in range(i + 1, len(vecs)):
-                    cos_sim = float(
-                        np.dot(vecs[i], vecs[j])
-                        / (np.linalg.norm(vecs[i]) * np.linalg.norm(vecs[j]) + 1e-8)
-                    )
-                    similarities.append(cos_sim)
-
-            avg_sim = float(np.mean(similarities))
-        except Exception as e:
-            logger.warning("Embedding similarity failed, falling back to fuzz: %s", e)
-            similarities = []
-            for i in range(len(answers)):
-                for j in range(i + 1, len(answers)):
-                    similarities.append(fuzz.token_sort_ratio(answers[i], answers[j]) / 100.0)
-            avg_sim = sum(similarities) / len(similarities) if similarities else 0
+        avg_sim = float(np.mean(similarities)) if similarities else 0
 
         if avg_sim < threshold:
             return None
 
         # Centroid에 가장 가까운 답변 선택
         try:
+            result = await asyncio.to_thread(
+                self.embedder.encode, answers, return_dense=True,
+                return_sparse=False, return_colbert_vecs=False,
+            )
+            vecs = np.array(result["dense_vecs"])
             centroid = np.mean(vecs, axis=0)
             best_idx = int(np.argmax([
                 np.dot(v, centroid) / (np.linalg.norm(v) * np.linalg.norm(centroid) + 1e-8)
                 for v in vecs
             ]))
-        except Exception:
+        except Exception as e:
+            logger.warning("Centroid selection failed, using first answer: %s", e)
             best_idx = 0
 
         return answers[best_idx], avg_sim

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.distill.repositories.build import DistillBuildRepository
 from src.distill.repositories.edge_log import DistillEdgeLogRepository
+from src.distill.repositories.edge_server import DistillEdgeServerRepository
 from src.distill.repositories.profile import DistillProfileRepository
 from src.distill.repositories.training_data import DistillTrainingDataRepository
 
@@ -27,6 +28,7 @@ class DistillRepository:
         self._builds = DistillBuildRepository(session_maker)
         self._edge_logs = DistillEdgeLogRepository(session_maker)
         self._training_data = DistillTrainingDataRepository(session_maker)
+        self._edge_servers = DistillEdgeServerRepository(session_maker)
 
     # --- Profiles ---
     async def list_profiles(self) -> list[dict[str, Any]]:
@@ -64,6 +66,16 @@ class DistillRepository:
     ) -> dict[str, Any] | None:
         return await self._builds.get_latest(profile_name, status)
 
+    async def list_version_history(
+        self, profile_name: str,
+    ) -> list[dict[str, Any]]:
+        return await self._builds.list_version_history(profile_name)
+
+    async def rollback_to(
+        self, build_id: str, current_build_id: str,
+    ) -> dict[str, Any] | None:
+        return await self._builds.rollback_to(build_id, current_build_id)
+
     # --- Edge Logs ---
     async def save_edge_logs(self, logs: list[dict[str, Any]]) -> int:
         return await self._edge_logs.save_batch(logs)
@@ -90,12 +102,17 @@ class DistillRepository:
     async def save_training_data(self, entries: list[dict[str, Any]]) -> int:
         return await self._training_data.save_batch(entries)
 
+    save_training_data_batch = save_training_data  # alias
+
     async def list_training_data(
         self, profile_name: str, status: str | None = None,
-        source_type: str | None = None, limit: int = 50, offset: int = 0,
+        source_type: str | None = None, batch_id: str | None = None,
+        sort_by: str = "created_at", sort_order: str = "desc",
+        limit: int = 50, offset: int = 0,
     ) -> dict[str, Any]:
         return await self._training_data.list_data(
-            profile_name, status, source_type, limit, offset,
+            profile_name, status, source_type, batch_id,
+            sort_by, sort_order, limit, offset,
         )
 
     async def get_training_data_stats(self, profile_name: str) -> dict[str, Any]:
@@ -105,3 +122,52 @@ class DistillRepository:
         self, ids: list[str], status: str,
     ) -> int:
         return await self._training_data.update_status(ids, status)
+
+    async def get_batch_stats(self, batch_id: str) -> dict[str, Any]:
+        return await self._training_data.get_batch_stats(batch_id)
+
+    async def delete_training_data_by_source(
+        self, profile_name: str, source_type: str,
+    ) -> int:
+        return await self._training_data.delete_by_source_type(profile_name, source_type)
+
+    async def delete_training_data_by_batch(self, batch_id: str) -> int:
+        return await self._training_data.delete_by_batch(batch_id)
+
+    async def delete_build(self, build_id: str) -> bool:
+        return await self._builds.delete(build_id)
+
+    async def bulk_update_training_data(
+        self, updates: list[dict[str, Any]],
+    ) -> int:
+        return await self._training_data.bulk_update_with_edit(updates)
+
+    # --- Edge Servers ---
+    async def upsert_heartbeat(
+        self, data: dict[str, Any], api_key: str,
+    ) -> dict[str, Any]:
+        return await self._edge_servers.upsert_heartbeat(data, api_key)
+
+    async def list_edge_servers(
+        self, profile_name: str | None = None, status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._edge_servers.list_servers(profile_name, status)
+
+    async def get_edge_server(self, store_id: str) -> dict[str, Any] | None:
+        return await self._edge_servers.get_server(store_id)
+
+    async def delete_edge_server(self, store_id: str) -> bool:
+        return await self._edge_servers.delete_server(store_id)
+
+    async def request_server_update(
+        self, store_id: str, update_type: str,
+    ) -> dict[str, Any]:
+        return await self._edge_servers.request_update(store_id, update_type)
+
+    async def bulk_request_server_update(
+        self, profile_name: str, update_type: str,
+    ) -> int:
+        return await self._edge_servers.bulk_request_update(profile_name, update_type)
+
+    async def get_fleet_stats(self, profile_name: str) -> dict[str, Any]:
+        return await self._edge_servers.get_fleet_stats(profile_name)

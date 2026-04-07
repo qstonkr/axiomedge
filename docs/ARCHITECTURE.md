@@ -228,6 +228,29 @@ ONNX (로컬 FP32/INT8)
 
 모든 프로바이더는 `EmbeddingProvider` Protocol을 충족하며 dense(1024) + sparse + ColBERT 벡터를 동일하게 반환.
 
+## Distill Pipeline (Edge Model)
+
+```
+[데이터 큐레이션]
+  usage_log (CRAG correct) ─┐
+  KB 청크 QA 생성 ───────────┼→ merge + dedup → self-consistency → generality filter
+  테스트 데이터 생성 ─────────┘    → augmentation + verify → DB (status=pending)
+                                        ↓
+  사람 리뷰 (대시보드) → 승인/거부/편집 → DB (status=approved)
+                                        ↓
+[빌드]
+  approved 데이터 export → LoRA SFT → 평가 게이트 → GGUF 양자화 (+ SHA256)
+    → S3 배포 (manifest.json) → 모델 버전 기록
+
+[엣지 서버]
+  install.sh/ps1 → 바이너리 + 모델 다운로드 → 서비스 등록 (systemd/nssm/launchd)
+  sync.py (5분 주기):
+    → 중앙 heartbeat push (상태/버전/시스템 정보)
+    → manifest 확인 → 모델 업데이트 / 앱 staging
+    → 로그 업로드
+  update-edge.sh/ps1 → staging → 서비스 중지 → swap → 시작 → 헬스체크 → 롤백
+```
+
 ## Key Files
 
 | 파일 | 역할 |
@@ -242,3 +265,8 @@ ONNX (로컬 FP32/INT8)
 | `src/vectordb/client.py` | Qdrant 하이브리드 검색 |
 | `src/graph/neo4j_repository.py` | Neo4j 그래프 연산 |
 | `src/embedding/types.py` | EmbeddingProvider Protocol |
+| `src/distill/service.py` | Distill 파이프라인 오케스트레이터 |
+| `src/distill/data_gen/generality_filter.py` | 범용성 필터 (매장/날짜/직원 종속 탈락) |
+| `src/distill/repositories/edge_server.py` | 엣지 서버 CRUD + heartbeat + fleet 관리 |
+| `edge/server.py` | 엣지 llama-cpp 추론 서버 |
+| `edge/sync.py` | S3 모델 sync + heartbeat push + 앱 업데이트 |

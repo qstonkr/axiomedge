@@ -11,8 +11,10 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
-from src.distill.data_gen.llm_helper import LLMHelper
 from src.distill.config import DistillProfile
+from src.distill.data_gen.llm_helper import LLMHelper
+
+SOURCE_TYPE_AUG_SUFFIX = "_aug"  # augmented 소스 타입 접미사
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +38,20 @@ class DatasetBuilder:
             return merged
 
         unique: list[dict[str, Any]] = []
-        seen_questions: list[str] = []
+        seen_questions: dict[str, str] = {}  # normalized → original
 
         for qa in merged:
             q = qa["question"]
-            is_dup = any(fuzz.token_sort_ratio(q, seen) > 85 for seen in seen_questions)
+            # 빠른 사전 필터: 정규화된 키워드로 후보군 축소
+            q_sorted = " ".join(sorted(q.split()))
+            if q_sorted in seen_questions:
+                continue
+            # 후보가 많으면 최근 200개만 비교 (O(n) → O(min(n,200)))
+            candidates = list(seen_questions.values())[-200:]
+            is_dup = any(fuzz.token_sort_ratio(q, seen) > 85 for seen in candidates)
             if not is_dup:
                 unique.append(qa)
-                seen_questions.append(q)
+                seen_questions[q_sorted] = q
 
         logger.info("Deduplicated: %d → %d QA pairs", len(merged), len(unique))
         return unique
@@ -77,13 +85,59 @@ class DatasetBuilder:
                     augmented.append({
                         **qa,
                         "question": variant,
-                        "source_type": qa.get("source_type", "chunk_qa") + "_aug",
+                        "source_type": qa.get("source_type", "chunk_qa") + SOURCE_TYPE_AUG_SUFFIX,
+                        "augmented_from": qa.get("id", ""),
                     })
             except Exception as e:
                 logger.warning("Augmentation failed for '%s': %s", question[:30], e)
 
         logger.info("Augmented: %d → %d QA pairs", len(qa_pairs), len(augmented))
         return augmented
+
+    async def verify_augmented_questions(
+        self,
+        qa_pairs: list[dict[str, Any]],
+        quality_filter,
+        threshold: float = 0.75,
+        max_concurrency: int = 10,
+    ) -> list[dict[str, Any]]:
+        """변형 질문의 답변 일관성 검증 (병렬 처리).
+
+        변형 질문을 Teacher에게 다시 질의 → 원본 답변과 cosine sim 비교.
+        threshold 미달 시 탈락.
+        """
+        import asyncio
+
+        originals = [qa for qa in qa_pairs if not qa.get("augmented_from")]
+        augmented = [qa for qa in qa_pairs if qa.get("augmented_from")]
+
+        sem = asyncio.Semaphore(max_concurrency)
+
+        async def _verify_one(qa: dict) -> dict | None:
+            async with sem:
+                try:
+                    teacher_answer = await self.llm.call(
+                        f"다음 질문에 답변하세요: {qa['question']}", temperature=0.1,
+                    )
+                    if not teacher_answer:
+                        return None
+                    sim = await quality_filter.compute_similarity(
+                        teacher_answer, qa["answer"],
+                    )
+                    qa["augmentation_verified"] = sim >= threshold
+                    return qa if qa["augmentation_verified"] else None
+                except Exception as e:
+                    logger.warning("Augmentation verify failed: %s", e)
+                    return None
+
+        results = await asyncio.gather(*[_verify_one(qa) for qa in augmented])
+        verified_aug = [r for r in results if r is not None]
+
+        logger.info(
+            "Augmentation verification: %d passed, %d dropped (threshold=%.2f)",
+            len(verified_aug), len(augmented) - len(verified_aug), threshold,
+        )
+        return originals + verified_aug
 
     @staticmethod
     def balance_dataset(

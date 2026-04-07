@@ -113,3 +113,23 @@ class DistillDeployer:
             logger.info("Force update created: %s", force_key)
 
         await asyncio.to_thread(_create)
+
+    async def delete_s3_object(self, s3_uri: str) -> None:
+        """S3 오브젝트 삭제 (best-effort)."""
+        import asyncio
+
+        import boto3
+
+        if not s3_uri.startswith("s3://"):
+            return
+        parts = s3_uri.replace("s3://", "").split("/", 1)
+        if len(parts) != 2:
+            return
+        bucket, key = parts
+
+        def _delete():
+            s3 = boto3.client("s3")
+            s3.delete_object(Bucket=bucket, Key=key)
+            logger.info("Deleted S3 object: %s", s3_uri)
+
+        await asyncio.to_thread(_delete)
