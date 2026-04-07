@@ -289,16 +289,35 @@ class DistillService:
                     "kb_id": row[2], "count": row[3],
                 })
 
+        # 품질 필터: 정의가 부실한 용어 제외
+        terms = [
+            t for t in terms
+            if t["definition"]
+            and "제공된 문맥에서" not in t["definition"]
+            and "명확한 정의를 도출하기 어렵" not in t["definition"]
+            and "직접적인 정의가" not in t["definition"]
+            and "구체적인 정의" not in t["definition"]
+            and "명확한 의미를 파악하기 어렵" not in t["definition"]
+            and "정확한 의미를 파악하기 어렵" not in t["definition"]
+            and "정확한 정의를 내리기 어렵" not in t["definition"]
+            and "명확한 정의를 제공하지 않" not in t["definition"]
+            and len(t["definition"]) >= 30
+        ]
+
         if not terms:
-            raise ValueError(f"No terms found for KBs: {kb_ids}")
+            raise ValueError(f"No quality terms found for KBs: {kb_ids}")
 
         # 용어 → QA 변환
         qa_pairs: list[dict] = []
         for t in terms:
-            # 다양한 질문 형태
+            term = t["term"]
+            # 한글 종성 판별 → 자연스러운 조사
+            last_char = term[-1] if term else ""
+            has_jongseong = last_char >= "\uac00" and (ord(last_char) - 0xAC00) % 28 != 0
+            subj = f"{term}이" if has_jongseong else f"{term}가"
             questions = [
-                f"{t['term']}이(가) 뭐야?",
-                f"{t['term']}에 대해 설명해줘",
+                f"{subj} 뭐야?",
+                f"{term}에 대해 설명해줘",
             ]
             for q in questions:
                 qa_pairs.append({
