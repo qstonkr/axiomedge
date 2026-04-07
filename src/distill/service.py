@@ -329,9 +329,40 @@ class DistillService:
             if term in _COMMON_WORDS:
                 continue
 
-            # 2글자 이하 한글 일반 명사 제외 (3글자+는 허용, 영문/약어는 유지)
+            # 2글자 이하 한글 일반 명사 제외
             if len(term) <= 2 and all("\uac00" <= c <= "\ud7a3" for c in term):
                 continue
+
+            # 숫자/기간 패턴 제외 (1개월전, 12개월, 13주 등)
+            import re
+            if re.match(r"^\d+[개월주년일편점]", term):
+                continue
+
+            # 1~2글자 영문 약어 제외 (너무 짧아서 의미 없음)
+            if len(term) <= 2 and term.isascii():
+                continue
+
+            # Kiwi 형태소 분석으로 일반어 자동 필터
+            # NNG(일반명사)만으로 구성 + 비즈니스 맥락 없음 → 일반어
+            try:
+                from kiwipiepy import Kiwi
+                _kiwi = Kiwi()
+                tokens = _kiwi.tokenize(term)
+                noun_tags = [t.tag for t in tokens if t.tag.startswith("NN")]
+                is_all_nng = len(noun_tags) > 0 and all(t == "NNG" for t in noun_tags)
+
+                if is_all_nng:
+                    # 비즈니스/GS 맥락 키워드가 정의에 있으면 보존
+                    biz_keywords = [
+                        "가맹", "점포", "매출", "정산", "계약", "본부", "POS",
+                        "발주", "경영", "수수료", "세금", "회계", "장부", "재고",
+                        "시스템", "GS", "편의점", "배분", "손익", "임대", "보상",
+                    ]
+                    has_biz = any(kw in defn for kw in biz_keywords)
+                    if not has_biz:
+                        continue  # 일반어 제외
+            except ImportError:
+                pass  # kiwipiepy 없으면 기존 하드코딩 필터 사용
 
             # 매장명/사람명 제외
             if term.endswith("점") and len(term) >= 3:

@@ -456,9 +456,12 @@ with tab_curation:
         else:
             selected = st.selectbox("프로필", options=enabled, key="curation_profile")
 
-            # ── Step 1: 데이터 생성 ──
-            st.subheader("데이터 생성")
-            gen_col1, gen_col2, gen_col3, gen_col4 = st.columns(4)
+            sub_data, sub_aug, sub_term = st.tabs(["📄 데이터셋", "🔄 질문 변형", "📚 용어 학습"])
+
+            # ==== 서브탭 1: 데이터셋 ====
+            with sub_data:
+                st.subheader("청크 기반 데이터 생성")
+                gen_col1, gen_col2 = st.columns(2)
             with gen_col1:
                 if st.button("🔄 데이터 생성 시작", key="btn_gen_data"):
                     result = api_client.generate_training_data({"profile_name": selected})
@@ -473,24 +476,6 @@ with tab_curation:
                     })
                     if not api_failed(result):
                         st.success("테스트 데이터 생성 시작됨 (백그라운드)")
-                        st.cache_data.clear()
-                        st.rerun()
-            with gen_col3:
-                if st.button("🔄 질문 변형 생성", key="btn_augment"):
-                    result = api_client.augment_training_data({
-                        "profile_name": selected, "max_variants": 3,
-                    })
-                    if not api_failed(result):
-                        st.success("질문 변형 생성 시작됨 (승인 데이터 기준)")
-                        st.cache_data.clear()
-                        st.rerun()
-            with gen_col4:
-                if st.button("📚 용어 QA 생성", key="btn_term_qa"):
-                    result = api_client.generate_term_qa({
-                        "profile_name": selected, "top_n": 100,
-                    })
-                    if not api_failed(result):
-                        st.success("용어 QA 생성 시작됨 (상위 100개)")
                         st.cache_data.clear()
                         st.rerun()
 
@@ -651,8 +636,60 @@ with tab_curation:
 
             st.markdown("---")
 
-            # ── 초기화 ──
-            st.subheader("초기화")
+            # ==== 서브탭 2: 질문 변형 ====
+            with sub_aug:
+                st.subheader("승인 데이터 질문 변형")
+                st.caption("승인된 QA를 다양한 표현으로 변형 → Hub Search로 검증 → pending 저장")
+                if st.button("🔄 질문 변형 생성 (x3)", key="btn_augment"):
+                    result = api_client.augment_training_data({
+                        "profile_name": selected, "max_variants": 3,
+                    })
+                    if not api_failed(result):
+                        st.success("질문 변형 생성 시작됨 (백그라운드)")
+                        st.cache_data.clear()
+                        st.rerun()
+
+                aug_data = api_client.list_training_data(
+                    selected, source_type="usage_log_aug", limit=20,
+                )
+                if not api_failed(aug_data):
+                    aug_items = aug_data.get("items", [])
+                    st.caption(f"변형 데이터: {aug_data.get('total', 0)}건")
+                    for it in aug_items[:10]:
+                        with st.container(border=True):
+                            st.markdown(f"🔗 원본에서 변형 | {CURATION_STATUS_ICONS.get(it.get('status',''))}")
+                            st.markdown(f"**Q:** {it.get('question', '')[:70]}")
+                            st.caption(f"A: {it.get('answer', '')[:100]}")
+
+            # ==== 서브탭 3: 용어 학습 ====
+            with sub_term:
+                st.subheader("PBU 도메인 용어 QA")
+                st.caption("PBU_ 도메인 표준 용어 → '~가 뭐야?' QA 자동 생성")
+                if st.button("📚 용어 QA 생성", key="btn_term_qa"):
+                    result = api_client.generate_term_qa({
+                        "profile_name": selected, "top_n": 772,
+                    })
+                    if not api_failed(result):
+                        st.success("용어 QA 생성 시작됨")
+                        st.cache_data.clear()
+                        st.rerun()
+
+                term_data = api_client.list_training_data(
+                    selected, source_type="term_qa", limit=20,
+                )
+                if not api_failed(term_data):
+                    term_items = term_data.get("items", [])
+                    st.caption(f"용어 QA: {term_data.get('total', 0)}건")
+                    for it in term_items[:10]:
+                        with st.container(border=True):
+                            st.markdown(f"📚 {CURATION_STATUS_ICONS.get(it.get('status',''))}")
+                            st.markdown(f"**Q:** {it.get('question', '')[:50]}")
+                            st.caption(f"A: {it.get('answer', '')[:80]}")
+
+            # ── 초기화 (데이터셋 서브탭 하단) ──
+            with sub_data:
+                st.markdown("---")
+                st.subheader("초기화")
             st.caption("테스트 데이터 또는 빌드를 삭제합니다. 운영 데이터에는 영향을 주지 않습니다.")
             reset_col1, reset_col2 = st.columns(2)
             with reset_col1:
