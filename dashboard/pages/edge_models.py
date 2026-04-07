@@ -694,7 +694,9 @@ with tab_curation:
                             st.rerun()
                 with tc2:
                     if st.button("🧹 용어 QA 삭제", key="btn_del_term"):
-                        result = api_client.delete_test_data(selected)  # TODO: term_qa 전용 삭제 API
+                        result = api_client.delete_by_source_type(selected, "term_qa")
+                        if not api_failed(result):
+                            st.success(f"용어 QA {result.get('deleted', 0)}건 삭제")
                         st.cache_data.clear()
                         st.rerun()
 
@@ -778,7 +780,7 @@ with tab_curation:
                 cc1, cc2 = st.columns(2)
                 with cc1:
                     if st.button("확인 삭제", type="primary", key="btn_confirm_del_test"):
-                        result = api_client.delete_test_data(selected)
+                        result = api_client.delete_by_source_type(selected, "test_seed")
                         if not api_failed(result):
                             st.success(f"테스트 데이터 {result.get('deleted', 0)}건 삭제")
                             st.session_state["confirm_del_test"] = False

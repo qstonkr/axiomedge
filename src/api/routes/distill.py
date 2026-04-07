@@ -719,11 +719,15 @@ async def generate_term_qa(request: GenerateTermQARequest):
 # Data Reset (초기화)
 # ---------------------------------------------------------------------------
 
-@router.delete("/training-data/test-data")
-async def delete_test_data(profile_name: str):
-    """테스트 시드 데이터 일괄 삭제."""
+@router.delete("/training-data/by-source")
+async def delete_by_source_type(profile_name: str, source_type: str):
+    """특정 source_type 데이터 일괄 삭제."""
+    allowed = {"test_seed", "term_qa", "chunk_qa", "usage_log_aug",
+               "chunk_qa_aug", "test_seed_aug", "manual"}
+    if source_type not in allowed:
+        raise HTTPException(status_code=400, detail=f"Invalid source_type: {source_type}")
     repo = _get_distill_repo()
-    deleted = await repo.delete_training_data_by_source(profile_name, "test_seed")
+    deleted = await repo.delete_training_data_by_source(profile_name, source_type)
     return {"deleted": deleted}
 
 

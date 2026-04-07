@@ -171,8 +171,11 @@ def reset_to_base_model(profile_name: str) -> dict:
 
 # ── 초기화 ──
 
-def delete_test_data(profile_name: str) -> dict:
-    return _delete(f"/api/v1/distill/training-data/test-data?profile_name={profile_name}")
+def delete_by_source_type(profile_name: str, source_type: str) -> dict:
+    return _delete(
+        f"/api/v1/distill/training-data/by-source"
+        f"?profile_name={profile_name}&source_type={source_type}"
+    )
 
 
 def delete_batch_data(batch_id: str) -> dict:
