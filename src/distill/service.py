@@ -306,6 +306,14 @@ class DistillService:
             "숙지", "검토", "보고", "전달", "수정", "추가", "개선", "분석",
         }
 
+        # Kiwi 형태소 분석기 (1회 초기화)
+        _kiwi_instance = None
+        try:
+            from kiwipiepy import Kiwi
+            _kiwi_instance = Kiwi()
+        except ImportError:
+            pass
+
         # 품질 필터
         filtered_terms = []
         for t in terms:
@@ -344,10 +352,8 @@ class DistillService:
 
             # Kiwi 형태소 분석으로 일반어 자동 필터
             # NNG(일반명사)만으로 구성 + 비즈니스 맥락 없음 → 일반어
-            try:
-                from kiwipiepy import Kiwi
-                _kiwi = Kiwi()
-                tokens = _kiwi.tokenize(term)
+            if _kiwi_instance:
+                tokens = _kiwi_instance.tokenize(term)
                 noun_tags = [t.tag for t in tokens if t.tag.startswith("NN")]
                 is_all_nng = len(noun_tags) > 0 and all(t == "NNG" for t in noun_tags)
 
@@ -361,8 +367,6 @@ class DistillService:
                     has_biz = any(kw in defn for kw in biz_keywords)
                     if not has_biz:
                         continue  # 일반어 제외
-            except ImportError:
-                pass  # kiwipiepy 없으면 기존 하드코딩 필터 사용
 
             # 매장명/사람명 제외
             if term.endswith("점") and len(term) >= 3:
