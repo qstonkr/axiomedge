@@ -318,10 +318,11 @@ class DistillService:
                 "직접적인 정의가", "구체적인 정의",
                 "명확한 의미를 파악하기 어렵", "정확한 의미를 파악하기 어렵",
                 "정확한 정의를 내리기 어렵", "명확한 정의를 제공하지 않",
+                "운영DB 미등록", "DA작업", "표준으로 변경",
             ]
             if any(p in defn for p in bad_patterns):
                 continue
-            if len(defn) < 30:
+            if len(defn) < 20:
                 continue
 
             # 일반어 제외
