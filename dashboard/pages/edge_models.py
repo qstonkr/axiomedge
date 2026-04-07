@@ -513,7 +513,7 @@ with tab_curation:
                     )
                 with fc3:
                     filter_source = st.selectbox(
-                        "소스 타입", options=[None, "usage_log", "chunk_qa", "test_seed", "manual", "retrain"],
+                        "소스 타입", options=["test_seed", "usage_log", "chunk_qa", "manual", "retrain", None],
                         format_func=lambda x: "전체" if x is None else x,
                         key="cur_source",
                     )
@@ -645,42 +645,121 @@ with tab_curation:
                         st.cache_data.clear()
                         st.rerun()
 
+                st.markdown("---")
+
+                # 변형 데이터 리뷰 (_aug 소스타입)
+                aug_page = st.number_input("페이지", value=1, min_value=1, key="aug_page")
                 aug_data = api_client.list_training_data(
-                    selected, source_type="usage_log_aug", limit=20,
+                    selected, limit=20, offset=(aug_page - 1) * 20,
                 )
                 if not api_failed(aug_data):
-                    aug_items = aug_data.get("items", [])
-                    st.caption(f"변형 데이터: {aug_data.get('total', 0)}건")
-                    for it in aug_items[:10]:
+                    # _aug가 포함된 것만 필터
+                    aug_items = [it for it in aug_data.get("items", [])
+                                 if "_aug" in (it.get("source_type") or "")]
+                    st.caption(f"변형 데이터: {len(aug_items)}건")
+                    for it in aug_items:
                         with st.container(border=True):
-                            st.markdown(f"🔗 원본에서 변형 | {CURATION_STATUS_ICONS.get(it.get('status',''))}")
+                            st.markdown(
+                                f"🔗 변형 | {CURATION_STATUS_ICONS.get(it.get('status', ''))}"
+                            )
                             st.markdown(f"**Q:** {it.get('question', '')[:70]}")
                             st.caption(f"A: {it.get('answer', '')[:100]}")
+                            ac1, ac2 = st.columns(2)
+                            with ac1:
+                                if it.get("status") != "approved":
+                                    if st.button("✅", key=f"aug_appr_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "approved"})
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac2:
+                                if it.get("status") != "rejected":
+                                    if st.button("❌", key=f"aug_rej_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "rejected"})
+                                        st.cache_data.clear()
+                                        st.rerun()
 
             # ==== 서브탭 3: 용어 학습 ====
             with sub_term:
                 st.subheader("PBU 도메인 용어 QA")
-                st.caption("PBU_ 도메인 표준 용어 → '~가 뭐야?' QA 자동 생성")
-                if st.button("📚 용어 QA 생성", key="btn_term_qa"):
-                    result = api_client.generate_term_qa({
-                        "profile_name": selected, "top_n": 772,
-                    })
-                    if not api_failed(result):
-                        st.success("용어 QA 생성 시작됨")
+                st.caption("PBU_ 도메인 표준 용어 → '~가 뭐야?' QA 자동 생성 (Kiwi 형태소 분석 일반어 필터)")
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    if st.button("📚 용어 QA 생성", key="btn_term_qa"):
+                        result = api_client.generate_term_qa({
+                            "profile_name": selected, "top_n": 772,
+                        })
+                        if not api_failed(result):
+                            st.success("용어 QA 생성 시작됨")
+                            st.cache_data.clear()
+                            st.rerun()
+                with tc2:
+                    if st.button("🧹 용어 QA 삭제", key="btn_del_term"):
+                        result = api_client.delete_test_data(selected)  # TODO: term_qa 전용 삭제 API
                         st.cache_data.clear()
                         st.rerun()
 
+                st.markdown("---")
+
+                # 용어 QA 리뷰
+                term_filter = st.selectbox(
+                    "상태", options=["pending", "approved", "rejected", None],
+                    format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
+                    key="term_status",
+                )
+                term_page = st.number_input("페이지", value=1, min_value=1, key="term_page")
                 term_data = api_client.list_training_data(
-                    selected, source_type="term_qa", limit=20,
+                    selected, source_type="term_qa", status=term_filter,
+                    limit=20, offset=(term_page - 1) * 20,
                 )
                 if not api_failed(term_data):
                     term_items = term_data.get("items", [])
-                    st.caption(f"용어 QA: {term_data.get('total', 0)}건")
-                    for it in term_items[:10]:
+                    term_total = term_data.get("total", 0)
+                    st.caption(f"용어 QA: {term_total}건 (페이지 {term_page}/{max(1, (term_total + 19) // 20)})")
+
+                    # 일괄 버튼
+                    ta1, ta2 = st.columns(2)
+                    with ta1:
+                        if st.button("✅ 전체 승인", key="btn_term_approve_all"):
+                            td = api_client.list_training_data(selected, source_type="term_qa", status="pending", limit=10000)
+                            if not api_failed(td):
+                                ids = [it["id"] for it in td.get("items", [])]
+                                if ids:
+                                    api_client.review_training_data({"ids": ids, "status": "approved"})
+                                    st.success(f"{len(ids)}건 승인")
+                                    st.cache_data.clear()
+                                    st.rerun()
+                    with ta2:
+                        if st.button("❌ 전체 거부", key="btn_term_reject_all"):
+                            td = api_client.list_training_data(selected, source_type="term_qa", status="pending", limit=10000)
+                            if not api_failed(td):
+                                ids = [it["id"] for it in td.get("items", [])]
+                                if ids:
+                                    api_client.review_training_data({"ids": ids, "status": "rejected"})
+                                    st.success(f"{len(ids)}건 거부")
+                                    st.cache_data.clear()
+                                    st.rerun()
+
+                    for it in term_items:
                         with st.container(border=True):
-                            st.markdown(f"📚 {CURATION_STATUS_ICONS.get(it.get('status',''))}")
-                            st.markdown(f"**Q:** {it.get('question', '')[:50]}")
-                            st.caption(f"A: {it.get('answer', '')[:80]}")
+                            st.markdown(
+                                f"📚 {CURATION_STATUS_ICONS.get(it.get('status', ''))} | "
+                                f"{it.get('kb_id', '')}"
+                            )
+                            st.markdown(f"**Q:** {it.get('question', '')[:60]}")
+                            st.caption(f"A: {it.get('answer', '')[:100]}")
+                            ac1, ac2 = st.columns(2)
+                            with ac1:
+                                if it.get("status") != "approved":
+                                    if st.button("✅", key=f"term_appr_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "approved"})
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac2:
+                                if it.get("status") != "rejected":
+                                    if st.button("❌", key=f"term_rej_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "rejected"})
+                                        st.cache_data.clear()
+                                        st.rerun()
 
             # ── 초기화 (데이터셋 서브탭 하단) ──
             with sub_data:
