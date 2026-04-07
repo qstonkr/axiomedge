@@ -273,9 +273,9 @@ class DistillService:
             # PBU_ 도메인 용어 사용 (GS 데이터 표준 용어)
             result = await session.execute(
                 text("""
-                    SELECT term, definition, kb_id, occurrence_count
+                    SELECT term, term_ko, definition, kb_id, occurrence_count
                     FROM glossary_terms
-                    WHERE kb_id LIKE 'PBU_%'
+                    WHERE kb_id LIKE 'PBU_%%'
                     AND status = 'approved'
                     AND definition IS NOT NULL
                     AND length(definition) > 20
@@ -285,9 +285,13 @@ class DistillService:
                 {"limit": top_n},
             )
             for row in result.fetchall():
+                # term_ko(한글 용어) 우선 사용
+                display_term = row[1] if row[1] and row[1] != row[0] else row[0]
                 terms.append({
-                    "term": row[0], "definition": row[1],
-                    "kb_id": row[2], "count": row[3],
+                    "term": display_term,
+                    "term_physical": row[0],
+                    "definition": row[2],
+                    "kb_id": row[3], "count": row[4],
                 })
 
         # 일반어 제외 목록 (GS 도메인 특화가 아닌 한국어 일반 명사)
@@ -364,10 +368,14 @@ class DistillService:
             last_char = term[-1] if term else ""
             has_jongseong = last_char >= "\uac00" and (ord(last_char) - 0xAC00) % 28 != 0
             subj = f"{term}이" if has_jongseong else f"{term}가"
+            physical = t.get("term_physical", "")
             questions = [
                 f"{subj} 뭐야?",
                 f"{term}에 대해 설명해줘",
             ]
+            # 물리명(약어)과 한글명이 다르면 약어 질문도 추가
+            if physical and physical != term and physical.upper() == physical:
+                questions.append(f"{physical}가 뭐야?")
             for q in questions:
                 qa_pairs.append({
                     "id": str(uuid.uuid4()),
