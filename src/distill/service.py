@@ -142,7 +142,7 @@ class DistillService:
         from src.distill.data_gen.llm_helper import LLMHelper
         from src.distill.data_gen.quality_filter import QualityFilter
         profile = dict_to_profile(profile_dict)
-        llm_helper = LLMHelper(self.llm, concurrency=3, timeout=60)
+        llm_helper = LLMHelper(self.llm, self.qdrant_url, concurrency=3, timeout_sec=60)
         qf = QualityFilter(llm_helper, self.embedder, profile)
 
         test_qa = await generate_test_qa(
@@ -191,7 +191,7 @@ class DistillService:
         from src.distill.config import dict_to_profile
         profile = dict_to_profile(profile_dict) if profile_dict else None
 
-        llm_helper = LLMHelper(self.llm, concurrency=3, timeout=60)
+        llm_helper = LLMHelper(self.llm, self.qdrant_url, concurrency=3, timeout_sec=60)
         builder = DatasetBuilder(llm_helper, profile)
 
         # ID 할당 (augmented_from 추적용)
