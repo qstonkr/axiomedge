@@ -716,6 +716,48 @@ async def generate_term_qa(request: GenerateTermQARequest):
 
 
 # ---------------------------------------------------------------------------
+# Answer Cleanup (답변 정리)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/cleanup-answers")
+async def cleanup_answers(profile_name: str, source_type: str | None = None):
+    """기존 학습 데이터 답변에서 마크다운/추론/출처 참조 일괄 제거."""
+    repo = _get_distill_repo()
+    result = await repo.list_training_data(
+        profile_name=profile_name, source_type=source_type, limit=10000,
+    )
+    items = result.get("items", [])
+    if not items:
+        return {"cleaned": 0}
+
+    import re
+    updates = []
+    for it in items:
+        answer = it.get("answer", "")
+        cleaned = answer
+        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
+        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
+        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
+        cleaned = re.sub(r"---+", "", cleaned)
+        cleaned = re.sub(
+            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
+            "", cleaned,
+        )
+        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"  +", " ", cleaned)
+        cleaned = cleaned.strip()
+
+        if cleaned != answer:
+            updates.append({"id": it["id"], "answer": cleaned})
+
+    if updates:
+        await repo.bulk_update_training_data(updates)
+
+    return {"cleaned": len(updates), "total": len(items)}
+
+
+# ---------------------------------------------------------------------------
 # Data Reset (초기화)
 # ---------------------------------------------------------------------------
 

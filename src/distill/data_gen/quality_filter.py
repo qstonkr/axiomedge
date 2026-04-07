@@ -90,16 +90,42 @@ class QualityFilter:
         return answers[best_idx], avg_sim
 
     async def convert_to_answer_only(self, question: str, full_answer: str) -> str:
-        """Teacher LLM으로 추론 과정 제거."""
-        prompt = (
-            "다음 답변에서 추론 과정('~이므로', '~를 확인해보면' 등)을 제거하고 "
-            "핵심 답변만 간결하게 남겨주세요. 번호가 있는 절차형이면 그대로 유지하세요.\n\n"
-            f"질문: {question}\n"
-            f"원본 답변: {full_answer}\n\n"
-            "간결한 답변:"
+        """추론 과정 + 마크다운 서식 + 출처 참조 제거."""
+        import re
+
+        # 1차: 패턴 기반 정리 (빠름, LLM 호출 불필요)
+        cleaned = full_answer
+        # 출처 참조 제거: [1], [2], [문서 1] 등
+        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
+        # 마크다운 서식 제거
+        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
+        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
+        cleaned = re.sub(r"---+", "", cleaned)
+        # "제공된 문서에 따르면" 등 메타 표현 제거
+        cleaned = re.sub(
+            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
+            "", cleaned,
         )
-        result = await self.llm.call(prompt, temperature=0.1)
-        return result if result else full_answer
+        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
+        # 연속 공백/줄바꿈 정리
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"  +", " ", cleaned)
+        # 불릿 포인트 정리: "- " → 번호로
+        lines = cleaned.strip().split("\n")
+        result_lines = []
+        num = 1
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- ") or stripped.startswith("* "):
+                result_lines.append(f"{num}. {stripped[2:]}")
+                num += 1
+            else:
+                result_lines.append(line)
+                if stripped and not stripped[0].isdigit():
+                    num = 1  # 번호 리셋
+        cleaned = "\n".join(result_lines).strip()
+
+        return cleaned
 
     async def normalize_answer_length(self, answer: str) -> str:
         """max_answer_tokens 초과 시 요약."""
