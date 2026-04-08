@@ -14,17 +14,15 @@ from __future__ import annotations
 
 import logging
 import os
-import ssl
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# SSL 우회 (회사 프록시 self-signed cert 대응)
-ssl._create_default_https_context = ssl._create_unverified_context
-os.environ.setdefault("CURL_CA_BUNDLE", "")
-os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+# SSL 우회 — HuggingFace만 (사내망 프록시 self-signed cert 대응)
+os.environ.setdefault("HF_HUB_DISABLE_SSL_VERIFY", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("HF_HUB_OFFLINE", "1")  # 캐시된 모델만 사용
+os.environ.setdefault("REQUESTS_CA_BUNDLE", "")  # HF requests용
 
 from src.distill.config import DistillProfile
 

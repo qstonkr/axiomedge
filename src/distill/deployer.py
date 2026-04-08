@@ -48,8 +48,7 @@ class DistillDeployer:
 
         import boto3
 
-        # SHA256 계산 (로컬 파일이 있으면)
-        sha256 = ""
+        sha256 = build_info.get("gguf_sha256", "")
         gguf_key = f"{self.prefix}{version}/model.gguf"
 
         def _create_manifest():

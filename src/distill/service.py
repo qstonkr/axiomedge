@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from src.distill.config import DistillConfig, DistillProfile
 from src.distill.repository import DistillRepository
 
 logger = logging.getLogger(__name__)
+
+_re_num_pattern = re.compile(r"^\d+[개월주년일편점]")
 
 
 class DistillService:
@@ -354,8 +357,7 @@ class DistillService:
                 continue
 
             # 숫자/기간 패턴 제외 (1개월전, 12개월, 13주 등)
-            import re
-            if re.match(r"^\d+[개월주년일편점]", term):
+            if _re_num_pattern.match(term):
                 continue
 
             # 1~2글자 영문 약어 제외 (너무 짧아서 의미 없음)

@@ -149,19 +149,42 @@ def upload_to_s3(binary_path: Path, version: str) -> dict:
 
 
 def update_manifest(version: str, app_downloads: dict) -> None:
-    """기존 manifest.json에 app_version + app_downloads 추가."""
-    # 현재 manifest 가져오기 (S3에서)
+    """기존 manifest.json에 app_version + app_downloads 추가.
+
+    DB에서 프로필 목록을 API로 가져옴 (YAML 사용하지 않음).
+    """
     import boto3
+
+    import httpx
+
+    # DB에서 프로필 가져오기 (API 경유)
+    api_url = os.getenv("API_URL", "http://localhost:8000")
+    try:
+        resp = httpx.get(f"{api_url}/api/v1/distill/profiles", timeout=10)
+        profiles = resp.json().get("profiles", {})
+    except Exception as e:
+        logger.error("Failed to fetch profiles from API: %s", e)
+        logger.info("Falling back to S3 bucket/prefix from env vars")
+        profiles = {"default": {"config": json.dumps({
+            "deploy": {"s3_bucket": S3_BUCKET, "s3_prefix": S3_PREFIX.replace("apps/edge/", "models/edge/")},
+        })}}
 
     s3 = boto3.client("s3")
 
-    # 프로필별 manifest 찾기
-    from src.distill.config import load_config
-    config = load_config()
-    for name, profile in config.profiles.items():
-        manifest_key = f"{profile.deploy.s3_prefix}manifest.json"
+    for name, profile in profiles.items():
+        config = profile.get("config", "{}")
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except (ValueError, TypeError):
+                config = {}
+        deploy = config.get("deploy", {})
+        bucket = deploy.get("s3_bucket", S3_BUCKET)
+        prefix = deploy.get("s3_prefix", "models/edge/")
+
+        manifest_key = f"{prefix}manifest.json"
         try:
-            resp = s3.get_object(Bucket=profile.deploy.s3_bucket, Key=manifest_key)
+            resp = s3.get_object(Bucket=bucket, Key=manifest_key)
             manifest = json.loads(resp["Body"].read())
         except Exception:
             manifest = {}
@@ -170,12 +193,12 @@ def update_manifest(version: str, app_downloads: dict) -> None:
         manifest["app_downloads"] = app_downloads
 
         s3.put_object(
-            Bucket=profile.deploy.s3_bucket,
+            Bucket=bucket,
             Key=manifest_key,
             Body=json.dumps(manifest, ensure_ascii=False, indent=2),
             ContentType="application/json",
         )
-        logger.info("Updated manifest: s3://%s/%s", profile.deploy.s3_bucket, manifest_key)
+        logger.info("Updated manifest: s3://%s/%s", bucket, manifest_key)
 
 
 def main():

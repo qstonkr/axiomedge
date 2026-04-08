@@ -418,8 +418,6 @@ async def smart_approve(profile_name: str, source_type: str | None = None):
     3. 마크다운 잔존 → cleanup 후 승인
     4. 나머지 → 승인
     """
-    import re
-
     repo = _get_distill_repo()
     result = await repo.list_training_data(
         profile_name=profile_name, source_type=source_type,
@@ -435,6 +433,8 @@ async def smart_approve(profile_name: str, source_type: str | None = None):
         "직접적인 정보가", "직접적인 정보는",
         "명확한 정보가", "구체적인 정보가 부족",
     ]
+
+    from src.distill.data_gen.quality_filter import cleanup_answer_text
 
     approve_ids = []
     reject_ids = []
@@ -455,21 +455,8 @@ async def smart_approve(profile_name: str, source_type: str | None = None):
             reject_ids.append(item_id)
             continue
 
-        # 마크다운 cleanup
-        cleaned = answer
-        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
-        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
-        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
-        cleaned = re.sub(r"---+", "", cleaned)
-        cleaned = re.sub(
-            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
-            "", cleaned,
-        )
-        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        cleaned = re.sub(r"  +", " ", cleaned)
-        cleaned = cleaned.strip()
-
+        # 마크다운 cleanup (공통 함수)
+        cleaned = cleanup_answer_text(answer)
         if cleaned != answer:
             cleanup_updates.append({"id": item_id, "answer": cleaned})
 
@@ -812,23 +799,12 @@ async def cleanup_answers(profile_name: str, source_type: str | None = None):
     if not items:
         return {"cleaned": 0}
 
-    import re
+    from src.distill.data_gen.quality_filter import cleanup_answer_text
+
     updates = []
     for it in items:
         answer = it.get("answer", "")
-        cleaned = answer
-        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
-        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
-        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
-        cleaned = re.sub(r"---+", "", cleaned)
-        cleaned = re.sub(
-            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
-            "", cleaned,
-        )
-        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        cleaned = re.sub(r"  +", " ", cleaned)
-        cleaned = cleaned.strip()
+        cleaned = cleanup_answer_text(answer)
 
         if cleaned != answer:
             updates.append({"id": it["id"], "answer": cleaned})
@@ -910,18 +886,22 @@ async def get_app_info(profile_name: str):
     try:
         from src.distill.config import dict_to_profile
         dp = dict_to_profile(profile)
-        import boto3
-        s3 = boto3.client("s3")
-        manifest_key = f"{dp.deploy.s3_prefix}manifest.json"
-        resp = s3.get_object(Bucket=dp.deploy.s3_bucket, Key=manifest_key)
-        import json as _json
-        manifest = _json.loads(resp["Body"].read())
-        return {
-            "app_version": manifest.get("app_version", ""),
-            "app_downloads": manifest.get("app_downloads", {}),
-            "model_version": manifest.get("version", ""),
-            "manifest_url": f"s3://{dp.deploy.s3_bucket}/{manifest_key}",
-        }
+
+        def _fetch():
+            import boto3
+            s3 = boto3.client("s3")
+            manifest_key = f"{dp.deploy.s3_prefix}manifest.json"
+            resp = s3.get_object(Bucket=dp.deploy.s3_bucket, Key=manifest_key)
+            import json as _json
+            manifest = _json.loads(resp["Body"].read())
+            return {
+                "app_version": manifest.get("app_version", ""),
+                "app_downloads": manifest.get("app_downloads", {}),
+                "model_version": manifest.get("version", ""),
+                "manifest_url": f"s3://{dp.deploy.s3_bucket}/{manifest_key}",
+            }
+
+        return await asyncio.to_thread(_fetch)
     except Exception as e:
         return {"app_version": "", "app_downloads": {}, "error": str(e)}
 
