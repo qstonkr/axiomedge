@@ -643,16 +643,37 @@ with tab_curation:
 
                 st.markdown("---")
 
-                # 변형 데이터 리뷰 (_aug 소스타입)
+                # 변형 데이터 리뷰
+                st.subheader("변형 데이터 리뷰")
+                aug_status = st.selectbox(
+                    "상태", options=["pending", "approved", "rejected", None],
+                    format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
+                    key="aug_status",
+                )
                 aug_page = st.number_input("페이지", value=1, min_value=1, key="aug_page")
+
+                # _aug 소스타입을 API에서 직접 필터 (test_seed_aug)
                 aug_data = api_client.list_training_data(
-                    selected, limit=20, offset=(aug_page - 1) * 20,
+                    selected, source_type="test_seed_aug", status=aug_status,
+                    limit=20, offset=(aug_page - 1) * 20,
                 )
                 if not api_failed(aug_data):
-                    # _aug가 포함된 것만 필터
-                    aug_items = [it for it in aug_data.get("items", [])
-                                 if "_aug" in (it.get("source_type") or "")]
-                    st.caption(f"변형 데이터: {len(aug_items)}건")
+                    aug_items = aug_data.get("items", [])
+                    aug_total = aug_data.get("total", 0)
+                    st.caption(f"변형 데이터: {aug_total}건 (페이지 {aug_page}/{max(1, (aug_total + 19) // 20)})")
+
+                    # 스마트 일괄 승인
+                    if aug_total > 0:
+                        if st.button("✅ 스마트 일괄 승인", key="btn_aug_smart_approve"):
+                            result = api_client.smart_approve(selected, source_type="test_seed_aug")
+                            if not api_failed(result):
+                                st.success(
+                                    f"승인: {result.get('approved', 0)}건 | "
+                                    f"거부: {result.get('rejected', 0)}건"
+                                )
+                                st.cache_data.clear()
+                                st.rerun()
+
                     for it in aug_items:
                         with st.container(border=True):
                             st.markdown(
