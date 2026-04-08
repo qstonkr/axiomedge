@@ -187,12 +187,14 @@ class DistillService:
         from src.distill.data_gen.llm_helper import LLMHelper
 
         repo = DistillRepository(self.session_factory)
+        # test_seed만 augmentation (용어 QA는 정의 질문이라 변형 불필요)
         result = await repo.list_training_data(
-            profile_name=profile_name, status="approved", limit=10000,
+            profile_name=profile_name, status="approved",
+            source_type="test_seed", limit=10000,
         )
         approved = result.get("items", [])
         if not approved:
-            raise ValueError("No approved data to augment")
+            raise ValueError("No approved test_seed data to augment")
 
         batch_id = str(uuid.uuid4())
 
