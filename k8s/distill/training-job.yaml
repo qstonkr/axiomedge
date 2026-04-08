@@ -1,0 +1,95 @@
+# Distill Training Job — GPU 노드에서 LoRA SFT 학습
+# kubectl apply -f k8s/distill/training-job.yaml
+#
+# 사용법:
+#   1. 학습 데이터(JSONL)를 S3에 업로드
+#   2. 이 Job을 실행 → GPU Pod에서 학습
+#   3. 완료 후 GGUF를 S3에 업로드
+#   4. Pod 자동 종료 (restartPolicy: Never)
+#
+# 환경변수로 빌드 설정 전달:
+#   BUILD_ID, S3_TRAIN_PATH, BASE_MODEL, LORA_R, LORA_ALPHA, EPOCHS 등
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: distill-train-${BUILD_ID}
+  namespace: knowledge
+  labels:
+    app: distill-trainer
+    build-id: "${BUILD_ID}"
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600  # 완료 후 1시간 뒤 자동 삭제
+  template:
+    metadata:
+      labels:
+        app: distill-trainer
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/instance-type: g4dn.xlarge  # GPU 노드
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: trainer
+          image: ${DOCKER_REGISTRY}/distill-trainer:latest
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+              memory: "16Gi"
+            requests:
+              nvidia.com/gpu: "1"
+              memory: "8Gi"
+              cpu: "4"
+          env:
+            - name: BUILD_ID
+              value: "${BUILD_ID}"
+            - name: S3_TRAIN_PATH
+              value: "${S3_TRAIN_PATH}"
+            - name: S3_OUTPUT_PATH
+              value: "${S3_OUTPUT_PATH}"
+            - name: BASE_MODEL
+              value: "${BASE_MODEL}"
+            - name: LORA_R
+              value: "${LORA_R}"
+            - name: LORA_ALPHA
+              value: "${LORA_ALPHA}"
+            - name: EPOCHS
+              value: "${EPOCHS}"
+            - name: BATCH_SIZE
+              value: "${BATCH_SIZE}"
+            - name: LEARNING_RATE
+              value: "${LEARNING_RATE}"
+            - name: MAX_SEQ_LENGTH
+              value: "${MAX_SEQ_LENGTH}"
+            - name: AWS_REGION
+              value: "ap-northeast-2"
+          envFrom:
+            - secretRef:
+                name: aws-credentials
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "=== Distill Training Job ==="
+              echo "Build: $BUILD_ID"
+              echo "Model: $BASE_MODEL"
+
+              # 학습 데이터 다운로드
+              mkdir -p /data /output
+              aws s3 sync $S3_TRAIN_PATH /data/
+
+              # 학습 실행
+              python3 /app/train_remote.py \
+                --data-dir /data \
+                --output-dir /output \
+                --build-id $BUILD_ID
+
+              # 결과 업로드
+              aws s3 sync /output/ $S3_OUTPUT_PATH
+
+              echo "=== Training Complete ==="

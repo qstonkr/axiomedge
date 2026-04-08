@@ -636,7 +636,45 @@ class DistillService:
         self, build_id: str, profile: DistillProfile,
         data_path: str, repo: DistillRepository, build_dir: Path,
     ) -> str:
-        """LoRA SFT 학습."""
+        """LoRA SFT 학습 (GPU EC2 우선, 없으면 로컬)."""
+        import os
+
+        gpu_instance = os.getenv("DISTILL_GPU_INSTANCE_ID", "")
+
+        if gpu_instance:
+            # GPU EC2 원격 학습
+            logger.info("Using GPU EC2 instance for training: %s", gpu_instance)
+            from src.distill.gpu_trainer import run_gpu_training
+
+            profile_dict = await repo.get_profile(profile.search_group)
+            deploy_config = profile_dict.get("config", {}) if profile_dict else {}
+            if isinstance(deploy_config, str):
+                deploy_config = json.loads(deploy_config) if deploy_config else {}
+
+            result = await run_gpu_training(
+                build_id=build_id,
+                jsonl_path=data_path,
+                config={
+                    "base_model": profile.base_model,
+                    "lora": {"r": profile.lora.r, "alpha": profile.lora.alpha,
+                             "dropout": profile.lora.dropout},
+                    "training": {"epochs": profile.training.epochs,
+                                 "batch_size": profile.training.batch_size,
+                                 "learning_rate": profile.training.learning_rate},
+                },
+                s3_bucket=profile.deploy.s3_bucket,
+                s3_prefix=profile.deploy.s3_prefix,
+            )
+
+            if result.get("status") != "success":
+                raise RuntimeError(f"GPU training failed: {result.get('error', 'unknown')}")
+
+            # TODO: S3에서 학습 결과 다운로드
+            model_path = str(build_dir / "model" / "merged")
+            return model_path
+
+        # 로컬 학습 (fallback)
+        logger.info("Using local CPU/MPS for training (no GPU instance configured)")
         from src.distill.trainer import DistillTrainer
 
         trainer = DistillTrainer(profile, output_dir=str(build_dir / "model"))
