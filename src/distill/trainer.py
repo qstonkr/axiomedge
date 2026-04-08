@@ -13,9 +13,16 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+# SSL 우회 — HuggingFace만 (사내망 프록시 self-signed cert 대응)
+os.environ.setdefault("HF_HUB_DISABLE_SSL_VERIFY", "1")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")  # 캐시된 모델만 사용
+os.environ.setdefault("REQUESTS_CA_BUNDLE", "")  # HF requests용
 
 from src.distill.config import DistillProfile
 
@@ -89,7 +96,7 @@ class DistillTrainer:
             per_device_train_batch_size=train_cfg.batch_size,
             gradient_accumulation_steps=train_cfg.gradient_accumulation,
             learning_rate=train_cfg.learning_rate,
-            max_seq_length=train_cfg.max_seq_length,
+            max_length=train_cfg.max_seq_length,
             logging_steps=10,
             save_strategy="epoch",
             eval_strategy="epoch" if "test" in dataset else "no",

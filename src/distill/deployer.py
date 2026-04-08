@@ -48,8 +48,7 @@ class DistillDeployer:
 
         import boto3
 
-        # SHA256 계산 (로컬 파일이 있으면)
-        sha256 = ""
+        sha256 = build_info.get("gguf_sha256", "")
         gguf_key = f"{self.prefix}{version}/model.gguf"
 
         def _create_manifest():
@@ -62,6 +61,15 @@ class DistillDeployer:
                 ExpiresIn=86400,
             )
 
+            # 기존 manifest에서 app 정보 유지
+            existing_manifest = {}
+            manifest_key = f"{self.prefix}manifest.json"
+            try:
+                resp = s3.get_object(Bucket=self.bucket, Key=manifest_key)
+                existing_manifest = json.loads(resp["Body"].read())
+            except Exception:
+                pass
+
             manifest = {
                 "version": version,
                 "sha256": sha256,
@@ -73,9 +81,13 @@ class DistillDeployer:
                 "eval_faithfulness": build_info.get("eval_faithfulness"),
                 "eval_relevancy": build_info.get("eval_relevancy"),
                 "gguf_size_mb": build_info.get("gguf_size_mb"),
+                "gguf_sha256": build_info.get("gguf_sha256", ""),
                 "quantize_method": build_info.get("quantize_method"),
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "format_version": "1.0",
+                "format_version": "2.0",
+                # 앱 정보 유지 (build_edge_binary.py에서 업데이트)
+                "app_version": existing_manifest.get("app_version", ""),
+                "app_downloads": existing_manifest.get("app_downloads", {}),
             }
 
             # manifest 업로드

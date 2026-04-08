@@ -643,16 +643,37 @@ with tab_curation:
 
                 st.markdown("---")
 
-                # 변형 데이터 리뷰 (_aug 소스타입)
+                # 변형 데이터 리뷰
+                st.subheader("변형 데이터 리뷰")
+                aug_status = st.selectbox(
+                    "상태", options=["pending", "approved", "rejected", None],
+                    format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
+                    key="aug_status",
+                )
                 aug_page = st.number_input("페이지", value=1, min_value=1, key="aug_page")
+
+                # _aug 소스타입을 API에서 직접 필터 (test_seed_aug)
                 aug_data = api_client.list_training_data(
-                    selected, limit=20, offset=(aug_page - 1) * 20,
+                    selected, source_type="test_seed_aug", status=aug_status,
+                    limit=20, offset=(aug_page - 1) * 20,
                 )
                 if not api_failed(aug_data):
-                    # _aug가 포함된 것만 필터
-                    aug_items = [it for it in aug_data.get("items", [])
-                                 if "_aug" in (it.get("source_type") or "")]
-                    st.caption(f"변형 데이터: {len(aug_items)}건")
+                    aug_items = aug_data.get("items", [])
+                    aug_total = aug_data.get("total", 0)
+                    st.caption(f"변형 데이터: {aug_total}건 (페이지 {aug_page}/{max(1, (aug_total + 19) // 20)})")
+
+                    # 스마트 일괄 승인
+                    if aug_total > 0:
+                        if st.button("✅ 스마트 일괄 승인", key="btn_aug_smart_approve"):
+                            result = api_client.smart_approve(selected, source_type="test_seed_aug")
+                            if not api_failed(result):
+                                st.success(
+                                    f"승인: {result.get('approved', 0)}건 | "
+                                    f"거부: {result.get('rejected', 0)}건"
+                                )
+                                st.cache_data.clear()
+                                st.rerun()
+
                     for it in aug_items:
                         with st.container(border=True):
                             st.markdown(
@@ -881,6 +902,42 @@ with tab_servers:
                                 api_client.delete_edge_server(srv["store_id"])
                                 st.cache_data.clear()
                                 st.rerun()
+
+            st.markdown("---")
+
+            # ── 앱 빌드 관리 ──
+            st.subheader("앱 빌드 관리")
+            st.caption("엣지 서버 바이너리를 빌드하고 S3에 업로드합니다.")
+
+            # 현재 앱 버전 표시
+            app_info = api_client.get_app_info(selected)
+            if not api_failed(app_info):
+                ai1, ai2 = st.columns(2)
+                with ai1:
+                    st.metric("현재 앱 버전", app_info.get("app_version") or "미배포")
+                with ai2:
+                    st.metric("현재 모델 버전", app_info.get("model_version") or "미배포")
+                downloads = app_info.get("app_downloads", {})
+                if downloads:
+                    st.caption("OS별 다운로드:")
+                    for platform_key, info in downloads.items():
+                        st.markdown(f"  - **{platform_key}**: {info.get('size_mb', '?')}MB")
+
+            with st.expander("앱 바이너리 빌드", expanded=False):
+                app_ver = st.text_input("앱 버전", value="v1.0.0", key="app_version")
+                st.markdown("**빌드 명령어** (터미널에서 실행):")
+                st.code(
+                    f"uv run python scripts/build_edge_binary.py "
+                    f"--version {app_ver} --upload --update-manifest",
+                    language="bash",
+                )
+                st.caption(
+                    "PyInstaller로 빌드 → S3 업로드 → manifest 갱신\n\n"
+                    "- 현재 OS용 바이너리만 빌드됩니다\n"
+                    "- 다른 OS용은 해당 OS에서 실행하세요\n"
+                    "- `--upload`: S3에 업로드\n"
+                    "- `--update-manifest`: manifest.json에 app_downloads 추가"
+                )
 
             st.markdown("---")
 

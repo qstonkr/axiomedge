@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from src.distill.config import DistillConfig, DistillProfile
 from src.distill.repository import DistillRepository
 
 logger = logging.getLogger(__name__)
+
+_re_num_pattern = re.compile(r"^\d+[개월주년일편점]")
 
 
 class DistillService:
@@ -187,12 +190,14 @@ class DistillService:
         from src.distill.data_gen.llm_helper import LLMHelper
 
         repo = DistillRepository(self.session_factory)
+        # test_seed만 augmentation (용어 QA는 정의 질문이라 변형 불필요)
         result = await repo.list_training_data(
-            profile_name=profile_name, status="approved", limit=10000,
+            profile_name=profile_name, status="approved",
+            source_type="test_seed", limit=10000,
         )
         approved = result.get("items", [])
         if not approved:
-            raise ValueError("No approved data to augment")
+            raise ValueError("No approved test_seed data to augment")
 
         batch_id = str(uuid.uuid4())
 
@@ -352,8 +357,7 @@ class DistillService:
                 continue
 
             # 숫자/기간 패턴 제외 (1개월전, 12개월, 13주 등)
-            import re
-            if re.match(r"^\d+[개월주년일편점]", term):
+            if _re_num_pattern.match(term):
                 continue
 
             # 1~2글자 영문 약어 제외 (너무 짧아서 의미 없음)
@@ -535,7 +539,8 @@ class DistillService:
         use_curated_data=True: DB에서 approved 데이터만 export (큐레이션 경로)
         use_curated_data=False: 자동 생성 + auto-approve (기존 경로)
         """
-        min_samples = self.config.defaults.min_training_samples
+        # 최소 학습 데이터 수 (파일럿: 200, 운영: distill.yaml에서 설정)
+        min_samples = 200
 
         # ── 큐레이션 경로: DB에서 approved 데이터 export ──
         if use_curated_data:
