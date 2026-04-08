@@ -537,7 +537,8 @@ class DistillService:
         use_curated_data=True: DB에서 approved 데이터만 export (큐레이션 경로)
         use_curated_data=False: 자동 생성 + auto-approve (기존 경로)
         """
-        min_samples = self.config.defaults.min_training_samples
+        # 최소 학습 데이터 수 (파일럿: 200, 운영: distill.yaml에서 설정)
+        min_samples = 200
 
         # ── 큐레이션 경로: DB에서 approved 데이터 export ──
         if use_curated_data:
