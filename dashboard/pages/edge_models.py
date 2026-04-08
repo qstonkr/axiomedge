@@ -905,6 +905,27 @@ with tab_servers:
 
             st.markdown("---")
 
+            # ── 앱 빌드 관리 ──
+            st.subheader("앱 빌드 관리")
+            st.caption("엣지 서버 바이너리를 빌드하고 S3에 업로드합니다.")
+            with st.expander("앱 바이너리 빌드", expanded=False):
+                app_ver = st.text_input("앱 버전", value="v1.0.0", key="app_version")
+                ab1, ab2 = st.columns(2)
+                with ab1:
+                    st.code(
+                        f"uv run python scripts/build_edge_binary.py "
+                        f"--version {app_ver} --upload --update-manifest",
+                        language="bash",
+                    )
+                with ab2:
+                    st.caption(
+                        "PyInstaller로 빌드 → S3 업로드 → manifest 갱신\n\n"
+                        "현재 OS용 바이너리만 빌드됩니다.\n"
+                        "다른 OS용은 해당 OS에서 실행하세요."
+                    )
+
+            st.markdown("---")
+
             # ── 새 서버 등록 ──
             st.subheader("새 서버 등록")
             with st.expander("설치 명령어 생성", expanded=False):
