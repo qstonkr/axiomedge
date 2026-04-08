@@ -908,21 +908,36 @@ with tab_servers:
             # ── 앱 빌드 관리 ──
             st.subheader("앱 빌드 관리")
             st.caption("엣지 서버 바이너리를 빌드하고 S3에 업로드합니다.")
+
+            # 현재 앱 버전 표시
+            app_info = api_client.get_app_info(selected)
+            if not api_failed(app_info):
+                ai1, ai2 = st.columns(2)
+                with ai1:
+                    st.metric("현재 앱 버전", app_info.get("app_version") or "미배포")
+                with ai2:
+                    st.metric("현재 모델 버전", app_info.get("model_version") or "미배포")
+                downloads = app_info.get("app_downloads", {})
+                if downloads:
+                    st.caption("OS별 다운로드:")
+                    for platform_key, info in downloads.items():
+                        st.markdown(f"  - **{platform_key}**: {info.get('size_mb', '?')}MB")
+
             with st.expander("앱 바이너리 빌드", expanded=False):
                 app_ver = st.text_input("앱 버전", value="v1.0.0", key="app_version")
-                ab1, ab2 = st.columns(2)
-                with ab1:
-                    st.code(
-                        f"uv run python scripts/build_edge_binary.py "
-                        f"--version {app_ver} --upload --update-manifest",
-                        language="bash",
-                    )
-                with ab2:
-                    st.caption(
-                        "PyInstaller로 빌드 → S3 업로드 → manifest 갱신\n\n"
-                        "현재 OS용 바이너리만 빌드됩니다.\n"
-                        "다른 OS용은 해당 OS에서 실행하세요."
-                    )
+                st.markdown("**빌드 명령어** (터미널에서 실행):")
+                st.code(
+                    f"uv run python scripts/build_edge_binary.py "
+                    f"--version {app_ver} --upload --update-manifest",
+                    language="bash",
+                )
+                st.caption(
+                    "PyInstaller로 빌드 → S3 업로드 → manifest 갱신\n\n"
+                    "- 현재 OS용 바이너리만 빌드됩니다\n"
+                    "- 다른 OS용은 해당 OS에서 실행하세요\n"
+                    "- `--upload`: S3에 업로드\n"
+                    "- `--update-manifest`: manifest.json에 app_downloads 추가"
+                )
 
             st.markdown("---")
 

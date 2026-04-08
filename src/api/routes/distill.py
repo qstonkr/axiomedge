@@ -896,6 +896,37 @@ async def delete_build(build_id: str):
 
 
 # ---------------------------------------------------------------------------
+# App Build (앱 빌드/배포)
+# ---------------------------------------------------------------------------
+
+@router.get("/app/info")
+async def get_app_info(profile_name: str):
+    """현재 앱 버전 + 다운로드 정보 조회 (manifest에서)."""
+    repo = _get_distill_repo()
+    profile = await repo.get_profile(profile_name)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    try:
+        from src.distill.config import dict_to_profile
+        dp = dict_to_profile(profile)
+        import boto3
+        s3 = boto3.client("s3")
+        manifest_key = f"{dp.deploy.s3_prefix}manifest.json"
+        resp = s3.get_object(Bucket=dp.deploy.s3_bucket, Key=manifest_key)
+        import json as _json
+        manifest = _json.loads(resp["Body"].read())
+        return {
+            "app_version": manifest.get("app_version", ""),
+            "app_downloads": manifest.get("app_downloads", {}),
+            "model_version": manifest.get("version", ""),
+            "manifest_url": f"s3://{dp.deploy.s3_bucket}/{manifest_key}",
+        }
+    except Exception as e:
+        return {"app_version": "", "app_downloads": {}, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
 # Edge Servers (엣지 서버 관리)
 # ---------------------------------------------------------------------------
 

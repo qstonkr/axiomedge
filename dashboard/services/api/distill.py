@@ -202,6 +202,13 @@ def list_model_versions(profile_name: str) -> dict:
     return _get("/api/v1/distill/builds/versions", profile_name=profile_name)
 
 
+# ── 앱 빌드 ──
+
+@st.cache_data(ttl=30)
+def get_app_info(profile_name: str) -> dict:
+    return _get("/api/v1/distill/app/info", profile_name=profile_name)
+
+
 # ── 엣지 서버 관리 ──
 
 @st.cache_data(ttl=15)
