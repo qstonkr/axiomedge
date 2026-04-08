@@ -760,6 +760,70 @@ Error response format:
 }
 ```
 
+## Distill (Edge Model)
+
+### Profiles
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/distill/profiles` | 모든 프로필 조회 |
+| GET | `/api/v1/distill/profiles/{name}` | 프로필 상세 |
+| POST | `/api/v1/distill/profiles` | 프로필 생성 |
+| PUT | `/api/v1/distill/profiles/{name}` | 프로필 수정 |
+| DELETE | `/api/v1/distill/profiles/{name}` | 프로필 삭제 |
+| GET | `/api/v1/distill/search-groups` | 사용 가능한 검색 그룹 |
+
+### Builds
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/distill/builds` | 빌드 시작 (`use_curated_data: bool` 지원) |
+| GET | `/api/v1/distill/builds` | 빌드 이력 |
+| GET | `/api/v1/distill/builds/versions` | 모델 버전 히스토리 (배포/완료 빌드만) |
+| GET | `/api/v1/distill/builds/{build_id}` | 빌드 상세 |
+| POST | `/api/v1/distill/builds/{build_id}/deploy` | 배포 (S3 manifest 갱신) |
+| POST | `/api/v1/distill/builds/{build_id}/rollback` | 롤백 (`rollback_from` 기록) |
+
+### Training Data (큐레이션)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/distill/training-data` | 학습 데이터 목록 (`batch_id`, `sort_by`, `sort_order` 지원) |
+| POST | `/api/v1/distill/training-data` | 수동 QA 추가 |
+| PUT | `/api/v1/distill/training-data/review` | 일괄 승인/거부 |
+| PUT | `/api/v1/distill/training-data/review-edit` | 개별 승인/거부 + 텍스트 편집 |
+| GET | `/api/v1/distill/training-data/stats` | 프로필별 통계 |
+| POST | `/api/v1/distill/training-data/generate` | 큐레이션용 데이터 생성 (백그라운드) |
+| POST | `/api/v1/distill/training-data/generate-test` | 테스트 시드 데이터 생성 |
+| GET | `/api/v1/distill/training-data/batches/{batch_id}` | 배치 생성 현황/통계 |
+
+### Edge Logs
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/distill/edge-logs/collect` | S3에서 엣지 로그 수집 |
+| GET | `/api/v1/distill/edge-logs` | 엣지 로그 목록 |
+| GET | `/api/v1/distill/edge-logs/analytics` | 사용 통계 (7일) |
+| GET | `/api/v1/distill/edge-logs/failed` | 실패 질의 목록 |
+
+### Edge Servers
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/distill/edge-servers/heartbeat` | heartbeat 수신 (Bearer 인증, 등록 겸용) |
+| GET | `/api/v1/distill/edge-servers` | 서버 목록 (필터: profile, status) |
+| GET | `/api/v1/distill/edge-servers/fleet-stats` | fleet 현황 통계 |
+| GET | `/api/v1/distill/edge-servers/{store_id}` | 서버 상세 |
+| DELETE | `/api/v1/distill/edge-servers/{store_id}` | 서버 등록 해제 |
+| POST | `/api/v1/distill/edge-servers/{store_id}/request-update` | 업데이트 요청 (model/app/both) |
+| POST | `/api/v1/distill/edge-servers/bulk-request-update` | 구버전 전체 업데이트 요청 |
+
+### Retrain
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/distill/retrain` | 실패 질문 → 학습 데이터 추가 |
+
 ## Rate Limits
 
 No built-in rate limiting. Use an API gateway (e.g., nginx, Kong) or K8s Ingress for production rate limiting.

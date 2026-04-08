@@ -75,10 +75,13 @@ class DistillBuildModel(DistillBase):
     # 양자화
     gguf_size_mb = Column(Float, nullable=True)
     quantize_method = Column(String(20), nullable=True)
+    gguf_sha256 = Column(String(64), nullable=True)
+    model_name = Column(String(100), nullable=True)  # 베이스 모델명 (예: Qwen2.5-0.5B)
 
     # 배포
     s3_uri = Column(String(500), nullable=True)
     deployed_at = Column(DateTime(timezone=True), nullable=True)
+    rollback_from = Column(String(36), nullable=True)  # 롤백 시 이전 빌드 id
 
     # 에러
     error_message = Column(Text, nullable=True)
@@ -141,8 +144,77 @@ class DistillTrainingDataModel(DistillBase):
     used_in_build = Column(String(36), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
 
+    # 품질 점수 (큐레이션)
+    consistency_score = Column(Float, nullable=True)
+    generality_score = Column(Float, nullable=True)
+    augmentation_verified = Column(Boolean, nullable=True)
+
+    # 계보
+    augmented_from = Column(String(36), nullable=True)  # 원본 QA id (변형인 경우)
+    generation_batch_id = Column(String(36), nullable=True)
+
+    # 리뷰
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    review_comment = Column(Text, nullable=True)
+
     __table_args__ = (
         Index("idx_train_data_profile", "profile_name"),
         Index("idx_train_data_source", "source_type"),
         Index("idx_train_data_status", "status"),
+        Index("idx_train_data_batch", "generation_batch_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Edge Servers — 등록된 엣지 서버 (매장)
+# ---------------------------------------------------------------------------
+
+class DistillEdgeServerModel(DistillBase):
+    """등록된 엣지 서버 (매장)."""
+
+    __tablename__ = "distill_edge_servers"
+
+    id = Column(String(36), primary_key=True)
+    store_id = Column(String(100), nullable=False, unique=True)
+    profile_name = Column(String(100), nullable=False)
+    display_name = Column(String(200), nullable=True)
+
+    # 서버 상태 (heartbeat push로 갱신)
+    status = Column(String(20), nullable=False, default="unknown")
+    last_heartbeat = Column(DateTime(timezone=True), nullable=True)
+    server_ip = Column(String(45), nullable=True)
+    os_type = Column(String(20), nullable=True)  # linux | windows | darwin
+
+    # 앱 버전 (PyInstaller 바이너리)
+    app_version = Column(String(50), nullable=True)
+
+    # 모델 버전
+    model_version = Column(String(50), nullable=True)
+    model_sha256 = Column(String(64), nullable=True)
+
+    # 시스템 정보 (heartbeat에서 수신)
+    cpu_info = Column(String(100), nullable=True)
+    ram_total_mb = Column(Integer, nullable=True)
+    ram_used_mb = Column(Integer, nullable=True)
+    disk_free_mb = Column(Integer, nullable=True)
+
+    # 성능 (heartbeat에서 수신)
+    avg_latency_ms = Column(Integer, nullable=True)
+    total_queries = Column(Integer, default=0)
+    success_rate = Column(Float, nullable=True)
+
+    # 업데이트 요청 (중앙에서 설정, 엣지가 다음 sync 시 확인)
+    pending_model_update = Column(Boolean, nullable=False, default=False)
+    pending_app_update = Column(Boolean, nullable=False, default=False)
+
+    # 인증
+    api_key_hash = Column(String(64), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        Index("idx_edge_server_store", "store_id"),
+        Index("idx_edge_server_profile", "profile_name"),
+        Index("idx_edge_server_status", "status"),
     )

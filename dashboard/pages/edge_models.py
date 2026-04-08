@@ -10,7 +10,13 @@ import streamlit as st
 
 st.set_page_config(page_title="엣지 모델", page_icon="🤖", layout="wide")
 
-from components.constants import DISTILL_STATUS_ICONS, EDGE_LOG_SUCCESS_ICON  # noqa: E402
+from components.constants import (  # noqa: E402
+    CURATION_STATUS_ICONS,
+    DISTILL_STATUS_ICONS,
+    EDGE_LOG_SUCCESS_ICON,
+    EDGE_SERVER_STATUS_ICONS,
+    quality_badge,
+)
 from components.sidebar import hide_default_nav, render_sidebar  # noqa: E402
 from services import api_client  # noqa: E402
 from services.api_client import api_failed  # noqa: E402
@@ -20,7 +26,15 @@ render_sidebar(show_admin=True)
 
 st.title("🤖 엣지 모델 관리")
 
-tab_settings, tab_train, tab_ops = st.tabs(["설정", "학습", "운영"])
+# 프로필은 전체 페이지에서 1번만 로드
+_profiles_result = api_client.list_distill_profiles()
+_profiles_ok = not api_failed(_profiles_result)
+_all_profiles = _profiles_result.get("profiles", {}) if _profiles_ok else {}
+_enabled_profiles = [k for k, v in _all_profiles.items() if v.get("enabled")]
+
+tab_settings, tab_train, tab_curation, tab_servers, tab_ops = st.tabs([
+    "설정", "학습/모델관리", "데이터 큐레이션", "엣지 서버", "운영",
+])
 
 
 # =============================================================================
@@ -203,12 +217,11 @@ with tab_train:
         "데이터가 부족하면 KB 청크에서 보조 QA를 자동 생성합니다."
     )
 
-    profiles_result = api_client.list_distill_profiles()
-    if api_failed(profiles_result):
+    if not _profiles_ok:
         st.error("API 연결 실패")
     else:
-        profiles = profiles_result.get("profiles", {})
-        enabled = [k for k, v in profiles.items() if v.get("enabled")]
+        profiles = _all_profiles
+        enabled = _enabled_profiles
 
         if not enabled:
             st.info("활성화된 프로필이 없습니다. '설정' 탭에서 프로필을 만드세요.")
@@ -273,16 +286,42 @@ with tab_train:
             # ── 빌드 시작 ──
             st.subheader("모델 빌드")
 
-            bc1, bc2 = st.columns([3, 1])
-            with bc2:
-                if st.button("🚀 빌드 시작", type="primary", key="btn_build"):
+            # 승인 데이터 현황
+            approved_stats = api_client.get_training_data_stats(selected)
+            if not api_failed(approved_stats):
+                asc1, asc2, asc3 = st.columns(3)
+                with asc1:
+                    st.metric("승인 데이터", f"{approved_stats.get('total', 0):,}건")
+                with asc2:
+                    st.caption("큐레이션 탭에서 데이터를 준비하세요")
+
+            bc1, bc2, bc3 = st.columns(3)
+            with bc1:
+                if st.button("🚀 자동 생성 빌드", key="btn_build"):
                     result = api_client.trigger_distill_build({"profile_name": selected})
                     if not api_failed(result):
                         st.success(f"빌드 시작: {result.get('version', '')}")
                         st.cache_data.clear()
                         st.rerun()
-                    else:
-                        st.error(f"빌드 실패: {result.get('error', '')}")
+            with bc2:
+                approved_count = approved_stats.get("total", 0) if not api_failed(approved_stats) else 0
+                if approved_count > 0:
+                    if st.button("🚀 큐레이션 데이터 빌드", type="primary", key="btn_curated_build"):
+                        result = api_client.trigger_distill_build({
+                            "profile_name": selected,
+                            "use_curated_data": True,
+                        })
+                        if not api_failed(result):
+                            st.success(f"큐레이션 빌드 시작: {result.get('version', '')}")
+                            st.cache_data.clear()
+                            st.rerun()
+                else:
+                    st.button("🚀 큐레이션 데이터 빌드", disabled=True, key="btn_curated_build_disabled")
+            with bc3:
+                st.caption(
+                    "**자동 생성**: RAG 로그에서 자동 수집\n\n"
+                    "**큐레이션**: 승인된 데이터만 사용"
+                )
 
             # ── 빌드 이력 ──
             builds_result = api_client.list_distill_builds(profile_name=selected)
@@ -299,7 +338,16 @@ with tab_train:
                         col_info, col_metrics, col_actions = st.columns([3, 3, 2])
 
                         with col_info:
-                            st.markdown(f"**{build.get('version', '-')}**")
+                            # 테스트 빌드 뱃지
+                            import json as _json2
+                            ds = build.get("data_sources", "{}")
+                            try:
+                                ds_dict = _json2.loads(ds) if isinstance(ds, str) else ds or {}
+                            except (ValueError, TypeError):
+                                ds_dict = {}
+                            is_test = ds_dict.get("source") == "curated" or "test" in str(ds_dict)
+                            test_badge = " 🧪" if is_test else ""
+                            st.markdown(f"**{build.get('version', '-')}{test_badge}**")
                             st.caption(
                                 f"모델: {build.get('base_model', '').split('/')[-1]} | "
                                 f"데이터: {build.get('training_samples', 0):,}건"
@@ -335,6 +383,25 @@ with tab_train:
                                         st.success("롤백 완료")
                                         st.cache_data.clear()
                                         st.rerun()
+                            if not build.get("deployed_at") and status in ("completed", "failed"):
+                                if st.button("🗑️", key=f"del_build_{build['id']}", help="빌드 삭제"):
+                                    st.session_state[f"confirm_del_build_{build['id']}"] = True
+
+                        if st.session_state.get(f"confirm_del_build_{build.get('id')}"):
+                            st.warning(f"빌드 **{build.get('version')}**를 삭제하시겠습니까? S3 모델도 함께 삭제됩니다.")
+                            dc1, dc2 = st.columns(2)
+                            with dc1:
+                                if st.button("확인 삭제", type="primary", key=f"confirm_del_b_{build['id']}"):
+                                    result = api_client.delete_build(build["id"])
+                                    if not api_failed(result):
+                                        st.success("빌드 삭제 완료")
+                                        st.session_state[f"confirm_del_build_{build['id']}"] = False
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with dc2:
+                                if st.button("취소", key=f"cancel_del_b_{build['id']}"):
+                                    st.session_state[f"confirm_del_build_{build['id']}"] = False
+                                    st.rerun()
 
                         # 진행중 프로그레스
                         if status in ("generating", "training", "evaluating", "quantizing", "deploying"):
@@ -347,20 +414,541 @@ with tab_train:
                             st.error(f"[{build.get('error_step', '')}] {build['error_message']}")
 
 
+            # ── 베이스 모델 리셋 ──
+            st.markdown("---")
+            st.subheader("베이스 모델 리셋")
+            st.caption("파인튜닝을 초기화하고 원본 베이스 모델(양자화 GGUF)로 되돌립니다.")
+            if st.button("🔄 베이스 모델로 리셋", key="btn_reset_base"):
+                st.session_state["confirm_reset_base"] = True
+
+            if st.session_state.get("confirm_reset_base"):
+                st.warning("모든 파인튜닝을 무시하고 베이스 모델로 리셋합니다. 진행하시겠습니까?")
+                rc1, rc2 = st.columns(2)
+                with rc1:
+                    if st.button("확인", type="primary", key="btn_confirm_reset"):
+                        result = api_client.reset_to_base_model(selected)
+                        if not api_failed(result):
+                            st.success(f"베이스 모델 리셋 시작: {result.get('version', '')}")
+                            st.session_state["confirm_reset_base"] = False
+                            st.cache_data.clear()
+                            st.rerun()
+                with rc2:
+                    if st.button("취소", key="btn_cancel_reset"):
+                        st.session_state["confirm_reset_base"] = False
+                        st.rerun()
+
+            # ── 모델 버전 히스토리 ──
+            st.markdown("---")
+            st.subheader("모델 버전 히스토리")
+            versions_result = api_client.list_model_versions(selected)
+            if not api_failed(versions_result):
+                versions = versions_result.get("items", [])
+                if versions:
+                    import pandas as pd
+                    df = pd.DataFrame([
+                        {
+                            "버전": v.get("version", ""),
+                            "모델": v.get("model_name", v.get("base_model", "").split("/")[-1]),
+                            "데이터": f"{v.get('training_samples', 0):,}",
+                            "Loss": f"{v.get('train_loss', 0):.4f}" if v.get("train_loss") else "-",
+                            "크기(MB)": f"{v.get('gguf_size_mb', 0):.0f}" if v.get("gguf_size_mb") else "-",
+                            "SHA256": (v.get("gguf_sha256", "") or "")[:12] + "...",
+                            "상태": "🟢 배포중" if v.get("deployed_at") else "⚪ 이전",
+                        }
+                        for v in versions
+                    ])
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.info("배포된 빌드가 없습니다.")
+
+
 # =============================================================================
-# Tab 3: 운영 — 엣지 로그 + 재학습
+# Tab 3: 데이터 큐레이션
+# =============================================================================
+with tab_curation:
+    st.caption(
+        "학습 데이터를 자동 생성하고, 품질 점수(일관성/범용성)를 확인한 후 "
+        "승인/거부/편집하여 학습에 사용할 데이터를 큐레이션합니다."
+    )
+
+    if not _profiles_ok:
+        st.error("API 연결 실패")
+    else:
+        profiles = _all_profiles
+        enabled = _enabled_profiles
+
+        if not enabled:
+            st.info("활성화된 프로필이 없습니다.")
+        else:
+            selected = st.selectbox("프로필", options=enabled, key="curation_profile")
+
+            sub_data, sub_aug, sub_term = st.tabs(["📄 데이터셋", "🔄 질문 변형", "📚 용어 학습"])
+
+            # ==== 서브탭 1: 데이터셋 ====
+            with sub_data:
+                st.subheader("청크 기반 데이터 생성")
+                gen_col1, gen_col2 = st.columns(2)
+            with gen_col1:
+                if st.button("🔄 데이터 생성 시작", key="btn_gen_data"):
+                    result = api_client.generate_training_data({"profile_name": selected})
+                    if not api_failed(result):
+                        st.success("데이터 생성 시작됨")
+                        st.cache_data.clear()
+                        st.rerun()
+            with gen_col2:
+                if st.button("🧪 테스트 데이터 생성", key="btn_gen_test"):
+                    result = api_client.generate_test_data({
+                        "profile_name": selected, "count": 50,
+                    })
+                    if not api_failed(result):
+                        st.success("테스트 데이터 생성 시작됨 (백그라운드)")
+                        st.cache_data.clear()
+                        st.rerun()
+
+            # 배치 현황
+            stats = api_client.get_training_data_stats(selected)
+            if not api_failed(stats):
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                with mc1:
+                    st.metric("전체", f"{stats.get('total', 0):,}")
+                with mc2:
+                    st.metric("RAG 로그", f"{stats.get('usage_log', 0):,}")
+                with mc3:
+                    st.metric("청크 QA", f"{stats.get('chunk_qa', 0):,}")
+                with mc4:
+                    st.metric("수동/재학습", f"{stats.get('manual', 0) + stats.get('retrain', 0):,}")
+
+                st.markdown("---")
+
+                # ── Step 2: 리뷰 ──
+                st.subheader("리뷰")
+
+                # 필터
+                fc1, fc2, fc3, fc4 = st.columns(4)
+                with fc1:
+                    filter_status = st.selectbox(
+                        "상태", options=["pending", "approved", "rejected", None],
+                        format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
+                        index=0, key="cur_status",
+                    )
+                with fc2:
+                    filter_sort = st.selectbox(
+                        "정렬", options=["consistency_score", "generality_score", "created_at"],
+                        format_func=lambda x: {"consistency_score": "일관성↑", "generality_score": "범용성↑", "created_at": "최신"}[x],
+                        key="cur_sort",
+                    )
+                with fc3:
+                    filter_source = st.selectbox(
+                        "소스 타입", options=["test_seed", "usage_log", "chunk_qa", "manual", "retrain", None],
+                        format_func=lambda x: "전체" if x is None else x,
+                        key="cur_source",
+                    )
+                with fc4:
+                    cur_page = st.number_input("페이지", value=1, min_value=1, key="cur_page")
+
+                # 자동 필터 버튼
+                af1, af2 = st.columns(2)
+                with af1:
+                    if st.button("✅ 스마트 일괄 승인", key="btn_smart_approve"):
+                        result = api_client.smart_approve(selected, source_type=filter_source)
+                        if not api_failed(result):
+                            st.success(
+                                f"승인: {result.get('approved', 0)}건 | "
+                                f"거부: {result.get('rejected', 0)}건 | "
+                                f"정리: {result.get('cleaned', 0)}건"
+                            )
+                            st.cache_data.clear()
+                            st.rerun()
+                with af2:
+                    if st.button("❌ 범용성 0.3↓ 전체 거부", key="btn_auto_reject"):
+                        td = api_client.list_training_data(
+                            selected, status="pending", limit=10000,
+                        )
+                        if not api_failed(td):
+                            ids = [
+                                it["id"] for it in td.get("items", [])
+                                if (it.get("generality_score") or 1) <= 0.3
+                            ]
+                            if ids:
+                                api_client.review_training_data({"ids": ids, "status": "rejected"})
+                                st.success(f"{len(ids)}건 자동 거부")
+                                st.cache_data.clear()
+                                st.rerun()
+
+                # QA 카드 목록
+                page_size = 20
+                td_result = api_client.list_training_data(
+                    selected, status=filter_status, source_type=filter_source,
+                    limit=page_size, offset=(cur_page - 1) * page_size,
+                )
+                if not api_failed(td_result):
+                    items = td_result.get("items", [])
+                    total = td_result.get("total", 0)
+                    st.caption(f"총 {total}건 (페이지 {cur_page}/{max(1, (total + page_size - 1) // page_size)})")
+
+                    for item in items:
+                        with st.container(border=True):
+                            src_type = item.get("source_type", "")
+                            test_tag = " 🧪" if src_type == "test_seed" else ""
+                            hdr = (
+                                f"📊 일관성: {quality_badge(item.get('consistency_score'))}  "
+                                f"🌐 범용성: {quality_badge(item.get('generality_score'))}  "
+                                f"타입: {src_type}{test_tag}"
+                            )
+                            if item.get("augmented_from"):
+                                hdr += "  🔗 변형"
+                                if item.get("augmentation_verified"):
+                                    hdr += " ✅"
+                            st.markdown(hdr)
+
+                            st.markdown(f"**Q:** {item.get('question', '')}")
+                            st.caption(f"A: {item.get('answer', '')[:200]}")
+
+                            status_icon = CURATION_STATUS_ICONS.get(item.get("status", ""), "")
+                            ac1, ac2, ac3 = st.columns([1, 1, 2])
+                            with ac1:
+                                if item.get("status") != "approved":
+                                    if st.button("✅ 승인", key=f"approve_{item['id']}"):
+                                        api_client.review_training_data(
+                                            {"ids": [item["id"]], "status": "approved"},
+                                        )
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac2:
+                                if item.get("status") != "rejected":
+                                    if st.button("❌ 거부", key=f"reject_{item['id']}"):
+                                        api_client.review_training_data(
+                                            {"ids": [item["id"]], "status": "rejected"},
+                                        )
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac3:
+                                st.caption(status_icon)
+
+                st.markdown("---")
+                st.info("빌드는 **학습/모델관리** 탭에서 진행하세요.")
+
+            # ==== 서브탭 2: 질문 변형 ====
+            with sub_aug:
+                st.subheader("승인 데이터 질문 변형")
+                st.caption("승인된 QA를 다양한 표현으로 변형 → Hub Search로 검증 → pending 저장")
+                if st.button("🔄 질문 변형 생성 (x3)", key="btn_augment"):
+                    result = api_client.augment_training_data({
+                        "profile_name": selected, "max_variants": 3,
+                    })
+                    if not api_failed(result):
+                        st.success("질문 변형 생성 시작됨 (백그라운드)")
+                        st.cache_data.clear()
+                        st.rerun()
+
+                st.markdown("---")
+
+                # 변형 데이터 리뷰 (_aug 소스타입)
+                aug_page = st.number_input("페이지", value=1, min_value=1, key="aug_page")
+                aug_data = api_client.list_training_data(
+                    selected, limit=20, offset=(aug_page - 1) * 20,
+                )
+                if not api_failed(aug_data):
+                    # _aug가 포함된 것만 필터
+                    aug_items = [it for it in aug_data.get("items", [])
+                                 if "_aug" in (it.get("source_type") or "")]
+                    st.caption(f"변형 데이터: {len(aug_items)}건")
+                    for it in aug_items:
+                        with st.container(border=True):
+                            st.markdown(
+                                f"🔗 변형 | {CURATION_STATUS_ICONS.get(it.get('status', ''))}"
+                            )
+                            st.markdown(f"**Q:** {it.get('question', '')[:70]}")
+                            st.caption(f"A: {it.get('answer', '')[:100]}")
+                            ac1, ac2 = st.columns(2)
+                            with ac1:
+                                if it.get("status") != "approved":
+                                    if st.button("✅", key=f"aug_appr_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "approved"})
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac2:
+                                if it.get("status") != "rejected":
+                                    if st.button("❌", key=f"aug_rej_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "rejected"})
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+            # ==== 서브탭 3: 용어 학습 ====
+            with sub_term:
+                st.subheader("PBU 도메인 용어 QA")
+                st.caption("PBU_ 도메인 표준 용어 → '~가 뭐야?' QA 자동 생성 (Kiwi 형태소 분석 일반어 필터)")
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    if st.button("📚 용어 QA 생성", key="btn_term_qa"):
+                        result = api_client.generate_term_qa({
+                            "profile_name": selected, "top_n": 772,
+                        })
+                        if not api_failed(result):
+                            st.success("용어 QA 생성 시작됨")
+                            st.cache_data.clear()
+                            st.rerun()
+                with tc2:
+                    if st.button("🧹 용어 QA 삭제", key="btn_del_term"):
+                        result = api_client.delete_by_source_type(selected, "term_qa")
+                        if not api_failed(result):
+                            st.success(f"용어 QA {result.get('deleted', 0)}건 삭제")
+                        st.cache_data.clear()
+                        st.rerun()
+
+                st.markdown("---")
+
+                # 용어 QA 리뷰
+                term_filter = st.selectbox(
+                    "상태", options=["pending", "approved", "rejected", None],
+                    format_func=lambda x: CURATION_STATUS_ICONS.get(x, "전체") if x else "전체",
+                    key="term_status",
+                )
+                term_page = st.number_input("페이지", value=1, min_value=1, key="term_page")
+                term_data = api_client.list_training_data(
+                    selected, source_type="term_qa", status=term_filter,
+                    limit=20, offset=(term_page - 1) * 20,
+                )
+                if not api_failed(term_data):
+                    term_items = term_data.get("items", [])
+                    term_total = term_data.get("total", 0)
+                    st.caption(f"용어 QA: {term_total}건 (페이지 {term_page}/{max(1, (term_total + 19) // 20)})")
+
+                    # 일괄 버튼
+                    ta1, ta2 = st.columns(2)
+                    with ta1:
+                        if st.button("✅ 스마트 일괄 승인", key="btn_term_approve_all"):
+                            result = api_client.smart_approve(selected, source_type="term_qa")
+                            if not api_failed(result):
+                                st.success(
+                                    f"승인: {result.get('approved', 0)}건 | "
+                                    f"거부: {result.get('rejected', 0)}건 | "
+                                    f"정리: {result.get('cleaned', 0)}건"
+                                )
+                                st.cache_data.clear()
+                                st.rerun()
+                    with ta2:
+                        if st.button("❌ 전체 거부", key="btn_term_reject_all"):
+                            td = api_client.list_training_data(selected, source_type="term_qa", status="pending", limit=10000)
+                            if not api_failed(td):
+                                ids = [it["id"] for it in td.get("items", [])]
+                                if ids:
+                                    api_client.review_training_data({"ids": ids, "status": "rejected"})
+                                    st.success(f"{len(ids)}건 거부")
+                                    st.cache_data.clear()
+                                    st.rerun()
+
+                    for it in term_items:
+                        with st.container(border=True):
+                            st.markdown(
+                                f"📚 {CURATION_STATUS_ICONS.get(it.get('status', ''))} | "
+                                f"{it.get('kb_id', '')}"
+                            )
+                            st.markdown(f"**Q:** {it.get('question', '')[:60]}")
+                            st.caption(f"A: {it.get('answer', '')[:100]}")
+                            ac1, ac2 = st.columns(2)
+                            with ac1:
+                                if it.get("status") != "approved":
+                                    if st.button("✅", key=f"term_appr_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "approved"})
+                                        st.cache_data.clear()
+                                        st.rerun()
+                            with ac2:
+                                if it.get("status") != "rejected":
+                                    if st.button("❌", key=f"term_rej_{it['id']}"):
+                                        api_client.review_training_data({"ids": [it["id"]], "status": "rejected"})
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+            # ── 초기화 (데이터셋 서브탭 하단) ──
+            with sub_data:
+                st.markdown("---")
+                st.subheader("초기화")
+            st.caption("테스트 데이터 또는 빌드를 삭제합니다. 운영 데이터에는 영향을 주지 않습니다.")
+            reset_col1, reset_col2 = st.columns(2)
+            with reset_col1:
+                if st.button("🧹 테스트 데이터 삭제", key="btn_del_test_data"):
+                    st.session_state["confirm_del_test"] = True
+            with reset_col2:
+                st.caption("source_type='test_seed'인 데이터만 삭제")
+
+            if st.session_state.get("confirm_del_test"):
+                st.warning("테스트 시드 데이터를 모두 삭제하시겠습니까?")
+                cc1, cc2 = st.columns(2)
+                with cc1:
+                    if st.button("확인 삭제", type="primary", key="btn_confirm_del_test"):
+                        result = api_client.delete_by_source_type(selected, "test_seed")
+                        if not api_failed(result):
+                            st.success(f"테스트 데이터 {result.get('deleted', 0)}건 삭제")
+                            st.session_state["confirm_del_test"] = False
+                            st.cache_data.clear()
+                            st.rerun()
+                with cc2:
+                    if st.button("취소", key="btn_cancel_del_test"):
+                        st.session_state["confirm_del_test"] = False
+                        st.rerun()
+
+
+# =============================================================================
+# Tab 4: 엣지 서버
+# =============================================================================
+with tab_servers:
+    st.caption("매장 엣지 서버의 상태를 모니터링하고, 모델/앱 업데이트를 요청합니다.")
+
+    if not _profiles_ok:
+        st.error("API 연결 실패")
+    else:
+        profiles = _all_profiles
+        enabled = _enabled_profiles
+
+        if not enabled:
+            st.info("활성화된 프로필이 없습니다.")
+        else:
+            selected = st.selectbox("프로필", options=enabled, key="server_profile")
+
+            # ── Fleet 현황 ──
+            fleet = api_client.get_fleet_stats(selected)
+            if not api_failed(fleet):
+                fc1, fc2, fc3, fc4 = st.columns(4)
+                with fc1:
+                    st.metric("전체", fleet.get("total", 0))
+                with fc2:
+                    st.metric("🟢 온라인", fleet.get("online", 0))
+                with fc3:
+                    st.metric("⚪ 오프라인", fleet.get("offline", 0))
+                with fc4:
+                    st.metric("🔴 에러", fleet.get("error", 0))
+
+            st.markdown("---")
+
+            # ── 서버 목록 ──
+            st.subheader("서버 목록")
+            sf1, sf2 = st.columns(2)
+            with sf1:
+                server_status_filter = st.selectbox(
+                    "상태 필터",
+                    options=[None, "online", "offline", "error"],
+                    format_func=lambda x: "전체" if x is None else EDGE_SERVER_STATUS_ICONS.get(x, x) + f" {x}",
+                    key="srv_status",
+                )
+
+            servers_result = api_client.list_edge_servers(
+                profile_name=selected, status=server_status_filter,
+            )
+            if not api_failed(servers_result):
+                servers = servers_result.get("items", [])
+                if not servers:
+                    st.info("등록된 서버가 없습니다.")
+
+                for srv in servers:
+                    status_icon = EDGE_SERVER_STATUS_ICONS.get(srv.get("status", ""), "❓")
+                    os_badge = f"[{srv.get('os_type', '?')}]" if srv.get("os_type") else ""
+                    display = srv.get("display_name") or srv.get("store_id", "")
+
+                    with st.container(border=True):
+                        st.markdown(
+                            f"{status_icon} **{display}** ({srv.get('store_id', '')}) {os_badge}"
+                        )
+                        st.caption(
+                            f"앱: {srv.get('app_version', '?')}  "
+                            f"모델: {srv.get('model_version', '?')}  "
+                            f"지연: {srv.get('avg_latency_ms', 0)}ms  "
+                            f"RAM: {srv.get('ram_used_mb', '?')}/{srv.get('ram_total_mb', '?')}MB"
+                        )
+
+                        hb = srv.get("last_heartbeat", "")
+                        sr = srv.get("success_rate")
+                        sr_str = f"성공률: {sr:.1%}" if sr is not None else ""
+                        st.caption(
+                            f"마지막 heartbeat: {hb[:16] if hb else '없음'}  "
+                            f"질의: {srv.get('total_queries', 0):,}건  "
+                            f"{sr_str}"
+                        )
+
+                        bc1, bc2, bc3 = st.columns(3)
+                        with bc1:
+                            if st.button("🔄 모델 업데이트", key=f"upd_model_{srv['store_id']}"):
+                                api_client.request_server_update(srv["store_id"], "model")
+                                st.success("모델 업데이트 요청됨 (다음 sync 시 반영)")
+                                st.cache_data.clear()
+                        with bc2:
+                            if st.button("📦 앱 업데이트", key=f"upd_app_{srv['store_id']}"):
+                                api_client.request_server_update(srv["store_id"], "app")
+                                st.success("앱 업데이트 요청됨 (다음 sync 시 반영)")
+                                st.cache_data.clear()
+                        with bc3:
+                            if st.button("🗑️ 등록 해제", key=f"del_srv_{srv['store_id']}"):
+                                api_client.delete_edge_server(srv["store_id"])
+                                st.cache_data.clear()
+                                st.rerun()
+
+            st.markdown("---")
+
+            # ── 새 서버 등록 ──
+            st.subheader("새 서버 등록")
+            with st.expander("설치 명령어 생성", expanded=False):
+                new_store = st.text_input("매장 ID", placeholder="gangnam-01", key="new_store_id")
+                if new_store:
+                    import secrets
+                    if f"api_key_{new_store}" not in st.session_state:
+                        st.session_state[f"api_key_{new_store}"] = secrets.token_urlsafe(32)
+                    api_key = st.session_state[f"api_key_{new_store}"]
+
+                    st.markdown("**Linux / macOS:**")
+                    linux_cmd = (
+                        f"curl -sL https://s3.../install.sh | \\\n"
+                        f"  STORE_ID={new_store} \\\n"
+                        f"  EDGE_API_KEY={api_key} \\\n"
+                        f"  MANIFEST_URL=https://s3.../manifest.json \\\n"
+                        f"  CENTRAL_API_URL=https://knowledge-api.gs.internal \\\n"
+                        f"  bash"
+                    )
+                    st.code(linux_cmd, language="bash")
+
+                    st.markdown("**Windows (PowerShell):**")
+                    win_cmd = (
+                        f'$env:STORE_ID="{new_store}"\n'
+                        f'$env:EDGE_API_KEY="{api_key}"\n'
+                        f'$env:MANIFEST_URL="https://s3.../manifest.json"\n'
+                        f'$env:CENTRAL_API_URL="https://knowledge-api.gs.internal"\n'
+                        f"irm https://s3.../install.ps1 | iex"
+                    )
+                    st.code(win_cmd, language="powershell")
+
+            st.markdown("---")
+
+            # ── 일괄 작업 ──
+            st.subheader("일괄 작업")
+            st.caption("대상: 최신 버전이 아닌 온라인 서버")
+            ba1, ba2 = st.columns(2)
+            with ba1:
+                if st.button("구버전 모델 전체 업데이트 요청", key="btn_bulk_model"):
+                    result = api_client.bulk_request_update(selected, "model")
+                    if not api_failed(result):
+                        st.success(f"{result.get('updated', 0)}대 업데이트 요청")
+                        st.cache_data.clear()
+            with ba2:
+                if st.button("구버전 앱 전체 업데이트 요청", key="btn_bulk_app"):
+                    result = api_client.bulk_request_update(selected, "app")
+                    if not api_failed(result):
+                        st.success(f"{result.get('updated', 0)}대 업데이트 요청")
+                        st.cache_data.clear()
+            st.caption("ⓘ 업데이트 요청은 다음 sync 주기(최대 5분)에 엣지 서버가 자동 반영합니다.")
+
+
+# =============================================================================
+# Tab 5: 운영 — 엣지 로그 + 재학습
 # =============================================================================
 with tab_ops:
     st.caption(
         "매장 엣지 서버의 실사용 로그를 수집하고, 실패 질문에 정답을 추가하여 재학습합니다."
     )
 
-    profiles_result = api_client.list_distill_profiles()
-    if api_failed(profiles_result):
+    if not _profiles_ok:
         st.error("API 연결 실패")
     else:
-        profiles = profiles_result.get("profiles", {})
-        enabled = [k for k, v in profiles.items() if v.get("enabled")]
+        profiles = _all_profiles
+        enabled = _enabled_profiles
 
         if not enabled:
             st.info("활성화된 프로필이 없습니다.")

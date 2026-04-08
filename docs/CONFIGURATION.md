@@ -270,3 +270,30 @@
 | `chunking.max_chunk_chars` | `2500` | 청크 최대 문자 수 |
 | `chunking.overlap_sentences` | `1` | 오버랩 문장 수 |
 | `chunking.max_chunks_per_document` | `500` | 문서당 최대 청크 수 |
+
+### Distill (엣지 모델)
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `DISTILL_ENABLED` | `true` | Distill 플러그인 활성화 |
+| `DISTILL_CONFIG_PATH` | `distill.yaml` | 프로필 설정 파일 경로 |
+| `DISTILL_WORK_DIR` | `/tmp/distill` | 학습 작업 디렉토리 |
+| `DISTILL_LLM_CONCURRENCY` | `3` | Teacher LLM 동시 호출 수 |
+| `DISTILL_LLM_TIMEOUT_SEC` | `120` | LLM 호출 타임아웃 |
+| `DISTILL_BUILD_TIMEOUT_SEC` | `7200` | 빌드 전체 타임아웃 |
+| `DISTILL_RAG_API_URL` | `http://localhost:8000` | 재학습 답변 생성용 RAG API |
+
+### Edge Server (엣지 서버)
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `STORE_ID` | `unknown` | 매장 ID |
+| `EDGE_API_KEY` | - | heartbeat 인증 키 |
+| `MODEL_PATH` | `/models/current/model.gguf` | GGUF 모델 경로 |
+| `LOG_DIR` | `/logs` | 질의 로그 디렉토리 |
+| `EDGE_N_CTX` | `512` | llama-cpp context length |
+| `EDGE_N_THREADS` | `4` | 추론 스레드 수 |
+| `EDGE_MAX_TOKENS` | `256` | 최대 생성 토큰 |
+| `MANIFEST_URL` | - | S3 manifest URL (모델 + 앱 버전) |
+| `CENTRAL_API_URL` | - | 중앙 서버 API URL (heartbeat push) |
+| `APP_VERSION` | `dev` | 앱 바이너리 버전 |

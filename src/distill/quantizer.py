@@ -5,6 +5,7 @@ HuggingFace 모델을 llama.cpp GGUF 포맷으로 변환 + 양자화.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 import subprocess
@@ -116,8 +117,17 @@ raise NotImplementedError('Manual GGUF conversion needed')
             "  # or build llama.cpp and add convert_hf_to_gguf.py to PATH"
         )
 
+    @staticmethod
+    def compute_sha256(file_path: str) -> str:
+        """파일 SHA256 해시 계산."""
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
     def validate_gguf(self, gguf_path: str) -> dict:
-        """GGUF 파일 유효성 검증 (로드 + 테스트 추론)."""
+        """GGUF 파일 유효성 검증 (로드 + 테스트 추론 + SHA256)."""
         from llama_cpp import Llama
 
         path = Path(gguf_path)
@@ -125,6 +135,7 @@ raise NotImplementedError('Manual GGUF conversion needed')
             return {"valid": False, "error": "File not found"}
 
         size_mb = path.stat().st_size / (1024 * 1024)
+        sha256 = self.compute_sha256(gguf_path)
 
         try:
             llm = Llama(model_path=gguf_path, n_ctx=128, n_threads=2, verbose=False)
@@ -138,8 +149,12 @@ raise NotImplementedError('Manual GGUF conversion needed')
             return {
                 "valid": True,
                 "size_mb": round(size_mb, 1),
+                "sha256": sha256,
                 "test_output": test_output,
                 "quantize_method": self.quantize_method,
             }
         except Exception as e:
-            return {"valid": False, "error": str(e), "size_mb": round(size_mb, 1)}
+            return {
+                "valid": False, "error": str(e),
+                "size_mb": round(size_mb, 1), "sha256": sha256,
+            }

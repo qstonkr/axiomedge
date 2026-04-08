@@ -56,6 +56,19 @@ Dashboard ────┼──▶ FastAPI API (:8000)
                     │         │          │         │         │
                  Qdrant    Neo4j    PostgreSQL   Redis    TEI/SageMaker
                 (vectors)  (graph)  (metadata)  (cache)  (cloud embed/LLM)
+
+Distill (src/distill/)  ──▶ Edge Model Pipeline
+  data_gen/ → QA 생성 + consistency + 범용성 필터 + augmentation 검증
+  trainer.py → LoRA SFT
+  quantizer.py → GGUF 양자화 + SHA256
+  deployer.py → S3 배포 + manifest
+  service.py → 파이프라인 오케스트레이터 (데이터 큐레이션 + 빌드)
+  repositories/ → profile, build, training_data, edge_log, edge_server
+
+Edge Server (edge/)  ──▶ 매장 엣지 서버
+  server.py → llama-cpp 추론 + heartbeat
+  sync.py → S3 모델 sync + heartbeat push + 앱 업데이트
+  install.sh/ps1 → 크로스 플랫폼 설치 (Linux/Windows/macOS)
 ```
 
 ### Cloud Services
@@ -81,6 +94,10 @@ Large files are split into helpers/sub-modules with **facade re-exports** for ba
 | `src/search/enhanced_similarity_matcher.py` | → `similarity/` pkg | Similarity matching (matcher, strategies, utils) |
 | `dashboard/services/api_client.py` | → `api/` pkg (8 modules) | Frontend API client (core, kb, search, glossary, quality, admin, auth, misc) |
 | `src/connectors/confluence/` | 8-module pkg | Confluence crawler (client, models, html_parsers, attachment_parser, config, output, structured_ir) |
+| `src/distill/` | service + data_gen/ + repositories/ | Edge model distillation (QA curation, LoRA SFT, GGUF, S3 deploy) |
+| `src/distill/data_gen/` | 5-module pkg | Data generation (qa_generator, quality_filter, generality_filter, dataset_builder, test_data_templates) |
+| `src/distill/repositories/` | 5-module pkg | Distill DB repos (profile, build, training_data, edge_log, edge_server) |
+| `edge/` | server.py + sync.py + install scripts | Edge server (llama-cpp inference, heartbeat, cross-platform deploy) |
 
 **All existing imports continue to work** — original files are facades.
 

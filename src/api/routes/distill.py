@@ -11,7 +11,8 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import Header
+from pydantic import BaseModel, Field, field_validator
 
 from src.api.app import _get_state
 
@@ -53,7 +54,9 @@ class ProfileUpdateRequest(BaseModel):
 class BuildTriggerRequest(BaseModel):
     profile_name: str
     steps: list[str] | None = None  # None=전체
+    use_curated_data: bool = False  # True: approved 데이터만 사용
 
+    @field_validator("steps")
     @classmethod
     def validate_steps(cls, v):
         if v is not None:
@@ -63,6 +66,46 @@ class BuildTriggerRequest(BaseModel):
                 msg = f"Unknown steps: {unknown}"
                 raise ValueError(msg)
         return v
+
+
+class GenerateDataRequest(BaseModel):
+    profile_name: str
+
+
+class GenerateTestDataRequest(BaseModel):
+    profile_name: str
+    count: int = 50
+
+
+class TrainingDataUpdateItem(BaseModel):
+    id: str
+    status: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    review_comment: str | None = None
+
+
+class TrainingDataEditReviewRequest(BaseModel):
+    updates: list[TrainingDataUpdateItem]
+
+
+class AugmentRequest(BaseModel):
+    profile_name: str
+    max_variants: int = 3
+
+
+class GenerateTermQARequest(BaseModel):
+    profile_name: str
+    top_n: int = 100  # 상위 빈도 용어 수
+
+
+class ServerUpdateRequest(BaseModel):
+    update_type: str = "both"  # model | app | both
+
+
+class BulkServerUpdateRequest(BaseModel):
+    profile_name: str
+    update_type: str = "both"
 
 
 class TrainingDataAddRequest(BaseModel):
@@ -200,7 +243,10 @@ async def trigger_build(request: BuildTriggerRequest):
     distill_service = _get_state().get("distill_service")
     if distill_service:
         task = asyncio.create_task(
-            distill_service.run_pipeline(build_id, request.profile_name, request.steps)
+            distill_service.run_pipeline(
+                build_id, request.profile_name, request.steps,
+                use_curated_data=request.use_curated_data,
+            )
         )
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
@@ -216,6 +262,14 @@ async def list_builds(profile_name: str | None = None, limit: int = 50):
     repo = _get_distill_repo()
     builds = await repo.list_builds(profile_name=profile_name, limit=limit)
     return {"items": builds}
+
+
+@router.get("/builds/versions")
+async def list_version_history(profile_name: str):
+    """모델 버전 히스토리."""
+    repo = _get_distill_repo()
+    versions = await repo.list_version_history(profile_name)
+    return {"items": versions}
 
 
 @router.get("/builds/{build_id}")
@@ -286,6 +340,10 @@ async def rollback_build(build_id: str):
     if not profile:
         raise HTTPException(status_code=404, detail=f"Profile '{build['profile_name']}' not found")
 
+    # 현재 배포 중인 빌드 확인
+    current = await repo.get_latest_build(build["profile_name"], status="completed")
+    current_id = current["id"] if current and current.get("deployed_at") else None
+
     try:
         from src.distill.config import dict_to_profile
         from src.distill.deployer import DistillDeployer
@@ -296,6 +354,14 @@ async def rollback_build(build_id: str):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Rollback failed: {e}")
+
+    # rollback_from 기록
+    if current_id:
+        await repo.rollback_to(build_id, current_id)
+    else:
+        await repo.update_build(
+            build_id, deployed_at=datetime.now(timezone.utc),
+        )
 
     return {"success": True, "rolled_back_to": build["version"]}
 
@@ -309,6 +375,9 @@ async def list_training_data(
     profile_name: str,
     status: str | None = None,
     source_type: str | None = None,
+    batch_id: str | None = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
     limit: int = 50,
     offset: int = 0,
 ):
@@ -316,7 +385,9 @@ async def list_training_data(
     repo = _get_distill_repo()
     return await repo.list_training_data(
         profile_name=profile_name, status=status,
-        source_type=source_type, limit=limit, offset=offset,
+        source_type=source_type, batch_id=batch_id,
+        sort_by=sort_by, sort_order=sort_order,
+        limit=limit, offset=offset,
     )
 
 
@@ -336,6 +407,88 @@ async def review_training_data(request: TrainingDataReviewRequest):
     repo = _get_distill_repo()
     updated = await repo.update_training_data_status(request.ids, request.status)
     return {"updated": updated}
+
+
+@router.post("/training-data/smart-approve")
+async def smart_approve(profile_name: str, source_type: str | None = None):
+    """품질 체크 후 일괄 승인 (불량은 자동 거부, 마크다운은 cleanup 후 승인).
+
+    1. 답변 불가 패턴 → 자동 거부
+    2. 너무 짧은 답변 (< 20자) → 자동 거부
+    3. 마크다운 잔존 → cleanup 후 승인
+    4. 나머지 → 승인
+    """
+    import re
+
+    repo = _get_distill_repo()
+    result = await repo.list_training_data(
+        profile_name=profile_name, source_type=source_type,
+        status="pending", limit=10000,
+    )
+    items = result.get("items", [])
+    if not items:
+        return {"approved": 0, "rejected": 0, "cleaned": 0, "total": 0}
+
+    bad_patterns = [
+        "제공된 문서들에", "제공된 문서에서", "주어진 문서들에서",
+        "명시되어 있지 않", "포함되어 있지 않",
+        "직접적인 정보가", "직접적인 정보는",
+        "명확한 정보가", "구체적인 정보가 부족",
+    ]
+
+    approve_ids = []
+    reject_ids = []
+    cleanup_updates = []
+
+    for it in items:
+        answer = it.get("answer", "")
+        item_id = it["id"]
+
+        # 답변 불가 → 거부
+        prefix = answer[:200]
+        if sum(1 for p in bad_patterns if p in prefix) >= 2:
+            reject_ids.append(item_id)
+            continue
+
+        # 너무 짧음 → 거부
+        if len(answer.strip()) < 20:
+            reject_ids.append(item_id)
+            continue
+
+        # 마크다운 cleanup
+        cleaned = answer
+        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
+        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
+        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
+        cleaned = re.sub(r"---+", "", cleaned)
+        cleaned = re.sub(
+            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
+            "", cleaned,
+        )
+        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"  +", " ", cleaned)
+        cleaned = cleaned.strip()
+
+        if cleaned != answer:
+            cleanup_updates.append({"id": item_id, "answer": cleaned})
+
+        approve_ids.append(item_id)
+
+    # 실행
+    if reject_ids:
+        await repo.update_training_data_status(reject_ids, "rejected")
+    if cleanup_updates:
+        await repo.bulk_update_training_data(cleanup_updates)
+    if approve_ids:
+        await repo.update_training_data_status(approve_ids, "approved")
+
+    return {
+        "approved": len(approve_ids),
+        "rejected": len(reject_ids),
+        "cleaned": len(cleanup_updates),
+        "total": len(items),
+    }
 
 
 @router.get("/training-data/stats")
@@ -419,13 +572,14 @@ async def trigger_retrain(request: RetrainRequest):
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    # 실패 로그를 한 번에 조회하여 id → log 매핑
+    # 요청된 ID의 로그만 조회 (필요한 수만큼)
     logs_result = await repo.list_edge_logs(
         profile_name=request.profile_name,
         success=False,
-        limit=max(len(request.edge_log_ids), 100),
+        limit=len(request.edge_log_ids) + 10,  # 약간의 여유
     )
-    logs_by_id = {lg["id"]: lg for lg in logs_result.get("items", [])}
+    logs_by_id = {lg["id"]: lg for lg in logs_result.get("items", [])
+                  if lg["id"] in set(request.edge_log_ids)}
 
     entries_to_save: list[dict] = []
     from src.config import get_settings
@@ -445,13 +599,14 @@ async def trigger_retrain(request: RetrainRequest):
         elif request.generate_answers:
             try:
                 import httpx
-                resp = httpx.post(
-                    f"{rag_url}/api/v1/search/hub",
-                    json={"query": question, "top_k": 5, "include_answer": True},
-                    timeout=60,
-                )
-                resp.raise_for_status()
-                answer = resp.json().get("answer", "")
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(
+                        f"{rag_url}/api/v1/search/hub",
+                        json={"query": question, "top_k": 5, "include_answer": True},
+                        timeout=60,
+                    )
+                    resp.raise_for_status()
+                    answer = resp.json().get("answer", "")
             except Exception as e:
                 logger.warning("Teacher answer generation failed for '%s': %s", question[:30], e)
                 answer = ""
@@ -474,3 +629,371 @@ async def trigger_retrain(request: RetrainRequest):
         added = await repo.save_training_data(entries_to_save)
 
     return {"added": added, "message": f"{added} entries added to training data"}
+
+
+# ---------------------------------------------------------------------------
+# Data Curation (큐레이션)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/generate")
+async def generate_training_data(request: GenerateDataRequest):
+    """큐레이션용 QA 데이터 생성 (백그라운드)."""
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    async def _run():
+        try:
+            return await distill_service.generate_data_for_review(request.profile_name)
+        except Exception as e:
+            logger.error("Data generation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "generating", "profile_name": request.profile_name}
+
+
+@router.post("/training-data/generate-test")
+async def generate_test_data(request: GenerateTestDataRequest):
+    """테스트 시드 데이터 생성 (백그라운드)."""
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    async def _run():
+        try:
+            return await distill_service.generate_test_data(
+                request.profile_name, count=request.count,
+            )
+        except Exception as e:
+            logger.error("Test data generation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "generating", "profile_name": request.profile_name, "count": request.count}
+
+
+@router.get("/training-data/batches/{batch_id}")
+async def get_batch_stats(batch_id: str):
+    """배치 생성 현황/통계."""
+    repo = _get_distill_repo()
+    return await repo.get_batch_stats(batch_id)
+
+
+@router.put("/training-data/review-edit")
+async def review_edit_training_data(request: TrainingDataEditReviewRequest):
+    """승인/거부 + 텍스트 편집."""
+    repo = _get_distill_repo()
+    updated = await repo.bulk_update_training_data(
+        [u.model_dump(exclude_none=True) for u in request.updates]
+    )
+    return {"updated": updated}
+
+
+# ---------------------------------------------------------------------------
+# Model Reset (베이스 모델 리셋)
+# ---------------------------------------------------------------------------
+
+@router.post("/builds/reset-to-base")
+async def reset_to_base_model(profile_name: str):
+    """파인튜닝을 초기화하고 베이스 모델(양자화 GGUF)을 S3에 배포.
+
+    모든 파인튜닝 빌드를 무시하고 원본 베이스 모델로 엣지 서버를 리셋합니다.
+    """
+    repo = _get_distill_repo()
+    profile = await repo.get_profile(profile_name)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    # 베이스 모델로 빌드 생성 (학습 없이 양자화 + 배포만)
+    build_id = str(uuid.uuid4())
+    version = f"v{datetime.now(timezone.utc).strftime('%Y%m%d.%H%M')}-base"
+
+    import json as _json
+    await repo.create_build(
+        id=build_id,
+        profile_name=profile_name,
+        version=version,
+        status="pending",
+        search_group=profile.get("search_group", ""),
+        base_model=profile.get("base_model", ""),
+        config_snapshot=_json.dumps(profile, ensure_ascii=False, default=str),
+    )
+
+    # 양자화 + 배포만 실행 (학습 스킵)
+    task = asyncio.create_task(
+        distill_service.run_pipeline(
+            build_id, profile_name,
+            steps=["quantize", "deploy"],
+        )
+    )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {
+        "build_id": build_id,
+        "version": version,
+        "message": "Base model reset initiated (quantize + deploy, no training)",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Augmentation (질문 변형)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/augment")
+async def augment_training_data(request: AugmentRequest):
+    """승인된 QA를 질문 변형으로 증강 (백그라운드)."""
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    async def _run():
+        try:
+            return await distill_service.augment_approved_data(
+                request.profile_name, max_variants=request.max_variants,
+            )
+        except Exception as e:
+            logger.error("Augmentation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "augmenting", "profile_name": request.profile_name}
+
+
+# ---------------------------------------------------------------------------
+# Term QA (용어 학습 데이터)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/generate-term-qa")
+async def generate_term_qa(request: GenerateTermQARequest):
+    """PBU 핵심 용어 → QA 학습 데이터 생성 (백그라운드)."""
+    distill_service = _get_state().get("distill_service")
+    if not distill_service:
+        raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    async def _run():
+        try:
+            return await distill_service.generate_term_qa(
+                request.profile_name, top_n=request.top_n,
+            )
+        except Exception as e:
+            logger.error("Term QA generation failed: %s", e)
+
+    task = asyncio.create_task(_run())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    return {"status": "generating_terms", "profile_name": request.profile_name, "top_n": request.top_n}
+
+
+# ---------------------------------------------------------------------------
+# Answer Cleanup (답변 정리)
+# ---------------------------------------------------------------------------
+
+@router.post("/training-data/cleanup-answers")
+async def cleanup_answers(profile_name: str, source_type: str | None = None):
+    """기존 학습 데이터 답변에서 마크다운/추론/출처 참조 일괄 제거."""
+    repo = _get_distill_repo()
+    result = await repo.list_training_data(
+        profile_name=profile_name, source_type=source_type, limit=10000,
+    )
+    items = result.get("items", [])
+    if not items:
+        return {"cleaned": 0}
+
+    import re
+    updates = []
+    for it in items:
+        answer = it.get("answer", "")
+        cleaned = answer
+        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
+        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
+        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
+        cleaned = re.sub(r"---+", "", cleaned)
+        cleaned = re.sub(
+            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
+            "", cleaned,
+        )
+        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"  +", " ", cleaned)
+        cleaned = cleaned.strip()
+
+        if cleaned != answer:
+            updates.append({"id": it["id"], "answer": cleaned})
+
+    if updates:
+        await repo.bulk_update_training_data(updates)
+
+    return {"cleaned": len(updates), "total": len(items)}
+
+
+# ---------------------------------------------------------------------------
+# Data Reset (초기화)
+# ---------------------------------------------------------------------------
+
+@router.delete("/training-data/by-source")
+async def delete_by_source_type(profile_name: str, source_type: str):
+    """특정 source_type 데이터 일괄 삭제."""
+    allowed = {"test_seed", "term_qa", "chunk_qa", "usage_log_aug",
+               "chunk_qa_aug", "test_seed_aug", "manual"}
+    if source_type not in allowed:
+        raise HTTPException(status_code=400, detail=f"Invalid source_type: {source_type}")
+    repo = _get_distill_repo()
+    deleted = await repo.delete_training_data_by_source(profile_name, source_type)
+    return {"deleted": deleted}
+
+
+@router.delete("/training-data/batch/{batch_id}")
+async def delete_batch_data(batch_id: str):
+    """특정 배치의 데이터 일괄 삭제."""
+    repo = _get_distill_repo()
+    deleted = await repo.delete_training_data_by_batch(batch_id)
+    return {"deleted": deleted}
+
+
+@router.delete("/builds/{build_id}")
+async def delete_build(build_id: str):
+    """빌드 삭제 (배포 중이거나 진행 중인 빌드는 삭제 불가)."""
+    repo = _get_distill_repo()
+    build = await repo.get_build(build_id)
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+    if build.get("deployed_at"):
+        raise HTTPException(status_code=400, detail="Cannot delete deployed build. Rollback first.")
+    if build.get("status") in ("pending", "generating", "training", "evaluating", "quantizing", "deploying"):
+        raise HTTPException(status_code=400, detail="Cannot delete in-progress build")
+
+    # S3 GGUF 정리 (best-effort)
+    s3_uri = build.get("s3_uri")
+    if s3_uri:
+        try:
+            profile = await repo.get_profile(build["profile_name"])
+            if profile:
+                from src.distill.config import dict_to_profile
+                from src.distill.deployer import DistillDeployer
+                dp = dict_to_profile(profile)
+                deployer = DistillDeployer(dp)
+                await deployer.delete_s3_object(s3_uri)
+        except Exception as e:
+            logger.warning("S3 cleanup failed for build %s: %s", build_id, e)
+
+    deleted = await repo.delete_build(build_id)
+    if not deleted:
+        raise HTTPException(status_code=500, detail="Delete failed")
+    return {"success": True, "build_id": build_id}
+
+
+# ---------------------------------------------------------------------------
+# Edge Servers (엣지 서버 관리)
+# ---------------------------------------------------------------------------
+
+class HeartbeatRequest(BaseModel):
+    store_id: str
+    status: str = "online"
+    model_version: str | None = None
+    model_sha256: str | None = None
+    app_version: str | None = None
+    os_type: str | None = None
+    cpu_info: str | None = None
+    ram_total_mb: int | None = None
+    ram_used_mb: int | None = None
+    disk_free_mb: int | None = None
+    avg_latency_ms: int | None = None
+    total_queries: int = 0
+    success_rate: float | None = None
+    server_ip: str | None = None
+    profile_name: str | None = None
+    display_name: str | None = None
+
+
+@router.post("/edge-servers/heartbeat")
+async def edge_server_heartbeat(
+    request: HeartbeatRequest,
+    authorization: str | None = Header(None),
+):
+    """heartbeat 수신 (등록 겸용, Bearer 인증 필수)."""
+    repo = _get_distill_repo()
+
+    api_key = ""
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization[7:]
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing Authorization Bearer token")
+
+    try:
+        result = await repo.upsert_heartbeat(request.model_dump(), api_key)
+        return result
+    except PermissionError:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/edge-servers")
+async def list_edge_servers(
+    profile_name: str | None = None,
+    status: str | None = None,
+):
+    """등록된 엣지 서버 목록."""
+    repo = _get_distill_repo()
+    servers = await repo.list_edge_servers(profile_name=profile_name, status=status)
+    return {"items": servers}
+
+
+@router.get("/edge-servers/fleet-stats")
+async def fleet_stats(profile_name: str):
+    """fleet 현황 통계."""
+    repo = _get_distill_repo()
+    return await repo.get_fleet_stats(profile_name)
+
+
+@router.get("/edge-servers/{store_id}")
+async def get_edge_server(store_id: str):
+    """서버 상세."""
+    repo = _get_distill_repo()
+    server = await repo.get_edge_server(store_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return server
+
+
+@router.delete("/edge-servers/{store_id}")
+async def delete_edge_server(store_id: str):
+    """서버 등록 해제."""
+    repo = _get_distill_repo()
+    deleted = await repo.delete_edge_server(store_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return {"success": True}
+
+
+@router.post("/edge-servers/{store_id}/request-update")
+async def request_server_update(store_id: str, request: ServerUpdateRequest):
+    """엣지 서버 업데이트 요청 (다음 sync 주기에 반영)."""
+    repo = _get_distill_repo()
+    try:
+        return await repo.request_server_update(store_id, request.update_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/edge-servers/bulk-request-update")
+async def bulk_request_update(request: BulkServerUpdateRequest):
+    """구버전 서버 전체 업데이트 요청."""
+    repo = _get_distill_repo()
+    count = await repo.bulk_request_server_update(
+        request.profile_name, request.update_type,
+    )
+    return {"updated": count}

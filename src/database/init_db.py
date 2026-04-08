@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.database.models import KnowledgeBase, RegistryBase
 from src.database.session import to_async_database_url
+from src.distill.models import DistillBase
 
 # Import auth models so they register with KnowledgeBase.metadata
 import src.auth.models  # noqa: F401
@@ -45,6 +46,10 @@ async def init_database(database_url: str | None = None) -> None:
         await conn.run_sync(RegistryBase.metadata.create_all)
         logger.info("RegistryBase tables created (%d tables)", len(RegistryBase.metadata.tables))
 
+        # Create DistillBase tables (edge model distillation)
+        await conn.run_sync(DistillBase.metadata.create_all)
+        logger.info("DistillBase tables created (%d tables)", len(DistillBase.metadata.tables))
+
     await engine.dispose()
     logger.info("Database initialization complete")
 
@@ -57,6 +62,7 @@ async def drop_all_tables(database_url: str | None = None) -> None:
     engine = create_async_engine(url, echo=False)
 
     async with engine.begin() as conn:
+        await conn.run_sync(DistillBase.metadata.drop_all)
         await conn.run_sync(RegistryBase.metadata.drop_all)
         await conn.run_sync(KnowledgeBase.metadata.drop_all)
 

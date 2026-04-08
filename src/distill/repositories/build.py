@@ -79,6 +79,61 @@ class DistillBuildRepository:
             model = result.scalar_one_or_none()
             return self._to_dict(model) if model else None
 
+    async def delete(self, build_id: str) -> bool:
+        """빌드 삭제."""
+        async with self._session_maker() as session:
+            stmt = select(DistillBuildModel).where(DistillBuildModel.id == build_id)
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            if not model:
+                return False
+            await session.delete(model)
+            await session.commit()
+            return True
+
+    async def list_version_history(
+        self, profile_name: str,
+    ) -> list[dict[str, Any]]:
+        """배포된 빌드 버전 히스토리 (비교용)."""
+        async with self._session_maker() as session:
+            stmt = (
+                select(DistillBuildModel)
+                .where(
+                    DistillBuildModel.profile_name == profile_name,
+                    DistillBuildModel.status.in_(["completed", "deployed"]),
+                )
+                .order_by(DistillBuildModel.created_at.desc())
+                .limit(20)
+            )
+            result = await session.execute(stmt)
+            return [self._to_dict(r) for r in result.scalars().all()]
+
+    async def rollback_to(
+        self, build_id: str, current_build_id: str,
+    ) -> dict[str, Any] | None:
+        """특정 빌드로 롤백 (rollback_from 기록)."""
+        async with self._session_maker() as session:
+            # 현재 배포 해제
+            await session.execute(
+                update(DistillBuildModel)
+                .where(DistillBuildModel.id == current_build_id)
+                .values(deployed_at=None)
+            )
+            # 대상 빌드 재배포
+            now = datetime.now(timezone.utc)
+            await session.execute(
+                update(DistillBuildModel)
+                .where(DistillBuildModel.id == build_id)
+                .values(deployed_at=now, rollback_from=current_build_id)
+            )
+            await session.commit()
+
+            result = await session.execute(
+                select(DistillBuildModel).where(DistillBuildModel.id == build_id)
+            )
+            model = result.scalar_one_or_none()
+            return self._to_dict(model) if model else None
+
     @staticmethod
     def _to_dict(model: DistillBuildModel) -> dict[str, Any]:
         return {
@@ -89,6 +144,7 @@ class DistillBuildRepository:
             "search_group": model.search_group,
             "base_model": model.base_model,
             "training_samples": model.training_samples,
+            "data_sources": model.data_sources,
             "train_loss": model.train_loss,
             "eval_loss": model.eval_loss,
             "training_duration_sec": model.training_duration_sec,
@@ -96,9 +152,12 @@ class DistillBuildRepository:
             "eval_relevancy": model.eval_relevancy,
             "eval_passed": model.eval_passed,
             "gguf_size_mb": model.gguf_size_mb,
+            "gguf_sha256": model.gguf_sha256,
+            "model_name": model.model_name,
             "quantize_method": model.quantize_method,
             "s3_uri": model.s3_uri,
             "deployed_at": model.deployed_at.isoformat() if model.deployed_at else None,
+            "rollback_from": model.rollback_from,
             "error_message": model.error_message,
             "error_step": model.error_step,
             "created_at": model.created_at.isoformat() if model.created_at else None,

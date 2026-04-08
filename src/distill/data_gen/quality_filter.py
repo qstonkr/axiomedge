@@ -22,6 +22,22 @@ class QualityFilter:
         self.embedder = embedder
         self.profile = profile
 
+    async def compute_similarity(self, text_a: str, text_b: str) -> float:
+        """두 텍스트 간 cosine similarity (임베딩 기반, fallback: fuzz)."""
+        try:
+            result = await asyncio.to_thread(
+                self.embedder.encode, [text_a, text_b], return_dense=True,
+                return_sparse=False, return_colbert_vecs=False,
+            )
+            vecs = np.array(result["dense_vecs"])
+            return float(
+                np.dot(vecs[0], vecs[1])
+                / (np.linalg.norm(vecs[0]) * np.linalg.norm(vecs[1]) + 1e-8)
+            )
+        except Exception as e:
+            logger.warning("Embedding similarity failed, falling back to fuzz: %s", e)
+            return fuzz.token_sort_ratio(text_a, text_b) / 100.0
+
     async def self_consistency_filter(
         self, question: str, chunk: str,
     ) -> tuple[str, float] | None:
@@ -35,67 +51,81 @@ class QualityFilter:
             f"[질문]\n{question}"
         )
 
-        answers = []
-        for _ in range(n):
-            answer = await self.llm.call(prompt, temperature=0.7)
-            if answer:
-                answers.append(answer)
+        results = await asyncio.gather(
+            *[self.llm.call(prompt, temperature=0.7) for _ in range(n)]
+        )
+        answers = [a for a in results if a]
 
         if len(answers) < 2:
             return None
 
-        # 임베딩 cosine similarity
-        try:
-            result = await asyncio.to_thread(
-                self.embedder.encode, answers, return_dense=True,
-                return_sparse=False, return_colbert_vecs=False,
-            )
-            vecs = np.array(result["dense_vecs"])
+        # 임베딩 cosine similarity (compute_similarity 재사용)
+        similarities = []
+        for i in range(len(answers)):
+            for j in range(i + 1, len(answers)):
+                sim = await self.compute_similarity(answers[i], answers[j])
+                similarities.append(sim)
 
-            similarities = []
-            for i in range(len(vecs)):
-                for j in range(i + 1, len(vecs)):
-                    cos_sim = float(
-                        np.dot(vecs[i], vecs[j])
-                        / (np.linalg.norm(vecs[i]) * np.linalg.norm(vecs[j]) + 1e-8)
-                    )
-                    similarities.append(cos_sim)
-
-            avg_sim = float(np.mean(similarities))
-        except Exception as e:
-            logger.warning("Embedding similarity failed, falling back to fuzz: %s", e)
-            similarities = []
-            for i in range(len(answers)):
-                for j in range(i + 1, len(answers)):
-                    similarities.append(fuzz.token_sort_ratio(answers[i], answers[j]) / 100.0)
-            avg_sim = sum(similarities) / len(similarities) if similarities else 0
+        avg_sim = float(np.mean(similarities)) if similarities else 0
 
         if avg_sim < threshold:
             return None
 
         # Centroid에 가장 가까운 답변 선택
         try:
+            result = await asyncio.to_thread(
+                self.embedder.encode, answers, return_dense=True,
+                return_sparse=False, return_colbert_vecs=False,
+            )
+            vecs = np.array(result["dense_vecs"])
             centroid = np.mean(vecs, axis=0)
             best_idx = int(np.argmax([
                 np.dot(v, centroid) / (np.linalg.norm(v) * np.linalg.norm(centroid) + 1e-8)
                 for v in vecs
             ]))
-        except Exception:
+        except Exception as e:
+            logger.warning("Centroid selection failed, using first answer: %s", e)
             best_idx = 0
 
         return answers[best_idx], avg_sim
 
     async def convert_to_answer_only(self, question: str, full_answer: str) -> str:
-        """Teacher LLM으로 추론 과정 제거."""
-        prompt = (
-            "다음 답변에서 추론 과정('~이므로', '~를 확인해보면' 등)을 제거하고 "
-            "핵심 답변만 간결하게 남겨주세요. 번호가 있는 절차형이면 그대로 유지하세요.\n\n"
-            f"질문: {question}\n"
-            f"원본 답변: {full_answer}\n\n"
-            "간결한 답변:"
+        """추론 과정 + 마크다운 서식 + 출처 참조 제거."""
+        import re
+
+        # 1차: 패턴 기반 정리 (빠름, LLM 호출 불필요)
+        cleaned = full_answer
+        # 출처 참조 제거: [1], [2], [문서 1] 등
+        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
+        # 마크다운 서식 제거
+        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
+        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
+        cleaned = re.sub(r"---+", "", cleaned)
+        # "제공된 문서에 따르면" 등 메타 표현 제거
+        cleaned = re.sub(
+            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
+            "", cleaned,
         )
-        result = await self.llm.call(prompt, temperature=0.1)
-        return result if result else full_answer
+        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
+        # 연속 공백/줄바꿈 정리
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"  +", " ", cleaned)
+        # 불릿 포인트 정리: "- " → 번호로
+        lines = cleaned.strip().split("\n")
+        result_lines = []
+        num = 1
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- ") or stripped.startswith("* "):
+                result_lines.append(f"{num}. {stripped[2:]}")
+                num += 1
+            else:
+                result_lines.append(line)
+                if stripped and not stripped[0].isdigit():
+                    num = 1  # 번호 리셋
+        cleaned = "\n".join(result_lines).strip()
+
+        return cleaned
 
     async def normalize_answer_length(self, answer: str) -> str:
         """max_answer_tokens 초과 시 요약."""

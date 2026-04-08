@@ -78,8 +78,9 @@ class DataQualityConfig(BaseModel):
 
 
 class DeployConfig(BaseModel):
-    s3_bucket: str = "gs-knowledge-models"
-    s3_prefix: str = ""
+    s3_bucket: str = "oreo-dev-ml-artifacts"
+    s3_prefix: str = "models/edge/"
+    app_s3_prefix: str = "apps/edge/"  # 앱 바이너리 저장 경로
     auto_update_cron: str = "0 3 * * 1"
     quantize: str = "q4_k_m"
 

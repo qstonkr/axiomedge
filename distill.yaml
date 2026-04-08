@@ -46,8 +46,9 @@ profiles:
       enable_self_consistency: true
       augmentation_count: 3
     deploy:
-      s3_bucket: gs-knowledge-models
-      s3_prefix: pbu-store/
+      s3_bucket: oreo-dev-ml-artifacts
+      s3_prefix: models/edge/pbu-store/
+      app_s3_prefix: apps/edge/
       auto_update_cron: "0 3 * * 1"
       quantize: q4_k_m
 

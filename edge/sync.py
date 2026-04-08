@@ -31,6 +31,9 @@ STORE_ID = os.getenv("STORE_ID", "unknown")
 EDGE_API_KEY = os.getenv("EDGE_API_KEY", "")
 EDGE_SERVER_URL = os.getenv("EDGE_SERVER_URL", "http://localhost:8080")
 LOG_UPLOAD_URL = os.getenv("LOG_UPLOAD_URL", "")
+CENTRAL_API_URL = os.getenv("CENTRAL_API_URL", "")
+APP_DIR = Path(os.getenv("APP_DIR", "/opt/edge-model"))
+APP_STAGING = APP_DIR / "staging"
 
 CURRENT_DIR = MODEL_DIR / "current"
 STAGING_DIR = MODEL_DIR / "staging"
@@ -180,6 +183,99 @@ def upload_logs() -> int:
         return 0
 
 
+def push_heartbeat() -> None:
+    """엣지 → 중앙 서버로 heartbeat push. 응답에 따라 업데이트 수행."""
+    if not CENTRAL_API_URL:
+        logger.debug("CENTRAL_API_URL not set, skipping heartbeat")
+        return
+
+    # 로컬 서버에서 상태 수집
+    try:
+        resp = httpx.get(f"{EDGE_SERVER_URL}/heartbeat", timeout=5)
+        data = resp.json()
+    except Exception as e:
+        logger.warning("Failed to collect heartbeat: %s", e)
+        return
+
+    # 중앙에 push
+    headers = {"Authorization": f"Bearer {EDGE_API_KEY}"} if EDGE_API_KEY else {}
+    try:
+        resp = httpx.post(
+            f"{CENTRAL_API_URL}/api/v1/distill/edge-servers/heartbeat",
+            json=data, headers=headers, timeout=10,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+    except Exception as e:
+        logger.warning("Heartbeat push failed: %s", e)
+        return
+
+    # 응답에 따라 업데이트
+    if result.get("pending_model_update"):
+        logger.info("Model update requested by central server")
+        check_and_update()
+    if result.get("pending_app_update"):
+        logger.info("App update requested by central server")
+        stage_app_update()
+
+
+def stage_app_update() -> bool:
+    """앱 바이너리를 staging에 다운로드. 실제 교체는 update-edge 스크립트가 수행."""
+    if not MANIFEST_URL:
+        return False
+
+    try:
+        resp = httpx.get(MANIFEST_URL, timeout=30)
+        manifest = resp.json()
+    except Exception as e:
+        logger.error("Failed to fetch manifest for app update: %s", e)
+        return False
+
+    remote_app_ver = manifest.get("app_version", "")
+    local_app_ver = os.getenv("APP_VERSION", "dev")
+    if not remote_app_ver or remote_app_ver == local_app_ver:
+        logger.info("App already up to date: %s", local_app_ver)
+        return False
+
+    # OS별 다운로드 URL
+    import platform
+    os_key = f"{platform.system().lower()}-{platform.machine()}"
+    downloads = manifest.get("app_downloads", {})
+    dl_info = downloads.get(os_key)
+    if not dl_info:
+        logger.warning("No app download for platform: %s", os_key)
+        return False
+
+    APP_STAGING.mkdir(parents=True, exist_ok=True)
+    binary_name = "edge-server.exe" if platform.system() == "Windows" else "edge-server"
+    staging_path = APP_STAGING / binary_name
+
+    try:
+        logger.info("Downloading app %s for %s...", remote_app_ver, os_key)
+        with httpx.stream("GET", dl_info["url"], timeout=300) as r:
+            r.raise_for_status()
+            with open(staging_path, "wb") as f:
+                for chunk in r.iter_bytes(chunk_size=8192):
+                    f.write(chunk)
+    except Exception as e:
+        logger.error("App download failed: %s", e)
+        return False
+
+    # SHA256 검증
+    expected_sha = dl_info.get("sha256", "")
+    if expected_sha:
+        actual_sha = _sha256_file(staging_path)
+        if actual_sha != expected_sha:
+            logger.error("App SHA256 mismatch")
+            staging_path.unlink(missing_ok=True)
+            return False
+
+    # UPDATE_READY 플래그 (update-edge 스크립트가 감지)
+    (APP_STAGING / "UPDATE_READY").write_text(remote_app_ver)
+    logger.info("App staged for update: %s → %s", local_app_ver, remote_app_ver)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="Edge model sync")
     parser.add_argument("--check-only", action="store_true")
@@ -191,7 +287,7 @@ def main():
     elif args.check_only:
         check_and_update()
     else:
-        check_and_update()
+        push_heartbeat()
         upload_logs()
 
 
