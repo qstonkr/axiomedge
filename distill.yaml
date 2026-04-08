@@ -5,7 +5,7 @@
 defaults:
   teacher_model: exaone-sagemaker
   quantize: q4_k_m
-  min_training_samples: 5000
+  min_training_samples: 200
   eval_threshold:
     faithfulness: 0.55
     relevancy: 0.65
