@@ -549,20 +549,16 @@ with tab_curation:
                 # 자동 필터 버튼
                 af1, af2 = st.columns(2)
                 with af1:
-                    if st.button("✅ 일관성 0.8↑ 전체 승인", key="btn_auto_approve"):
-                        td = api_client.list_training_data(
-                            selected, status="pending", limit=10000,
-                        )
-                        if not api_failed(td):
-                            ids = [
-                                it["id"] for it in td.get("items", [])
-                                if (it.get("consistency_score") or 0) >= 0.8
-                            ]
-                            if ids:
-                                api_client.review_training_data({"ids": ids, "status": "approved"})
-                                st.success(f"{len(ids)}건 자동 승인")
-                                st.cache_data.clear()
-                                st.rerun()
+                    if st.button("✅ 스마트 일괄 승인", key="btn_smart_approve"):
+                        result = api_client.smart_approve(selected, source_type=filter_source)
+                        if not api_failed(result):
+                            st.success(
+                                f"승인: {result.get('approved', 0)}건 | "
+                                f"거부: {result.get('rejected', 0)}건 | "
+                                f"정리: {result.get('cleaned', 0)}건"
+                            )
+                            st.cache_data.clear()
+                            st.rerun()
                 with af2:
                     if st.button("❌ 범용성 0.3↓ 전체 거부", key="btn_auto_reject"):
                         td = api_client.list_training_data(
@@ -721,15 +717,16 @@ with tab_curation:
                     # 일괄 버튼
                     ta1, ta2 = st.columns(2)
                     with ta1:
-                        if st.button("✅ 전체 승인", key="btn_term_approve_all"):
-                            td = api_client.list_training_data(selected, source_type="term_qa", status="pending", limit=10000)
-                            if not api_failed(td):
-                                ids = [it["id"] for it in td.get("items", [])]
-                                if ids:
-                                    api_client.review_training_data({"ids": ids, "status": "approved"})
-                                    st.success(f"{len(ids)}건 승인")
-                                    st.cache_data.clear()
-                                    st.rerun()
+                        if st.button("✅ 스마트 일괄 승인", key="btn_term_approve_all"):
+                            result = api_client.smart_approve(selected, source_type="term_qa")
+                            if not api_failed(result):
+                                st.success(
+                                    f"승인: {result.get('approved', 0)}건 | "
+                                    f"거부: {result.get('rejected', 0)}건 | "
+                                    f"정리: {result.get('cleaned', 0)}건"
+                                )
+                                st.cache_data.clear()
+                                st.rerun()
                     with ta2:
                         if st.button("❌ 전체 거부", key="btn_term_reject_all"):
                             td = api_client.list_training_data(selected, source_type="term_qa", status="pending", limit=10000)

@@ -409,6 +409,88 @@ async def review_training_data(request: TrainingDataReviewRequest):
     return {"updated": updated}
 
 
+@router.post("/training-data/smart-approve")
+async def smart_approve(profile_name: str, source_type: str | None = None):
+    """품질 체크 후 일괄 승인 (불량은 자동 거부, 마크다운은 cleanup 후 승인).
+
+    1. 답변 불가 패턴 → 자동 거부
+    2. 너무 짧은 답변 (< 20자) → 자동 거부
+    3. 마크다운 잔존 → cleanup 후 승인
+    4. 나머지 → 승인
+    """
+    import re
+
+    repo = _get_distill_repo()
+    result = await repo.list_training_data(
+        profile_name=profile_name, source_type=source_type,
+        status="pending", limit=10000,
+    )
+    items = result.get("items", [])
+    if not items:
+        return {"approved": 0, "rejected": 0, "cleaned": 0, "total": 0}
+
+    bad_patterns = [
+        "제공된 문서들에", "제공된 문서에서", "주어진 문서들에서",
+        "명시되어 있지 않", "포함되어 있지 않",
+        "직접적인 정보가", "직접적인 정보는",
+        "명확한 정보가", "구체적인 정보가 부족",
+    ]
+
+    approve_ids = []
+    reject_ids = []
+    cleanup_updates = []
+
+    for it in items:
+        answer = it.get("answer", "")
+        item_id = it["id"]
+
+        # 답변 불가 → 거부
+        prefix = answer[:200]
+        if sum(1 for p in bad_patterns if p in prefix) >= 2:
+            reject_ids.append(item_id)
+            continue
+
+        # 너무 짧음 → 거부
+        if len(answer.strip()) < 20:
+            reject_ids.append(item_id)
+            continue
+
+        # 마크다운 cleanup
+        cleaned = answer
+        cleaned = re.sub(r"\[(\d+|문서\s*\d+)\]", "", cleaned)
+        cleaned = re.sub(r"#{1,4}\s*", "", cleaned)
+        cleaned = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", cleaned)
+        cleaned = re.sub(r"---+", "", cleaned)
+        cleaned = re.sub(
+            r"제공된 문서[들]?[에서을를]*\s*(따르면|종합하[면여]|바탕으로|분석한 결과)",
+            "", cleaned,
+        )
+        cleaned = re.sub(r"GS리테일 사내 지식.*?입니다\.\s*", "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        cleaned = re.sub(r"  +", " ", cleaned)
+        cleaned = cleaned.strip()
+
+        if cleaned != answer:
+            cleanup_updates.append({"id": item_id, "answer": cleaned})
+
+        approve_ids.append(item_id)
+
+    # 실행
+    if reject_ids:
+        await repo.update_training_data_status(reject_ids, "rejected")
+    if cleanup_updates:
+        await repo.bulk_update_training_data(cleanup_updates)
+    if approve_ids:
+        await repo.update_training_data_status(approve_ids, "approved")
+
+    return {
+        "approved": len(approve_ids),
+        "rejected": len(reject_ids),
+        "cleaned": len(cleanup_updates),
+        "total": len(items),
+    }
+
+
 @router.get("/training-data/stats")
 async def training_data_stats(profile_name: str):
     """프로필별 학습 데이터 통계."""

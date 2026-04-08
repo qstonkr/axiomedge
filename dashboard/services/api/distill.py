@@ -151,6 +151,15 @@ def review_edit_training_data(body: dict) -> dict:
     return _put("/api/v1/distill/training-data/review-edit", body)
 
 
+# ── 스마트 승인 ──
+
+def smart_approve(profile_name: str, source_type: str | None = None) -> dict:
+    path = f"/api/v1/distill/training-data/smart-approve?profile_name={profile_name}"
+    if source_type:
+        path += f"&source_type={source_type}"
+    return _post(path, {})
+
+
 # ── 증강 + 용어 ──
 
 def augment_training_data(body: dict) -> dict:
