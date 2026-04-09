@@ -19,6 +19,8 @@ _st_mock = MagicMock()
 _st_mock.cache_data = lambda **kw: lambda f: f
 sys.modules.setdefault("streamlit", _st_mock)
 
+import services.api._core as _core_module
+
 from services.api._core import (
     PUBLISH_EXECUTE_TIMEOUT_SECONDS,
     _client,
@@ -105,75 +107,57 @@ class TestRequest:
             )
         return resp
 
-    @patch("services.api._core._client")
-    def test_successful_dict_response(self, mock_client_fn):
+    def _make_mock_client(self, resp):
+        """Create a mock httpx.Client that works as context manager."""
+        client = MagicMock(spec=httpx.Client)
+        client.request.return_value = resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        return client
+
+    def test_successful_dict_response(self, monkeypatch):
         resp = self._mock_response(200, {"result": "ok"})
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _request("GET", "/test")
         assert result == {"result": "ok"}
 
-    @patch("services.api._core._client")
-    def test_list_response_wrapped_in_items(self, mock_client_fn):
+    def test_list_response_wrapped_in_items(self, monkeypatch):
         resp = self._mock_response(200, [1, 2, 3])
         resp.json.return_value = [1, 2, 3]
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _request("GET", "/test")
         assert result == {"items": [1, 2, 3]}
 
-    @patch("services.api._core._client")
-    def test_http_error_returns_api_failed(self, mock_client_fn):
+    def test_http_error_returns_api_failed(self, monkeypatch):
         resp = self._mock_response(500)
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _request("GET", "/fail")
         assert api_failed(result) is True
 
-    @patch("services.api._core._client")
-    def test_timeout_returns_api_failed(self, mock_client_fn):
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.side_effect = httpx.TimeoutException("timed out")
-        mock_client_fn.return_value = ctx
+    def test_timeout_returns_api_failed(self, monkeypatch):
+        client = self._make_mock_client(self._mock_response(200))
+        client.request.side_effect = httpx.TimeoutException("timed out")
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: client)
 
         result = _request("GET", "/slow")
         assert api_failed(result) is True
         assert "Timeout" in result["error"]
 
-    @patch("services.api._core._client")
-    def test_connection_error_returns_api_failed(self, mock_client_fn):
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.side_effect = httpx.ConnectError("refused")
-        mock_client_fn.return_value = ctx
+    def test_connection_error_returns_api_failed(self, monkeypatch):
+        client = self._make_mock_client(self._mock_response(200))
+        client.request.side_effect = httpx.ConnectError("refused")
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: client)
 
         result = _request("GET", "/unreachable")
         assert api_failed(result) is True
 
-    @patch("services.api._core._client")
-    def test_non_json_response_returns_api_failed(self, mock_client_fn):
+    def test_non_json_response_returns_api_failed(self, monkeypatch):
         resp = self._mock_response(200)
         resp.json.side_effect = ValueError("not json")
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _request("GET", "/html")
         assert api_failed(result) is True
@@ -185,40 +169,40 @@ class TestRequest:
 # ===========================================================================
 
 class TestHTTPHelpers:
-    @patch("services.api._core._request")
-    def test_get_filters_none_params(self, mock_req):
-        mock_req.return_value = {"data": 1}
+    def test_get_filters_none_params(self, monkeypatch):
+        mock_req = MagicMock(return_value={"data": 1})
+        monkeypatch.setattr(_core_module, "_request", mock_req)
         _get("/test", a=1, b=None, c="x")
         call_kwargs = mock_req.call_args
         assert call_kwargs[1]["params"] == {"a": 1, "c": "x"}
 
-    @patch("services.api._core._request")
-    def test_get_removes_use_agents(self, mock_req):
-        mock_req.return_value = {}
+    def test_get_removes_use_agents(self, monkeypatch):
+        mock_req = MagicMock(return_value={})
+        monkeypatch.setattr(_core_module, "_request", mock_req)
         _get("/test", use_agents=True, q="hello")
         assert "use_agents" not in mock_req.call_args[1]["params"]
 
-    @patch("services.api._core._request")
-    def test_post_sends_body(self, mock_req):
-        mock_req.return_value = {"ok": True}
+    def test_post_sends_body(self, monkeypatch):
+        mock_req = MagicMock(return_value={"ok": True})
+        monkeypatch.setattr(_core_module, "_request", mock_req)
         _post("/test", {"key": "val"})
         mock_req.assert_called_once_with("POST", "/test", json_body={"key": "val"}, timeout=None)
 
-    @patch("services.api._core._request")
-    def test_post_empty_body_defaults_to_empty_dict(self, mock_req):
-        mock_req.return_value = {}
+    def test_post_empty_body_defaults_to_empty_dict(self, monkeypatch):
+        mock_req = MagicMock(return_value={})
+        monkeypatch.setattr(_core_module, "_request", mock_req)
         _post("/test")
         mock_req.assert_called_once_with("POST", "/test", json_body={}, timeout=None)
 
-    @patch("services.api._core._request")
-    def test_put_sends_body(self, mock_req):
-        mock_req.return_value = {}
+    def test_put_sends_body(self, monkeypatch):
+        mock_req = MagicMock(return_value={})
+        monkeypatch.setattr(_core_module, "_request", mock_req)
         _put("/test", {"name": "new"})
         mock_req.assert_called_once_with("PUT", "/test", json_body={"name": "new"})
 
-    @patch("services.api._core._request")
-    def test_patch_sends_body(self, mock_req):
-        mock_req.return_value = {}
+    def test_patch_sends_body(self, monkeypatch):
+        mock_req = MagicMock(return_value={})
+        monkeypatch.setattr(_core_module, "_request", mock_req)
         _patch("/test", {"field": "value"})
         mock_req.assert_called_once_with("PATCH", "/test", json_body={"field": "value"})
 
@@ -228,47 +212,39 @@ class TestHTTPHelpers:
 # ===========================================================================
 
 class TestDelete:
-    @patch("services.api._core._client")
-    def test_204_returns_success(self, mock_client_fn):
+    def _make_mock_client(self, resp):
+        client = MagicMock(spec=httpx.Client)
+        client.request.return_value = resp
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        return client
+
+    def test_204_returns_success(self, monkeypatch):
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 204
         resp.raise_for_status = MagicMock()
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _delete("/test/123")
         assert result == {"success": True}
 
-    @patch("services.api._core._client")
-    def test_200_with_json_returns_data(self, mock_client_fn):
+    def test_200_with_json_returns_data(self, monkeypatch):
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 200
         resp.raise_for_status = MagicMock()
         resp.json.return_value = {"deleted": True}
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _delete("/test/456")
         assert result == {"deleted": True}
 
-    @patch("services.api._core._client")
-    def test_http_error_returns_api_failed(self, mock_client_fn):
+    def test_http_error_returns_api_failed(self, monkeypatch):
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = 404
         resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             message="Not Found", request=MagicMock(), response=resp,
         )
-        ctx = MagicMock()
-        ctx.__enter__ = MagicMock(return_value=ctx)
-        ctx.__exit__ = MagicMock(return_value=False)
-        ctx.request.return_value = resp
-        mock_client_fn.return_value = ctx
+        monkeypatch.setattr(_core_module, "_client", lambda **kw: self._make_mock_client(resp))
 
         result = _delete("/test/missing")
         assert api_failed(result) is True

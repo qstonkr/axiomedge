@@ -202,11 +202,17 @@ class TestRunDataSourceSync:
 class TestOCRInstanceLifecycle:
     @pytest.mark.asyncio
     async def test_start_ocr_returns_none_when_no_instance_id(self):
-        from src.api.routes.data_source_sync import _start_ocr_instance
-
-        with patch("src.api.routes.data_source_sync._PADDLEOCR_INSTANCE_ID", ""):
-            result = await _start_ocr_instance()
-            assert result is None or result == ""
+        import src.api.routes.data_source_sync as _sync_mod
+        orig_id = _sync_mod._PADDLEOCR_INSTANCE_ID
+        orig_url = _sync_mod._PADDLEOCR_API_URL
+        try:
+            _sync_mod._PADDLEOCR_INSTANCE_ID = ""
+            _sync_mod._PADDLEOCR_API_URL = ""
+            result = await _sync_mod._start_ocr_instance()
+            assert result is None
+        finally:
+            _sync_mod._PADDLEOCR_INSTANCE_ID = orig_id
+            _sync_mod._PADDLEOCR_API_URL = orig_url
 
     @pytest.mark.asyncio
     async def test_start_ocr_already_running(self):
