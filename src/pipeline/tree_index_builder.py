@@ -76,6 +76,19 @@ def build_tree_from_chunks(
     pages: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
 
+    # heading 없는 청크 수에 따라 적응형 그룹 크기 결정
+    headingless_count = sum(
+        1 for c in chunks if not parse_heading_path(c.get("heading_path", "") or "")
+    )
+    if headingless_count <= 5:
+        _page_group_size = headingless_count  # 그룹 1개 (세분화 불필요)
+    elif headingless_count <= 20:
+        _page_group_size = 5
+    elif headingless_count <= 100:
+        _page_group_size = 10
+    else:
+        _page_group_size = 20
+
     for chunk in chunks:
         heading_path = chunk.get("heading_path", "") or ""
         chunk_id = chunk.get("chunk_id", "")
@@ -84,8 +97,8 @@ def build_tree_from_chunks(
         parsed = parse_heading_path(heading_path)
 
         if not parsed:
-            # heading 없는 문서 → 페이지 그룹으로 섹션 생성 (20페이지 단위)
-            group_size = 20
+            # heading 없는 문서 → 적응형 페이지 그룹으로 섹션 생성
+            group_size = _page_group_size
             group_idx = chunk_index // group_size
             start_page = group_idx * group_size + 1
             end_page = start_page + group_size - 1
