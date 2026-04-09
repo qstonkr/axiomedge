@@ -9,14 +9,18 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-# Mock streamlit if not already loaded
-st_mock = MagicMock()
-st_mock.session_state = MagicMock()
-st_mock.session_state.get = MagicMock(return_value=None)
-st_mock.cache_data = MagicMock()
-st_mock.cache_resource = MagicMock()
-sys.modules.setdefault("streamlit", st_mock)
+# Use the streamlit mock from conftest (or create one if running standalone)
+if "streamlit" not in sys.modules:
+    st_mock = MagicMock()
+    sys.modules["streamlit"] = st_mock
 st_mock = sys.modules["streamlit"]
+# Ensure required attributes exist
+if not hasattr(st_mock.session_state, 'get') or not callable(getattr(st_mock.session_state, 'get', None)):
+    st_mock.session_state = MagicMock()
+    st_mock.session_state.get = MagicMock(return_value=None)
+if not hasattr(st_mock.cache_data, 'clear'):
+    st_mock.cache_data = MagicMock()
+    st_mock.cache_data.clear = MagicMock()
 
 
 # Purge cached dashboard modules so they reimport with our mock

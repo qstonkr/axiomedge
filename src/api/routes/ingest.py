@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import tempfile
 from typing import Annotated, Any
 
@@ -97,8 +98,18 @@ async def ingest_directory(request: IngestRequest):
     if not store or not embedder:
         raise HTTPException(status_code=503, detail="Ingestion services not initialized")
 
-    if not os.path.isdir(request.source_dir):
-        raise HTTPException(status_code=400, detail=f"Directory not found: {request.source_dir}")
+    # Path traversal prevention: resolve symlinks and validate against allowed base paths
+    _extra = os.environ.get("INGEST_ALLOWED_PATHS", "")
+    allowed_bases = [
+        os.path.realpath("/tmp"),
+        os.path.realpath(tempfile.gettempdir()),
+        os.path.realpath(os.path.expanduser("~/uploads")),
+    ] + [os.path.realpath(p) for p in _extra.split(":") if p.strip()]
+    real_path = os.path.realpath(request.source_dir)
+    if not any(real_path.startswith(base) for base in allowed_bases):
+        raise HTTPException(status_code=400, detail="Source directory is outside allowed paths")
+    if not os.path.isdir(real_path):
+        raise HTTPException(status_code=400, detail="Directory not found")
 
     collections = state.get("qdrant_collections")
     if collections:
@@ -185,7 +196,10 @@ async def upload_file(
         raise HTTPException(status_code=503, detail="Ingestion services not initialized")
 
     # Save uploaded file to temp (use asyncio.to_thread for sync I/O)
-    suffix = os.path.splitext(file.filename or "")[1]
+    # Sanitize filename to prevent XSS and path traversal
+    raw_name = file.filename or "uploaded_file"
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', raw_name)  # strip dangerous chars
+    suffix = os.path.splitext(safe_name)[1]
     content = await file.read()
     tmp = await asyncio.to_thread(tempfile.NamedTemporaryFile, delete=False, suffix=suffix)
     try:

@@ -48,9 +48,9 @@ async def graph_search(body: dict[str, Any]):
     """Search the knowledge graph."""
     state = _get_state()
     graph = state.get("graph_repo")
-    query = body.get("query", "")
-    _max_hops = body.get("max_hops", 2)  # Not yet used: pass to graph query when multi-hop is implemented
-    max_nodes = body.get("max_nodes", 50)
+    query = str(body.get("query", ""))[:500]  # limit query length
+    _max_hops = min(int(body.get("max_hops", 2)), 5)  # cap at 5 hops
+    max_nodes = min(int(body.get("max_nodes", 50)), 200)  # cap at 200
 
     if not graph:
         return {"query": query, "nodes": [], "edges": [], "total": 0}
@@ -124,7 +124,7 @@ async def graph_expand(body: dict[str, Any]):
     """Expand a graph node to show neighbors."""
     state = _get_state()
     graph = state.get("graph_repo")
-    node_id = body.get("node_id", "")
+    node_id = str(body.get("node_id", ""))[:200]
 
     if not graph:
         return {"node_id": node_id, "neighbors": [], "edges": []}
@@ -632,7 +632,10 @@ def _fetch_ai_classify_candidates(
     auth = (user, password) if password else None
     driver = GraphDatabase.driver(uri, auth=auth)
 
-    kb_clause = f" AND n.kb_id = '{kb_id}'" if kb_id else ""
+    kb_clause = " AND n.kb_id = $kb_id" if kb_id else ""
+    params: dict[str, Any] = {}
+    if kb_id:
+        params["kb_id"] = kb_id
     candidates: list[dict[str, Any]] = []
     # limit=0 means fetch all
     limit_clause1 = f"LIMIT {limit // 2}" if limit > 0 else ""
@@ -647,7 +650,7 @@ def _fetch_ai_classify_candidates(
                 "RETURN elementId(n) AS eid, n.name AS name, "
                 f"'Person' AS current_label, n.kb_id AS kb_id {limit_clause1}"
             )
-            result1 = session.run(q1)
+            result1 = session.run(q1, params)
             for record in result1:
                 candidates.append(dict(record))
 
@@ -659,7 +662,7 @@ def _fetch_ai_classify_candidates(
                 "RETURN elementId(n) AS eid, n.name AS name, "
                 f"'__Entity__' AS current_label, n.kb_id AS kb_id {limit_clause2}"
             )
-            result2 = session.run(q2)
+            result2 = session.run(q2, params)
             for record in result2:
                 candidates.append(dict(record))
     finally:

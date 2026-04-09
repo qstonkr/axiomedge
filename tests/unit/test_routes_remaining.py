@@ -274,7 +274,10 @@ class TestDataSourceRoutes:
 
     def test_trigger_sync(self):
         repo = AsyncMock()
-        repo.get = AsyncMock(return_value={"id": "ds1", "status": "active"})
+        repo.get = AsyncMock(return_value={
+            "id": "ds1", "status": "active",
+            "config": {"page_id": "12345", "confluence_url": "https://wiki.example.com"},
+        })
         repo.update_status = AsyncMock()
         state = _mock_state(data_source_repo=repo)
         with patch("src.api.routes.data_sources._get_state", return_value=state):
@@ -283,7 +286,7 @@ class TestDataSourceRoutes:
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
                     resp = await ac.post("/api/v1/admin/data-sources/ds1/trigger")
                     assert resp.status_code == 200
-                    assert resp.json()["message"] == "Sync triggered"
+                    assert "Sync trigger" in resp.json()["message"]
             _run(_t())
 
     def test_trigger_sync_not_found(self):

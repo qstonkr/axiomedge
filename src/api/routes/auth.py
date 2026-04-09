@@ -92,6 +92,13 @@ async def login(body: LoginRequest, request: Request, response: Response):
 
     user = await auth_service.authenticate(body.email, body.password)
     if not user:
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(
+            "AUTH_FAIL: email=%s ip=%s user_agent=%s",
+            body.email,
+            client_ip,
+            request.headers.get("user-agent", "unknown"),
+        )
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     state = _get_state()
