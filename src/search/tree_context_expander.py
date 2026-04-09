@@ -180,9 +180,11 @@ async def get_section_bonus_map(
         logger.warning("Section bonus calculation failed: %s", e)
         return {}
 
+    from src.search.section_utils import get_top_section
+
     section_groups: dict[str, list[str]] = {}
     for cid, path in paths.items():
-        top_section = path.split(" > ")[0] if path else ""
+        top_section = get_top_section(path)
         if top_section:
             section_groups.setdefault(top_section, []).append(cid)
 

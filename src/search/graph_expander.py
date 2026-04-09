@@ -249,15 +249,15 @@ class GraphSearchExpander:
         if not candidate_uris:
             return candidate_uris
 
-        # 히트 청크에서 top-level 섹션 키워드 수집
+        from src.search.section_utils import get_top_section
+
         section_keywords: set[str] = set()
         for chunk in chunks:
             meta = chunk.get("metadata") or {}
             hp = meta.get("heading_path", "") or ""
-            if hp:
-                top = hp.split(" > ")[0].strip()
-                if top:
-                    section_keywords.add(top.lower())
+            top = get_top_section(hp)
+            if top:
+                section_keywords.add(top.lower())
 
         if not section_keywords:
             return candidate_uris
@@ -273,9 +273,9 @@ class GraphSearchExpander:
             else:
                 unrelated.add(uri)
 
-        # 관련 URI + 관련 없는 URI의 절반 (완전 차단하지 않음)
+        # 관련 URI + 비관련 URI 일부 허용 (완전 차단 방지)
         max_unrelated = max(1, len(candidate_uris) // 4)
-        filtered |= set(list(unrelated)[:max_unrelated])
+        filtered |= set(sorted(unrelated)[:max_unrelated])
 
         return filtered
 

@@ -72,20 +72,22 @@ def _cluster_embeddings(
     max_k = min(max_clusters, n_samples // 2, n_samples - 1)
     max_k = max(max_k, 1)
 
-    best_k, best_bic = 1, float("inf")
-    for k in range(1, max_k + 1):
+    best_gmm = GaussianMixture(n_components=1, random_state=42, covariance_type="full")
+    best_gmm.fit(reduced)
+    best_bic = best_gmm.bic(reduced)
+    for k in range(2, max_k + 1):
         try:
             gmm = GaussianMixture(n_components=k, random_state=42, covariance_type="full")
             gmm.fit(reduced)
             bic = gmm.bic(reduced)
             if bic < best_bic:
                 best_bic = bic
-                best_k = k
-        except Exception:
+                best_gmm = gmm
+        except Exception as e:
+            logger.debug("GMM fit failed for k=%d: %s", k, e)
             break
 
-    gmm = GaussianMixture(n_components=best_k, random_state=42, covariance_type="full")
-    labels = gmm.fit_predict(reduced)
+    labels = best_gmm.predict(reduced)
 
     clusters: dict[int, list[int]] = {}
     for idx, label in enumerate(labels):

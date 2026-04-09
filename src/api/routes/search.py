@@ -832,14 +832,15 @@ async def _step_tree_expand(
 
     try:
         from src.search.tree_context_expander import (
-            expand_siblings, search_by_section_titles, get_section_bonus_map,
+            expand_siblings, search_by_section_titles,
         )
 
         chunk_ids = [c.get("chunk_id", "") for c in all_chunks if c.get("chunk_id")]
         chunk_scores = {c.get("chunk_id", ""): c.get("score", 0.0) for c in all_chunks}
         kb_id = collections[0] if len(collections) == 1 else None
 
-        # 5.5a+b+c: 형제 확장, 섹션 제목 검색, 보너스 맵 (병렬)
+        # 5.5a+b: 형제 확장 + 섹션 제목 검색 (병렬)
+        # 섹션 보너스는 composite_reranker._apply_section_bonus에서 처리
         coros = [
             expand_siblings(
                 chunk_ids, chunk_scores, graph_repo,
@@ -852,20 +853,11 @@ async def _step_tree_expand(
                 display_query, graph_repo,
                 kb_id=kb_id, existing_chunk_ids=set(chunk_ids),
             ) if tree_settings.section_title_search else asyncio.sleep(0),
-            get_section_bonus_map(chunk_ids, graph_repo),
         ]
-        siblings_result, section_result, bonus_map = await asyncio.gather(*coros)
+        siblings_result, section_result = await asyncio.gather(*coros)
 
         siblings = siblings_result if isinstance(siblings_result, list) else []
         section_hits = section_result if isinstance(section_result, list) else []
-
-        # 섹션 보너스 적용
-        if bonus_map:
-            section_bonus = tree_settings.section_bonus
-            for chunk in all_chunks:
-                cid = chunk.get("chunk_id", "")
-                if cid in bonus_map:
-                    chunk["score"] = chunk.get("score", 0.0) + section_bonus
 
         # 확장 청크를 Qdrant에서 로드하여 결과에 추가
         expanded_ids = [s.chunk_id for s in siblings] + [s.chunk_id for s in section_hits]
@@ -880,8 +872,8 @@ async def _step_tree_expand(
             all_chunks.extend(loaded)
 
         logger.info(
-            "Tree expansion: siblings=%d, section_hits=%d, bonus_applied=%d",
-            len(siblings), len(section_hits), len(bonus_map),
+            "Tree expansion: siblings=%d, section_hits=%d",
+            len(siblings), len(section_hits),
         )
     except Exception as e:
         logger.warning("Tree context expansion failed: %s", e)

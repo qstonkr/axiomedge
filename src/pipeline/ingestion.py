@@ -547,7 +547,9 @@ class IngestionPipeline:
         ts = get_settings().tree_index
         if not ts.enabled or not ts.summary_enabled:
             return
-        if not hasattr(self, '_summary_embedder') or not hasattr(self, '_summary_llm'):
+        embedder = getattr(self, 'embedding_provider', None)
+        llm = getattr(self, 'llm_client', None)
+        if not embedder or not llm:
             return
         try:
             from .summary_tree_builder import build_summary_tree
@@ -570,7 +572,7 @@ class IngestionPipeline:
                 return
 
             summaries = await build_summary_tree(
-                body_chunks, self._summary_embedder, self._summary_llm,
+                body_chunks, embedder, llm,
                 max_layers=ts.summary_max_layers,
                 min_chunks=ts.summary_cluster_min_chunks,
                 use_umap=True,
@@ -593,6 +595,7 @@ class IngestionPipeline:
                         "document_name": raw.title,
                         "chunk_type": "summary",
                         "summary_layer": s["layer"],
+                        # Qdrant payload 크기 제한 (16KB)을 위해 상위 10개만 저장
                         "source_chunk_ids": s["source_chunk_ids"][:10],
                         "kb_id": collection_name,
                         "ingested_at": now_iso,

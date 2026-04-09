@@ -437,12 +437,16 @@ class CompositeReranker:
         if bonus <= 0:
             return weighted_chunks
 
-        # top-level 섹션별 그룹화
+        from src.search.section_utils import get_top_section
+
+        # 같은 top-level 섹션에 2+ 히트 → 핵심 섹션일 확률 높음
         section_counts: dict[str, int] = {}
+        chunk_sections: list[str] = []
         for chunk_tuple in weighted_chunks:
             chunk = chunk_tuple[0]
             hp = getattr(chunk, "metadata", {}).get("heading_path", "") or ""
-            top = hp.split(" > ")[0].strip() if hp else ""
+            top = get_top_section(hp)
+            chunk_sections.append(top)
             if top:
                 section_counts[top] = section_counts.get(top, 0) + 1
 
@@ -451,10 +455,7 @@ class CompositeReranker:
             return weighted_chunks
 
         boosted = []
-        for chunk_tuple in weighted_chunks:
-            chunk = chunk_tuple[0]
-            hp = getattr(chunk, "metadata", {}).get("heading_path", "") or ""
-            top = hp.split(" > ")[0].strip() if hp else ""
+        for chunk_tuple, top in zip(weighted_chunks, chunk_sections):
             if top in multi_sections:
                 # tuple: (chunk, score, model, base, source_boost, position)
                 new_score = min(1.0, chunk_tuple[1] + bonus)

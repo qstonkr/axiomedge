@@ -250,12 +250,14 @@ class CRAGRetrievalEvaluator:
         if not get_settings().tree_index.enabled:
             return 0.0
 
+        from src.search.section_utils import get_top_section
+
         doc_sections: dict[str, set[str]] = {}
         for chunk in chunks:
             meta = _chunk_metadata(chunk)
             doc_id = meta.get("document_id", "") or meta.get("doc_id", "")
             hp = meta.get("heading_path", "") or ""
-            top_section = hp.split(" > ")[0].strip() if hp else ""
+            top_section = get_top_section(hp)
             if doc_id and top_section:
                 doc_sections.setdefault(doc_id, set()).add(top_section)
 
