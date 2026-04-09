@@ -26,6 +26,48 @@ os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+S3_MODEL_BUCKET = os.getenv("DISTILL_S3_BUCKET", "gs-knowledge-models")
+S3_MODEL_PREFIX = "models"
+AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
+
+
+def _resolve_model_path(base_model: str) -> str:
+    """모델 경로 결정: S3에 있으면 다운로드, 없으면 HuggingFace ID 그대로 반환.
+
+    S3 경로: s3://{bucket}/models/{base_model}/
+    로컬 캐시: /opt/distill/models/{base_model}/
+    """
+    import subprocess
+
+    local_path = f"/opt/distill/models/{base_model.replace('/', '_')}"
+    s3_path = f"s3://{S3_MODEL_BUCKET}/{S3_MODEL_PREFIX}/{base_model}/"
+
+    # 이미 로컬에 있으면 재사용
+    if os.path.exists(local_path) and os.listdir(local_path):
+        logger.info("Model cached locally: %s", local_path)
+        return local_path
+
+    # S3에서 다운로드 시도
+    try:
+        check = subprocess.run(
+            ["aws", "s3", "ls", s3_path, "--region", AWS_REGION],
+            capture_output=True, text=True, timeout=10,
+        )
+        if check.returncode == 0 and check.stdout.strip():
+            logger.info("Downloading model from S3: %s", s3_path)
+            os.makedirs(local_path, exist_ok=True)
+            subprocess.run(
+                ["aws", "s3", "sync", s3_path, local_path, "--region", AWS_REGION],
+                check=True, timeout=600,
+            )
+            logger.info("Model downloaded to %s", local_path)
+            return local_path
+    except Exception as e:
+        logger.warning("S3 model download failed: %s, falling back to HuggingFace", e)
+
+    # S3에 없으면 HuggingFace ID 반환 (transformers가 자동 다운로드)
+    return base_model
+
 
 def train(data_dir: str, output_dir: str, build_id: str):
     """LoRA SFT 학습 + GGUF 양자화."""
@@ -47,6 +89,10 @@ def train(data_dir: str, output_dir: str, build_id: str):
     merged_dir = os.path.join(output_dir, "model_merged")
     t0 = time.time()
 
+    # 0. 모델 다운로드 (S3 우선, 없으면 HuggingFace)
+    model_path = _resolve_model_path(base_model)
+    logger.info("Using model path: %s", model_path)
+
     # 1. LoRA SFT 학습
     logger.info("=== Step 1: LoRA SFT Training ===")
     from peft import LoraConfig, get_peft_model
@@ -54,12 +100,12 @@ def train(data_dir: str, output_dir: str, build_id: str):
     from trl import SFTTrainer
     from datasets import load_dataset
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
-        base_model, trust_remote_code=True, device_map="auto",
+        model_path, trust_remote_code=True, device_map="auto",
     )
 
     peft_config = LoraConfig(
