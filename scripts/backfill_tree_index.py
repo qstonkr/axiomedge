@@ -147,8 +147,32 @@ async def _build_and_persist(
     return stats
 
 
-async def async_main(kb_ids: list[str], dry_run: bool = False):
+async def _clean_tree_nodes() -> int:
+    """기존 트리 노드 전체 삭제 (TreeRoot, TreeSection, TreePage + 관련 엣지)."""
+    from src.graph.client import Neo4jClient
+
+    client = Neo4jClient(uri=NEO4J_URI, user=NEO4J_USER, password=NEO4J_PASSWORD)
+    total_deleted = 0
+    try:
+        for label in ("TreePage", "TreeSection", "TreeRoot"):
+            result = await client.execute_query(
+                f"MATCH (n:{label}) DETACH DELETE n RETURN count(n) as cnt"
+            )
+            cnt = result[0]["cnt"] if result else 0
+            total_deleted += cnt
+            logger.info("Cleaned %d %s nodes", cnt, label)
+    finally:
+        await client.close()
+    return total_deleted
+
+
+async def async_main(kb_ids: list[str], dry_run: bool = False, clean: bool = False):
     """메인 백필 로직."""
+    if clean and not dry_run:
+        logger.info("--- Cleaning existing tree nodes ---")
+        deleted = await _clean_tree_nodes()
+        logger.info("Cleaned %d tree nodes total", deleted)
+
     available = _list_collections()
     if not available:
         logger.error("No Qdrant collections found")
@@ -196,4 +220,5 @@ async def async_main(kb_ids: list[str], dry_run: bool = False):
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry_run = "--dry-run" in sys.argv
-    asyncio.run(async_main(args, dry_run=dry_run))
+    clean = "--clean" in sys.argv
+    asyncio.run(async_main(args, dry_run=dry_run, clean=clean))

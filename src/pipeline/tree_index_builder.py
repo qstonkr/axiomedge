@@ -8,7 +8,6 @@ LLM 호출 없음 — heading_path 메타데이터만 활용.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 from typing import Any
@@ -85,19 +84,25 @@ def build_tree_from_chunks(
         parsed = parse_heading_path(heading_path)
 
         if not parsed:
-            flat_hash = _path_hash("__flat__")
-            if flat_hash not in sections:
-                sections[flat_hash] = {
-                    "node_id": f"{kb_id}:{doc_id}:section:{flat_hash}",
+            # heading 없는 문서 → 페이지 그룹으로 섹션 생성 (20페이지 단위)
+            group_size = 20
+            group_idx = chunk_index // group_size
+            start_page = group_idx * group_size + 1
+            end_page = start_page + group_size - 1
+            group_title = f"p.{start_page}-{end_page}"
+            group_hash = _path_hash(f"__page_group_{group_idx}__")
+            if group_hash not in sections:
+                sections[group_hash] = {
+                    "node_id": f"{kb_id}:{doc_id}:section:{group_hash}",
                     "level": 1,
-                    "title": "(본문)",
-                    "full_path": "(본문)",
-                    "order": 0,
+                    "title": group_title,
+                    "full_path": group_title,
+                    "order": len(sections),
                     "doc_id": doc_id,
                     "kb_id": kb_id,
                     "char_count": 0,
                 }
-            leaf_section_id = sections[flat_hash]["node_id"]
+            leaf_section_id = sections[group_hash]["node_id"]
         else:
             for node_info in parsed:
                 ph = node_info["path_hash"]

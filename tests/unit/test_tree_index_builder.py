@@ -103,9 +103,9 @@ class TestBuildTreeFromChunks:
         chunks = self._make_chunks(["", "", ""])
         result = build_tree_from_chunks("kb1", "doc1", chunks)
 
-        # flat 섹션 1개에 모든 청크 할당
+        # 3 chunks all in chunk_index 0-2 → 1 page group (p.1-20)
         assert len(result["sections"]) == 1
-        assert result["sections"][0]["title"] == "(본문)"
+        assert result["sections"][0]["title"] == "p.1-20"
         assert len(result["pages"]) == 3
 
     def test_mixed_heading_and_no_heading(self):
@@ -113,7 +113,7 @@ class TestBuildTreeFromChunks:
         result = build_tree_from_chunks("kb1", "doc1", chunks)
 
         titles = [s["title"] for s in result["sections"]]
-        assert "(본문)" in titles
+        assert "p.1-20" in titles  # heading 없는 chunk → page group
         assert "A" in titles
         assert "B" in titles
         assert "C" in titles
