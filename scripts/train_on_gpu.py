@@ -137,14 +137,19 @@ def train(data_dir: str, output_dir: str, build_id: str):
         report_to="none",
     )
 
-    trainer = SFTTrainer(
+    # trl 버전에 따라 max_seq_length 파라미터 지원 여부 다름
+    sft_kwargs = dict(
         model=model,
         args=training_args,
         train_dataset=dataset,
         eval_dataset=eval_dataset,
         processing_class=tokenizer,
-        max_seq_length=max_seq,
     )
+    import inspect
+    if "max_seq_length" in inspect.signature(SFTTrainer.__init__).parameters:
+        sft_kwargs["max_seq_length"] = max_seq
+
+    trainer = SFTTrainer(**sft_kwargs)
 
     train_result = trainer.train()
     train_loss = train_result.training_loss
