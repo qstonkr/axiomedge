@@ -27,7 +27,9 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
 
-ALL_KBS = ["a-ari", "drp", "g-espa", "partnertalk", "hax", "itops_general"]
+ALL_KBS = [
+    "kb_a_ari", "kb_drp", "kb_g_espa", "kb_partnertalk", "kb_hax", "kb_itops_general",
+]
 
 
 def _list_collections() -> list[str]:
@@ -54,7 +56,10 @@ def _scroll_all_chunks(collection: str) -> dict[str, list[dict]]:
     while True:
         body = {
             "limit": 100,
-            "with_payload": ["document_id", "heading_path", "chunk_index", "chunk_type"],
+            "with_payload": [
+                "document_id", "doc_id", "heading_path", "ancestor_path",
+                "chunk_index", "chunk_type",
+            ],
             "with_vector": False,
         }
         if offset:
@@ -81,12 +86,14 @@ def _scroll_all_chunks(collection: str) -> dict[str, list[dict]]:
             payload = pt.get("payload", {})
             if payload.get("chunk_type") == "title":
                 continue
-            doc_id = payload.get("document_id", "")
+            doc_id = payload.get("document_id") or payload.get("doc_id", "")
             if not doc_id:
                 continue
+            # heading_path 또는 ancestor_path (Confluence 위키)
+            heading = payload.get("heading_path") or payload.get("ancestor_path") or ""
             docs.setdefault(doc_id, []).append({
                 "chunk_id": str(pt["id"]),
-                "heading_path": payload.get("heading_path", "") or "",
+                "heading_path": heading,
                 "chunk_index": payload.get("chunk_index", 0),
             })
             total += 1
@@ -117,11 +124,10 @@ async def _build_and_persist(
             stats["pages"] += len(tree["pages"])
         return stats
 
-    # Neo4j 클라이언트 초기화
-    from src.graph.neo4j_client import Neo4jClient
+    from src.graph.client import Neo4jClient
     from src.graph.repository import Neo4jGraphRepository
 
-    client = Neo4jClient(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+    client = Neo4jClient(uri=NEO4J_URI, user=NEO4J_USER, password=NEO4J_PASSWORD)
     repo = Neo4jGraphRepository(client)
 
     try:
