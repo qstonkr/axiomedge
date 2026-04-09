@@ -205,6 +205,10 @@ class GraphSearchExpander:
 
             all_related = related_uris | cross_kb_uris | person_uris
             new_uris = all_related - existing_uris - existing_docs
+
+            # 트리 인덱스 활성화 시: 히트 청크의 섹션 경로 기반으로 확장 범위 제한
+            new_uris = await self._filter_by_section_scope(chunks, new_uris)
+
             graph_related_count = len(new_uris)
 
             logger.info(
@@ -229,6 +233,51 @@ class GraphSearchExpander:
                 expanded_source_uris=set(),
                 graph_related_count=0,
             )
+
+    async def _filter_by_section_scope(
+        self,
+        chunks: list[dict[str, Any]],
+        candidate_uris: set[str],
+    ) -> set[str]:
+        """트리 인덱스 활성화 시, 히트 청크의 top-level 섹션과 관련된 URI만 유지.
+
+        트리 인덱스 비활성화 시 원본 그대로 반환.
+        """
+        from src.config import get_settings
+        if not get_settings().tree_index.enabled:
+            return candidate_uris
+        if not candidate_uris:
+            return candidate_uris
+
+        # 히트 청크에서 top-level 섹션 키워드 수집
+        section_keywords: set[str] = set()
+        for chunk in chunks:
+            meta = chunk.get("metadata") or {}
+            hp = meta.get("heading_path", "") or ""
+            if hp:
+                top = hp.split(" > ")[0].strip()
+                if top:
+                    section_keywords.add(top.lower())
+
+        if not section_keywords:
+            return candidate_uris
+
+        # URI(보통 document_name)에 섹션 키워드가 포함된 것만 유지
+        # 섹션 키워드가 없는 URI도 일부 허용 (최대 절반)
+        filtered = set()
+        unrelated = set()
+        for uri in candidate_uris:
+            uri_lower = uri.lower()
+            if any(kw in uri_lower for kw in section_keywords):
+                filtered.add(uri)
+            else:
+                unrelated.add(uri)
+
+        # 관련 URI + 관련 없는 URI의 절반 (완전 차단하지 않음)
+        max_unrelated = max(1, len(candidate_uris) // 4)
+        filtered |= set(list(unrelated)[:max_unrelated])
+
+        return filtered
 
     @staticmethod
     def _extract_date_tokens(query: str) -> list[str]:
