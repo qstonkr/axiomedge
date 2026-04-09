@@ -493,27 +493,30 @@ class DistillService:
                 await repo.update_build(build_id, status="training")
                 model_path = await self._train(build_id, profile, data_path, repo, build_dir)
 
-            # Step 3: 평가
-            if "evaluate" in all_steps:
-                await repo.update_build(build_id, status="evaluating")
-                passed = await self._evaluate(build_id, profile, model_path, data_path, repo)
-                if not passed:
-                    await repo.update_build(
-                        build_id, status="failed",
-                        error_message="Evaluation below threshold",
-                        error_step="evaluate",
-                    )
-                    return
-
-            # Step 4: 양자화
+            # Step 3: 양자화
             if "quantize" in all_steps:
                 await repo.update_build(build_id, status="quantizing")
                 gguf_path = await self._quantize(build_id, profile, model_path, repo, build_dir)
 
-            # Step 5: 배포
+            # Step 4: 배포 (S3 업로드)
             if "deploy" in all_steps:
                 await repo.update_build(build_id, status="deploying")
                 await self._deploy(build_id, profile, gguf_path, repo)
+
+            # Step 5: 평가 (S3에서 GGUF 다운로드 → Teacher judge)
+            if "evaluate" in all_steps:
+                await repo.update_build(build_id, status="evaluating")
+                passed = await self._evaluate(
+                    build_id, profile, model_path, data_path, repo,
+                    gguf_path=gguf_path,
+                )
+                if not passed:
+                    await repo.update_build(
+                        build_id, status="failed",
+                        error_message="Evaluation below threshold — GGUF deployed but flagged",
+                        error_step="evaluate",
+                    )
+                    return
 
             await repo.update_build(build_id, status="completed")
             logger.info("Build %s completed successfully", build_id)
@@ -695,10 +698,13 @@ class DistillService:
     async def _evaluate(
         self, build_id: str, profile: DistillProfile,
         model_path: str, data_path: str, repo: DistillRepository,
+        *, gguf_path: str | None = None,
     ) -> bool:
-        """모델 평가 + 배포 게이트."""
-        # from src.distill.evaluator import DistillEvaluator  # TODO: 실 평가 시 활성화
+        """모델 평가 + 배포 게이트.
 
+        GGUF가 있으면 DistillEvaluator로 Teacher judge + 임베딩 유사도 평가.
+        llama_cpp 미설치 시 train_loss 기반 fallback 게이트.
+        """
         # eval set 로드 (train.jsonl에서 마지막 10% 사용)
         eval_data = []
         with open(data_path, encoding="utf-8") as f:
@@ -717,21 +723,41 @@ class DistillService:
             logger.warning("No eval data, skipping evaluation")
             return True
 
-        # TODO: GGUF 변환 후 DistillEvaluator로 실 평가 (현재는 loss 기반 게이트)
-        # evaluator = DistillEvaluator(self.llm, self.embedder)
-        # result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+        # GGUF 기반 실 평가 시도
+        if gguf_path and self.llm and self.embedder:
+            try:
+                from src.distill.evaluator import DistillEvaluator
+
+                evaluator = DistillEvaluator(self.llm, self.embedder)
+                threshold = getattr(profile.training, "eval_threshold", None)
+                result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+
+                await repo.update_build(
+                    build_id,
+                    eval_passed=result.passed,
+                    eval_faithfulness=result.faithfulness,
+                    eval_relevancy=result.relevancy,
+                )
+                logger.info(
+                    "GGUF evaluation: passed=%s, faithfulness=%.3f, relevancy=%.3f",
+                    result.passed, result.faithfulness, result.relevancy,
+                )
+                return result.passed
+            except ImportError:
+                logger.warning("llama_cpp not available, falling back to train_loss gate")
+            except Exception as e:
+                logger.warning("GGUF evaluation failed, falling back to train_loss gate: %s", e)
+
+        # Fallback: train_loss 기반 게이트
         build = await repo.get_build(build_id)
         train_loss = build.get("train_loss", 999)
-
-        # 간단한 게이트: train_loss < 2.0이면 통과
         passed = train_loss < 2.0
         await repo.update_build(
             build_id,
             eval_passed=passed,
-            eval_faithfulness=0.0,  # 추후 실제 평가 시 업데이트
+            eval_faithfulness=0.0,
             eval_relevancy=0.0,
         )
-
         return passed
 
     async def _quantize(

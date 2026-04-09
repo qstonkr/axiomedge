@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -18,6 +20,8 @@ from src.search.answer_guard import AnswerGuard
 from src.search.crag_evaluator import RetrievalAction
 from src.search.passage_cleaner import clean_chunks
 from src.search.cross_encoder_reranker import async_rerank_with_cross_encoder
+from src.search.transparency_formatter import SourceType, TransparencyFormatter
+from src.search.trust_score_service import SOURCE_CREDIBILITY
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/search", tags=["Search"])
@@ -103,6 +107,12 @@ class HubSearchResponse(BaseModel):
     expanded_terms: list[str] = []
     confidence_level: str = ""
     rerank_applied: bool = False
+    # Typed top-level fields (promoted from metadata for type safety)
+    crag_action: str | None = None
+    crag_confidence: float | None = None
+    conflicts: list[dict[str, Any]] | None = None
+    follow_up_questions: list[str] | None = None
+    transparency: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -749,6 +759,47 @@ async def _step_follow_ups(
     return []
 
 
+# Map hub_search query_type → TransparencyFormatter SourceType
+_QUERY_TYPE_TO_SOURCE: dict[str, SourceType] = {
+    "factual": SourceType.DOCUMENT,
+    "analytical": SourceType.INFERENCE,
+    "advisory": SourceType.GENERAL,
+}
+# Map Korean confidence labels → TransparencyFormatter confidence keys
+_CONFIDENCE_KO_TO_EN: dict[str, str] = {
+    "높음": "high",
+    "보통": "medium",
+    "낮음": "low",
+}
+
+
+def _step_build_transparency(
+    answer: str | None,
+    query_type: str,
+    confidence: str,
+) -> dict[str, Any] | None:
+    """Step 9.5: Build transparency metadata for the response.
+
+    Feature-gated via SEARCH_TRANSPARENCY_ENABLED (default: true).
+    Reuses TransparencyFormatter constants for label consistency.
+    """
+    if os.environ.get("SEARCH_TRANSPARENCY_ENABLED", "true").lower() == "false":
+        return None
+    if not answer:
+        return None
+
+    source_type = _QUERY_TYPE_TO_SOURCE.get(query_type, SourceType.DOCUMENT)
+    source_label = TransparencyFormatter.SOURCE_LABELS.get(source_type, "")
+    confidence_key = _CONFIDENCE_KO_TO_EN.get(confidence, "")
+    confidence_indicator = TransparencyFormatter.CONFIDENCE_INDICATORS.get(confidence_key, "")
+
+    return {
+        "source_type": source_type.value,
+        "source_label": source_label,
+        "confidence_indicator": confidence_indicator,
+    }
+
+
 async def _step_cache_store(
     query: str,
     response: HubSearchResponse,
@@ -877,6 +928,57 @@ async def _step_tree_expand(
         )
     except Exception as e:
         logger.warning("Tree context expansion failed: %s", e)
+
+    return all_chunks
+
+
+def _parse_datetime_safe(value: Any) -> datetime | None:
+    """Parse a datetime value from string or passthrough, returning None on failure."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _step_apply_trust_and_freshness(
+    all_chunks: list[dict[str, Any]],
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Step 5.6: Attach KTS trust score and freshness score to chunk metadata.
+
+    Feature-gated via SEARCH_KTS_ENABLED / SEARCH_FRESHNESS_ENABLED env vars.
+    Scores are informational (metadata only) — no reranking impact yet.
+    """
+    kts_enabled = os.environ.get("SEARCH_KTS_ENABLED", "true").lower() != "false"
+    freshness_enabled = os.environ.get("SEARCH_FRESHNESS_ENABLED", "true").lower() != "false"
+
+    if not kts_enabled and not freshness_enabled:
+        return all_chunks
+
+    freshness_predictor = state.get("freshness_predictor") if freshness_enabled else None
+
+    for chunk in all_chunks:
+        meta = chunk.get("metadata") or {}
+
+        if freshness_predictor:
+            raw_date = meta.get("last_modified") or meta.get("updated_at") or chunk.get("updated_at")
+            updated_at = _parse_datetime_safe(raw_date)
+            if updated_at:
+                doc_type = meta.get("doc_type", "general") or "general"
+                meta["freshness_score"] = round(freshness_predictor.score(updated_at, doc_type), 4)
+
+        if kts_enabled:
+            source_type = meta.get("source_type", "auto_extracted")
+            meta["kts_source_credibility"] = SOURCE_CREDIBILITY.get(source_type, 0.0)
+
+        chunk["metadata"] = meta
 
     return all_chunks
 
@@ -1068,12 +1170,15 @@ async def hub_search(request: HubSearchRequest):
         display_query, all_chunks, collections, state,
     )
 
+    # 5.6 Trust score + freshness (feature-gated)
+    all_chunks = _step_apply_trust_and_freshness(all_chunks, state)
+
     # 6. Graph expansion
     all_chunks = await _step_graph_expand(
         display_query, all_chunks, collections, state, _qdrant_url,
     )
 
-    # 7-9. CRAG + answer + guard + conflicts + follow-ups
+    # 7-9. CRAG + answer + guard + conflicts + follow-ups + transparency
     crag_evaluation = await _step_crag_evaluate(display_query, all_chunks, start, state)
     answer, query_type, confidence = await _step_generate_answer(
         display_query, all_chunks, crag_evaluation, request.include_answer, state,
@@ -1084,6 +1189,7 @@ async def hub_search(request: HubSearchRequest):
     follow_ups = await _step_follow_ups(
         display_query, answer, all_chunks, request.include_answer, state,
     )
+    transparency = _step_build_transparency(answer, query_type, confidence)
 
     elapsed = (time.time() - start) * 1000
     await _step_log_usage(
@@ -1100,6 +1206,11 @@ async def hub_search(request: HubSearchRequest):
         display_query=display_query if display_query != query else None,
         expanded_terms=expanded_terms, confidence_level=confidence,
         rerank_applied=rerank_applied, query_preprocess=preprocess_info,
+        crag_action=crag_evaluation.action.value if crag_evaluation else None,
+        crag_confidence=crag_evaluation.confidence_score if crag_evaluation else None,
+        conflicts=conflicts or None,
+        follow_up_questions=follow_ups or None,
+        transparency=transparency,
         metadata={
             "display_query": corrected_query,
             "rerank_applied": rerank_applied,

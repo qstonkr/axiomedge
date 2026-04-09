@@ -173,7 +173,7 @@ class TreeIndexSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="TREE_INDEX_")
 
-    enabled: bool = Field(default=False, description="트리 인덱스 활성화 (기본 OFF)")
+    enabled: bool = Field(default=True, description="트리 인덱스 활성화")
     # 수단 1: 형제 확장
     sibling_window: int = Field(default=2, ge=0, le=5, description="형제 청크 확장 범위")
     max_tree_chunks_per_hit: int = Field(default=4, ge=1, le=10, description="히트당 최대 확장 청크")
