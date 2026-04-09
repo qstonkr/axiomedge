@@ -229,7 +229,7 @@ async def persist_tree_to_neo4j(
                 "char_count": s.get("char_count", 0),
             },
         } for s in sections]
-        node_coros.append(graph_repo.batch_upsert_nodes("TreeSection", section_nodes))
+        node_coros.append(graph_repo.batch_upsert_nodes("TreeSection", section_nodes, batch_size=200))
 
     if pages:
         page_nodes = [{
@@ -242,7 +242,7 @@ async def persist_tree_to_neo4j(
                 "chunk_index": p["chunk_index"],
             },
         } for p in pages]
-        node_coros.append(graph_repo.batch_upsert_nodes("TreePage", page_nodes))
+        node_coros.append(graph_repo.batch_upsert_nodes("TreePage", page_nodes, batch_size=200))
 
     for coro in node_coros:
         await coro
@@ -255,7 +255,7 @@ async def persist_tree_to_neo4j(
     for rel_type, rel_edges in edge_by_type.items():
         batch = [{"source": e["source"], "target": e["target"], "properties": {}}
                  for e in rel_edges]
-        await graph_repo.batch_upsert_edges(rel_type, batch)
+        await graph_repo.batch_upsert_edges(rel_type, batch, batch_size=100)
 
     total = 1 + len(sections) + len(pages)
     logger.info(
