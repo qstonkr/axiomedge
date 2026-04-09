@@ -140,7 +140,13 @@ async def _poll_s3_output(
     s3_bucket: str, s3_prefix: str, build_id: str,
     timeout: int = 7200,
 ) -> dict:
-    """S3에서 학습 결과 폴링 (최대 2시간)."""
+    """S3에서 학습 결과 폴링 (최대 2시간).
+
+    EC2가 stopped/terminated 되면 즉시 실패 처리 (무한 폴링 방지).
+    """
+    instance_id = _GPU_INSTANCE_ID
+    stopped_count = 0
+
     for _ in range(timeout // 15):
         result = await asyncio.to_thread(
             _check_output_exists, s3_bucket, s3_prefix, build_id,
@@ -153,6 +159,18 @@ async def _poll_s3_output(
             if status == "failed":
                 logger.error("Training failed: %s", result.get("error", ""))
                 return {"status": "failed", "error": result.get("error", "unknown")}
+
+        # EC2가 꺼졌으면 result 없이 실패한 것
+        if instance_id:
+            ec2_state = await _get_instance_state(instance_id)
+            if ec2_state in ("stopped", "terminated"):
+                stopped_count += 1
+                if stopped_count >= 2:
+                    logger.error("EC2 %s without producing result.json", ec2_state)
+                    return {"status": "failed", "error": f"EC2 {ec2_state} without result"}
+            else:
+                stopped_count = 0
+
         await asyncio.sleep(15)
 
     return {"status": "timeout"}
