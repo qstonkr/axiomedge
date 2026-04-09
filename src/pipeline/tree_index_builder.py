@@ -212,7 +212,7 @@ async def persist_tree_to_neo4j(
         "title": f"TreeRoot:{root['doc_id']}",
         "properties": {"doc_id": root["doc_id"], "kb_id": root["kb_id"]},
     }]
-    await graph_repo.batch_upsert_nodes("tree_root", root_nodes)
+    await graph_repo.batch_upsert_nodes("TreeRoot", root_nodes)
 
     # 2-3. TreeSection + TreePage 노드 (병렬)
     node_coros = []
@@ -229,7 +229,7 @@ async def persist_tree_to_neo4j(
                 "char_count": s.get("char_count", 0),
             },
         } for s in sections]
-        node_coros.append(graph_repo.batch_upsert_nodes("tree_section", section_nodes))
+        node_coros.append(graph_repo.batch_upsert_nodes("TreeSection", section_nodes))
 
     if pages:
         page_nodes = [{
@@ -242,33 +242,20 @@ async def persist_tree_to_neo4j(
                 "chunk_index": p["chunk_index"],
             },
         } for p in pages]
-        node_coros.append(graph_repo.batch_upsert_nodes("tree_page", page_nodes))
+        node_coros.append(graph_repo.batch_upsert_nodes("TreePage", page_nodes))
 
-    if node_coros:
-        await asyncio.gather(*node_coros)
+    for coro in node_coros:
+        await coro
 
-    # 4. 엣지 (타입별 병렬)
+    # 4. 엣지 (타입별 순차 — Neo4j deadlock 방지)
     edge_by_type: dict[str, list[dict]] = {}
     for e in edges:
         edge_by_type.setdefault(e["type"], []).append(e)
 
-    type_key_map = {
-        "HAS_TREE_ROOT": "has_tree_root",
-        "HAS_TREE_SECTION": "has_tree_section",
-        "HAS_TREE_PAGE": "has_tree_page",
-        "TREE_NEXT_SIBLING": "tree_next_sibling",
-    }
-
-    edge_coros = []
     for rel_type, rel_edges in edge_by_type.items():
-        key = type_key_map.get(rel_type)
-        if key:
-            batch = [{"source": e["source"], "target": e["target"], "properties": {}}
-                     for e in rel_edges]
-            edge_coros.append(graph_repo.batch_upsert_edges(key, batch))
-
-    if edge_coros:
-        await asyncio.gather(*edge_coros)
+        batch = [{"source": e["source"], "target": e["target"], "properties": {}}
+                 for e in rel_edges]
+        await graph_repo.batch_upsert_edges(rel_type, batch)
 
     total = 1 + len(sections) + len(pages)
     logger.info(
