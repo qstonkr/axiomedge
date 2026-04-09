@@ -515,14 +515,15 @@ class IngestionPipeline:
         try:
             from .tree_index_builder import build_tree_from_chunks, persist_tree_to_neo4j
             chunks_for_tree = []
-            for idx, item in enumerate(items):
+            for item in items:
                 meta = item.get("metadata", {})
                 if meta.get("chunk_type") == "title":
                     continue
+                ci = meta.get("chunk_index", 0)
                 chunks_for_tree.append({
                     "chunk_id": str(item.get("point_id", "")),
-                    "heading_path": chunk_heading_paths[idx] if idx < len(chunk_heading_paths) else "",
-                    "chunk_index": meta.get("chunk_index", idx),
+                    "heading_path": chunk_heading_paths[ci] if ci < len(chunk_heading_paths) else "",
+                    "chunk_index": ci,
                 })
             if not chunks_for_tree:
                 return

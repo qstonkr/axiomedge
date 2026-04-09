@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +42,8 @@ class ExpandedChunk:
     section_title: str
     section_path: str
     score: float
-    source: str  # "sibling" | "section_title_search"
-    source_chunk_id: str | None = None  # 어떤 히트에서 확장되었는지
+    source: Literal["sibling", "section_title_search"]
+    source_chunk_id: str | None = None
 
 
 async def expand_siblings(
@@ -83,6 +83,7 @@ async def expand_siblings(
 
     already_in = set(hit_chunk_ids)
     expanded: list[ExpandedChunk] = []
+    total_chars = 0
 
     for source_id in hit_chunk_ids:
         siblings = siblings_map.get(source_id, [])
@@ -94,6 +95,8 @@ async def expand_siblings(
             if sib_id in already_in:
                 continue
             if count >= max_per_hit:
+                break
+            if total_chars >= max_total_chars:
                 break
 
             expanded.append(ExpandedChunk(
@@ -107,6 +110,11 @@ async def expand_siblings(
             ))
             already_in.add(sib_id)
             count += 1
+            # content 길이 정확히 모르므로 청크 평균 ~500자로 추정
+            total_chars += 500
+
+        if total_chars >= max_total_chars:
+            break
 
     expanded.sort(key=lambda x: x.score, reverse=True)
     return expanded
@@ -121,19 +129,7 @@ async def search_by_section_titles(
     limit: int = 10,
     default_score: float = 0.3,
 ) -> list[ExpandedChunk]:
-    """섹션 제목 fulltext 검색으로 벡터 미스 보완.
-
-    Args:
-        query: 사용자 쿼리
-        graph_repo: Neo4j 그래프 레포지토리
-        kb_id: 특정 KB 필터
-        existing_chunk_ids: 이미 결과에 포함된 청크 (중복 제거용)
-        limit: 최대 반환 수
-        default_score: 섹션 검색 결과의 기본 점수
-
-    Returns:
-        섹션 제목 매칭으로 발견된 청크 리스트
-    """
+    """섹션 제목 fulltext 검색으로 벡터 미스 보완."""
     existing = existing_chunk_ids or set()
 
     try:
@@ -184,7 +180,6 @@ async def get_section_bonus_map(
         logger.warning("Section bonus calculation failed: %s", e)
         return {}
 
-    # top-level 섹션 (첫 번째 > 이전)별 그룹화
     section_groups: dict[str, list[str]] = {}
     for cid, path in paths.items():
         top_section = path.split(" > ")[0] if path else ""
@@ -195,6 +190,6 @@ async def get_section_bonus_map(
     for _section, cids in section_groups.items():
         if len(cids) >= 2:
             for cid in cids:
-                bonus_map[cid] = 1.0  # 보너스 배율 (호출자가 section_bonus 곱해서 사용)
+                bonus_map[cid] = 1.0
 
     return bonus_map

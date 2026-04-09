@@ -8,30 +8,21 @@ LLM 호출 없음 — heading_path 메타데이터만 활용.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class TreeNode:
-    """트리 구축 중 사용하는 중간 데이터 구조."""
-
-    node_id: str
-    level: int
-    title: str
-    full_path: str
-    doc_id: str
-    order: int
-    chunk_ids: list[str] = field(default_factory=list)
-    children: list[TreeNode] = field(default_factory=list)
-
-
 def _path_hash(path: str) -> str:
     return hashlib.md5(path.encode()).hexdigest()[:12]
+
+
+def _parent_path(full_path: str) -> str:
+    """full_path에서 마지막 세그먼트를 제거한 부모 경로 반환."""
+    return " > ".join(full_path.split(" > ")[:-1])
 
 
 def parse_heading_path(heading_path: str) -> list[dict[str, Any]]:
@@ -85,7 +76,6 @@ def build_tree_from_chunks(
     sections: dict[str, dict[str, Any]] = {}  # path_hash → section info
     pages: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
-    section_order: dict[str, int] = {}  # path_hash → first seen order
 
     for chunk in chunks:
         heading_path = chunk.get("heading_path", "") or ""
@@ -95,7 +85,6 @@ def build_tree_from_chunks(
         parsed = parse_heading_path(heading_path)
 
         if not parsed:
-            # heading 없는 청크 → flat 섹션에 할당
             flat_hash = _path_hash("__flat__")
             if flat_hash not in sections:
                 sections[flat_hash] = {
@@ -108,28 +97,23 @@ def build_tree_from_chunks(
                     "kb_id": kb_id,
                     "char_count": 0,
                 }
-                section_order[flat_hash] = 0
             leaf_section_id = sections[flat_hash]["node_id"]
         else:
-            # 각 계층 레벨의 섹션 노드 생성
             for node_info in parsed:
                 ph = node_info["path_hash"]
                 if ph not in sections:
-                    order = len(section_order)
                     sections[ph] = {
                         "node_id": f"{kb_id}:{doc_id}:section:{ph}",
                         "level": node_info["level"],
                         "title": node_info["title"],
                         "full_path": node_info["full_path"],
-                        "order": order,
+                        "order": len(sections),
                         "doc_id": doc_id,
                         "kb_id": kb_id,
                         "char_count": 0,
                     }
-                    section_order[ph] = order
             leaf_section_id = sections[parsed[-1]["path_hash"]]["node_id"]
 
-        # 페이지(청크) 노드
         page_id = f"{kb_id}:{doc_id}:page:{chunk_index}"
         pages.append({
             "node_id": page_id,
@@ -151,8 +135,7 @@ def build_tree_from_chunks(
     # 부모 섹션 → 자식 섹션
     for sec in section_list:
         if sec["level"] > 1:
-            parent_path = " > ".join(sec["full_path"].split(" > ")[:-1])
-            parent_hash = _path_hash(parent_path)
+            parent_hash = _path_hash(_parent_path(sec["full_path"]))
             if parent_hash in sections:
                 edges.append({
                     "source": sections[parent_hash]["node_id"],
@@ -173,7 +156,7 @@ def build_tree_from_chunks(
     for page in pages:
         section_pages.setdefault(page["section_id"], []).append(page)
 
-    for sec_id, sec_pages in section_pages.items():
+    for _sec_id, sec_pages in section_pages.items():
         sorted_pages = sorted(sec_pages, key=lambda p: p["chunk_index"])
         for i in range(len(sorted_pages) - 1):
             edges.append({
@@ -188,8 +171,7 @@ def build_tree_from_chunks(
         if sec["level"] == 1:
             by_parent.setdefault("root", []).append(sec)
         elif sec["level"] > 1:
-            parent_path = " > ".join(sec["full_path"].split(" > ")[:-1])
-            by_parent.setdefault(_path_hash(parent_path), []).append(sec)
+            by_parent.setdefault(_path_hash(_parent_path(sec["full_path"])), []).append(sec)
 
     for siblings in by_parent.values():
         for i in range(len(siblings) - 1):
@@ -232,7 +214,8 @@ async def persist_tree_to_neo4j(
     }]
     await graph_repo.batch_upsert_nodes("tree_root", root_nodes)
 
-    # 2. TreeSection 노드
+    # 2-3. TreeSection + TreePage 노드 (병렬)
+    node_coros = []
     if sections:
         section_nodes = [{
             "node_id": s["node_id"],
@@ -246,9 +229,8 @@ async def persist_tree_to_neo4j(
                 "char_count": s.get("char_count", 0),
             },
         } for s in sections]
-        await graph_repo.batch_upsert_nodes("tree_section", section_nodes)
+        node_coros.append(graph_repo.batch_upsert_nodes("tree_section", section_nodes))
 
-    # 3. TreePage 노드
     if pages:
         page_nodes = [{
             "node_id": p["node_id"],
@@ -260,9 +242,12 @@ async def persist_tree_to_neo4j(
                 "chunk_index": p["chunk_index"],
             },
         } for p in pages]
-        await graph_repo.batch_upsert_nodes("tree_page", page_nodes)
+        node_coros.append(graph_repo.batch_upsert_nodes("tree_page", page_nodes))
 
-    # 4. 엣지
+    if node_coros:
+        await asyncio.gather(*node_coros)
+
+    # 4. 엣지 (타입별 병렬)
     edge_by_type: dict[str, list[dict]] = {}
     for e in edges:
         edge_by_type.setdefault(e["type"], []).append(e)
@@ -274,12 +259,16 @@ async def persist_tree_to_neo4j(
         "TREE_NEXT_SIBLING": "tree_next_sibling",
     }
 
+    edge_coros = []
     for rel_type, rel_edges in edge_by_type.items():
         key = type_key_map.get(rel_type)
         if key:
             batch = [{"source": e["source"], "target": e["target"], "properties": {}}
                      for e in rel_edges]
-            await graph_repo.batch_upsert_edges(key, batch)
+            edge_coros.append(graph_repo.batch_upsert_edges(key, batch))
+
+    if edge_coros:
+        await asyncio.gather(*edge_coros)
 
     total = 1 + len(sections) + len(pages)
     logger.info(

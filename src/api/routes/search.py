@@ -835,30 +835,31 @@ async def _step_tree_expand(
             expand_siblings, search_by_section_titles, get_section_bonus_map,
         )
 
-        # 기존 청크 ID와 점수 추출
         chunk_ids = [c.get("chunk_id", "") for c in all_chunks if c.get("chunk_id")]
         chunk_scores = {c.get("chunk_id", ""): c.get("score", 0.0) for c in all_chunks}
+        kb_id = collections[0] if len(collections) == 1 else None
 
-        # 5.5a: 형제 확장
-        siblings = await expand_siblings(
-            chunk_ids, chunk_scores, graph_repo,
-            window=tree_settings.sibling_window,
-            max_per_hit=tree_settings.max_tree_chunks_per_hit,
-            score_decay=tree_settings.sibling_score_decay,
-            max_total_chars=tree_settings.max_context_chars,
-        )
-
-        # 5.5b: 섹션 제목 검색 (병렬)
-        section_hits = []
-        if tree_settings.section_title_search:
-            kb_id = collections[0] if len(collections) == 1 else None
-            section_hits = await search_by_section_titles(
+        # 5.5a+b+c: 형제 확장, 섹션 제목 검색, 보너스 맵 (병렬)
+        coros = [
+            expand_siblings(
+                chunk_ids, chunk_scores, graph_repo,
+                window=tree_settings.sibling_window,
+                max_per_hit=tree_settings.max_tree_chunks_per_hit,
+                score_decay=tree_settings.sibling_score_decay,
+                max_total_chars=tree_settings.max_context_chars,
+            ),
+            search_by_section_titles(
                 display_query, graph_repo,
                 kb_id=kb_id, existing_chunk_ids=set(chunk_ids),
-            )
+            ) if tree_settings.section_title_search else asyncio.sleep(0),
+            get_section_bonus_map(chunk_ids, graph_repo),
+        ]
+        siblings_result, section_result, bonus_map = await asyncio.gather(*coros)
 
-        # 5.5c: 섹션 보너스 맵 (수단 3 — composite reranker에서 이미 적용된 결과에 추가)
-        bonus_map = await get_section_bonus_map(chunk_ids, graph_repo)
+        siblings = siblings_result if isinstance(siblings_result, list) else []
+        section_hits = section_result if isinstance(section_result, list) else []
+
+        # 섹션 보너스 적용
         if bonus_map:
             section_bonus = tree_settings.section_bonus
             for chunk in all_chunks:
@@ -869,39 +870,32 @@ async def _step_tree_expand(
         # 확장 청크를 Qdrant에서 로드하여 결과에 추가
         expanded_ids = [s.chunk_id for s in siblings] + [s.chunk_id for s in section_hits]
         if expanded_ids:
-            expanded_scores = {}
-            for s in siblings:
-                expanded_scores[s.chunk_id] = s.score
-            for s in section_hits:
-                expanded_scores[s.chunk_id] = s.score
-
+            expanded_scores = {s.chunk_id: s.score for s in (*siblings, *section_hits)}
             qdrant_client = state.get("qdrant_client")
             if qdrant_client:
-                try:
-                    from qdrant_client.models import PointIdsList
-                    from src.pipeline.qdrant_utils import str_to_uuid
-                    point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
-                    for col in collections:
-                        try:
-                            points = await asyncio.to_thread(
-                                qdrant_client.retrieve,
-                                collection_name=col,
-                                ids=point_ids,
-                                with_payload=True,
-                            )
-                            for pt in points:
-                                pid = str(pt.id)
-                                all_chunks.append({
-                                    "chunk_id": pid,
-                                    "content": pt.payload.get("content", ""),
-                                    "metadata": pt.payload.get("metadata", {}),
-                                    "score": expanded_scores.get(pid, 0.3),
-                                    "_tree_expanded": True,
-                                })
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
+                from src.pipeline.qdrant_utils import str_to_uuid
+                point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
+                retrieve_coros = [
+                    asyncio.to_thread(
+                        qdrant_client.retrieve,
+                        collection_name=col, ids=point_ids, with_payload=True,
+                    )
+                    for col in collections
+                ]
+                retrieve_results = await asyncio.gather(*retrieve_coros, return_exceptions=True)
+                for result in retrieve_results:
+                    if isinstance(result, BaseException):
+                        logger.debug("Qdrant retrieve for tree expansion failed: %s", result)
+                        continue
+                    for pt in result:
+                        pid = str(pt.id)
+                        all_chunks.append({
+                            "chunk_id": pid,
+                            "content": pt.payload.get("content", ""),
+                            "metadata": pt.payload.get("metadata", {}),
+                            "score": expanded_scores.get(pid, 0.3),
+                            "_tree_expanded": True,
+                        })
 
         logger.info(
             "Tree expansion: siblings=%d, section_hits=%d, bonus_applied=%d",

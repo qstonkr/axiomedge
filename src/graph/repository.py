@@ -703,33 +703,6 @@ class Neo4jGraphRepository:
 
     # -- Tree Index (heading_path 기반 문서 구조 트리) ----------------------
 
-    async def find_tree_siblings(
-        self,
-        chunk_id: str,
-        *,
-        window: int = 2,
-    ) -> list[dict[str, Any]]:
-        """chunk_id의 같은 섹션 형제 청크 조회."""
-        cypher = """
-        MATCH (tp:TreePage {chunk_id: $chunk_id})<-[:HAS_TREE_PAGE]-(ts:TreeSection)
-        MATCH (ts)-[:HAS_TREE_PAGE]->(sibling:TreePage)
-        WHERE sibling.chunk_index >= tp.chunk_index - $window
-          AND sibling.chunk_index <= tp.chunk_index + $window
-          AND sibling.chunk_id <> $chunk_id
-        RETURN sibling.chunk_id AS chunk_id,
-               sibling.chunk_index AS chunk_index,
-               ts.title AS section_title,
-               ts.full_path AS section_path
-        ORDER BY sibling.chunk_index
-        """
-        try:
-            return await self._client.execute_query(
-                cypher, {"chunk_id": chunk_id, "window": window},
-            )
-        except Exception as e:
-            logger.warning("Neo4j find_tree_siblings failed: %s", e)
-            return []
-
     async def find_tree_siblings_batch(
         self,
         chunk_ids: list[str],
@@ -795,22 +768,6 @@ class Neo4jGraphRepository:
         except Exception as e:
             logger.warning("Neo4j search_section_titles failed: %s", e)
             return []
-
-    async def get_chunk_section_path(
-        self,
-        chunk_id: str,
-    ) -> str | None:
-        """chunk_id가 속한 섹션의 full_path 반환."""
-        cypher = """
-        MATCH (tp:TreePage {chunk_id: $chunk_id})<-[:HAS_TREE_PAGE]-(ts:TreeSection)
-        RETURN ts.full_path AS section_path
-        LIMIT 1
-        """
-        try:
-            results = await self._client.execute_query(cypher, {"chunk_id": chunk_id})
-            return results[0]["section_path"] if results else None
-        except Exception:
-            return None
 
     async def get_chunk_section_paths_batch(
         self,
