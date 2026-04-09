@@ -1,5 +1,6 @@
 # Distill Trainer Docker Image
-# GPU 학습용 — EC2 g4dn 또는 K8s GPU 노드에서 실행
+# GPU 학습용 — EC2 g4dn에서 실행
+# 부팅 시 S3에서 미완료 학습 작업 자동 감지 → 학습 → 결과 업로드 → shutdown
 
 FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
@@ -11,15 +12,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscli.zip" && \
     unzip awscli.zip && ./aws/install && rm -rf awscli.zip aws/
 
-WORKDIR /app
+WORKDIR /opt/distill
 
 # Python 패키지
 COPY k8s/distill/requirements-trainer.txt .
 RUN pip3 install --no-cache-dir -r requirements-trainer.txt
 
 # 학습 스크립트
-COPY scripts/train_remote.py .
+COPY scripts/train_on_gpu.py .
+COPY scripts/gpu_boot_train.sh .
+RUN chmod +x gpu_boot_train.sh
 
 ENV PYTHONUNBUFFERED=1
+ENV AWS_REGION=ap-northeast-2
+ENV DISTILL_S3_BUCKET=gs-knowledge-models
 
-CMD ["python3", "train_remote.py"]
+# 부팅 시 자동 실행: S3 스캔 → 학습 → shutdown
+CMD ["./gpu_boot_train.sh"]
