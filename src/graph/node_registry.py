@@ -257,6 +257,33 @@ ALL_NODE_TYPES: dict[str, NodeConfig] = {
         unique_property="id",
         constraint_name="technology_id_unique",
     ),
+    # Tree Index (heading_path 기반 문서 구조 트리)
+    "tree_root": NodeConfig(
+        label="TreeRoot",
+        unique_property="id",
+        constraint_name="tree_root_id_unique",
+        indexes=(
+            ("tree_root_doc_id_idx", "doc_id"),
+        ),
+    ),
+    "tree_section": NodeConfig(
+        label="TreeSection",
+        unique_property="id",
+        constraint_name="tree_section_id_unique",
+        indexes=(
+            ("tree_section_doc_id_idx", "doc_id"),
+            ("tree_section_title_idx", "title"),
+        ),
+    ),
+    "tree_page": NodeConfig(
+        label="TreePage",
+        unique_property="id",
+        constraint_name="tree_page_id_unique",
+        indexes=(
+            ("tree_page_chunk_id_idx", "chunk_id"),
+            ("tree_page_doc_id_idx", "doc_id"),
+        ),
+    ),
 }
 
 ALL_RELATION_TYPES: dict[str, RelationConfig] = {
@@ -336,6 +363,12 @@ ALL_RELATION_TYPES: dict[str, RelationConfig] = {
     "expert_in": RelationConfig("EXPERT_IN"),
     "member_of_concept": RelationConfig("MEMBER_OF_CONCEPT"),
     "cross_kb_related": RelationConfig("CROSS_KB_RELATED"),
+    # Tree Index (문서 구조 트리)
+    "has_tree_root": RelationConfig("HAS_TREE_ROOT"),
+    "has_tree_section": RelationConfig("HAS_TREE_SECTION"),
+    "has_tree_page": RelationConfig("HAS_TREE_PAGE"),
+    "tree_next_sibling": RelationConfig("TREE_NEXT_SIBLING"),
+    "tree_has_summary": RelationConfig("TREE_HAS_SUMMARY"),
 }
 
 

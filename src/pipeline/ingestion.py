@@ -499,6 +499,38 @@ class IngestionPipeline:
             "point_id": str_to_uuid(f"{collection_name}:{raw.doc_id}:title"),
         }
 
+    async def _run_tree_index_builder(
+        self,
+        raw: RawDocument,
+        items: list[dict[str, Any]],
+        chunk_heading_paths: list[str],
+        collection_name: str,
+    ) -> None:
+        """Stage 12: heading_path → Neo4j 트리 구축 (실패해도 인제스트 계속)."""
+        from src.config import get_settings
+        if not get_settings().tree_index.enabled:
+            return
+        if not self.graph_store:
+            return
+        try:
+            from .tree_index_builder import build_tree_from_chunks, persist_tree_to_neo4j
+            chunks_for_tree = []
+            for idx, item in enumerate(items):
+                meta = item.get("metadata", {})
+                if meta.get("chunk_type") == "title":
+                    continue
+                chunks_for_tree.append({
+                    "chunk_id": str(item.get("point_id", "")),
+                    "heading_path": chunk_heading_paths[idx] if idx < len(chunk_heading_paths) else "",
+                    "chunk_index": meta.get("chunk_index", idx),
+                })
+            if not chunks_for_tree:
+                return
+            tree_data = build_tree_from_chunks(collection_name, raw.doc_id, chunks_for_tree)
+            await persist_tree_to_neo4j(self.graph_store, tree_data)
+        except Exception as exc:
+            logger.warning("Tree index build failed for doc_id=%s: %s", raw.doc_id, exc)
+
     async def _run_term_extraction(
         self, raw: RawDocument, typed_chunks: list[tuple[str, str, str]], collection_name: str,
     ) -> dict[str, Any]:
@@ -806,7 +838,10 @@ class IngestionPipeline:
             # 11. Graph edges
             await self._create_graph_edges(raw, collection_name, owner=owner, l1_category=l1_category)
 
-            # 12. Term extraction + synonym discovery + GraphRAG
+            # 12. Tree index (heading_path → Neo4j 트리)
+            await self._run_tree_index_builder(raw, items, chunk_heading_paths, collection_name)
+
+            # 13. Term extraction + synonym discovery + GraphRAG
             term_extraction_stats = await self._run_term_extraction(raw, typed_chunks, collection_name)
             synonym_discovery_stats = await self._run_synonym_discovery(raw, collection_name)
             graphrag_stats = await self._run_graphrag(raw, collection_name)

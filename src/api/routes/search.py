@@ -814,6 +814,105 @@ async def _step_search_enrichment(
     return all_chunks
 
 
+async def _step_tree_expand(
+    display_query: str,
+    all_chunks: list[dict[str, Any]],
+    collections: list[str],
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Step 5.5: Tree context expansion (형제 확장 + 섹션 제목 검색)."""
+    from src.config import get_settings
+    tree_settings = get_settings().tree_index
+    if not tree_settings.enabled or not all_chunks:
+        return all_chunks
+
+    graph_repo = state.get("graph_repo")
+    if not graph_repo:
+        return all_chunks
+
+    try:
+        from src.search.tree_context_expander import (
+            expand_siblings, search_by_section_titles, get_section_bonus_map,
+        )
+
+        # 기존 청크 ID와 점수 추출
+        chunk_ids = [c.get("chunk_id", "") for c in all_chunks if c.get("chunk_id")]
+        chunk_scores = {c.get("chunk_id", ""): c.get("score", 0.0) for c in all_chunks}
+
+        # 5.5a: 형제 확장
+        siblings = await expand_siblings(
+            chunk_ids, chunk_scores, graph_repo,
+            window=tree_settings.sibling_window,
+            max_per_hit=tree_settings.max_tree_chunks_per_hit,
+            score_decay=tree_settings.sibling_score_decay,
+            max_total_chars=tree_settings.max_context_chars,
+        )
+
+        # 5.5b: 섹션 제목 검색 (병렬)
+        section_hits = []
+        if tree_settings.section_title_search:
+            kb_id = collections[0] if len(collections) == 1 else None
+            section_hits = await search_by_section_titles(
+                display_query, graph_repo,
+                kb_id=kb_id, existing_chunk_ids=set(chunk_ids),
+            )
+
+        # 5.5c: 섹션 보너스 맵 (수단 3 — composite reranker에서 이미 적용된 결과에 추가)
+        bonus_map = await get_section_bonus_map(chunk_ids, graph_repo)
+        if bonus_map:
+            section_bonus = tree_settings.section_bonus
+            for chunk in all_chunks:
+                cid = chunk.get("chunk_id", "")
+                if cid in bonus_map:
+                    chunk["score"] = chunk.get("score", 0.0) + section_bonus
+
+        # 확장 청크를 Qdrant에서 로드하여 결과에 추가
+        expanded_ids = [s.chunk_id for s in siblings] + [s.chunk_id for s in section_hits]
+        if expanded_ids:
+            expanded_scores = {}
+            for s in siblings:
+                expanded_scores[s.chunk_id] = s.score
+            for s in section_hits:
+                expanded_scores[s.chunk_id] = s.score
+
+            qdrant_client = state.get("qdrant_client")
+            if qdrant_client:
+                try:
+                    from qdrant_client.models import PointIdsList
+                    from src.pipeline.qdrant_utils import str_to_uuid
+                    point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
+                    for col in collections:
+                        try:
+                            points = await asyncio.to_thread(
+                                qdrant_client.retrieve,
+                                collection_name=col,
+                                ids=point_ids,
+                                with_payload=True,
+                            )
+                            for pt in points:
+                                pid = str(pt.id)
+                                all_chunks.append({
+                                    "chunk_id": pid,
+                                    "content": pt.payload.get("content", ""),
+                                    "metadata": pt.payload.get("metadata", {}),
+                                    "score": expanded_scores.get(pid, 0.3),
+                                    "_tree_expanded": True,
+                                })
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        logger.info(
+            "Tree expansion: siblings=%d, section_hits=%d, bonus_applied=%d",
+            len(siblings), len(section_hits), len(bonus_map),
+        )
+    except Exception as e:
+        logger.warning("Tree context expansion failed: %s", e)
+
+    return all_chunks
+
+
 async def _step_graph_expand(
     display_query: str,
     all_chunks: list[dict[str, Any]],
@@ -995,6 +1094,11 @@ async def hub_search(request: HubSearchRequest):
     )
     all_chunks = all_chunks[:effective_top_k]
     all_chunks = _step_week_match_guarantee(all_chunks, rerank_applied, search_chunks)
+
+    # 5.5 Tree context expansion (형제 청크 확장 + 섹션 제목 검색)
+    all_chunks = await _step_tree_expand(
+        display_query, all_chunks, collections, state,
+    )
 
     # 6. Graph expansion
     all_chunks = await _step_graph_expand(
