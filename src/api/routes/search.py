@@ -871,31 +871,13 @@ async def _step_tree_expand(
         expanded_ids = [s.chunk_id for s in siblings] + [s.chunk_id for s in section_hits]
         if expanded_ids:
             expanded_scores = {s.chunk_id: s.score for s in (*siblings, *section_hits)}
-            qdrant_client = state.get("qdrant_client")
-            if qdrant_client:
-                from src.pipeline.qdrant_utils import str_to_uuid
-                point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
-                retrieve_coros = [
-                    asyncio.to_thread(
-                        qdrant_client.retrieve,
-                        collection_name=col, ids=point_ids, with_payload=True,
-                    )
-                    for col in collections
-                ]
-                retrieve_results = await asyncio.gather(*retrieve_coros, return_exceptions=True)
-                for result in retrieve_results:
-                    if isinstance(result, BaseException):
-                        logger.debug("Qdrant retrieve for tree expansion failed: %s", result)
-                        continue
-                    for pt in result:
-                        pid = str(pt.id)
-                        all_chunks.append({
-                            "chunk_id": pid,
-                            "content": pt.payload.get("content", ""),
-                            "metadata": pt.payload.get("metadata", {}),
-                            "score": expanded_scores.get(pid, 0.3),
-                            "_tree_expanded": True,
-                        })
+            from src.pipeline.qdrant_utils import str_to_uuid
+            from src.api.routes.search_helpers import retrieve_chunks_by_ids
+            point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
+            loaded = await retrieve_chunks_by_ids(
+                state.get("qdrant_client"), collections, point_ids, expanded_scores,
+            )
+            all_chunks.extend(loaded)
 
         logger.info(
             "Tree expansion: siblings=%d, section_hits=%d, bonus_applied=%d",

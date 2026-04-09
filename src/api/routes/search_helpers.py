@@ -579,3 +579,49 @@ async def graph_expansion(
         logger.warning("Graph expansion failed in search route: %s", e)
 
     return all_chunks
+
+
+# ── 5.5  Tree expansion helpers ────────────────────────────────────────────
+
+
+async def retrieve_chunks_by_ids(
+    qdrant_client: Any,
+    collections: list[str],
+    point_ids: list[Any],
+    scores: dict[str, float],
+    *,
+    default_score: float = 0.3,
+) -> list[dict[str, Any]]:
+    """Qdrant에서 point_id 목록으로 청크를 로드하여 chunk dict 리스트로 반환.
+
+    여러 collection에 대해 병렬로 조회하고 결과를 합침.
+    """
+    import asyncio
+
+    if not qdrant_client or not point_ids:
+        return []
+
+    retrieve_coros = [
+        asyncio.to_thread(
+            qdrant_client.retrieve,
+            collection_name=col, ids=point_ids, with_payload=True,
+        )
+        for col in collections
+    ]
+    results = await asyncio.gather(*retrieve_coros, return_exceptions=True)
+
+    chunks: list[dict[str, Any]] = []
+    for result in results:
+        if isinstance(result, BaseException):
+            logger.debug("Qdrant retrieve for tree expansion failed: %s", result)
+            continue
+        for pt in result:
+            pid = str(pt.id)
+            chunks.append({
+                "chunk_id": pid,
+                "content": pt.payload.get("content", ""),
+                "metadata": pt.payload.get("metadata", {}),
+                "score": scores.get(pid, default_score),
+                "_tree_expanded": True,
+            })
+    return chunks
