@@ -1088,6 +1088,20 @@ async def download_provision_script():
     return FileResponse(script, media_type="text/plain", filename="provision.sh")
 
 
+@router.get("/edge-files/{filename}")
+async def download_edge_file(filename: str):
+    """엣지 서버 코드 파일 다운로드 (server.py, sync.py)."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    allowed = {"server.py", "sync.py"}
+    if filename not in allowed:
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+    filepath = Path(__file__).resolve().parents[3] / "edge" / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+    return FileResponse(filepath, media_type="text/plain", filename=filename)
+
+
 @router.get("/edge-servers/fleet-stats")
 async def fleet_stats(profile_name: str):
     """fleet 현황 통계."""
