@@ -1007,7 +1007,11 @@ def _build_provision_config(
     if api_key:
         parts.insert(1, f"EDGE_API_KEY={api_key}")
 
-    command = " \\\n  ".join(parts) + " \\\n  bash provision.sh"
+    command = (
+        f"curl -sfL {api_url}/api/v1/distill/provision.sh -o /tmp/provision.sh && \\\n  "
+        + " \\\n  ".join(parts)
+        + " \\\n  bash /tmp/provision.sh"
+    )
 
     return {
         "store_id": store_id,
@@ -1071,6 +1075,17 @@ async def list_edge_servers(
     repo = _get_distill_repo()
     servers = await repo.list_edge_servers(profile_name=profile_name, status=status)
     return {"items": servers}
+
+
+@router.get("/provision.sh")
+async def download_provision_script():
+    """출고 스크립트 다운로드."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    script = Path(__file__).resolve().parents[3] / "edge" / "provision.sh"
+    if not script.exists():
+        raise HTTPException(status_code=404, detail="provision.sh not found")
+    return FileResponse(script, media_type="text/plain", filename="provision.sh")
 
 
 @router.get("/edge-servers/fleet-stats")
