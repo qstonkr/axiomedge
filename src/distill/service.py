@@ -493,13 +493,16 @@ class DistillService:
                 await repo.update_build(build_id, status="training")
                 model_path = await self._train(build_id, profile, data_path, repo, build_dir)
 
-            # Step 3: 양자화
-            if "quantize" in all_steps:
+            # GPU 원격 학습 시 양자화/배포는 EC2에서 완료됨 → 스킵
+            gpu_trained = model_path == "__GPU_TRAINED__"
+
+            # Step 3: 양자화 (GPU 학습 시 스킵 — EC2에서 처리됨)
+            if "quantize" in all_steps and not gpu_trained:
                 await repo.update_build(build_id, status="quantizing")
                 gguf_path = await self._quantize(build_id, profile, model_path, repo, build_dir)
 
-            # Step 4: 배포 (S3 업로드)
-            if "deploy" in all_steps:
+            # Step 4: 배포 (GPU 학습 시 스킵 — EC2에서 S3 업로드 완료)
+            if "deploy" in all_steps and not gpu_trained:
                 await repo.update_build(build_id, status="deploying")
                 await self._deploy(build_id, profile, gguf_path, repo)
 
@@ -660,10 +663,14 @@ class DistillService:
                 config={
                     "base_model": profile.base_model,
                     "lora": {"r": profile.lora.r, "alpha": profile.lora.alpha,
-                             "dropout": profile.lora.dropout},
+                             "dropout": profile.lora.dropout,
+                             "target_modules": profile.lora.target_modules},
                     "training": {"epochs": profile.training.epochs,
                                  "batch_size": profile.training.batch_size,
-                                 "learning_rate": profile.training.learning_rate},
+                                 "gradient_accumulation": profile.training.gradient_accumulation,
+                                 "learning_rate": profile.training.learning_rate,
+                                 "max_seq_length": profile.training.max_seq_length},
+                    "quantize": profile.deploy.quantize or "q4_k_m",
                 },
                 s3_bucket=profile.deploy.s3_bucket,
                 s3_prefix=profile.deploy.s3_prefix,
@@ -672,8 +679,19 @@ class DistillService:
             if result.get("status") != "success":
                 raise RuntimeError(f"GPU training failed: {result.get('error', 'unknown')}")
 
-            # TODO: S3에서 학습 결과 다운로드
-            model_path = str(build_dir / "model" / "merged")
+            # EC2에서 학습 + merge + GGUF까지 완료 → result.json에서 메타데이터 반영
+            await repo.update_build(
+                build_id,
+                train_loss=result.get("train_loss"),
+                training_duration_sec=result.get("duration_sec"),
+                gguf_size_mb=result.get("gguf_size_mb"),
+                gguf_sha256=result.get("gguf_sha256"),
+                quantize_method=result.get("quantize_method"),
+            )
+
+            # GPU 경로에서는 양자화/배포를 EC2가 처리하므로 merged model 경로 불필요
+            # _GPU_TRAINED 마커로 후속 단계 스킵 판단
+            model_path = "__GPU_TRAINED__"
             return model_path
 
         # 로컬 학습 (fallback)
