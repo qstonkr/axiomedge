@@ -506,12 +506,18 @@ class DistillService:
                 await repo.update_build(build_id, status="deploying")
                 await self._deploy(build_id, profile, gguf_path, repo)
 
-            # Step 5: 평가 (S3에서 GGUF 다운로드 → Teacher judge)
+            # Step 5: 평가 (Teacher judge)
             if "evaluate" in all_steps:
                 await repo.update_build(build_id, status="evaluating")
+                # GPU 학습 시 GGUF가 S3에만 있으므로 다운로드
+                eval_gguf_path = gguf_path
+                if gpu_trained:
+                    eval_gguf_path = await self._download_gguf_from_s3(
+                        build_id, profile, build_dir,
+                    )
                 passed = await self._evaluate(
                     build_id, profile, model_path, data_path, repo,
-                    gguf_path=gguf_path,
+                    gguf_path=eval_gguf_path,
                 )
                 if not passed:
                     await repo.update_build(
@@ -777,6 +783,27 @@ class DistillService:
             eval_relevancy=0.0,
         )
         return passed
+
+    async def _download_gguf_from_s3(
+        self, build_id: str, profile: DistillProfile, build_dir: Path,
+    ) -> str | None:
+        """GPU 학습 후 S3에서 GGUF 다운로드 (평가용)."""
+        import os
+        import boto3
+        s3_key = f"{profile.deploy.s3_prefix}train/{build_id}/output/model.gguf"
+        local_path = str(build_dir / "model.gguf")
+
+        try:
+            s3 = boto3.Session(
+                profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+                region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
+            ).client("s3")
+            s3.download_file(profile.deploy.s3_bucket, s3_key, local_path)
+            logger.info("Downloaded GGUF from S3: %s", s3_key)
+            return local_path
+        except Exception as e:
+            logger.warning("GGUF download failed (eval will use train_loss fallback): %s", e)
+            return None
 
     async def _quantize(
         self, build_id: str, profile: DistillProfile,
