@@ -989,7 +989,7 @@ def _build_provision_config(
 ) -> dict:
     """출고 설정 생성 (내부 헬퍼)."""
     s3_bucket = "gs-knowledge-models"
-    s3_prefix = f"models/edge/{profile_name}/"
+    s3_prefix = f"{profile_name}/"
 
     from src.config import get_settings
     try:
