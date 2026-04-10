@@ -168,6 +168,28 @@ class DistillSettings(BaseSettings):
     rag_api_url: str = Field(default="http://localhost:8000", description="재학습 시 Teacher RAG URL")
 
 
+class TreeIndexSettings(BaseSettings):
+    """문서 구조 트리 인덱스 설정 (heading_path 기반 Neo4j 트리 + RAPTOR식 요약)."""
+
+    model_config = SettingsConfigDict(env_prefix="TREE_INDEX_")
+
+    enabled: bool = Field(default=True, description="트리 인덱스 활성화")
+    # 수단 1: 형제 확장
+    sibling_window: int = Field(default=2, ge=0, le=5, description="형제 청크 확장 범위")
+    max_tree_chunks_per_hit: int = Field(default=4, ge=1, le=10, description="히트당 최대 확장 청크")
+    max_context_chars: int = Field(default=8000, ge=1000, description="트리 확장 최대 문자 수")
+    sibling_score_decay: float = Field(default=0.85, ge=0.5, le=1.0, description="확장 청크 점수 감소율")
+    section_title_search: bool = Field(default=True, description="섹션 제목 fulltext 검색 활성화")
+    # 수단 2: 요약 트리 (Phase 2)
+    summary_enabled: bool = Field(default=False, description="RAPTOR식 요약 트리 생성")
+    summary_max_layers: int = Field(default=3, ge=1, le=5, description="요약 트리 최대 계층")
+    summary_cluster_min_chunks: int = Field(default=5, ge=2, description="클러스터링 최소 청크 수")
+    summary_umap_dim: int = Field(default=10, ge=2, le=50, description="UMAP 축소 차원")
+    # 수단 3: 리랭킹/CRAG
+    section_bonus: float = Field(default=0.05, ge=0.0, le=0.2, description="같은 섹션 보너스")
+    adaptive_depth: bool = Field(default=True, description="쿼리 분류 연동 적응형 깊이")
+
+
 class Settings(BaseSettings):
     """Top-level aggregated settings."""
 
@@ -182,6 +204,7 @@ class Settings(BaseSettings):
     api: ApiSettings = Field(default_factory=ApiSettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     distill: DistillSettings = Field(default_factory=DistillSettings)
+    tree_index: TreeIndexSettings = Field(default_factory=TreeIndexSettings)
 
 
 @lru_cache(maxsize=1)

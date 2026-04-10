@@ -227,13 +227,46 @@ class CRAGRetrievalEvaluator:
         return weighted_sum / weight_total if weight_total > 0 else 0.0
 
     def _calculate_source_coverage(self, chunks: list[Any], query: str) -> float:
-        """Source coverage: unique documents vs expected."""
+        """Source coverage: unique documents vs expected, with section diversity bonus."""
         if not chunks:
             return 0.0
         unique_docs = len({_chunk_doc_id(c) for c in chunks})
         expected = self._estimate_expected_sources(query)
         coverage = unique_docs / max(expected, 1)
+
+        # 섹션 다양성 보너스: 같은 문서 내 여러 섹션 커버 시 +0.1
+        section_bonus = self._section_coverage_bonus(chunks)
+        coverage += section_bonus
+
         return max(0.0, min(coverage, 1.0))
+
+    @staticmethod
+    def _section_coverage_bonus(chunks: list[Any]) -> float:
+        """트리 인덱스 활성화 시, 섹션 다양성에 따른 커버리지 보너스.
+
+        같은 문서의 여러 섹션이 히트되면 해당 문서의 맥락 커버리지가 높다고 판단.
+        """
+        from src.config import get_settings
+        if not get_settings().tree_index.enabled:
+            return 0.0
+
+        from src.search.section_utils import get_top_section
+
+        doc_sections: dict[str, set[str]] = {}
+        for chunk in chunks:
+            meta = _chunk_metadata(chunk)
+            doc_id = meta.get("document_id", "") or meta.get("doc_id", "")
+            hp = meta.get("heading_path", "") or ""
+            top_section = get_top_section(hp)
+            if doc_id and top_section:
+                doc_sections.setdefault(doc_id, set()).add(top_section)
+
+        if not doc_sections:
+            return 0.0
+
+        # 2+ 섹션이 히트된 문서 수에 비례한 보너스 (최대 0.1)
+        multi_section_docs = sum(1 for secs in doc_sections.values() if len(secs) >= 2)
+        return min(multi_section_docs * 0.05, 0.1)
 
     def _calculate_query_specificity(self, query: str) -> float:
         """Query specificity score."""

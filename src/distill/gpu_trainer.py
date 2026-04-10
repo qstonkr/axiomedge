@@ -1,14 +1,19 @@
 """GPU EC2 인스턴스 기반 원격 학습.
 
-PaddleOCR와 동일 패턴: 필요할 때 EC2 시작 → 학습 → 자동 중지.
+EC2 시작 → S3에서 작업 자동 감지 → 학습 → 결과 업로드 → 자동 중지.
+SSM/SSH 미사용 — EC2 부팅 스크립트가 S3 작업을 자동 처리.
 
-Usage:
-    학습 요청 시:
-    1. EC2 GPU 인스턴스 시작 (g4dn.xlarge)
-    2. 학습 데이터(JSONL) + 설정을 S3에 업로드
-    3. EC2에서 학습 스크립트 실행 (SSM Run Command)
-    4. 학습 완료 → 모델을 S3에 업로드
-    5. EC2 인스턴스 자동 중지
+흐름:
+    [우리 API]
+    1. S3에 train/{build_id}/train.jsonl + config.json 업로드
+    2. EC2 GPU 인스턴스 시작
+    3. S3에서 output/{build_id}/ 폴링 → 완료 확인
+
+    [EC2 부팅 스크립트 - systemd]
+    1. S3 전체 프로필 스캔 → 미완료 작업(output 없는 train/) 탐색
+    2. 학습 실행 (순차)
+    3. 결과 S3 업로드
+    4. shutdown -h now
 
 환경변수:
     DISTILL_GPU_INSTANCE_ID: EC2 인스턴스 ID (g4dn.xlarge)
@@ -29,8 +34,11 @@ _AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 _AWS_PROFILE = os.getenv("AWS_PROFILE", "jeongbeomkim")
 
 
+# ---------------------------------------------------------------------------
+# EC2 lifecycle
+# ---------------------------------------------------------------------------
+
 async def _get_instance_state(instance_id: str) -> str:
-    """EC2 인스턴스 상태 조회."""
     proc = await asyncio.create_subprocess_shell(
         f"aws ec2 describe-instances --instance-ids {instance_id} "
         f"--region {_AWS_REGION} --profile {_AWS_PROFILE} "
@@ -43,7 +51,16 @@ async def _get_instance_state(instance_id: str) -> str:
 
 
 async def _start_instance(instance_id: str) -> bool:
-    """EC2 인스턴스 시작."""
+    state = await _get_instance_state(instance_id)
+
+    # stopping 상태면 stopped 될 때까지 대기
+    if state == "stopping":
+        logger.info("Instance stopping, waiting for stopped...")
+        for _ in range(30):
+            await asyncio.sleep(5)
+            if await _get_instance_state(instance_id) == "stopped":
+                break
+
     logger.info("Starting GPU instance %s", instance_id)
     proc = await asyncio.create_subprocess_shell(
         f"aws ec2 start-instances --instance-ids {instance_id} "
@@ -53,18 +70,15 @@ async def _start_instance(instance_id: str) -> bool:
     )
     await proc.communicate()
 
-    # running 될 때까지 대기 (최대 5분)
-    for _ in range(30):
-        state = await _get_instance_state(instance_id)
-        if state == "running":
+    for _ in range(60):
+        if await _get_instance_state(instance_id) == "running":
             logger.info("GPU instance running")
             return True
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
     return False
 
 
 async def _stop_instance(instance_id: str) -> None:
-    """EC2 인스턴스 중지 (비용 절감)."""
     logger.info("Stopping GPU instance %s", instance_id)
     proc = await asyncio.create_subprocess_shell(
         f"aws ec2 stop-instances --instance-ids {instance_id} "
@@ -76,11 +90,15 @@ async def _stop_instance(instance_id: str) -> None:
     logger.info("GPU instance stop requested")
 
 
-async def _upload_training_data(
+# ---------------------------------------------------------------------------
+# S3 업로드 + 결과 폴링
+# ---------------------------------------------------------------------------
+
+def _upload_training_data_sync(
     s3_bucket: str, s3_prefix: str, build_id: str,
     jsonl_path: str, config: dict,
 ) -> str:
-    """학습 데이터 + 설정을 S3에 업로드."""
+    """학습 데이터 + 설정을 S3에 업로드 (동기)."""
     import boto3
 
     s3 = boto3.Session(
@@ -100,66 +118,68 @@ async def _upload_training_data(
     return f"s3://{s3_bucket}/{s3_prefix}train/{build_id}/"
 
 
-async def _run_remote_training(instance_id: str, s3_train_path: str, build_id: str) -> dict:
-    """SSM Run Command로 EC2에서 학습 실행."""
+def _check_output_exists(s3_bucket: str, s3_prefix: str, build_id: str) -> dict | None:
+    """S3에 학습 결과가 있는지 확인."""
     import boto3
 
-    ssm = boto3.Session(
+    s3 = boto3.Session(
         profile_name=_AWS_PROFILE, region_name=_AWS_REGION,
-    ).client("ssm")
+    ).client("s3")
 
-    # EC2에서 실행할 학습 스크립트
-    command = f"""
-#!/bin/bash
-set -e
-cd /opt/distill
+    result_key = f"{s3_prefix}train/{build_id}/output/result.json"
+    try:
+        obj = s3.get_object(Bucket=s3_bucket, Key=result_key)
+        return json.loads(obj["Body"].read().decode())
+    except s3.exceptions.NoSuchKey:
+        return None
+    except Exception as e:
+        logger.debug("S3 check failed for %s: %s", result_key, e)
+        return None
 
-# 학습 데이터 다운로드
-aws s3 sync {s3_train_path} ./data/{build_id}/
 
-# 학습 실행
-python3 train_remote.py \
-    --data-dir ./data/{build_id}/ \
-    --output-dir ./output/{build_id}/ \
-    --build-id {build_id}
+async def _poll_s3_output(
+    s3_bucket: str, s3_prefix: str, build_id: str,
+    timeout: int = 7200,
+) -> dict:
+    """S3에서 학습 결과 폴링 (최대 2시간).
 
-# 결과 업로드
-aws s3 sync ./output/{build_id}/ {s3_train_path}output/
+    EC2가 stopped/terminated 되면 즉시 실패 처리 (무한 폴링 방지).
+    """
+    instance_id = _GPU_INSTANCE_ID
+    stopped_count = 0
 
-# 완료 시그널
-echo "TRAINING_COMPLETE" > /tmp/train_status_{build_id}
-"""
+    for _ in range(timeout // 15):
+        result = await asyncio.to_thread(
+            _check_output_exists, s3_bucket, s3_prefix, build_id,
+        )
+        if result is not None:
+            status = result.get("status", "unknown")
+            if status == "completed":
+                logger.info("Training completed: %s", result)
+                return {"status": "success", **result}
+            if status == "failed":
+                logger.error("Training failed: %s", result.get("error", ""))
+                return {"status": "failed", "error": result.get("error", "unknown")}
 
-    response = ssm.send_command(
-        InstanceIds=[instance_id],
-        DocumentName="AWS-RunShellScript",
-        Parameters={"commands": [command]},
-        TimeoutSeconds=7200,  # 2시간 타임아웃
-    )
-    command_id = response["Command"]["CommandId"]
-    logger.info("SSM command sent: %s", command_id)
+        # EC2가 꺼졌으면 result 없이 실패한 것
+        if instance_id:
+            ec2_state = await _get_instance_state(instance_id)
+            if ec2_state in ("stopped", "terminated"):
+                stopped_count += 1
+                if stopped_count >= 2:
+                    logger.error("EC2 %s without producing result.json", ec2_state)
+                    return {"status": "failed", "error": f"EC2 {ec2_state} without result"}
+            else:
+                stopped_count = 0
 
-    # 완료 대기 (polling)
-    for _ in range(720):  # 최대 2시간
-        await asyncio.sleep(10)
-        try:
-            result = ssm.get_command_invocation(
-                CommandId=command_id,
-                InstanceId=instance_id,
-            )
-            status = result["Status"]
-            if status == "Success":
-                logger.info("Remote training completed")
-                return {"status": "success", "command_id": command_id}
-            if status in ("Failed", "TimedOut", "Cancelled"):
-                error = result.get("StandardErrorContent", "")
-                logger.error("Remote training failed: %s", error[:200])
-                return {"status": "failed", "error": error[:500]}
-        except Exception:
-            pass
+        await asyncio.sleep(15)
 
     return {"status": "timeout"}
 
+
+# ---------------------------------------------------------------------------
+# 메인 엔트리 포인트
+# ---------------------------------------------------------------------------
 
 async def run_gpu_training(
     build_id: str,
@@ -168,40 +188,47 @@ async def run_gpu_training(
     s3_bucket: str,
     s3_prefix: str,
 ) -> dict:
-    """GPU EC2에서 학습 실행 (전체 흐름).
+    """GPU EC2에서 학습 실행.
 
-    1. EC2 시작
-    2. 데이터 S3 업로드
-    3. SSM으로 학습 실행
-    4. 완료 후 EC2 중지
+    1. S3에 학습 데이터 업로드
+    2. EC2 시작 (부팅 스크립트가 S3 작업 자동 감지)
+    3. S3 output 폴링으로 완료 확인
+    4. EC2는 부팅 스크립트에서 자동 shutdown
     """
     instance_id = _GPU_INSTANCE_ID
     if not instance_id:
         return {"status": "error", "error": "DISTILL_GPU_INSTANCE_ID not configured"}
 
     try:
-        # 1. 인스턴스 시작
+        # 1. S3 업로드
+        await asyncio.to_thread(
+            _upload_training_data_sync,
+            s3_bucket, s3_prefix, build_id, jsonl_path, config,
+        )
+
+        # 2. EC2 시작
         state = await _get_instance_state(instance_id)
         if state != "running":
             started = await _start_instance(instance_id)
             if not started:
                 return {"status": "error", "error": "Failed to start GPU instance"}
 
-        # 2. 학습 데이터 업로드
-        s3_train_path = await asyncio.to_thread(
-            lambda: asyncio.run(_upload_training_data(
-                s3_bucket, s3_prefix, build_id, jsonl_path, config,
-            ))
-        )
+        logger.info("GPU instance started, polling S3 for results...")
 
-        # 3. 원격 학습
-        result = await _run_remote_training(instance_id, s3_train_path, build_id)
+        # 3. S3 결과 폴링 (EC2 부팅 스크립트가 학습 완료 후 result.json 업로드)
+        result = await _poll_s3_output(s3_bucket, s3_prefix, build_id)
+
+        # EC2는 부팅 스크립트에서 자동 shutdown하지만, 안전망으로 중지 요청
+        if await _get_instance_state(instance_id) == "running":
+            await _stop_instance(instance_id)
 
         return result
 
-    finally:
-        # 4. 인스턴스 중지 (항상)
+    except Exception as e:
+        logger.error("GPU training error: %s", e)
+        # 에러 시에도 EC2 중지 시도
         try:
             await _stop_instance(instance_id)
-        except Exception as e:
-            logger.error("Failed to stop GPU instance: %s", e)
+        except Exception:
+            pass
+        return {"status": "error", "error": str(e)}

@@ -499,6 +499,117 @@ class IngestionPipeline:
             "point_id": str_to_uuid(f"{collection_name}:{raw.doc_id}:title"),
         }
 
+    async def _run_tree_index_builder(
+        self,
+        raw: RawDocument,
+        items: list[dict[str, Any]],
+        chunk_heading_paths: list[str],
+        collection_name: str,
+    ) -> None:
+        """Stage 12: heading_path → Neo4j 트리 구축 (실패해도 인제스트 계속)."""
+        from src.config import get_settings
+        if not get_settings().tree_index.enabled:
+            return
+        if not self.graph_store:
+            return
+        try:
+            from .tree_index_builder import build_tree_from_chunks, persist_tree_to_neo4j
+            chunks_for_tree = []
+            for item in items:
+                meta = item.get("metadata", {})
+                if meta.get("chunk_type") == "title":
+                    continue
+                ci = meta.get("chunk_index", 0)
+                chunks_for_tree.append({
+                    "chunk_id": str(item.get("point_id", "")),
+                    "heading_path": chunk_heading_paths[ci] if ci < len(chunk_heading_paths) else "",
+                    "chunk_index": ci,
+                })
+            if not chunks_for_tree:
+                return
+            tree_data = build_tree_from_chunks(collection_name, raw.doc_id, chunks_for_tree)
+            await persist_tree_to_neo4j(self.graph_store, tree_data)
+        except Exception as exc:
+            logger.warning("Tree index build failed for doc_id=%s: %s", raw.doc_id, exc)
+
+    async def _run_summary_tree_builder(
+        self,
+        raw: RawDocument,
+        items: list[dict[str, Any]],
+        dense_vectors: list[list[float]],
+        prefixed_chunks: list[str],
+        collection_name: str,
+        chunk_heading_paths: list[str],
+        now_iso: str,
+    ) -> None:
+        """Stage 13: RAPTOR식 요약 트리 (실패해도 인제스트 계속)."""
+        from src.config import get_settings
+        ts = get_settings().tree_index
+        if not ts.enabled or not ts.summary_enabled:
+            return
+        embedder = getattr(self, 'embedding_provider', None)
+        llm = getattr(self, 'llm_client', None)
+        if not embedder or not llm:
+            return
+        try:
+            from .summary_tree_builder import build_summary_tree
+            from .qdrant_utils import str_to_uuid
+
+            body_chunks = []
+            for idx, item in enumerate(items):
+                meta = item.get("metadata", {})
+                if meta.get("chunk_type") == "title":
+                    continue
+                ci = meta.get("chunk_index", 0)
+                body_chunks.append({
+                    "text": prefixed_chunks[ci] if ci < len(prefixed_chunks) else "",
+                    "embedding": dense_vectors[ci] if ci < len(dense_vectors) else [],
+                    "chunk_id": str(item.get("point_id", "")),
+                    "heading_path": chunk_heading_paths[ci] if ci < len(chunk_heading_paths) else "",
+                })
+
+            if len(body_chunks) < ts.summary_cluster_min_chunks:
+                return
+
+            summaries = await build_summary_tree(
+                body_chunks, embedder, llm,
+                max_layers=ts.summary_max_layers,
+                min_chunks=ts.summary_cluster_min_chunks,
+                use_umap=True,
+                umap_dim=ts.summary_umap_dim,
+            )
+
+            if not summaries:
+                return
+
+            # Qdrant에 요약 청크 저장
+            summary_items = []
+            for i, s in enumerate(summaries):
+                point_id_str = f"{collection_name}:{raw.doc_id}:summary:{s['layer']}:{i}"
+                summary_items.append({
+                    "content": s["text"],
+                    "dense_vector": s["embedding"],
+                    "sparse_vector": {},
+                    "metadata": {
+                        "document_id": raw.doc_id,
+                        "document_name": raw.title,
+                        "chunk_type": "summary",
+                        "summary_layer": s["layer"],
+                        # Qdrant payload 크기 제한 (16KB)을 위해 상위 10개만 저장
+                        "source_chunk_ids": s["source_chunk_ids"][:10],
+                        "kb_id": collection_name,
+                        "ingested_at": now_iso,
+                    },
+                    "point_id": str_to_uuid(point_id_str),
+                })
+            await self.vector_store.upsert_batch(collection_name, summary_items)
+            logger.info(
+                "Summary tree stored: doc_id=%s, summaries=%d",
+                raw.doc_id, len(summary_items),
+            )
+        except Exception as exc:
+            logger.warning("Summary tree build failed for doc_id=%s: %s", raw.doc_id, exc)
+
     async def _run_term_extraction(
         self, raw: RawDocument, typed_chunks: list[tuple[str, str, str]], collection_name: str,
     ) -> dict[str, Any]:
@@ -806,7 +917,16 @@ class IngestionPipeline:
             # 11. Graph edges
             await self._create_graph_edges(raw, collection_name, owner=owner, l1_category=l1_category)
 
-            # 12. Term extraction + synonym discovery + GraphRAG
+            # 12. Tree index (heading_path → Neo4j 트리)
+            await self._run_tree_index_builder(raw, items, chunk_heading_paths, collection_name)
+
+            # 13. Summary tree (RAPTOR식 클러스터링 → 요약 → Qdrant)
+            await self._run_summary_tree_builder(
+                raw, items, dense_vectors, prefixed_chunks, collection_name,
+                chunk_heading_paths, now_iso,
+            )
+
+            # 14. Term extraction + synonym discovery + GraphRAG
             term_extraction_stats = await self._run_term_extraction(raw, typed_chunks, collection_name)
             synonym_discovery_stats = await self._run_synonym_discovery(raw, collection_name)
             graphrag_stats = await self._run_graphrag(raw, collection_name)

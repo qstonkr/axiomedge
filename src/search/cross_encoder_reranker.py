@@ -66,11 +66,13 @@ def _load_model_sync():
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
-        # SSL bypass for corporate proxy (fallback if online mode needed)
-        import ssl
-        ssl._create_default_https_context = ssl._create_unverified_context
-        os.environ.setdefault("CURL_CA_BUNDLE", "")
-        os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+        # SSL: Use corporate CA bundle if available, bypass only as last resort
+        if not os.environ.get("REQUESTS_CA_BUNDLE") and not os.environ.get("CURL_CA_BUNDLE"):
+            import ssl
+            ssl._create_default_https_context = ssl._create_unverified_context
+            os.environ.setdefault("CURL_CA_BUNDLE", "")
+            os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+            logger.warning("No CA bundle configured — SSL verification disabled for model download")
 
         import urllib3
         urllib3.disable_warnings()

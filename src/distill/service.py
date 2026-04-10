@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 _re_num_pattern = re.compile(r"^\d+[개월주년일편점]")
 
+# GPU 원격 학습 완료 마커 — 로컬 양자화/배포 스킵 판단에 사용
+_GPU_TRAINED = "__GPU_TRAINED__"
+
 
 class DistillService:
     """Distill 파이프라인 오케스트레이터."""
@@ -493,27 +496,39 @@ class DistillService:
                 await repo.update_build(build_id, status="training")
                 model_path = await self._train(build_id, profile, data_path, repo, build_dir)
 
-            # Step 3: 평가
-            if "evaluate" in all_steps:
-                await repo.update_build(build_id, status="evaluating")
-                passed = await self._evaluate(build_id, profile, model_path, data_path, repo)
-                if not passed:
-                    await repo.update_build(
-                        build_id, status="failed",
-                        error_message="Evaluation below threshold",
-                        error_step="evaluate",
-                    )
-                    return
+            # GPU 원격 학습 시 양자화/배포는 EC2에서 완료됨 → 스킵
+            gpu_trained = model_path == _GPU_TRAINED
 
-            # Step 4: 양자화
-            if "quantize" in all_steps:
+            # Step 3: 양자화 (GPU 학습 시 스킵 — EC2에서 처리됨)
+            if "quantize" in all_steps and not gpu_trained:
                 await repo.update_build(build_id, status="quantizing")
                 gguf_path = await self._quantize(build_id, profile, model_path, repo, build_dir)
 
-            # Step 5: 배포
-            if "deploy" in all_steps:
+            # Step 4: 배포 (GPU 학습 시 스킵 — EC2에서 S3 업로드 완료)
+            if "deploy" in all_steps and not gpu_trained:
                 await repo.update_build(build_id, status="deploying")
                 await self._deploy(build_id, profile, gguf_path, repo)
+
+            # Step 5: 평가 (Teacher judge)
+            if "evaluate" in all_steps:
+                await repo.update_build(build_id, status="evaluating")
+                # GPU 학습 시 GGUF가 S3에만 있으므로 다운로드
+                eval_gguf_path = gguf_path
+                if gpu_trained:
+                    eval_gguf_path = await self._download_gguf_from_s3(
+                        build_id, profile, build_dir,
+                    )
+                passed = await self._evaluate(
+                    build_id, profile, model_path, data_path, repo,
+                    gguf_path=eval_gguf_path,
+                )
+                if not passed:
+                    await repo.update_build(
+                        build_id, status="failed",
+                        error_message="Evaluation below threshold — GGUF deployed but flagged",
+                        error_step="evaluate",
+                    )
+                    return
 
             await repo.update_build(build_id, status="completed")
             logger.info("Build %s completed successfully", build_id)
@@ -657,10 +672,14 @@ class DistillService:
                 config={
                     "base_model": profile.base_model,
                     "lora": {"r": profile.lora.r, "alpha": profile.lora.alpha,
-                             "dropout": profile.lora.dropout},
+                             "dropout": profile.lora.dropout,
+                             "target_modules": profile.lora.target_modules},
                     "training": {"epochs": profile.training.epochs,
                                  "batch_size": profile.training.batch_size,
-                                 "learning_rate": profile.training.learning_rate},
+                                 "gradient_accumulation": profile.training.gradient_accumulation,
+                                 "learning_rate": profile.training.learning_rate,
+                                 "max_seq_length": profile.training.max_seq_length},
+                    "quantize": profile.deploy.quantize or "q4_k_m",
                 },
                 s3_bucket=profile.deploy.s3_bucket,
                 s3_prefix=profile.deploy.s3_prefix,
@@ -669,9 +688,18 @@ class DistillService:
             if result.get("status") != "success":
                 raise RuntimeError(f"GPU training failed: {result.get('error', 'unknown')}")
 
-            # TODO: S3에서 학습 결과 다운로드
-            model_path = str(build_dir / "model" / "merged")
-            return model_path
+            # EC2에서 학습 + merge + GGUF까지 완료 → result.json에서 메타데이터 반영
+            await repo.update_build(
+                build_id,
+                train_loss=result.get("train_loss"),
+                training_duration_sec=result.get("duration_sec"),
+                gguf_size_mb=result.get("gguf_size_mb"),
+                gguf_sha256=result.get("gguf_sha256"),
+                quantize_method=result.get("quantize_method"),
+            )
+
+            # GPU 경로: 양자화/배포를 EC2가 처리 → 로컬 model_path 불필요
+            return _GPU_TRAINED
 
         # 로컬 학습 (fallback)
         logger.info("Using local CPU/MPS for training (no GPU instance configured)")
@@ -695,10 +723,13 @@ class DistillService:
     async def _evaluate(
         self, build_id: str, profile: DistillProfile,
         model_path: str, data_path: str, repo: DistillRepository,
+        *, gguf_path: str | None = None,
     ) -> bool:
-        """모델 평가 + 배포 게이트."""
-        # from src.distill.evaluator import DistillEvaluator  # TODO: 실 평가 시 활성화
+        """모델 평가 + 배포 게이트.
 
+        GGUF가 있으면 DistillEvaluator로 Teacher judge + 임베딩 유사도 평가.
+        llama_cpp 미설치 시 train_loss 기반 fallback 게이트.
+        """
         # eval set 로드 (train.jsonl에서 마지막 10% 사용)
         eval_data = []
         with open(data_path, encoding="utf-8") as f:
@@ -717,22 +748,63 @@ class DistillService:
             logger.warning("No eval data, skipping evaluation")
             return True
 
-        # TODO: GGUF 변환 후 DistillEvaluator로 실 평가 (현재는 loss 기반 게이트)
-        # evaluator = DistillEvaluator(self.llm, self.embedder)
-        # result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+        # GGUF 기반 실 평가 시도
+        if gguf_path and self.llm and self.embedder:
+            try:
+                from src.distill.evaluator import DistillEvaluator
+
+                evaluator = DistillEvaluator(self.llm, self.embedder)
+                threshold = getattr(profile.training, "eval_threshold", None)
+                result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+
+                await repo.update_build(
+                    build_id,
+                    eval_passed=result.passed,
+                    eval_faithfulness=result.faithfulness,
+                    eval_relevancy=result.relevancy,
+                )
+                logger.info(
+                    "GGUF evaluation: passed=%s, faithfulness=%.3f, relevancy=%.3f",
+                    result.passed, result.faithfulness, result.relevancy,
+                )
+                return result.passed
+            except ImportError:
+                logger.warning("llama_cpp not available, falling back to train_loss gate")
+            except Exception as e:
+                logger.warning("GGUF evaluation failed, falling back to train_loss gate: %s", e)
+
+        # Fallback: train_loss 기반 게이트
         build = await repo.get_build(build_id)
         train_loss = build.get("train_loss", 999)
-
-        # 간단한 게이트: train_loss < 2.0이면 통과
         passed = train_loss < 2.0
         await repo.update_build(
             build_id,
             eval_passed=passed,
-            eval_faithfulness=0.0,  # 추후 실제 평가 시 업데이트
+            eval_faithfulness=0.0,
             eval_relevancy=0.0,
         )
-
         return passed
+
+    async def _download_gguf_from_s3(
+        self, build_id: str, profile: DistillProfile, build_dir: Path,
+    ) -> str | None:
+        """GPU 학습 후 S3에서 GGUF 다운로드 (평가용)."""
+        import os
+        import boto3
+        s3_key = f"{profile.deploy.s3_prefix}train/{build_id}/output/model.gguf"
+        local_path = str(build_dir / "model.gguf")
+
+        try:
+            s3 = boto3.Session(
+                profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+                region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
+            ).client("s3")
+            s3.download_file(profile.deploy.s3_bucket, s3_key, local_path)
+            logger.info("Downloaded GGUF from S3: %s", s3_key)
+            return local_path
+        except Exception as e:
+            logger.warning("GGUF download failed (eval will use train_loss fallback): %s", e)
+            return None
 
     async def _quantize(
         self, build_id: str, profile: DistillProfile,

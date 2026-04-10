@@ -929,6 +929,116 @@ class HeartbeatRequest(BaseModel):
     display_name: str | None = None
 
 
+class StoreRegisterRequest(BaseModel):
+    """매장 사전 등록 요청."""
+    store_id: str
+    profile_name: str
+    display_name: str = ""
+
+
+@router.post("/edge-servers/register")
+async def register_edge_server(request: StoreRegisterRequest):
+    """매장 사전 등록 — 본사에서 장비 출고 전 등록.
+
+    API key를 자동 발급하고, 장비에 세팅할 완전한 출고 명령어를 반환.
+    """
+    import hashlib
+    import re
+    import secrets
+
+    if not re.match(r"^[a-z0-9][a-z0-9_-]{1,48}[a-z0-9]$", request.store_id):
+        raise HTTPException(
+            status_code=400,
+            detail="store_id는 영소문자, 숫자, 하이픈만 가능 (3~50자)",
+        )
+
+    repo = _get_distill_repo()
+
+    existing = await repo.get_edge_server(request.store_id)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Store '{request.store_id}' already registered")
+
+    api_key = f"edge-{secrets.token_urlsafe(24)}"
+    api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+
+    try:
+        await repo.register_edge_server(
+            store_id=request.store_id,
+            profile_name=request.profile_name,
+            display_name=request.display_name or request.store_id,
+            api_key_hash=api_key_hash,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    # 출고 설정 생성 (API key 포함)
+    provision = _build_provision_config(request.store_id, request.profile_name, api_key)
+
+    return {
+        "store_id": request.store_id,
+        "api_key": api_key,
+        "profile_name": request.profile_name,
+        "status": "pending",
+        "provision_command": provision["command"],
+        "message": "매장 등록 완료. 아래 출고 명령어를 장비에서 실행하세요.",
+    }
+
+
+def _build_provision_config(
+    store_id: str, profile_name: str, api_key: str | None = None,
+) -> dict:
+    """출고 설정 생성 (내부 헬퍼)."""
+    s3_bucket = "gs-knowledge-models"
+    s3_prefix = f"models/edge/{profile_name}/"
+
+    from src.config import get_settings
+    try:
+        api_url = get_settings().api.base_url
+    except AttributeError:
+        api_url = "http://localhost:8000"
+
+    manifest_url = f"https://{s3_bucket}.s3.ap-northeast-2.amazonaws.com/{s3_prefix}manifest.json"
+
+    parts = [
+        f"STORE_ID={store_id}",
+        f"MANIFEST_URL={manifest_url}",
+        f"CENTRAL_API_URL={api_url}",
+    ]
+    if api_key:
+        parts.insert(1, f"EDGE_API_KEY={api_key}")
+
+    command = " \\\n  ".join(parts) + " \\\n  bash provision.sh"
+
+    return {
+        "store_id": store_id,
+        "profile_name": profile_name,
+        "env": {
+            "STORE_ID": store_id,
+            "EDGE_API_KEY": api_key or "(등록 시 발급된 키 사용)",
+            "MANIFEST_URL": manifest_url,
+            "CENTRAL_API_URL": api_url,
+        },
+        "command": command,
+    }
+
+
+@router.get("/edge-servers/{store_id}/provision")
+async def provision_edge_server(store_id: str):
+    """출고 설정 — 장비에 세팅할 환경 설정 반환.
+
+    ⚠ EDGE_API_KEY는 등록 시 1회만 발급. 분실 시 삭제 후 재등록 필요.
+    """
+    repo = _get_distill_repo()
+    server = await repo.get_edge_server(store_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    config = _build_provision_config(
+        store_id, server.get("profile_name", ""),
+    )
+    return config
+
+
 @router.post("/edge-servers/heartbeat")
 async def edge_server_heartbeat(
     request: HeartbeatRequest,

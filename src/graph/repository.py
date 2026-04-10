@@ -701,6 +701,90 @@ class Neo4jGraphRepository:
             logger.warning("Neo4j find_step_context failed: %s", e)
             return {}
 
+    # -- Tree Index (heading_path 기반 문서 구조 트리) ----------------------
+
+    async def find_tree_siblings_batch(
+        self,
+        chunk_ids: list[str],
+        *,
+        window: int = 2,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """여러 chunk_id에 대한 형제 청크 일괄 조회."""
+        cypher = """
+        UNWIND $chunk_ids AS cid
+        MATCH (tp:TreePage {chunk_id: cid})<-[:HAS_TREE_PAGE]-(ts:TreeSection)
+        MATCH (ts)-[:HAS_TREE_PAGE]->(sibling:TreePage)
+        WHERE sibling.chunk_index >= tp.chunk_index - $window
+          AND sibling.chunk_index <= tp.chunk_index + $window
+          AND sibling.chunk_id <> cid
+        RETURN cid AS source_chunk_id,
+               sibling.chunk_id AS chunk_id,
+               sibling.chunk_index AS chunk_index,
+               ts.title AS section_title,
+               ts.full_path AS section_path
+        ORDER BY cid, sibling.chunk_index
+        """
+        try:
+            results = await self._client.execute_query(
+                cypher, {"chunk_ids": chunk_ids, "window": window},
+            )
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for r in results:
+                source = r.pop("source_chunk_id", "")
+                grouped.setdefault(source, []).append(r)
+            return grouped
+        except Exception as e:
+            logger.warning("Neo4j find_tree_siblings_batch failed: %s", e)
+            return {}
+
+    async def search_section_titles(
+        self,
+        query: str,
+        *,
+        kb_id: str | None = None,
+        limit: int = 10,
+        min_score: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """Neo4j fulltext 인덱스로 섹션 제목 검색 → 해당 청크 ID 반환."""
+        kb_filter = "AND ts.kb_id = $kb_id" if kb_id else ""
+        cypher = f"""
+        CALL db.index.fulltext.queryNodes("tree_section_title_ft", $query)
+        YIELD node, score
+        WHERE score > $min_score {kb_filter}
+        WITH node AS ts, score
+        MATCH (ts)-[:HAS_TREE_PAGE]->(tp:TreePage)
+        RETURN tp.chunk_id AS chunk_id,
+               ts.title AS section_title,
+               ts.full_path AS section_path,
+               score
+        ORDER BY score DESC
+        LIMIT $limit
+        """
+        params: dict[str, Any] = {"query": query, "min_score": min_score, "limit": limit}
+        if kb_id:
+            params["kb_id"] = kb_id
+        try:
+            return await self._client.execute_query(cypher, params)
+        except Exception as e:
+            logger.warning("Neo4j search_section_titles failed: %s", e)
+            return []
+
+    async def get_chunk_section_paths_batch(
+        self,
+        chunk_ids: list[str],
+    ) -> dict[str, str]:
+        """여러 chunk_id의 섹션 경로 일괄 조회."""
+        cypher = """
+        UNWIND $chunk_ids AS cid
+        MATCH (tp:TreePage {chunk_id: cid})<-[:HAS_TREE_PAGE]-(ts:TreeSection)
+        RETURN cid AS chunk_id, ts.full_path AS section_path
+        """
+        try:
+            results = await self._client.execute_query(cypher, {"chunk_ids": chunk_ids})
+            return {r["chunk_id"]: r["section_path"] for r in results}
+        except Exception:
+            return {}
+
     # -- Stats / Health ---------------------------------------------------
 
     async def get_entity_count(self) -> int:

@@ -26,6 +26,31 @@ class DistillEdgeServerRepository:
     def __init__(self, session_maker: async_sessionmaker) -> None:
         self._session_maker = session_maker
 
+    async def register_edge_server(
+        self,
+        store_id: str,
+        profile_name: str,
+        display_name: str,
+        api_key_hash: str,
+    ) -> dict[str, Any]:
+        """매장 사전 등록 — 장비 출고 전 본사에서 등록."""
+        async with self._session_maker() as session:
+            model = DistillEdgeServerModel(
+                id=str(uuid.uuid4()),
+                store_id=store_id,
+                profile_name=profile_name,
+                display_name=display_name,
+                status="pending",
+                api_key_hash=api_key_hash,
+            )
+            session.add(model)
+            try:
+                await session.commit()
+            except SQLAlchemyError as e:
+                await session.rollback()
+                raise ValueError(f"Failed to register: {e}")
+        return {"store_id": store_id, "status": "pending"}
+
     async def upsert_heartbeat(
         self, data: dict[str, Any], api_key: str,
     ) -> dict[str, Any]:

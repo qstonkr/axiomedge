@@ -264,6 +264,49 @@ def _extract_page_images(page, doc, extracted_images: list) -> None:
                 extracted_images.append(img_bytes)
 
 
+def _extract_pdf_page_heading(page) -> str:
+    """PDF 페이지에서 폰트 크기 기반으로 heading(제목) 추출.
+
+    페이지 상단 20% 영역에서 가장 큰 폰트의 텍스트를 heading으로 판단.
+    """
+    try:
+        blocks = page.get_text("dict", flags=0)["blocks"]
+        if not blocks:
+            return ""
+        page_height = page.rect.height
+        heading_zone = page_height * 0.2  # 상단 20%
+
+        candidates = []
+        for block in blocks:
+            if block.get("type") != 0:  # text block만
+                continue
+            for line in block.get("lines", []):
+                # 상단 영역만
+                if line["bbox"][1] > heading_zone:
+                    continue
+                for span in line.get("spans", []):
+                    text = span.get("text", "").strip()
+                    size = span.get("size", 0)
+                    flags = span.get("flags", 0)
+                    is_bold = bool(flags & 2**4)  # bit 4 = bold
+                    if text and len(text) >= 2:
+                        # 볼드이면 크기 보너스
+                        effective_size = size * 1.2 if is_bold else size
+                        candidates.append((effective_size, text))
+
+        if not candidates:
+            return ""
+        # 가장 큰 폰트 텍스트
+        candidates.sort(key=lambda x: -x[0])
+        best_size, best_text = candidates[0]
+        # 본문 크기(보통 10~12pt) 대비 충분히 커야 heading
+        if best_size < 13:
+            return ""
+        return best_text[:100]
+    except Exception:
+        return ""
+
+
 def _classify_pdf_page(
     page, page_num: int, filename: str, doc,
     has_broken_cmap_fn, is_garbled_fn,
@@ -281,7 +324,12 @@ def _classify_pdf_page(
         elif text.strip():
             logger.info("Garbled text on page %d of %s, routing to OCR", page_label, filename)
     elif text.strip():
-        texts.append(f"[Page {page_label}]\n{text}")
+        # PDF heading 추출 — 폰트 크기 기반
+        heading = _extract_pdf_page_heading(page)
+        if heading:
+            texts.append(f"## {heading}\n\n[Page {page_label}]\n{text}")
+        else:
+            texts.append(f"[Page {page_label}]\n{text}")
     else:
         scanned_pages.append(page_label)
 
@@ -483,9 +531,29 @@ def _iter_pptx_shapes(shapes, _depth: int = 0):
             yield from _iter_pptx_shapes(shape.shapes, _depth + 1)
 
 
+def _extract_slide_title(slide) -> str:
+    """PPTX 슬라이드 제목 추출 (title placeholder 또는 첫 번째 큰 텍스트)."""
+    # 1. Title placeholder에서 추출 (가장 정확)
+    if slide.shapes.title and slide.shapes.title.text.strip():
+        return slide.shapes.title.text.strip()[:100]
+    # 2. placeholder type 13(TITLE) 또는 15(CENTER_TITLE) 탐색
+    try:
+        for shape in slide.placeholders:
+            if shape.placeholder_format.idx in (0, 13, 15):
+                if shape.text.strip():
+                    return shape.text.strip()[:100]
+    except Exception:
+        pass
+    return ""
+
+
 def _extract_slide_text(slide, slide_num: int) -> str | None:
     """Extract text from a single PPTX slide."""
-    slide_texts = [f"[Slide {slide_num}]"]
+    title = _extract_slide_title(slide)
+    if title:
+        slide_texts = [f"## {title}\n\n[Slide {slide_num}]"]
+    else:
+        slide_texts = [f"[Slide {slide_num}]"]
     for shape in _iter_pptx_shapes(slide.shapes):
         if hasattr(shape, "text") and shape.text.strip():
             slide_texts.append(shape.text)
@@ -541,7 +609,11 @@ def _process_pptx_shape(shape, slide_texts: list, tables: list, images: list) ->
 
 def _process_enhanced_slide(slide, slide_num: int, tables: list, images: list) -> str | None:
     """Process a single slide for enhanced parsing, collecting tables and images."""
-    slide_texts = [f"[Slide {slide_num}]"]
+    title = _extract_slide_title(slide)
+    if title:
+        slide_texts = [f"## {title}\n\n[Slide {slide_num}]"]
+    else:
+        slide_texts = [f"[Slide {slide_num}]"]
     for shape in _iter_pptx_shapes(slide.shapes):
         _process_pptx_shape(shape, slide_texts, tables, images)
     if slide.has_notes_slide:

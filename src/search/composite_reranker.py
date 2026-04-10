@@ -331,6 +331,9 @@ class CompositeReranker:
             for idx, chunk in enumerate(chunks)
         ]
 
+        # 섹션 보너스: 같은 top-level 섹션에 2+ 히트 시 보너스
+        weighted_chunks = self._apply_section_bonus(weighted_chunks)
+
         if not weighted_chunks:
             return []
 
@@ -419,6 +422,47 @@ class CompositeReranker:
             self._replace_score(chunk, score)
             for chunk, score, _model_score, _base_score, _source_boost, _position in selected
         ]
+
+    @staticmethod
+    def _apply_section_bonus(
+        weighted_chunks: list[tuple],
+    ) -> list[tuple]:
+        """같은 top-level 섹션에 2+ 히트 시 보너스 적용."""
+        from src.config import get_settings
+        ts = get_settings().tree_index
+        if not ts.enabled:
+            return weighted_chunks
+
+        bonus = ts.section_bonus
+        if bonus <= 0:
+            return weighted_chunks
+
+        from src.search.section_utils import get_top_section
+
+        # 같은 top-level 섹션에 2+ 히트 → 핵심 섹션일 확률 높음
+        section_counts: dict[str, int] = {}
+        chunk_sections: list[str] = []
+        for chunk_tuple in weighted_chunks:
+            chunk = chunk_tuple[0]
+            hp = getattr(chunk, "metadata", {}).get("heading_path", "") or ""
+            top = get_top_section(hp)
+            chunk_sections.append(top)
+            if top:
+                section_counts[top] = section_counts.get(top, 0) + 1
+
+        multi_sections = {s for s, c in section_counts.items() if c >= 2}
+        if not multi_sections:
+            return weighted_chunks
+
+        boosted = []
+        for chunk_tuple, top in zip(weighted_chunks, chunk_sections):
+            if top in multi_sections:
+                # tuple: (chunk, score, model, base, source_boost, position)
+                new_score = min(1.0, chunk_tuple[1] + bonus)
+                boosted.append((chunk_tuple[0], new_score, *chunk_tuple[2:]))
+            else:
+                boosted.append(chunk_tuple)
+        return boosted
 
     @staticmethod
     def _replace_score(chunk: SearchChunk, score: float) -> SearchChunk:

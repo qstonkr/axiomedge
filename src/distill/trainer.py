@@ -45,20 +45,16 @@ class DistillTrainer:
         self.output_dir = output_dir
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    def prepare_dataset(self, data_path: str, eval_ratio: float = 0.1):
-        """JSONL → HuggingFace Dataset (train/eval split)."""
+    def prepare_dataset(self, data_path: str):
+        """JSONL → HuggingFace Dataset (전체 학습용, 평가는 Teacher가 별도 수행)."""
         from datasets import load_dataset
 
         dataset = load_dataset("json", data_files=data_path, split="train")
-        split = dataset.train_test_split(test_size=eval_ratio, seed=42)
-        logger.info(
-            "Dataset: %d train, %d eval",
-            len(split["train"]), len(split["test"]),
-        )
-        return split
+        logger.info("Dataset: %d samples", len(dataset))
+        return dataset
 
     def train(self, dataset) -> TrainOutput:
-        """LoRA SFT 학습 실행."""
+        """LoRA SFT 학습 실행. 평가는 DistillEvaluator(Teacher)가 별도 수행."""
         from peft import LoraConfig, get_peft_model
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from trl import SFTConfig, SFTTrainer
@@ -89,7 +85,7 @@ class DistillTrainer:
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
 
-        # SFT 설정
+        # SFT 설정 — eval 없음 (Teacher가 별도 평가)
         sft_config = SFTConfig(
             output_dir=self.output_dir,
             num_train_epochs=train_cfg.epochs,
@@ -98,18 +94,18 @@ class DistillTrainer:
             learning_rate=train_cfg.learning_rate,
             max_length=train_cfg.max_seq_length,
             logging_steps=10,
-            save_strategy="epoch",
-            eval_strategy="epoch" if "test" in dataset else "no",
+            save_strategy="no",
+            eval_strategy="no",
             warmup_ratio=0.1,
             fp16=True,
+            gradient_checkpointing=True,
             report_to="none",
         )
 
         trainer = SFTTrainer(
             model=model,
             args=sft_config,
-            train_dataset=dataset["train"],
-            eval_dataset=dataset.get("test"),
+            train_dataset=dataset,
             processing_class=tokenizer,
         )
 
@@ -119,25 +115,17 @@ class DistillTrainer:
 
         duration = int(time.monotonic() - t0)
         train_loss = result.training_loss
-        eval_loss = None
-
-        if "test" in dataset:
-            eval_result = trainer.evaluate()
-            eval_loss = eval_result.get("eval_loss")
 
         # 어댑터 저장
         adapter_path = Path(self.output_dir) / "adapter"
         model.save_pretrained(str(adapter_path))
         tokenizer.save_pretrained(str(adapter_path))
 
-        logger.info(
-            "Training complete: loss=%.4f, eval_loss=%s, duration=%ds",
-            train_loss, f"{eval_loss:.4f}" if eval_loss else "N/A", duration,
-        )
+        logger.info("Training complete: loss=%.4f, duration=%ds", train_loss, duration)
 
         return TrainOutput(
             training_loss=train_loss,
-            eval_loss=eval_loss,
+            eval_loss=None,
             duration_sec=duration,
             output_dir=self.output_dir,
         )

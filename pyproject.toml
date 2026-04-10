@@ -63,6 +63,7 @@ dependencies = [
     "streamlit-agraph>=0.0.45",
     "rich>=14.3.3",
     "trl>=1.0.0",
+    "umap-learn>=0.5.12",
 ]
 
 [project.optional-dependencies]

@@ -842,6 +842,43 @@ with tab_servers:
 
             st.markdown("---")
 
+            # ── 매장 등록 (출고 전) ──
+            st.subheader("매장 등록")
+            st.caption("장비 출고 전 매장을 사전 등록합니다. 등록 후 출고 설정을 다운로드하여 장비에 세팅합니다.")
+
+            with st.expander("➕ 새 매장 등록", expanded=False):
+                rc1, rc2 = st.columns(2)
+                with rc1:
+                    new_store_id = st.text_input("매장 ID", placeholder="gangnam-01", key="reg_store_id")
+                with rc2:
+                    new_display = st.text_input("매장명", placeholder="강남1호점", key="reg_display")
+
+                if st.button("등록", key="reg_btn", type="primary", disabled=not new_store_id):
+                    reg_result = api_client.register_edge_server(
+                        new_store_id, selected, new_display,
+                    )
+                    if not api_failed(reg_result):
+                        st.success(f"✅ 매장 **{new_store_id}** 등록 완료")
+                        st.warning("⚠️ 아래 출고 명령어는 이 화면에서만 확인 가능합니다. 반드시 복사하세요.")
+                        st.markdown("**출고 명령어** (본사에서 장비에 실행):")
+                        st.code(reg_result.get("provision_command", ""), language="bash")
+                    else:
+                        st.error(f"등록 실패: {reg_result.get('detail', reg_result)}")
+
+            # 출고 설정 조회 (기존 매장)
+            with st.expander("📋 출고 설정 조회", expanded=False):
+                prov_store = st.text_input("매장 ID 입력", key="prov_store_id")
+                if st.button("조회", key="prov_btn", disabled=not prov_store):
+                    prov = api_client.get_provision_config(prov_store)
+                    if not api_failed(prov):
+                        st.json(prov.get("env", {}))
+                        st.markdown("**출고 명령어:**")
+                        st.code(prov.get("provision_command", ""), language="bash")
+                    else:
+                        st.error(f"조회 실패: {prov.get('detail', prov)}")
+
+            st.markdown("---")
+
             # ── 서버 목록 ──
             st.subheader("서버 목록")
             sf1, sf2 = st.columns(2)

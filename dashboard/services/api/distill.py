@@ -244,3 +244,13 @@ def bulk_request_update(profile_name: str, update_type: str) -> dict:
 
 def delete_edge_server(store_id: str) -> dict:
     return _delete(f"/api/v1/distill/edge-servers/{store_id}")
+
+
+def register_edge_server(store_id: str, profile_name: str, display_name: str = "") -> dict:
+    return _post("/api/v1/distill/edge-servers/register", json={
+        "store_id": store_id, "profile_name": profile_name, "display_name": display_name,
+    })
+
+
+def get_provision_config(store_id: str) -> dict:
+    return _get(f"/api/v1/distill/edge-servers/{store_id}/provision")
