@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 _re_num_pattern = re.compile(r"^\d+[개월주년일편점]")
 
+# GPU 원격 학습 완료 마커 — 로컬 양자화/배포 스킵 판단에 사용
+_GPU_TRAINED = "__GPU_TRAINED__"
+
 
 class DistillService:
     """Distill 파이프라인 오케스트레이터."""
@@ -494,7 +497,7 @@ class DistillService:
                 model_path = await self._train(build_id, profile, data_path, repo, build_dir)
 
             # GPU 원격 학습 시 양자화/배포는 EC2에서 완료됨 → 스킵
-            gpu_trained = model_path == "__GPU_TRAINED__"
+            gpu_trained = model_path == _GPU_TRAINED
 
             # Step 3: 양자화 (GPU 학습 시 스킵 — EC2에서 처리됨)
             if "quantize" in all_steps and not gpu_trained:
@@ -695,10 +698,8 @@ class DistillService:
                 quantize_method=result.get("quantize_method"),
             )
 
-            # GPU 경로에서는 양자화/배포를 EC2가 처리하므로 merged model 경로 불필요
-            # _GPU_TRAINED 마커로 후속 단계 스킵 판단
-            model_path = "__GPU_TRAINED__"
-            return model_path
+            # GPU 경로: 양자화/배포를 EC2가 처리 → 로컬 model_path 불필요
+            return _GPU_TRAINED
 
         # 로컬 학습 (fallback)
         logger.info("Using local CPU/MPS for training (no GPU instance configured)")
