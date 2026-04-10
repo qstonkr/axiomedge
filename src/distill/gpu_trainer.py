@@ -132,7 +132,8 @@ def _check_output_exists(s3_bucket: str, s3_prefix: str, build_id: str) -> dict 
         return json.loads(obj["Body"].read().decode())
     except s3.exceptions.NoSuchKey:
         return None
-    except Exception:
+    except Exception as e:
+        logger.debug("S3 check failed for %s: %s", result_key, e)
         return None
 
 
