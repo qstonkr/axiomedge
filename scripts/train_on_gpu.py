@@ -124,12 +124,12 @@ def train(data_dir: str, output_dir: str, build_id: str):
         dataset = split["train"]
         eval_dataset = split["test"]
 
-    max_seq = training_config.get("max_seq_length", 512)
+    max_seq = training_config.get("max_seq_length", 256)
     training_args = TrainingArguments(
         output_dir=os.path.join(output_dir, "checkpoints"),
         num_train_epochs=training_config.get("epochs", 3),
-        per_device_train_batch_size=training_config.get("batch_size", 4),
-        gradient_accumulation_steps=training_config.get("gradient_accumulation", 8),
+        per_device_train_batch_size=training_config.get("batch_size", 1),
+        gradient_accumulation_steps=training_config.get("gradient_accumulation", 16),
         learning_rate=training_config.get("learning_rate", 2e-4),
         logging_steps=10,
         save_strategy="no",
