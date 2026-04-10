@@ -849,11 +849,18 @@ with tab_servers:
             with st.expander("➕ 새 매장 등록", expanded=False):
                 rc1, rc2 = st.columns(2)
                 with rc1:
-                    new_store_id = st.text_input("매장 ID", placeholder="gangnam-01", key="reg_store_id")
+                    new_store_id = st.text_input(
+                        "매장 ID", placeholder="gangnam-01", key="reg_store_id",
+                        help="영소문자, 숫자, 하이픈만 가능 (3~50자). 예: gangnam-01, busan-haeundae",
+                    )
                 with rc2:
                     new_display = st.text_input("매장명", placeholder="강남1호점", key="reg_display")
 
-                if st.button("등록", key="reg_btn", type="primary", disabled=not new_store_id):
+                import re as _re
+                valid_id = bool(new_store_id and _re.match(r"^[a-z0-9][a-z0-9_-]{1,48}[a-z0-9]$", new_store_id))
+                if new_store_id and not valid_id:
+                    st.error("매장 ID는 영소문자, 숫자, 하이픈만 가능합니다 (3~50자)")
+                if st.button("등록", key="reg_btn", type="primary", disabled=not valid_id):
                     reg_result = api_client.register_edge_server(
                         new_store_id, selected, new_display,
                     )
