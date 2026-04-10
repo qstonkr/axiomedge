@@ -134,8 +134,45 @@ EOSYNC
     echo "  systemd 서비스 등록 ✓"
 
 elif [ "$OS" = "darwin" ]; then
-    echo "  macOS: 수동 시작 필요"
-    echo "  cd $EDGE_HOME && source venv/bin/activate && uvicorn server:app --port $EDGE_PORT"
+    echo "  macOS: 백그라운드 서비스 등록..."
+
+    # LaunchAgent plist 생성 (로그인 시 자동 시작)
+    PLIST_DIR="$HOME/Library/LaunchAgents"
+    mkdir -p "$PLIST_DIR"
+    cat > "$PLIST_DIR/com.gs.edge-server.plist" <<EOPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.gs.edge-server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$EDGE_HOME/venv/bin/uvicorn</string>
+        <string>server:app</string>
+        <string>--host</string><string>0.0.0.0</string>
+        <string>--port</string><string>$EDGE_PORT</string>
+    </array>
+    <key>WorkingDirectory</key><string>$EDGE_HOME</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>STORE_ID</key><string>$STORE_ID</string>
+        <key>EDGE_API_KEY</key><string>$EDGE_API_KEY</string>
+        <key>MODEL_PATH</key><string>$EDGE_HOME/models/current/model.gguf</string>
+        <key>LOG_DIR</key><string>$EDGE_HOME/logs</string>
+        <key>CENTRAL_API_URL</key><string>$CENTRAL_API_URL</string>
+        <key>MANIFEST_URL</key><string>$MANIFEST_URL</string>
+    </dict>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>StandardOutPath</key><string>$EDGE_HOME/logs/server.log</string>
+    <key>StandardErrorPath</key><string>$EDGE_HOME/logs/server.err</string>
+</dict>
+</plist>
+EOPLIST
+
+    launchctl unload "$PLIST_DIR/com.gs.edge-server.plist" 2>/dev/null || true
+    launchctl load "$PLIST_DIR/com.gs.edge-server.plist"
+    echo "  LaunchAgent 등록 + 시작 ✓"
 fi
 
 # 모델 초기 다운로드 시도
