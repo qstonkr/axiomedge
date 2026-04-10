@@ -118,18 +118,13 @@ def train(data_dir: str, output_dir: str, build_id: str):
     model = get_peft_model(model, peft_config)
 
     dataset = load_dataset("json", data_files=data_path, split="train")
-    eval_dataset = None
-    if len(dataset) > 20:
-        split = dataset.train_test_split(test_size=0.1, seed=42)
-        dataset = split["train"]
-        eval_dataset = split["test"]
 
     max_seq = training_config.get("max_seq_length", 256)
     training_args = TrainingArguments(
         output_dir=os.path.join(output_dir, "checkpoints"),
         num_train_epochs=training_config.get("epochs", 3),
         per_device_train_batch_size=training_config.get("batch_size", 1),
-        per_device_eval_batch_size=1,
+        eval_strategy="no",
         gradient_accumulation_steps=training_config.get("gradient_accumulation", 16),
         learning_rate=training_config.get("learning_rate", 2e-4),
         logging_steps=10,
@@ -144,7 +139,6 @@ def train(data_dir: str, output_dir: str, build_id: str):
         model=model,
         args=training_args,
         train_dataset=dataset,
-        eval_dataset=eval_dataset,
         processing_class=tokenizer,
     )
     import inspect
@@ -155,13 +149,8 @@ def train(data_dir: str, output_dir: str, build_id: str):
 
     train_result = trainer.train()
     train_loss = train_result.training_loss
-    eval_loss = None
-    if eval_dataset:
-        eval_result = trainer.evaluate()
-        eval_loss = eval_result.get("eval_loss")
 
-    logger.info("Training done: loss=%.4f, eval_loss=%s", train_loss,
-                f"{eval_loss:.4f}" if eval_loss else "N/A")
+    logger.info("Training done: loss=%.4f", train_loss)
 
     # 2. Merge LoRA + Save
     logger.info("=== Step 2: Merge LoRA ===")
@@ -210,7 +199,6 @@ def train(data_dir: str, output_dir: str, build_id: str):
         "status": "completed",
         "build_id": build_id,
         "train_loss": round(train_loss, 4),
-        "eval_loss": round(eval_loss, 4) if eval_loss else None,
         "duration_sec": duration,
         "gguf_size_mb": gguf_size_mb,
         "gguf_sha256": gguf_sha256,
