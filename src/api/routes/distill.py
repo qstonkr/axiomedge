@@ -988,9 +988,6 @@ def _build_provision_config(
     store_id: str, profile_name: str, api_key: str | None = None,
 ) -> dict:
     """출고 설정 생성 (내부 헬퍼)."""
-    s3_bucket = "gs-knowledge-models"
-    s3_prefix = f"{profile_name}/"
-
     import os
     import socket
     # 환경변수 우선, 없으면 로컬 IP 자동 감지
@@ -1005,7 +1002,8 @@ def _build_provision_config(
         except Exception:
             api_url = "http://localhost:8000"
 
-    manifest_url = f"https://{s3_bucket}.s3.ap-northeast-2.amazonaws.com/{s3_prefix}manifest.json"
+    # S3 직접 접근이 아닌 API를 통해 manifest 제공 (S3 퍼블릭 차단 대응)
+    manifest_url = f"{api_url}/api/v1/distill/manifest/{profile_name}"
 
     parts = [
         f"STORE_ID={store_id}",
@@ -1083,6 +1081,38 @@ async def list_edge_servers(
     repo = _get_distill_repo()
     servers = await repo.list_edge_servers(profile_name=profile_name, status=status)
     return {"items": servers}
+
+
+@router.get("/manifest/{profile_name}")
+async def get_manifest(profile_name: str):
+    """매니페스트 프록시 — S3에서 가져와 반환 (퍼블릭 접근 불필요)."""
+    import boto3
+    import os as _os
+
+    repo = _get_distill_repo()
+    profile = await repo.get_profile(profile_name)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    config = profile.get("config", "{}")
+    if isinstance(config, str):
+        import json as _json
+        config = _json.loads(config) if config else {}
+    deploy = config.get("deploy", {})
+    bucket = deploy.get("s3_bucket", "gs-knowledge-models")
+    prefix = deploy.get("s3_prefix", f"{profile_name}/")
+    manifest_key = f"{prefix}manifest.json"
+
+    try:
+        s3 = boto3.Session(
+            profile_name=_os.getenv("AWS_PROFILE", "jeongbeomkim"),
+            region_name=_os.getenv("AWS_REGION", "ap-northeast-2"),
+        ).client("s3")
+        obj = s3.get_object(Bucket=bucket, Key=manifest_key)
+        import json as _json
+        return _json.loads(obj["Body"].read().decode())
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Manifest not found: {e}")
 
 
 @router.get("/provision.sh")
