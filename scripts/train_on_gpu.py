@@ -134,6 +134,7 @@ def train(data_dir: str, output_dir: str, build_id: str):
         logging_steps=10,
         save_strategy="no",
         fp16=True,
+        gradient_checkpointing=True,
         report_to="none",
     )
 
