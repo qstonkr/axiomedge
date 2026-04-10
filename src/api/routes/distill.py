@@ -991,11 +991,19 @@ def _build_provision_config(
     s3_bucket = "gs-knowledge-models"
     s3_prefix = f"{profile_name}/"
 
-    from src.config import get_settings
-    try:
-        api_url = get_settings().api.base_url
-    except AttributeError:
-        api_url = "http://localhost:8000"
+    import os
+    import socket
+    # 환경변수 우선, 없으면 로컬 IP 자동 감지
+    api_url = os.getenv("EXTERNAL_API_URL", "")
+    if not api_url:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            api_url = f"http://{local_ip}:8000"
+        except Exception:
+            api_url = "http://localhost:8000"
 
     manifest_url = f"https://{s3_bucket}.s3.ap-northeast-2.amazonaws.com/{s3_prefix}manifest.json"
 
