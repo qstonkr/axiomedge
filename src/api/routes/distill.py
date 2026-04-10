@@ -961,15 +961,18 @@ async def register_edge_server(request: StoreRegisterRequest):
     api_key = f"edge-{secrets.token_urlsafe(24)}"
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
-    await repo.register_edge_server(
-        store_id=request.store_id,
-        profile_name=request.profile_name,
-        display_name=request.display_name or request.store_id,
-        api_key_hash=api_key_hash,
-    )
+    try:
+        await repo.register_edge_server(
+            store_id=request.store_id,
+            profile_name=request.profile_name,
+            display_name=request.display_name or request.store_id,
+            api_key_hash=api_key_hash,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     # 출고 설정 생성 (API key 포함)
-    provision = _build_provision_config(request.store_id, request.profile_name, api_key, repo)
+    provision = _build_provision_config(request.store_id, request.profile_name, api_key)
 
     return {
         "store_id": request.store_id,
@@ -982,7 +985,7 @@ async def register_edge_server(request: StoreRegisterRequest):
 
 
 def _build_provision_config(
-    store_id: str, profile_name: str, api_key: str | None, repo,
+    store_id: str, profile_name: str, api_key: str | None = None,
 ) -> dict:
     """출고 설정 생성 (내부 헬퍼)."""
     s3_bucket = "gs-knowledge-models"
@@ -1031,7 +1034,7 @@ async def provision_edge_server(store_id: str):
         raise HTTPException(status_code=404, detail="Store not found")
 
     config = _build_provision_config(
-        store_id, server.get("profile_name", ""), api_key=None, repo=repo,
+        store_id, server.get("profile_name", ""),
     )
     return config
 
