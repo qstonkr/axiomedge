@@ -940,19 +940,24 @@ class StoreRegisterRequest(BaseModel):
 async def register_edge_server(request: StoreRegisterRequest):
     """매장 사전 등록 — 본사에서 장비 출고 전 등록.
 
-    API key를 자동 발급하고, 장비에 세팅할 설정을 반환.
+    API key를 자동 발급하고, 장비에 세팅할 완전한 출고 명령어를 반환.
     """
-    import secrets
     import hashlib
+    import re
+    import secrets
+
+    if not re.match(r"^[a-z0-9][a-z0-9_-]{1,48}[a-z0-9]$", request.store_id):
+        raise HTTPException(
+            status_code=400,
+            detail="store_id는 영소문자, 숫자, 하이픈만 가능 (3~50자)",
+        )
 
     repo = _get_distill_repo()
 
-    # 중복 체크
     existing = await repo.get_edge_server(request.store_id)
     if existing:
         raise HTTPException(status_code=409, detail=f"Store '{request.store_id}' already registered")
 
-    # API key 자동 생성
     api_key = f"edge-{secrets.token_urlsafe(24)}"
     api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
@@ -963,12 +968,54 @@ async def register_edge_server(request: StoreRegisterRequest):
         api_key_hash=api_key_hash,
     )
 
+    # 출고 설정 생성 (API key 포함)
+    provision = _build_provision_config(request.store_id, request.profile_name, api_key, repo)
+
     return {
         "store_id": request.store_id,
-        "api_key": api_key,  # 최초 1회만 반환 (이후 조회 불가)
+        "api_key": api_key,
         "profile_name": request.profile_name,
         "status": "pending",
-        "message": "매장 등록 완료. 출고 설정을 다운로드하세요.",
+        "provision_command": provision["command"],
+        "message": "매장 등록 완료. 아래 출고 명령어를 장비에서 실행하세요.",
+    }
+
+
+def _build_provision_config(
+    store_id: str, profile_name: str, api_key: str | None, repo,
+) -> dict:
+    """출고 설정 생성 (내부 헬퍼)."""
+    s3_bucket = "gs-knowledge-models"
+    s3_prefix = f"models/edge/{profile_name}/"
+
+    from src.config import get_settings
+    try:
+        api_url = get_settings().api.base_url
+    except AttributeError:
+        api_url = "http://localhost:8000"
+
+    manifest_url = f"https://{s3_bucket}.s3.ap-northeast-2.amazonaws.com/{s3_prefix}manifest.json"
+
+    parts = [
+        f"STORE_ID={store_id}",
+        f"MANIFEST_URL={manifest_url}",
+        f"CENTRAL_API_URL={api_url}",
+    ]
+    if api_key:
+        parts.insert(1, f"EDGE_API_KEY={api_key}")
+
+    command = " \\\n  ".join(parts) + " \\\n  bash provision.sh"
+
+    return {
+        "store_id": store_id,
+        "profile_name": profile_name,
+        "env": {
+            "STORE_ID": store_id,
+            "EDGE_API_KEY": api_key or "(등록 시 발급된 키 사용)",
+            "MANIFEST_URL": manifest_url,
+            "CENTRAL_API_URL": api_url,
+        },
+        "command": command,
     }
 
 
@@ -976,47 +1023,17 @@ async def register_edge_server(request: StoreRegisterRequest):
 async def provision_edge_server(store_id: str):
     """출고 설정 — 장비에 세팅할 환경 설정 반환.
 
-    본사에서 provision.sh에 전달하여 장비 자동 세팅.
+    ⚠ EDGE_API_KEY는 등록 시 1회만 발급. 분실 시 삭제 후 재등록 필요.
     """
     repo = _get_distill_repo()
     server = await repo.get_edge_server(store_id)
     if not server:
         raise HTTPException(status_code=404, detail="Store not found")
 
-    profile_name = server.get("profile_name", "")
-    profile = await repo.get_profile(profile_name)
-    deploy_config = {}
-    if profile:
-        config = profile.get("config", "{}")
-        if isinstance(config, str):
-            import json as _json
-            deploy_config = _json.loads(config).get("deploy", {}) if config else {}
-        else:
-            deploy_config = config.get("deploy", {})
-
-    s3_bucket = deploy_config.get("s3_bucket", "gs-knowledge-models")
-    s3_prefix = deploy_config.get("s3_prefix", f"models/edge/{profile_name}/")
-
-    from src.config import get_settings
-    api_url = get_settings().api.base_url if hasattr(get_settings().api, "base_url") else "http://localhost:8000"
-
-    return {
-        "store_id": store_id,
-        "profile_name": profile_name,
-        "display_name": server.get("display_name", store_id),
-        "env": {
-            "STORE_ID": store_id,
-            "MANIFEST_URL": f"https://{s3_bucket}.s3.ap-northeast-2.amazonaws.com/{s3_prefix}manifest.json",
-            "CENTRAL_API_URL": api_url,
-        },
-        "docker_image": "edge-model:latest",
-        "provision_command": (
-            f"STORE_ID={store_id} "
-            f"MANIFEST_URL=https://{s3_bucket}.s3.ap-northeast-2.amazonaws.com/{s3_prefix}manifest.json "
-            f"CENTRAL_API_URL={api_url} "
-            f"bash install.sh"
-        ),
-    }
+    config = _build_provision_config(
+        store_id, server.get("profile_name", ""), api_key=None, repo=repo,
+    )
+    return config
 
 
 @router.post("/edge-servers/heartbeat")

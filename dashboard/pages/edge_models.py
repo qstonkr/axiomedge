@@ -859,14 +859,9 @@ with tab_servers:
                     )
                     if not api_failed(reg_result):
                         st.success(f"✅ 매장 **{new_store_id}** 등록 완료")
-                        st.code(f"API Key: {reg_result.get('api_key', '')}", language=None)
-                        st.warning("⚠️ API Key는 이 화면에서만 확인 가능합니다. 복사해두세요.")
-
-                        # 출고 설정
-                        prov = api_client.get_provision_config(new_store_id)
-                        if not api_failed(prov):
-                            st.markdown("**출고 명령어** (장비에서 실행):")
-                            st.code(prov.get("provision_command", ""), language="bash")
+                        st.warning("⚠️ 아래 출고 명령어는 이 화면에서만 확인 가능합니다. 반드시 복사하세요.")
+                        st.markdown("**출고 명령어** (본사에서 장비에 실행):")
+                        st.code(reg_result.get("provision_command", ""), language="bash")
                     else:
                         st.error(f"등록 실패: {reg_result.get('detail', reg_result)}")
 

@@ -112,17 +112,28 @@ else
     fi
 fi
 
-docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null || true
+if ! docker compose up -d 2>/dev/null && ! docker-compose up -d 2>/dev/null; then
+    echo "  ❌ Docker 서버 시작 실패. 이미지를 확인하세요."
+    exit 1
+fi
 
 # 헬스체크 대기
-echo "  서버 시작 대기 (최대 60초)..."
-for i in $(seq 1 12); do
+echo "  서버 시작 대기 (최대 90초)..."
+HEALTHY=false
+for i in $(seq 1 18); do
     if curl -sf "http://localhost:$EDGE_PORT/health" >/dev/null 2>&1; then
         echo "  서버 정상 ✓"
+        HEALTHY=true
         break
     fi
     sleep 5
 done
+
+if [ "$HEALTHY" = "false" ]; then
+    echo "  ⚠ 서버 헬스체크 실패. 로그를 확인하세요:"
+    echo "    docker compose logs"
+    exit 1
+fi
 
 # 5. 부팅 시 자동 시작
 echo "[5/5] 자동 시작 등록..."
