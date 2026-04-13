@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,42 @@ class DistillTrainer:
         self.profile = profile
         self.output_dir = output_dir
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    def _save_tokenizer_with_model(self, tokenizer, output_path: str | Path) -> None:
+        # FastTokenizer의 save_pretrained()는 tokenizer.json만 저장하고
+        # tokenizer.model (SentencePiece raw)을 저장하지 않는다. llama.cpp의
+        # convert_hf_to_gguf.py는 Gemma3의 경우 tokenizer.model 존재 여부로
+        # SentencePiece 경로/gpt2 BPE 경로를 분기하는데, 없으면 BPE fallback으로
+        # 떨어져서 한국어 multi-byte 출력이 깨진다. HF cache 또는 base model
+        # 경로에서 복사해서 이 경로 분기를 정상 경로로 고정한다.
+        output_path = Path(output_path)
+        tokenizer.save_pretrained(str(output_path))
+        tm_target = output_path / "tokenizer.model"
+        if tm_target.exists():
+            return
+        base_ref = self.profile.base_model
+        try:
+            from huggingface_hub import try_to_load_from_cache
+            cached = try_to_load_from_cache(base_ref, "tokenizer.model")
+            if cached and Path(cached).exists():
+                shutil.copy(cached, tm_target)
+                logger.info("Copied tokenizer.model from HF cache (%s)", base_ref)
+                return
+        except Exception as e:
+            logger.debug("HF cache lookup for tokenizer.model failed: %s", e)
+        try:
+            base_path = Path(base_ref)
+            if base_path.is_dir() and (base_path / "tokenizer.model").exists():
+                shutil.copy(base_path / "tokenizer.model", tm_target)
+                logger.info("Copied tokenizer.model from local base path %s", base_path)
+                return
+        except Exception as e:
+            logger.debug("Local base path lookup for tokenizer.model failed: %s", e)
+        logger.warning(
+            "tokenizer.model not found for base=%s — GGUF conversion will "
+            "fall back to gpt2 BPE and break Gemma3 Korean output",
+            base_ref,
+        )
 
     def prepare_dataset(self, data_path: str):
         """JSONL → HuggingFace Dataset (전체 학습용, 평가는 Teacher가 별도 수행)."""
@@ -181,7 +218,7 @@ class DistillTrainer:
         # 어댑터 저장
         adapter_path = Path(self.output_dir) / "adapter"
         model.save_pretrained(str(adapter_path))
-        tokenizer.save_pretrained(str(adapter_path))
+        self._save_tokenizer_with_model(tokenizer, adapter_path)
 
         logger.info("Training complete: loss=%.4f, duration=%ds", train_loss, duration)
 
@@ -210,7 +247,7 @@ class DistillTrainer:
         merged.save_pretrained(output_path)
 
         tokenizer = AutoTokenizer.from_pretrained(str(adapter_path))
-        tokenizer.save_pretrained(output_path)
+        self._save_tokenizer_with_model(tokenizer, output_path)
 
         logger.info("Merged model saved to %s", output_path)
         return output_path
