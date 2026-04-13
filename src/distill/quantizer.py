@@ -49,6 +49,11 @@ class DistillQuantizer:
 
     def _convert_hf_to_gguf(self, model_path: Path, output_path: Path) -> None:
         """HuggingFace → GGUF f16 변환."""
+        # 방어선: convert_hf_to_gguf.py의 Gemma3 경로는 tokenizer.model 유무로
+        # SentencePiece / gpt2 BPE 분기한다. 없으면 BPE fallback 되어 한국어가 깨짐.
+        # 학습 파이프라인이 tokenizer.model을 빼먹었을 경우 여기서 마지막 복구.
+        self._ensure_tokenizer_model(model_path)
+
         # llama.cpp CLI 사용 (convert_hf_to_gguf.py)
         convert_script = shutil.which("convert_hf_to_gguf.py")
         if convert_script:
@@ -73,6 +78,34 @@ class DistillQuantizer:
             # Fallback: transformers + gguf 라이브러리
             logger.warning("CLI convert failed, trying Python fallback: %s", result.stderr[:200])
             self._python_convert_to_gguf(model_path, output_path)
+
+    def _ensure_tokenizer_model(self, model_path: Path) -> None:
+        tm_target = model_path / "tokenizer.model"
+        if tm_target.exists():
+            return
+        base_ref = self.profile.base_model
+        try:
+            from huggingface_hub import try_to_load_from_cache
+            cached = try_to_load_from_cache(base_ref, "tokenizer.model")
+            if cached and Path(cached).exists():
+                shutil.copy(cached, tm_target)
+                logger.info("Recovered tokenizer.model from HF cache (%s)", base_ref)
+                return
+        except Exception as e:
+            logger.debug("HF cache lookup failed: %s", e)
+        try:
+            base_path = Path(base_ref)
+            if base_path.is_dir() and (base_path / "tokenizer.model").exists():
+                shutil.copy(base_path / "tokenizer.model", tm_target)
+                logger.info("Recovered tokenizer.model from local base %s", base_path)
+                return
+        except Exception as e:
+            logger.debug("Local base path lookup failed: %s", e)
+        logger.warning(
+            "tokenizer.model missing in %s and not recoverable from base %s — "
+            "GGUF conversion may produce broken Korean (gpt2 BPE fallback)",
+            model_path, base_ref,
+        )
 
     def _quantize_gguf(self, input_path: Path, output_path: Path) -> None:
         """GGUF f16 → 양자화 (Q4_K_M 등)."""

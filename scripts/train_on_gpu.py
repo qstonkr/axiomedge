@@ -332,6 +332,34 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
     model.save_pretrained(merged_dir)
     tokenizer.save_pretrained(merged_dir)
 
+    # tokenizer.model (SentencePiece raw) 복사 — FastTokenizer.save_pretrained()는
+    # tokenizer.json만 저장하고 이 파일을 누락시키는데, llama.cpp의 convert_hf_to_gguf.py
+    # Gemma3 경로는 이 파일 유무로 SentencePiece/gpt2 BPE 분기를 결정한다.
+    # 없으면 BPE fallback으로 떨어져 한국어 출력이 깨짐 — 반드시 복사해야 함.
+    tm_target = os.path.join(merged_dir, "tokenizer.model")
+    if not os.path.exists(tm_target):
+        tm_src_candidates = [
+            os.path.join(model_path, "tokenizer.model"),  # 로컬 base model 경로
+        ]
+        try:
+            from huggingface_hub import try_to_load_from_cache
+            cached = try_to_load_from_cache(base_model, "tokenizer.model")
+            if cached:
+                tm_src_candidates.insert(0, cached)
+        except Exception as e:
+            logger.debug("HF cache lookup for tokenizer.model failed: %s", e)
+        for src in tm_src_candidates:
+            if src and os.path.exists(src):
+                shutil.copy(src, tm_target)
+                logger.info("Copied tokenizer.model from %s", src)
+                break
+        else:
+            logger.warning(
+                "tokenizer.model not found for %s — GGUF conversion will fall back "
+                "to gpt2 BPE and break Gemma3 Korean output",
+                base_model,
+            )
+
     # ---------- Step 3: GGUF 양자화 (2단계, 명시적 실패 처리) ----------
     logger.info("=== Step 3: GGUF Quantization (%s) ===", quantize_method)
     gguf_path = _quantize_gguf(merged_dir, output_dir, quantize_method)
