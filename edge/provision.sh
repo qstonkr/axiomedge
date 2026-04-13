@@ -21,7 +21,7 @@ echo "  매장: $STORE_ID"
 echo "  경로: $EDGE_HOME"
 echo ""
 
-# 1. Python 확인
+# 1. Python 확인 (3.9+ 필요, 3.10+ 권장)
 echo "[1/6] Python 확인..."
 if ! command -v python3 &>/dev/null; then
     echo "  Python3 설치 중..."
@@ -36,7 +36,14 @@ if ! command -v python3 &>/dev/null; then
         exit 1
     fi
 fi
+PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo "  Python: $(python3 --version) ✓"
+if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'; then
+    :
+else
+    echo "  ❌ Python 3.9 이상 필요 (현재 $PY_VER)"
+    exit 1
+fi
 
 # 2. 디렉토리 + venv
 echo "[2/6] 환경 설정..."
@@ -50,21 +57,32 @@ fi
 # 3. 패키지 설치
 echo "[3/6] 패키지 설치..."
 "$EDGE_HOME/venv/bin/pip" install -q --upgrade pip
+# eval_type_backport: Python 3.9에서 `str | None` 같은 PEP 604 union syntax를
+# FastAPI/Pydantic이 런타임 파싱할 수 있게 해주는 백포트. 3.10+에서도 무해.
 "$EDGE_HOME/venv/bin/pip" install -q \
     "llama-cpp-python>=0.3.0" \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.34.0" \
     "httpx>=0.27.0" \
-    "pydantic>=2.0"
+    "pydantic>=2.0" \
+    "eval_type_backport>=0.2.0"
 echo "  패키지 설치 완료 ✓"
 
 # 4. 서버 코드 다운로드
 echo "[4/6] 서버 코드 다운로드..."
 curl -sfL "$CENTRAL_API_URL/api/v1/distill/edge-files/server.py" -o "$EDGE_HOME/server.py" || {
-    echo "  API에서 다운로드 실패, 직접 복사 필요"
+    echo "  ❌ server.py 다운로드 실패 ($CENTRAL_API_URL 접속 확인)"
+    exit 1
 }
-curl -sfL "$CENTRAL_API_URL/api/v1/distill/edge-files/sync.py" -o "$EDGE_HOME/sync.py" 2>/dev/null || true
-echo "  서버 코드 ✓"
+curl -sfL "$CENTRAL_API_URL/api/v1/distill/edge-files/sync.py" -o "$EDGE_HOME/sync.py" || {
+    echo "  ❌ sync.py 다운로드 실패"
+    exit 1
+}
+# 최초 설치 시점의 앱 버전 기록 (중앙 API 의 manifest.json 의 app_version 과 비교)
+REMOTE_APP_VER=$(curl -sfL "$MANIFEST_URL" 2>/dev/null \
+    | python3 -c "import json, sys; print(json.load(sys.stdin).get('app_version', ''))" 2>/dev/null || echo "")
+echo "${REMOTE_APP_VER:-initial}" > "$EDGE_HOME/.app_version"
+echo "  서버 코드 ✓ (app_version=${REMOTE_APP_VER:-initial})"
 
 # 5. 환경변수 파일
 echo "[5/6] 설정 파일 생성..."

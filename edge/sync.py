@@ -33,11 +33,15 @@ EDGE_SERVER_URL = os.getenv("EDGE_SERVER_URL", "http://localhost:8080")
 LOG_UPLOAD_URL = os.getenv("LOG_UPLOAD_URL", "")
 CENTRAL_API_URL = os.getenv("CENTRAL_API_URL", "")
 APP_DIR = Path(os.getenv("APP_DIR", "/opt/edge-model"))
-APP_STAGING = APP_DIR / "staging"
+APP_VERSION_FILE = APP_DIR / ".app_version"
+LAUNCHCTL_LABEL = os.getenv("LAUNCHCTL_LABEL", "com.gs.edge-server")
 
 CURRENT_DIR = MODEL_DIR / "current"
 STAGING_DIR = MODEL_DIR / "staging"
 ROLLBACK_DIR = MODEL_DIR / "rollback"
+
+# 엣지가 중앙 API에서 받아오는 소스 파일 (venv는 그대로 유지, 소스만 교체).
+EDGE_SOURCE_FILES = ("server.py", "sync.py")
 
 
 def _read_local_version() -> str:
@@ -240,64 +244,163 @@ def push_heartbeat() -> None:
         check_and_update()
     if result.get("pending_app_update"):
         logger.info("App update requested by central server")
-        stage_app_update()
+        update_source_files()
 
 
-def stage_app_update() -> bool:
-    """앱 바이너리를 staging에 다운로드. 실제 교체는 update-edge 스크립트가 수행."""
+def _read_local_app_version() -> str:
+    if APP_VERSION_FILE.exists():
+        try:
+            return APP_VERSION_FILE.read_text().strip()
+        except OSError:
+            pass
+    return ""
+
+
+def _remote_app_version() -> str:
+    """manifest.json 의 app_version 필드 조회 (sync.py는 MANIFEST_URL로 중앙 API 경유)."""
     if not MANIFEST_URL:
-        return False
-
+        return ""
     try:
         resp = httpx.get(MANIFEST_URL, timeout=30)
-        manifest = resp.json()
+        resp.raise_for_status()
+        return resp.json().get("app_version", "")
     except Exception as e:
-        logger.error("Failed to fetch manifest for app update: %s", e)
-        return False
+        logger.warning("Failed to fetch manifest for app version: %s", e)
+        return ""
 
-    remote_app_ver = manifest.get("app_version", "")
-    local_app_ver = os.getenv("APP_VERSION", "dev")
-    if not remote_app_ver or remote_app_ver == local_app_ver:
-        logger.info("App already up to date: %s", local_app_ver)
-        return False
 
-    # OS별 다운로드 URL
+def _restart_edge_server() -> None:
+    """플랫폼별 엣지 서버 재시작."""
     import platform
-    os_key = f"{platform.system().lower()}-{platform.machine()}"
-    downloads = manifest.get("app_downloads", {})
-    dl_info = downloads.get(os_key)
-    if not dl_info:
-        logger.warning("No app download for platform: %s", os_key)
-        return False
-
-    APP_STAGING.mkdir(parents=True, exist_ok=True)
-    binary_name = "edge-server.exe" if platform.system() == "Windows" else "edge-server"
-    staging_path = APP_STAGING / binary_name
-
+    import subprocess
+    system = platform.system()
     try:
-        logger.info("Downloading app %s for %s...", remote_app_ver, os_key)
-        with httpx.stream("GET", dl_info["url"], timeout=300) as r:
-            r.raise_for_status()
-            with open(staging_path, "wb") as f:
-                for chunk in r.iter_bytes(chunk_size=8192):
-                    f.write(chunk)
+        if system == "Darwin":
+            subprocess.run(
+                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{LAUNCHCTL_LABEL}"],
+                check=True, timeout=10,
+            )
+        elif system == "Linux":
+            subprocess.run(
+                ["systemctl", "restart", "edge-server"],
+                check=True, timeout=10,
+            )
+        else:
+            logger.warning("Unsupported platform for auto-restart: %s", system)
     except Exception as e:
-        logger.error("App download failed: %s", e)
+        logger.error("Edge server restart failed: %s", e)
+        raise
+
+
+def _health_check(retries: int = 10, delay: float = 1.0) -> bool:
+    """재시작 후 헬스체크. 최대 retries*delay 초 동안 대기."""
+    import time
+    for _ in range(retries):
+        try:
+            resp = httpx.get(f"{EDGE_SERVER_URL}/health", timeout=3)
+            if resp.status_code == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(delay)
+    return False
+
+
+def update_source_files() -> bool:
+    """중앙 API에서 server.py / sync.py 재다운로드 → 원자적 교체 → 재시작 → 헬스체크.
+
+    실패 시 .bak 파일로 롤백. venv / 패키지는 건드리지 않음.
+    """
+    if not CENTRAL_API_URL:
+        logger.warning("CENTRAL_API_URL not set, skipping app update")
         return False
 
-    # SHA256 검증
-    expected_sha = dl_info.get("sha256", "")
-    if expected_sha:
-        actual_sha = _sha256_file(staging_path)
-        if actual_sha != expected_sha:
-            logger.error("App SHA256 mismatch")
-            staging_path.unlink(missing_ok=True)
-            return False
+    remote_ver = _remote_app_version()
+    local_ver = _read_local_app_version()
+    if remote_ver and remote_ver == local_ver:
+        logger.info("App already up to date: %s", local_ver)
+        return False
 
-    # UPDATE_READY 플래그 (update-edge 스크립트가 감지)
-    (APP_STAGING / "UPDATE_READY").write_text(remote_app_ver)
-    logger.info("App staged for update: %s → %s", local_app_ver, remote_app_ver)
+    logger.info("App update: %s → %s", local_ver or "(none)", remote_ver or "(unknown)")
+
+    # 1. 새 파일을 .new 로 받기 (실패해도 기존 파일 무사)
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for fname in EDGE_SOURCE_FILES:
+            url = f"{CENTRAL_API_URL}/api/v1/distill/edge-files/{fname}"
+            target = APP_DIR / fname
+            new_path = APP_DIR / f"{fname}.new"
+            logger.info("Downloading %s...", fname)
+            with httpx.stream("GET", url, timeout=60) as r:
+                r.raise_for_status()
+                with open(new_path, "wb") as f:
+                    for chunk in r.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
+            staged.append((target, new_path))
+    except Exception as e:
+        logger.error("Source download failed: %s", e)
+        for _, new_path in staged:
+            new_path.unlink(missing_ok=True)
+        return False
+
+    # 2. 기존 파일을 .bak 로 이동하고 .new → 원본 원자적 교체
+    backups: list[tuple[Path, Path]] = []
+    try:
+        for target, new_path in staged:
+            if target.exists():
+                bak_path = APP_DIR / f"{target.name}.bak"
+                bak_path.unlink(missing_ok=True)
+                target.rename(bak_path)
+                backups.append((target, bak_path))
+            new_path.rename(target)
+    except OSError as e:
+        logger.error("Source swap failed: %s — restoring backups", e)
+        for target, bak_path in backups:
+            if bak_path.exists():
+                target.unlink(missing_ok=True)
+                bak_path.rename(target)
+        for _, new_path in staged:
+            new_path.unlink(missing_ok=True)
+        return False
+
+    # 3. 엣지 서버 재시작
+    try:
+        _restart_edge_server()
+    except Exception:
+        _restore_backups(backups)
+        return False
+
+    # 4. 헬스체크 — 실패 시 .bak 복구 + 재시작
+    if not _health_check():
+        logger.error("Health check failed after app update — rolling back")
+        _restore_backups(backups)
+        try:
+            _restart_edge_server()
+        except Exception as e:
+            logger.error("Rollback restart failed: %s", e)
+        return False
+
+    # 5. 성공: .bak 정리 + 버전 파일 기록
+    for _, bak_path in backups:
+        bak_path.unlink(missing_ok=True)
+    try:
+        APP_VERSION_FILE.write_text(remote_ver or "unknown")
+    except OSError as e:
+        logger.warning("Failed to write app version file: %s", e)
+    logger.info("App updated successfully to %s", remote_ver)
     return True
+
+
+def _restore_backups(backups: list[tuple[Path, Path]]) -> None:
+    """교체 실패 시 .bak → 원본 복구."""
+    import shutil
+    for target, bak_path in backups:
+        if bak_path.exists():
+            try:
+                target.unlink(missing_ok=True)
+                shutil.move(str(bak_path), str(target))
+            except OSError as e:
+                logger.error("Failed to restore backup %s: %s", bak_path, e)
 
 
 def main():

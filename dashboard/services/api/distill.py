@@ -242,6 +242,17 @@ def bulk_request_update(profile_name: str, update_type: str) -> dict:
     )
 
 
+def set_app_version(profile_name: str, version: str) -> dict:
+    """엣지 앱 소스 버전 태그만 갱신 (S3 manifest 업데이트).
+
+    실제 소스 파일 재다운로드는 엣지가 heartbeat 시 자동으로 수행.
+    """
+    return _post(
+        f"/api/v1/distill/profiles/{profile_name}/app-version",
+        {"version": version},
+    )
+
+
 def delete_edge_server(store_id: str) -> dict:
     return _delete(f"/api/v1/distill/edge-servers/{store_id}")
 

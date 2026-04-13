@@ -1,9 +1,0 @@
-[Unit]
-Description=GS Edge Sync Timer
-
-[Timer]
-OnBootSec=60
-OnUnitActiveSec=300
-
-[Install]
-WantedBy=timers.target

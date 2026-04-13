@@ -1144,6 +1144,65 @@ async def get_manifest(profile_name: str):
     return manifest
 
 
+class AppVersionRequest(BaseModel):
+    version: str
+
+
+@router.post("/profiles/{profile_name}/app-version")
+async def set_app_version(profile_name: str, request: AppVersionRequest):
+    """엣지 앱 소스 버전 태그를 갱신.
+
+    실제 바이너리/패키지 배포는 하지 않는다. S3 manifest.json 의
+    `app_version` 필드만 업데이트. 엣지는 다음 heartbeat 시 이 값을
+    자기 `.app_version` 과 비교해 차이가 있으면 중앙 API 의 edge-files
+    엔드포인트에서 server.py / sync.py 를 재다운로드 (source-file update).
+    """
+    import json as _json
+
+    from src.distill.deployer import _s3_client
+
+    repo = _get_distill_repo()
+    profile = await repo.get_profile(profile_name)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    config = profile.get("config", "{}")
+    if isinstance(config, str):
+        config = _json.loads(config) if config else {}
+    deploy = config.get("deploy", {})
+    bucket = deploy.get("s3_bucket", "gs-knowledge-models")
+    prefix = deploy.get("s3_prefix", f"{profile_name}/")
+    manifest_key = f"{prefix}manifest.json"
+
+    def _update():
+        s3 = _s3_client()
+        try:
+            obj = s3.get_object(Bucket=bucket, Key=manifest_key)
+            manifest = _json.loads(obj["Body"].read().decode())
+        except Exception:
+            manifest = {}
+        manifest["app_version"] = request.version
+        s3.put_object(
+            Bucket=bucket,
+            Key=manifest_key,
+            Body=_json.dumps(manifest, ensure_ascii=False, indent=2),
+            ContentType="application/json",
+        )
+        return manifest
+
+    try:
+        updated = await asyncio.to_thread(_update)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update app version: {e}")
+
+    return {
+        "success": True,
+        "profile_name": profile_name,
+        "app_version": request.version,
+        "manifest": updated,
+    }
+
+
 @router.get("/provision.sh")
 async def download_provision_script():
     """출고 스크립트 다운로드."""
