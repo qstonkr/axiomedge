@@ -7,11 +7,39 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
+
+import boto3
+from botocore.config import Config
 
 from src.distill.config import DistillProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _s3_client():
+    """V4 서명 + 명시적 region으로 S3 client 생성.
+
+    STS 임시 자격증명(SSO/assume-role)은 V4 서명만 허용되므로
+    반드시 signature_version='s3v4' 를 강제해야 한다. region을 명시하지 않으면
+    boto3가 us-east-1 로 떨어지면서 V2 서명으로 fallback되는 버그가 있음.
+    """
+    return boto3.Session(
+        profile_name=os.getenv("AWS_PROFILE") or None,
+        region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
+    ).client("s3", config=Config(signature_version="s3v4"))
+
+
+def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
+    """s3://bucket/key → (bucket, key). 유효하지 않으면 ValueError."""
+    if not s3_uri.startswith("s3://"):
+        raise ValueError(f"Invalid s3_uri: {s3_uri}")
+    rest = s3_uri[len("s3://"):]
+    if "/" not in rest:
+        raise ValueError(f"Invalid s3_uri (no key): {s3_uri}")
+    bucket, key = rest.split("/", 1)
+    return bucket, key
 
 
 class DistillDeployer:
@@ -26,12 +54,10 @@ class DistillDeployer:
         """GGUF 파일을 S3에 업로드."""
         import asyncio
 
-        import boto3
-
         s3_key = f"{self.prefix}{version}/model.gguf"
 
         def _upload():
-            s3 = boto3.client("s3")
+            s3 = _s3_client()
             logger.info("Uploading %s → s3://%s/%s", gguf_path, self.bucket, s3_key)
             s3.upload_file(gguf_path, self.bucket, s3_key)
             return f"s3://{self.bucket}/{s3_key}"
@@ -40,24 +66,53 @@ class DistillDeployer:
         logger.info("Upload complete: %s", s3_uri)
         return s3_uri
 
+    async def copy_in_s3(self, src_uri: str, version: str) -> str:
+        """S3 내부 객체 복사 (GPU 학습 결과물을 버전 경로로 이동).
+
+        대용량 GGUF(>5GB)를 대비해 `s3.copy()` high-level API 사용 —
+        필요 시 multipart 자동 처리.
+        """
+        import asyncio
+
+        src_bucket, src_key = _parse_s3_uri(src_uri)
+        dst_key = f"{self.prefix}{version}/model.gguf"
+
+        def _copy():
+            s3 = _s3_client()
+            logger.info("Copying s3://%s/%s → s3://%s/%s",
+                        src_bucket, src_key, self.bucket, dst_key)
+            s3.copy(
+                CopySource={"Bucket": src_bucket, "Key": src_key},
+                Bucket=self.bucket,
+                Key=dst_key,
+            )
+            return f"s3://{self.bucket}/{dst_key}"
+
+        dst_uri = await asyncio.to_thread(_copy)
+        logger.info("Copy complete: %s", dst_uri)
+        return dst_uri
+
     async def create_and_upload_manifest(
         self, s3_uri: str, version: str, build_info: dict,
     ) -> dict:
-        """manifest.json 생성 + S3 업로드 (pre-signed download URL 포함)."""
+        """manifest.json 생성 + S3 업로드 (pre-signed download URL 포함).
+
+        download_url 은 `s3_uri` 파라미터의 실제 위치로 서명한다
+        (예전엔 {prefix}{version}/model.gguf 로 재조립했는데, GPU 학습 경로와
+        어긋나서 NoSuchKey 버그가 있었음).
+        """
         import asyncio
 
-        import boto3
-
         sha256 = build_info.get("gguf_sha256", "")
-        gguf_key = f"{self.prefix}{version}/model.gguf"
+        gguf_bucket, gguf_key = _parse_s3_uri(s3_uri)
 
         def _create_manifest():
-            s3 = boto3.client("s3")
+            s3 = _s3_client()
 
-            # Pre-signed download URL (24시간 유효)
+            # Pre-signed download URL (24시간 유효) — s3_uri에서 추출한 실제 위치로 서명
             download_url = s3.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self.bucket, "Key": gguf_key},
+                Params={"Bucket": gguf_bucket, "Key": gguf_key},
                 ExpiresIn=86400,
             )
 
@@ -107,10 +162,8 @@ class DistillDeployer:
         """긴급 업데이트 트리거 파일 생성."""
         import asyncio
 
-        import boto3
-
         def _create():
-            s3 = boto3.client("s3")
+            s3 = _s3_client()
             force_key = f"{self.prefix}force_update.json"
             s3.put_object(
                 Bucket=self.bucket,
@@ -130,17 +183,13 @@ class DistillDeployer:
         """S3 오브젝트 삭제 (best-effort)."""
         import asyncio
 
-        import boto3
-
-        if not s3_uri.startswith("s3://"):
+        try:
+            bucket, key = _parse_s3_uri(s3_uri)
+        except ValueError:
             return
-        parts = s3_uri.replace("s3://", "").split("/", 1)
-        if len(parts) != 2:
-            return
-        bucket, key = parts
 
         def _delete():
-            s3 = boto3.client("s3")
+            s3 = _s3_client()
             s3.delete_object(Bucket=bucket, Key=key)
             logger.info("Deleted S3 object: %s", s3_uri)
 

@@ -21,7 +21,7 @@ echo "  매장: $STORE_ID"
 echo "  경로: $EDGE_HOME"
 echo ""
 
-# 1. Python 확인
+# 1. Python 확인 (3.9+ 필요, 3.10+ 권장)
 echo "[1/6] Python 확인..."
 if ! command -v python3 &>/dev/null; then
     echo "  Python3 설치 중..."
@@ -36,7 +36,14 @@ if ! command -v python3 &>/dev/null; then
         exit 1
     fi
 fi
+PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 echo "  Python: $(python3 --version) ✓"
+if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'; then
+    :
+else
+    echo "  ❌ Python 3.9 이상 필요 (현재 $PY_VER)"
+    exit 1
+fi
 
 # 2. 디렉토리 + venv
 echo "[2/6] 환경 설정..."
@@ -50,21 +57,32 @@ fi
 # 3. 패키지 설치
 echo "[3/6] 패키지 설치..."
 "$EDGE_HOME/venv/bin/pip" install -q --upgrade pip
+# eval_type_backport: Python 3.9에서 `str | None` 같은 PEP 604 union syntax를
+# FastAPI/Pydantic이 런타임 파싱할 수 있게 해주는 백포트. 3.10+에서도 무해.
 "$EDGE_HOME/venv/bin/pip" install -q \
     "llama-cpp-python>=0.3.0" \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.34.0" \
     "httpx>=0.27.0" \
-    "pydantic>=2.0"
+    "pydantic>=2.0" \
+    "eval_type_backport>=0.2.0"
 echo "  패키지 설치 완료 ✓"
 
 # 4. 서버 코드 다운로드
 echo "[4/6] 서버 코드 다운로드..."
 curl -sfL "$CENTRAL_API_URL/api/v1/distill/edge-files/server.py" -o "$EDGE_HOME/server.py" || {
-    echo "  API에서 다운로드 실패, 직접 복사 필요"
+    echo "  ❌ server.py 다운로드 실패 ($CENTRAL_API_URL 접속 확인)"
+    exit 1
 }
-curl -sfL "$CENTRAL_API_URL/api/v1/distill/edge-files/sync.py" -o "$EDGE_HOME/sync.py" 2>/dev/null || true
-echo "  서버 코드 ✓"
+curl -sfL "$CENTRAL_API_URL/api/v1/distill/edge-files/sync.py" -o "$EDGE_HOME/sync.py" || {
+    echo "  ❌ sync.py 다운로드 실패"
+    exit 1
+}
+# 최초 설치 시점의 앱 버전 기록 (중앙 API 의 manifest.json 의 app_version 과 비교)
+REMOTE_APP_VER=$(curl -sfL "$MANIFEST_URL" 2>/dev/null \
+    | python3 -c "import json, sys; print(json.load(sys.stdin).get('app_version', ''))" 2>/dev/null || echo "")
+echo "${REMOTE_APP_VER:-initial}" > "$EDGE_HOME/.app_version"
+echo "  서버 코드 ✓ (app_version=${REMOTE_APP_VER:-initial})"
 
 # 5. 환경변수 파일
 echo "[5/6] 설정 파일 생성..."
@@ -73,6 +91,7 @@ STORE_ID=$STORE_ID
 EDGE_API_KEY=$EDGE_API_KEY
 MANIFEST_URL=$MANIFEST_URL
 CENTRAL_API_URL=$CENTRAL_API_URL
+MODEL_DIR=$EDGE_HOME/models
 MODEL_PATH=$EDGE_HOME/models/current/model.gguf
 LOG_DIR=$EDGE_HOME/logs
 EDGE_N_CTX=512
@@ -124,7 +143,7 @@ Description=GS Edge Sync
 [Service]
 Type=oneshot
 EnvironmentFile=$EDGE_HOME/.env
-ExecStart=$EDGE_HOME/venv/bin/python3 $EDGE_HOME/sync.py --once
+ExecStart=$EDGE_HOME/venv/bin/python3 $EDGE_HOME/sync.py
 WorkingDirectory=$EDGE_HOME
 EOSYNC
 
@@ -157,10 +176,12 @@ elif [ "$OS" = "darwin" ]; then
     <dict>
         <key>STORE_ID</key><string>$STORE_ID</string>
         <key>EDGE_API_KEY</key><string>$EDGE_API_KEY</string>
+        <key>MODEL_DIR</key><string>$EDGE_HOME/models</string>
         <key>MODEL_PATH</key><string>$EDGE_HOME/models/current/model.gguf</string>
         <key>LOG_DIR</key><string>$EDGE_HOME/logs</string>
         <key>CENTRAL_API_URL</key><string>$CENTRAL_API_URL</string>
         <key>MANIFEST_URL</key><string>$MANIFEST_URL</string>
+        <key>EDGE_SERVER_URL</key><string>http://localhost:$EDGE_PORT</string>
     </dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
@@ -172,15 +193,55 @@ EOPLIST
 
     launchctl unload "$PLIST_DIR/com.gs.edge-server.plist" 2>/dev/null || true
     launchctl load "$PLIST_DIR/com.gs.edge-server.plist"
-    echo "  LaunchAgent 등록 + 시작 ✓"
+    echo "  edge-server LaunchAgent 등록 + 시작 ✓"
+
+    # Sync LaunchAgent — 5분마다 sync.py 실행 (모델/앱 업데이트 자동 반영)
+    cat > "$PLIST_DIR/com.gs.edge-sync.plist" <<EOSYNCPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.gs.edge-sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$EDGE_HOME/venv/bin/python3</string>
+        <string>$EDGE_HOME/sync.py</string>
+    </array>
+    <key>WorkingDirectory</key><string>$EDGE_HOME</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>STORE_ID</key><string>$STORE_ID</string>
+        <key>EDGE_API_KEY</key><string>$EDGE_API_KEY</string>
+        <key>MODEL_DIR</key><string>$EDGE_HOME/models</string>
+        <key>MODEL_PATH</key><string>$EDGE_HOME/models/current/model.gguf</string>
+        <key>LOG_DIR</key><string>$EDGE_HOME/logs</string>
+        <key>CENTRAL_API_URL</key><string>$CENTRAL_API_URL</string>
+        <key>MANIFEST_URL</key><string>$MANIFEST_URL</string>
+        <key>EDGE_SERVER_URL</key><string>http://localhost:$EDGE_PORT</string>
+        <key>APP_DIR</key><string>$EDGE_HOME</string>
+    </dict>
+    <key>StartInterval</key><integer>300</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardOutPath</key><string>$EDGE_HOME/logs/sync.log</string>
+    <key>StandardErrorPath</key><string>$EDGE_HOME/logs/sync.err</string>
+</dict>
+</plist>
+EOSYNCPLIST
+
+    launchctl unload "$PLIST_DIR/com.gs.edge-sync.plist" 2>/dev/null || true
+    launchctl load "$PLIST_DIR/com.gs.edge-sync.plist"
+    echo "  edge-sync LaunchAgent 등록 + 시작 ✓ (5분 주기)"
 fi
 
 # 모델 초기 다운로드 시도
 echo ""
 echo "  모델 다운로드 시도 중..."
-"$EDGE_HOME/venv/bin/python3" "$EDGE_HOME/sync.py" --once 2>/dev/null && \
-    echo "  모델 다운로드 ✓" || \
-    echo "  ⚠ 모델 미배포 상태 — 배포 후 자동 sync됩니다"
+if ( set -a && . "$EDGE_HOME/.env" && set +a && \
+     "$EDGE_HOME/venv/bin/python3" "$EDGE_HOME/sync.py" --check-only ); then
+    echo "  모델 다운로드 ✓"
+else
+    echo "  ⚠ 모델 다운로드 실패 — 로그 확인 또는 배포 상태 확인 필요"
+fi
 
 # 헬스체크
 sleep 3

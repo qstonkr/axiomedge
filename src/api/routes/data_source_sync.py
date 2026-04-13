@@ -350,7 +350,11 @@ async def _run_ingestion(
         legal_graph_extractor=legal_graph_extractor,
     )
 
-    semaphore = asyncio.Semaphore(4)
+    # TEI server advertises max_batch_requests=8; Semaphore(4) left half the
+    # parallel slots idle during legalize-kr. Bump to 8 to saturate the
+    # embedding path without overloading Neo4j (graph saves are ~1s and the
+    # bumped 3g heap / 1.5g tx ceiling absorbs the parallel writes).
+    semaphore = asyncio.Semaphore(8)
     total_chunks = 0
     docs_ingested = 0
     errors: list[str] = []

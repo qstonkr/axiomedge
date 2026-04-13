@@ -99,11 +99,8 @@ def _upload_training_data_sync(
     jsonl_path: str, config: dict,
 ) -> str:
     """학습 데이터 + 설정을 S3에 업로드 (동기)."""
-    import boto3
-
-    s3 = boto3.Session(
-        profile_name=_AWS_PROFILE, region_name=_AWS_REGION,
-    ).client("s3")
+    from src.distill.deployer import _s3_client
+    s3 = _s3_client()
 
     train_key = f"{s3_prefix}train/{build_id}/train.jsonl"
     config_key = f"{s3_prefix}train/{build_id}/config.json"
@@ -120,11 +117,8 @@ def _upload_training_data_sync(
 
 def _check_output_exists(s3_bucket: str, s3_prefix: str, build_id: str) -> dict | None:
     """S3에 학습 결과가 있는지 확인."""
-    import boto3
-
-    s3 = boto3.Session(
-        profile_name=_AWS_PROFILE, region_name=_AWS_REGION,
-    ).client("s3")
+    from src.distill.deployer import _s3_client
+    s3 = _s3_client()
 
     result_key = f"{s3_prefix}train/{build_id}/output/result.json"
     try:

@@ -19,6 +19,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.responses import HTMLResponse
@@ -50,7 +51,7 @@ LOG_FILE = LOG_DIR / "queries.jsonl"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(key: str | None = Security(api_key_header)):
+async def verify_api_key(key: Optional[str] = Security(api_key_header)):
     if not EDGE_API_KEY:
         return
     if key != EDGE_API_KEY:
@@ -243,7 +244,7 @@ async def heartbeat():
     }
 
 
-def _get_system_ram_total() -> int | None:
+def _get_system_ram_total() -> Optional[int]:
     try:
         import psutil
         return int(psutil.virtual_memory().total / 1024 / 1024)
@@ -251,7 +252,7 @@ def _get_system_ram_total() -> int | None:
         return None
 
 
-def _get_system_ram_used() -> int | None:
+def _get_system_ram_used() -> Optional[int]:
     try:
         import psutil
         return int(psutil.virtual_memory().used / 1024 / 1024)
@@ -259,7 +260,7 @@ def _get_system_ram_used() -> int | None:
         return None
 
 
-def _get_disk_free() -> int | None:
+def _get_disk_free() -> Optional[int]:
     try:
         import psutil
         return int(psutil.disk_usage("/").free / 1024 / 1024)
