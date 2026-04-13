@@ -108,11 +108,16 @@ def check_and_update() -> bool:
 
     (STAGING_DIR / "manifest.json").write_text(json.dumps(remote, ensure_ascii=False))
 
+    # 기존 current가 실제 모델을 담고 있으면 rollback으로 보관, 빈 디렉토리면 그냥 삭제.
+    # (최초 설치 시 current는 provision.sh가 만든 빈 디렉토리 → 유효 rollback이 아님)
     try:
         if ROLLBACK_DIR.exists():
             shutil.rmtree(ROLLBACK_DIR)
         if CURRENT_DIR.exists():
-            CURRENT_DIR.rename(ROLLBACK_DIR)
+            if (CURRENT_DIR / "model.gguf").exists():
+                CURRENT_DIR.rename(ROLLBACK_DIR)
+            else:
+                shutil.rmtree(CURRENT_DIR)
         STAGING_DIR.rename(CURRENT_DIR)
     except OSError as e:
         logger.error("Model swap failed: %s", e)
@@ -123,24 +128,43 @@ def check_and_update() -> bool:
         resp = httpx.post(f"{EDGE_SERVER_URL}/reload", headers=headers, timeout=60)
         resp.raise_for_status()
         logger.info("Server reloaded: %s", resp.json())
+        return True
+    except httpx.ConnectError as e:
+        # edge-server가 꺼져 있거나 아직 안 떠 있음. 새 모델은 그대로 두고
+        # 서버가 다음 기동 시 자동으로 적재하게 함 — rollback하면 방금 받은 모델이 사라짐.
+        logger.warning(
+            "Reload skipped (server not reachable: %s). "
+            "New model left in place — will be loaded on next edge-server startup.",
+            e,
+        )
+        return True
     except Exception as e:
-        logger.error("Reload failed, rolling back: %s", e)
-        _rollback()
+        # 서버는 떠있는데 reload 자체가 실패한 경우 — 새 모델이 로드 불가 상태일 수 있음.
+        # rollback 디렉토리에 유효 모델이 있을 때만 복원 시도.
+        logger.error("Reload failed: %s", e)
+        if (ROLLBACK_DIR / "model.gguf").exists():
+            logger.info("Attempting rollback to previous model")
+            _rollback()
+        else:
+            logger.warning("No valid rollback target — leaving new model in place")
         return False
-    return True
 
 
 def _rollback() -> None:
-    if not ROLLBACK_DIR.exists():
-        logger.error("No rollback directory")
+    """이전 모델로 복원. rollback 디렉토리에 실제 model.gguf가 있을 때만 호출할 것."""
+    if not (ROLLBACK_DIR / "model.gguf").exists():
+        logger.error("No valid rollback model (rollback dir empty or missing)")
         return
     try:
         if CURRENT_DIR.exists():
             shutil.rmtree(CURRENT_DIR)
         ROLLBACK_DIR.rename(CURRENT_DIR)
         headers = {"X-API-Key": EDGE_API_KEY} if EDGE_API_KEY else {}
-        httpx.post(f"{EDGE_SERVER_URL}/reload", headers=headers, timeout=60)
-        logger.info("Rolled back")
+        try:
+            httpx.post(f"{EDGE_SERVER_URL}/reload", headers=headers, timeout=60)
+        except Exception as e:
+            logger.warning("Rollback reload ping failed (server may be down): %s", e)
+        logger.info("Rolled back to previous model")
     except Exception as e:
         logger.error("Rollback failed: %s", e)
 

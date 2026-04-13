@@ -31,10 +31,10 @@ class EdgeLogCollector:
         """S3 로그 파일 수집 → DB 저장."""
         import asyncio
 
-        import boto3
+        from src.distill.deployer import _s3_client
 
         def _list_and_download():
-            s3 = boto3.client("s3")
+            s3 = _s3_client()
             log_prefix = f"{self.prefix}logs/"
             all_logs: list[dict[str, Any]] = []
 

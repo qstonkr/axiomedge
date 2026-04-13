@@ -504,10 +504,12 @@ class DistillService:
                 await repo.update_build(build_id, status="quantizing")
                 gguf_path = await self._quantize(build_id, profile, model_path, repo, build_dir)
 
-            # Step 4: 배포 (GPU 학습 시 스킵 — EC2에서 S3 업로드 완료)
-            if "deploy" in all_steps and not gpu_trained:
+            # Step 4: 배포 (GPU 학습 시에도 실행 — 훈련 출력 경로에 대해 manifest 생성)
+            if "deploy" in all_steps:
                 await repo.update_build(build_id, status="deploying")
-                await self._deploy(build_id, profile, gguf_path, repo)
+                await self._deploy(
+                    build_id, profile, gguf_path, repo, gpu_trained=gpu_trained,
+                )
 
             # Step 5: 평가 (Teacher judge)
             if "evaluate" in all_steps:
@@ -789,16 +791,12 @@ class DistillService:
         self, build_id: str, profile: DistillProfile, build_dir: Path,
     ) -> str | None:
         """GPU 학습 후 S3에서 GGUF 다운로드 (평가용)."""
-        import os
-        import boto3
+        from src.distill.deployer import _s3_client
         s3_key = f"{profile.deploy.s3_prefix}train/{build_id}/output/model.gguf"
         local_path = str(build_dir / "model.gguf")
 
         try:
-            s3 = boto3.Session(
-                profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
-                region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
-            ).client("s3")
+            s3 = _s3_client()
             s3.download_file(profile.deploy.s3_bucket, s3_key, local_path)
             logger.info("Downloaded GGUF from S3: %s", s3_key)
             return local_path
@@ -835,15 +833,29 @@ class DistillService:
     async def _deploy(
         self, build_id: str, profile: DistillProfile,
         gguf_path: str, repo: DistillRepository,
+        gpu_trained: bool = False,
     ) -> None:
-        """S3 배포."""
+        """S3 배포.
+
+        - 로컬 학습: 로컬 GGUF를 `{prefix}{version}/model.gguf` 로 업로드.
+        - GPU 학습: 이미 S3 훈련 출력 경로에 존재하므로 `copy_in_s3` 로 버전 경로에 복사.
+        """
         from src.distill.deployer import DistillDeployer
 
         deployer = DistillDeployer(profile)
         build = await repo.get_build(build_id)
         version = build["version"]
 
-        s3_uri = await deployer.upload_to_s3(gguf_path, version)
+        if gpu_trained:
+            src_uri = build.get("s3_uri")
+            if not src_uri:
+                raise RuntimeError(
+                    f"GPU-trained build {build_id} has no s3_uri — cannot deploy",
+                )
+            s3_uri = await deployer.copy_in_s3(src_uri, version)
+        else:
+            s3_uri = await deployer.upload_to_s3(gguf_path, version)
+
         await deployer.create_and_upload_manifest(s3_uri, version, build)
 
         await repo.update_build(

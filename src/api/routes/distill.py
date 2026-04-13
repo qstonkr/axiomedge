@@ -307,9 +307,24 @@ async def deploy_build(build_id: str):
             raise HTTPException(status_code=400, detail="Build has no S3 URI")
 
         from src.distill.config import dict_to_profile
-        from src.distill.deployer import DistillDeployer
+        from src.distill.deployer import DistillDeployer, _parse_s3_uri
         dp = dict_to_profile(profile)
         deployer = DistillDeployer(dp)
+
+        # GPU 학습 빌드는 s3_uri가 훈련 출력 경로(train/<id>/output/...)에 있음.
+        # 버전 경로 {prefix}{version}/model.gguf 로 옮기고 DB 갱신.
+        # (bucket, key) 튜플로 정규화해서 비교 — 문자열 비교는 trailing slash 등으로 false positive.
+        try:
+            current_bucket, current_key = _parse_s3_uri(s3_uri)
+        except ValueError:
+            await repo.update_build(build_id, status="completed")
+            raise HTTPException(status_code=400, detail=f"Invalid s3_uri: {s3_uri}")
+
+        versioned_key = f"{dp.deploy.s3_prefix}{build['version']}/model.gguf"
+        if (current_bucket, current_key) != (dp.deploy.s3_bucket, versioned_key):
+            s3_uri = await deployer.copy_in_s3(s3_uri, build["version"])
+            await repo.update_build(build_id, s3_uri=s3_uri)
+
         await deployer.create_and_upload_manifest(s3_uri, build["version"], build)
 
         await repo.update_build(
@@ -888,8 +903,8 @@ async def get_app_info(profile_name: str):
         dp = dict_to_profile(profile)
 
         def _fetch():
-            import boto3
-            s3 = boto3.client("s3")
+            from src.distill.deployer import _s3_client
+            s3 = _s3_client()
             manifest_key = f"{dp.deploy.s3_prefix}manifest.json"
             resp = s3.get_object(Bucket=dp.deploy.s3_bucket, Key=manifest_key)
             import json as _json
@@ -1085,9 +1100,14 @@ async def list_edge_servers(
 
 @router.get("/manifest/{profile_name}")
 async def get_manifest(profile_name: str):
-    """매니페스트 프록시 — S3에서 가져와 반환 (퍼블릭 접근 불필요)."""
-    import boto3
-    import os as _os
+    """매니페스트 프록시 — S3에서 가져오고 download_url을 매 호출마다 재서명.
+
+    저장된 download_url은 임시 STS 세션 만료 시 함께 무효화되므로,
+    엣지가 조회할 때마다 fresh한 pre-signed URL을 발급해 응답에 주입한다.
+    """
+    import json as _json
+
+    from src.distill.deployer import _parse_s3_uri, _s3_client
 
     repo = _get_distill_repo()
     profile = await repo.get_profile(profile_name)
@@ -1096,7 +1116,6 @@ async def get_manifest(profile_name: str):
 
     config = profile.get("config", "{}")
     if isinstance(config, str):
-        import json as _json
         config = _json.loads(config) if config else {}
     deploy = config.get("deploy", {})
     bucket = deploy.get("s3_bucket", "gs-knowledge-models")
@@ -1104,15 +1123,25 @@ async def get_manifest(profile_name: str):
     manifest_key = f"{prefix}manifest.json"
 
     try:
-        s3 = boto3.Session(
-            profile_name=_os.getenv("AWS_PROFILE", "jeongbeomkim"),
-            region_name=_os.getenv("AWS_REGION", "ap-northeast-2"),
-        ).client("s3")
+        s3 = _s3_client()
         obj = s3.get_object(Bucket=bucket, Key=manifest_key)
-        import json as _json
-        return _json.loads(obj["Body"].read().decode())
+        manifest = _json.loads(obj["Body"].read().decode())
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Manifest not found: {e}")
+
+    s3_uri = manifest.get("s3_uri", "")
+    if s3_uri.startswith("s3://"):
+        try:
+            model_bucket, model_key = _parse_s3_uri(s3_uri)
+            manifest["download_url"] = s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": model_bucket, "Key": model_key},
+                ExpiresIn=86400,
+            )
+        except Exception as e:
+            logger.warning("Failed to refresh presigned URL for %s: %s", s3_uri, e)
+
+    return manifest
 
 
 @router.get("/provision.sh")
