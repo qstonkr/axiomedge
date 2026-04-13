@@ -472,7 +472,13 @@ class DistillService:
         from src.distill.config import dict_to_profile
         profile = dict_to_profile(profile_dict)
 
-        all_steps = steps or ["generate", "train", "evaluate", "quantize", "deploy"]
+        # 평가는 절대 스킵 불가 — 품질 게이트 통과 못 한 모델이 배포되면
+        # 이번 같은 garbage echo 모델이 매장에 나가는 사고 발생.
+        all_steps = steps or ["generate", "train", "quantize", "evaluate", "deploy"]
+        if "evaluate" not in all_steps:
+            logger.warning("Evaluate step requested-skip rejected — forcing evaluate")
+            all_steps = list(all_steps) + ["evaluate"]
+
         from src.config import get_settings
         work_dir = Path(get_settings().distill.work_dir)
         build_dir = work_dir / build_id
@@ -496,7 +502,7 @@ class DistillService:
                 await repo.update_build(build_id, status="training")
                 model_path = await self._train(build_id, profile, data_path, repo, build_dir)
 
-            # GPU 원격 학습 시 양자화/배포는 EC2에서 완료됨 → 스킵
+            # GPU 원격 학습 시 양자화는 EC2에서 완료됨 → 스킵
             gpu_trained = model_path == _GPU_TRAINED
 
             # Step 3: 양자화 (GPU 학습 시 스킵 — EC2에서 처리됨)
@@ -504,33 +510,35 @@ class DistillService:
                 await repo.update_build(build_id, status="quantizing")
                 gguf_path = await self._quantize(build_id, profile, model_path, repo, build_dir)
 
-            # Step 4: 배포 (GPU 학습 시에도 실행 — 훈련 출력 경로에 대해 manifest 생성)
+            # Step 4: 평가 (배포 전에 반드시 실행 — 순서 변경!)
+            # 이전에는 deploy → evaluate 순서라서 eval fail 시에도 이미 배포된 뒤였음.
+            # 이제 evaluate 가 먼저 통과해야만 deploy 가 실행됨.
+            await repo.update_build(build_id, status="evaluating")
+            # GPU 학습 시 GGUF가 S3에만 있으므로 다운로드
+            eval_gguf_path = gguf_path
+            if gpu_trained:
+                eval_gguf_path = await self._download_gguf_from_s3(
+                    build_id, profile, build_dir,
+                )
+            passed = await self._evaluate(
+                build_id, profile, model_path, data_path, repo,
+                gguf_path=eval_gguf_path,
+            )
+            if not passed:
+                await repo.update_build(
+                    build_id, status="failed",
+                    error_message="Evaluation below threshold — deploy skipped",
+                    error_step="evaluate",
+                )
+                logger.error("Build %s failed evaluation — NOT deploying", build_id)
+                return
+
+            # Step 5: 배포 (평가 통과한 경우에만)
             if "deploy" in all_steps:
                 await repo.update_build(build_id, status="deploying")
                 await self._deploy(
                     build_id, profile, gguf_path, repo, gpu_trained=gpu_trained,
                 )
-
-            # Step 5: 평가 (Teacher judge)
-            if "evaluate" in all_steps:
-                await repo.update_build(build_id, status="evaluating")
-                # GPU 학습 시 GGUF가 S3에만 있으므로 다운로드
-                eval_gguf_path = gguf_path
-                if gpu_trained:
-                    eval_gguf_path = await self._download_gguf_from_s3(
-                        build_id, profile, build_dir,
-                    )
-                passed = await self._evaluate(
-                    build_id, profile, model_path, data_path, repo,
-                    gguf_path=eval_gguf_path,
-                )
-                if not passed:
-                    await repo.update_build(
-                        build_id, status="failed",
-                        error_message="Evaluation below threshold — GGUF deployed but flagged",
-                        error_step="evaluate",
-                    )
-                    return
 
             await repo.update_build(build_id, status="completed")
             logger.info("Build %s completed successfully", build_id)

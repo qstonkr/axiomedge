@@ -45,8 +45,10 @@ ESTIMATED_CHARS_PER_TOKEN = 2.0
 # ---------------------------------------------------------------------------
 
 class LoRAConfig(BaseModel):
-    r: int = Field(8, ge=4, le=64)
-    alpha: int = Field(16, ge=8, le=128)
+    # r=16/alpha=32: 1B instruction-tuned 모델에 필요한 최소 학습 capacity.
+    # 기존 r=8/alpha=16은 너무 작아서 학습 효과 없음 (검증됨).
+    r: int = Field(16, ge=4, le=64)
+    alpha: int = Field(32, ge=8, le=128)
     dropout: float = Field(0.05, ge=0.0, le=0.5)
     target_modules: list[str] = Field(
         default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"],
@@ -54,10 +56,13 @@ class LoRAConfig(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    epochs: int = Field(3, ge=1, le=50)
+    # learning_rate=5e-5: -it (instruction-tuned) 모델에 2e-4는 과함 —
+    # pretrained 가중치 교란 후 수렴 실패. 5e-5 가 안전선.
+    # epochs=5: 3 epochs는 953 샘플 기준 부족. 5~7 권장.
+    epochs: int = Field(5, ge=1, le=50)
     batch_size: int = Field(4, ge=1, le=128)
     gradient_accumulation: int = Field(8, ge=1, le=64)
-    learning_rate: float = Field(2e-4, gt=0)
+    learning_rate: float = Field(5e-5, gt=0)
     max_seq_length: int = Field(512, ge=128, le=4096)
 
 
