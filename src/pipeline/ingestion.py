@@ -131,6 +131,7 @@ class IngestionPipeline:
         graph_store: IGraphStore | None = None,
         chunker: Chunker | None = None,
         graphrag_extractor: GraphRAGExtractor | None = None,
+        legal_graph_extractor: Any | None = None,
         term_extractor: Any | None = None,
         dedup_cache: Any | None = None,
         dedup_pipeline: Any | None = None,
@@ -147,6 +148,7 @@ class IngestionPipeline:
             strategy=ChunkStrategy.SEMANTIC,
         )
         self.graphrag_extractor = graphrag_extractor
+        self.legal_graph_extractor = legal_graph_extractor
         self.term_extractor = term_extractor
         self.dedup_cache = dedup_cache
         self.dedup_pipeline = dedup_pipeline  # Full 4-stage dedup (preferred over dedup_cache)
@@ -307,7 +309,16 @@ class IngestionPipeline:
         body_content = _clean_text_for_embedding(body_content)
         doc_summary = _extract_document_summary(body_content)
 
-        chunk_result = await asyncio.to_thread(self.chunker.chunk_with_headings, body_content)
+        # Korean legal docs (detected via git connector frontmatter) use an
+        # article-preserving chunker so 제N조 stays intact as a unit.
+        if raw.metadata.get("_is_legal_document"):
+            chunk_result = await asyncio.to_thread(
+                self.chunker.chunk_legal_articles, body_content,
+            )
+        else:
+            chunk_result = await asyncio.to_thread(
+                self.chunker.chunk_with_headings, body_content,
+            )
         if not chunk_result.chunks and not (parse_result and (parse_result.tables or parse_result.ocr_text)):
             return IngestionResult.failure_result(
                 reason="No chunks produced from document content", stage="chunk",
@@ -679,7 +690,16 @@ class IngestionPipeline:
     async def _run_graphrag(
         self, raw: RawDocument, collection_name: str,
     ) -> dict[str, Any]:
-        """Run optional GraphRAG extraction."""
+        """Run optional graph extraction.
+
+        Legal documents (detected via the ``_is_legal_document`` metadata
+        flag set by the git connector's frontmatter parser) are routed to
+        the rule-based :class:`LegalGraphExtractor` which is cheaper and
+        more accurate than the LLM-based GraphRAG path.
+        """
+        if raw.metadata.get("_is_legal_document") and self.legal_graph_extractor is not None:
+            return await self._run_legal_graph_extraction(raw, collection_name)
+
         stats: dict[str, Any] = {}
         if not self.enable_graphrag or self.graphrag_extractor is None:
             return stats
@@ -711,6 +731,39 @@ class IngestionPipeline:
         except Exception as e:
             logger.warning("GraphRAG extraction failed for doc_id=%s: %s", raw.doc_id, e)
             stats = {"error": str(e)}
+        return stats
+
+    async def _run_legal_graph_extraction(
+        self, raw: RawDocument, collection_name: str,
+    ) -> dict[str, Any]:
+        """Run the rule-based legal graph extractor for a single document."""
+        stats: dict[str, Any] = {}
+        try:
+            extraction_result = await self.legal_graph_extractor.extract_from_document(
+                raw, kb_id=collection_name,
+            )
+            if extraction_result.node_count == 0 and extraction_result.relationship_count == 0:
+                return stats
+            save_stats = await asyncio.to_thread(
+                self.legal_graph_extractor.save_to_neo4j, extraction_result,
+            )
+            stats = {
+                "nodes_extracted": extraction_result.node_count,
+                "relationships_extracted": extraction_result.relationship_count,
+                "extractor": "legal_rule_based",
+                **save_stats,
+            }
+            logger.info(
+                "Legal graph extraction completed for doc_id=%s: %d nodes, %d rels",
+                raw.doc_id,
+                extraction_result.node_count,
+                extraction_result.relationship_count,
+            )
+        except Exception as e:
+            logger.warning(
+                "Legal graph extraction failed for doc_id=%s: %s", raw.doc_id, e,
+            )
+            stats = {"error": str(e), "extractor": "legal_rule_based"}
         return stats
 
     def _check_ingestion_gate(

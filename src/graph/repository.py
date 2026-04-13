@@ -36,6 +36,24 @@ class Neo4jGraphRepository:
     def __init__(self, neo4j_client: Any) -> None:
         self._client = neo4j_client
 
+    async def execute_write(
+        self,
+        query: str,
+        parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """IGraphStore passthrough to the underlying Neo4j client.
+
+        The ingestion pipeline talks to the graph via the
+        :class:`IGraphStore` protocol, which requires an ``execute_write``
+        method on the store itself. Historically this repository only
+        exposed domain-level helpers and relied on callers accessing
+        ``self._client.execute_write`` directly — the ingestion path
+        was therefore hitting an ``AttributeError`` for every document
+        and silently dropping base graph edges (CHILD_OF, BELONGS_TO,
+        AUTHORED, etc.). This thin passthrough closes that gap.
+        """
+        return await self._client.execute_write(query, parameters or {})
+
     # -- Write Methods ----------------------------------------------------
 
     async def upsert_document(

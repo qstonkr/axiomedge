@@ -322,6 +322,18 @@ async def _run_ingestion(
 
     from src.pipeline.ingestion import IngestionPipeline
 
+    legal_graph_extractor = state.get("legal_graph_extractor")
+    if legal_graph_extractor is None:
+        # Rule-based extractor is cheap to instantiate and reuses the
+        # existing Neo4j driver via its parent class. We wire it lazily
+        # so non-legal KBs aren't impacted if Neo4j is unreachable.
+        try:
+            from src.pipeline.legal_graph import LegalGraphExtractor
+
+            legal_graph_extractor = LegalGraphExtractor()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("LegalGraphExtractor init failed: %s", e)
+
     sparse_embedder = _OnnxSparseEmbedder(embedder)
     pipeline = IngestionPipeline(
         embedder=embedder,
@@ -335,6 +347,7 @@ async def _run_ingestion(
         enable_graphrag=True,
         term_extractor=state.get("term_extractor"),
         graphrag_extractor=state.get("graphrag_extractor"),
+        legal_graph_extractor=legal_graph_extractor,
     )
 
     semaphore = asyncio.Semaphore(4)
@@ -454,7 +467,20 @@ async def run_data_source_sync(
     state: Any,
     sync_mode: str = "full",
 ) -> None:
-    """Run crawl + ingest pipeline for a data source in background.
+    """Dispatch a data source sync to the connector matching its source_type."""
+    source_type = str(source.get("source_type") or "").strip().lower()
+    if source_type == "git":
+        await _run_git_source_sync(source, state)
+        return
+    await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
+
+
+async def _run_confluence_source_sync(
+    source: dict[str, Any],
+    state: Any,
+    sync_mode: str = "full",
+) -> None:
+    """Run Confluence crawl + ingest pipeline for a data source in background.
 
     Steps:
     1. Extract page_id from data source config/metadata
@@ -549,3 +575,127 @@ async def run_data_source_sync(
                 await _stop_ocr_instance()
             except Exception as e:
                 logger.warning("Failed to stop PaddleOCR instance: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Git source sync path
+# ---------------------------------------------------------------------------
+
+async def _run_git_source_sync(source: dict[str, Any], state: Any) -> None:
+    """Clone/pull a git repo via GitConnector, then run the ingestion pipeline."""
+    source_id = source["id"]
+    kb_id = source.get("kb_id", "knowledge")
+    source_name = source.get("name", "unknown")
+    metadata = source.get("metadata") or {}
+
+    ds_repo = state.get("data_source_repo")
+    run_repo = state.get("ingestion_run_repo")
+    run_id = str(uuid.uuid4())
+
+    last_fingerprint = (source.get("last_sync_result") or {}).get("version_fingerprint")
+
+    try:
+        logger.info(
+            "Starting git sync for source %s (kb=%s, repo=%s)",
+            source_name, kb_id, (source.get("crawl_config") or {}).get("repo_url"),
+        )
+
+        if run_repo:
+            try:
+                await run_repo.create({
+                    "id": run_id, "kb_id": kb_id,
+                    "source_type": "git", "source_name": source_name,
+                    "status": "running", "started_at": datetime.now(UTC),
+                })
+            except Exception as e:
+                logger.warning("Failed to create ingestion run record: %s", e)
+
+        from src.connectors.git import GitConnector
+
+        connector = GitConnector()
+        connector_config = dict(source.get("crawl_config") or {})
+        connector_config.setdefault("name", source_name)
+        connector_config.setdefault("id", source_id)
+
+        result = await connector.fetch(
+            connector_config, force=False, last_fingerprint=last_fingerprint,
+        )
+        if not result.success:
+            raise RuntimeError(result.error or "git connector failed")
+
+        if result.skipped:
+            logger.info("git source %s unchanged (commit %s), skipping ingest",
+                        source_name, result.metadata.get("commit_sha", "")[:8])
+            if ds_repo:
+                await ds_repo.complete_sync(
+                    source_id, "active",
+                    sync_result={
+                        "documents_synced": 0,
+                        "chunks_stored": 0,
+                        "skipped": True,
+                        "version_fingerprint": result.version_fingerprint,
+                        "commit_sha": result.metadata.get("commit_sha", ""),
+                        "completed_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+            if run_repo:
+                try:
+                    await run_repo.complete(run_id, {
+                        "status": "completed", "documents_ingested": 0,
+                        "documents_fetched": 0, "chunks_stored": 0,
+                        "errors": [], "completed_at": datetime.now(UTC),
+                    })
+                except Exception as e:
+                    logger.warning("Failed to complete ingestion run record: %s", e)
+            return
+
+        documents = result.documents or []
+        if not documents:
+            logger.warning("git source %s produced 0 documents", source_name)
+            if ds_repo:
+                await ds_repo.complete_sync(
+                    source_id, "active",
+                    sync_result={
+                        "documents_synced": 0, "chunks_stored": 0,
+                        "version_fingerprint": result.version_fingerprint,
+                    },
+                )
+            return
+
+        logger.info("git connector produced %d documents, starting ingestion",
+                    len(documents))
+
+        docs_ingested, total_chunks, errors = await _run_ingestion(
+            state, documents, kb_id,
+        )
+
+        await _ensure_kb_and_update_counts(
+            state, kb_id, source_name, metadata, docs_ingested, total_chunks,
+        )
+
+        sync_result = {
+            "documents_synced": docs_ingested,
+            "documents_total": len(documents),
+            "chunks_stored": total_chunks,
+            "errors": errors[:10],
+            "version_fingerprint": result.version_fingerprint,
+            "commit_sha": result.metadata.get("commit_sha", ""),
+            "completed_at": datetime.now(UTC).isoformat(),
+        }
+        if ds_repo:
+            await ds_repo.complete_sync(source_id, "active", sync_result=sync_result)
+        if run_repo:
+            try:
+                await run_repo.complete(run_id, {
+                    "status": "completed",
+                    "documents_ingested": docs_ingested,
+                    "documents_fetched": len(documents),
+                    "chunks_stored": total_chunks,
+                    "errors": errors[:10],
+                    "completed_at": datetime.now(UTC),
+                })
+            except Exception as e:
+                logger.warning("Failed to complete ingestion run record: %s", e)
+
+    except Exception as exc:
+        await _report_sync_failure(ds_repo, run_repo, source_id, run_id, exc)

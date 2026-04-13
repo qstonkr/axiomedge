@@ -269,23 +269,67 @@ with st.expander("➕ 새 데이터소스 추가", expanded=False):
     with st.form("add_data_source_form"):
         ds_type = st.selectbox(
             "커넥터 타입",
-            options=["file_upload", "crawl_result"],
+            options=["file_upload", "crawl_result", "git"],
             format_func=lambda x: {
                 "file_upload": "📄 파일 업로드",
                 "crawl_result": "🔍 크롤 결과 (JSON/JSONL)",
+                "git": "🐙 Git 저장소",
             }.get(x, x),
         )
         ds_kb_id = st.text_input("KB ID", placeholder="기존 또는 신규 KB ID")
-        ds_url = st.text_input("연결 URL (선택)", placeholder="예: https://wiki.example.com")
+        ds_url = st.text_input(
+            "연결 URL (선택)",
+            placeholder="예: https://wiki.example.com (git 타입은 아래 저장소 설정 사용)",
+        )
         ds_description = st.text_area("설명 (선택)", placeholder="데이터소스에 대한 설명")
+
+        st.markdown("**🐙 Git 저장소 설정** (커넥터 타입이 `git`일 때만 사용)")
+        git_repo_url = st.text_input(
+            "Repository URL",
+            placeholder="https://github.com/owner/repo 또는 git@github.com:owner/repo.git",
+            key="ds_git_repo_url",
+        )
+        git_col1, git_col2 = st.columns(2)
+        with git_col1:
+            git_branch = st.text_input(
+                "Branch / Tag (선택)", placeholder="main",
+                key="ds_git_branch",
+            )
+        with git_col2:
+            git_subdir = st.text_input(
+                "Subdir (선택)", placeholder="예: kr",
+                help="저장소 내 특정 하위 경로만 수집",
+                key="ds_git_subdir",
+            )
+        git_include = st.text_area(
+            "Include globs (줄 단위)",
+            value="**/*.md",
+            height=80,
+            key="ds_git_include",
+            help="한 줄에 하나씩. 예: kr/**/*.md",
+        )
+        git_exclude = st.text_area(
+            "Exclude globs (줄 단위)",
+            value=".git/**\nnode_modules/**\nREADME.md",
+            height=80,
+            key="ds_git_exclude",
+        )
+        git_auth_token_env = st.text_input(
+            "Private repo 인증 환경변수 (선택)",
+            placeholder="예: GITHUB_PAT",
+            help="지정한 환경변수의 PAT를 HTTPS URL에 주입합니다. Public repo면 비워두세요.",
+            key="ds_git_auth_env",
+        )
 
         submitted = st.form_submit_button("추가", type="primary")
         if submitted:
             if not ds_type or not ds_kb_id:
                 st.error("커넥터 타입과 KB ID는 필수입니다.")
+            elif ds_type == "git" and not git_repo_url:
+                st.error("Git 커넥터는 Repository URL이 필수입니다.")
             else:
                 ds_name = f"{ds_type}_{ds_kb_id}"
-                body = {
+                body: dict = {
                     "name": ds_name,
                     "source_type": ds_type,
                     "kb_id": ds_kb_id,
@@ -294,6 +338,23 @@ with st.expander("➕ 새 데이터소스 추가", expanded=False):
                         "description": ds_description if ds_description else None,
                     },
                 }
+                if ds_type == "git":
+                    def _split_globs(text: str) -> list[str]:
+                        return [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+
+                    crawl_config: dict = {
+                        "repo_url": git_repo_url.strip(),
+                        "include_globs": _split_globs(git_include) or ["**/*.md"],
+                        "exclude_globs": _split_globs(git_exclude),
+                    }
+                    if git_branch.strip():
+                        crawl_config["branch"] = git_branch.strip()
+                    if git_subdir.strip():
+                        crawl_config["subdir"] = git_subdir.strip()
+                    if git_auth_token_env.strip():
+                        crawl_config["auth_token_env"] = git_auth_token_env.strip()
+                    body["crawl_config"] = crawl_config
+
                 result = api_client.create_data_source(body)
                 if api_failed(result):
                     st.error("데이터소스 추가 실패")

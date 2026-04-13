@@ -265,6 +265,69 @@ class Chunker:
             },
         )
 
+    def chunk_legal_articles(
+        self,
+        text: str,
+        *,
+        max_article_chars: int = 6000,
+    ) -> ChunkResult:
+        """Chunk Korean legal markdown while preserving 제N조 integrity.
+
+        Unlike :meth:`chunk_with_headings`, a single legal article (a heading
+        section) is emitted as one chunk as long as it fits within
+        ``max_article_chars``. Only articles larger than this threshold are
+        further split by the normal sentence/paragraph chunker. This prevents
+        semantic fragmentation inside a 조, which hurts retrieval precision
+        for queries like "119법 제8조에 의한 구조대 편성 요건".
+
+        Each produced chunk carries the full heading path as its
+        ``HeadingChunk.heading_path`` (e.g. "119구조ㆍ구급에 관한 법률 >
+        제1장 총칙 > 제2조 (정의)"), which the ingestion pipeline converts
+        into the contextual prefix prepended before embedding.
+        """
+        sections = extract_legal_sections(text)
+        if not sections:
+            return self.chunk(text)
+
+        all_chunks: list[str] = []
+        heading_chunks: list[HeadingChunk] = []
+
+        for heading_path, section_text in sections:
+            stripped = section_text.strip()
+            if not stripped:
+                continue
+
+            # Short/medium articles: keep whole, never split mid-article.
+            if len(stripped) <= max_article_chars:
+                all_chunks.append(stripped)
+                heading_chunks.append(
+                    HeadingChunk(text=stripped, heading_path=heading_path)
+                )
+                continue
+
+            # Oversized article — fall back to sentence/paragraph chunking.
+            sub_result = self.chunk(section_text)
+            for sub in sub_result.chunks:
+                all_chunks.append(sub)
+                heading_chunks.append(HeadingChunk(text=sub, heading_path=heading_path))
+
+        if not all_chunks:
+            return self.chunk(text)
+
+        avg_len = sum(len(c) for c in all_chunks) / len(all_chunks)
+        return ChunkResult(
+            chunks=all_chunks,
+            total_chunks=len(all_chunks),
+            metadata={
+                "strategy": "legal_articles",
+                "avg_chunk_chars": round(avg_len, 1),
+                "max_chunk_chars": self._max_chunk_chars,
+                "max_article_chars": max_article_chars,
+                "has_heading_paths": True,
+            },
+            heading_chunks=heading_chunks,
+        )
+
     def chunk_with_headings(self, text: str) -> ChunkResult:
         """Chunk text while preserving heading hierarchy paths.
 
@@ -310,6 +373,52 @@ class Chunker:
         """Regex-based sentence splitting for Korean and English."""
         parts = _SENTENCE_SPLIT_PATTERN.split(text)
         return [p.strip() for p in parts if p.strip()]
+
+
+def extract_legal_sections(content: str) -> list[tuple[str, str]]:
+    """Extract heading sections with correct sibling handling.
+
+    Unlike :func:`extract_heading_sections`, which maintains a flat
+    ``current_path`` list and therefore stacks siblings whenever levels
+    jump (e.g. ``#`` → ``##`` → ``#####`` → another ``#####``), this
+    function stores one heading slot per level index so that a new heading
+    at level L correctly *replaces* everything at levels ≥ L. This matches
+    the mental model needed for Korean legal markdown where every article
+    is ``##### 제N조`` under a ``## 제N장`` chapter.
+    """
+    lines = content.split("\n")
+    slots: dict[int, str] = {}
+    sections: list[tuple[str, str]] = []
+    current_text: list[str] = []
+    current_max_level = 0
+
+    def _flush() -> None:
+        if not current_text:
+            return
+        path_parts = [slots[lvl] for lvl in sorted(slots) if lvl <= current_max_level]
+        path_str = " > ".join(path_parts)
+        sections.append((path_str, "\n".join(current_text)))
+
+    for line in lines:
+        heading_match = _HEADING_PATTERN.match(line)
+        if heading_match:
+            _flush()
+            current_text = []
+
+            level = len(heading_match.group(1))
+            heading_text = heading_match.group(2).strip()
+
+            # Drop all slots at or below this level (sibling replacement).
+            for lvl in list(slots):
+                if lvl >= level:
+                    del slots[lvl]
+            slots[level] = heading_text
+            current_max_level = level
+        else:
+            current_text.append(line)
+
+    _flush()
+    return sections
 
 
 def extract_heading_sections(content: str) -> list[tuple[str, str]]:
