@@ -36,7 +36,7 @@ class TEIEmbeddingProvider:
     backend = "tei"
     _DENSE_DIM: int = _w.embedding.dimension
 
-    def __init__(self, base_url: str | None = None, timeout: float = 60.0):
+    def __init__(self, base_url: str | None = None, timeout: float = 180.0):
         self._base_url = (
             base_url or os.getenv("BGE_TEI_URL", "http://localhost:8080")
         ).rstrip("/")
@@ -48,12 +48,26 @@ class TEIEmbeddingProvider:
             self._client = httpx.Client(timeout=self._timeout)
         return self._client
 
+    def _post_batch(self, client: httpx.Client, batch: list[str]) -> list[list[float]]:
+        resp = client.post(
+            f"{self._base_url}/embed",
+            json={"inputs": batch, "truncate": True},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def is_ready(self) -> bool:
         try:
             resp = self._get_client().get(f"{self._base_url}/health")
             return resp.status_code == 200
         except Exception:
             return False
+
+    # TEI server constraint: max_batch_tokens=16384, max_client_batch_size=32.
+    # Estimate ~3 chars/token for mixed KR/EN; keep batch budget well below the
+    # server limit so long legal-doc chunks don't overflow.
+    _MAX_CHARS_PER_BATCH = 30_000
+    _MAX_ITEMS_PER_BATCH = 32
 
     def encode(
         self,
@@ -67,15 +81,30 @@ class TEIEmbeddingProvider:
         if not texts:
             return {"dense_vecs": [], "lexical_weights": [], "colbert_vecs": []}
 
-        client = self._get_client()
-        resp = client.post(
-            f"{self._base_url}/embed",
-            json={"inputs": texts},
-        )
-        resp.raise_for_status()
-        embeddings = resp.json()
-
-        dense_vecs = [list(emb) for emb in embeddings] if return_dense else []
+        # Only hit the TEI server when a dense vector is actually requested —
+        # sparse is synthesized locally, so sparse-only calls must not pay for
+        # an HTTP round trip (previously they silently duplicated the dense
+        # encoding path and doubled ingestion wall time).
+        dense_vecs: list[list[float]] = []
+        if return_dense:
+            client = self._get_client()
+            embeddings: list[list[float]] = []
+            batch: list[str] = []
+            batch_chars = 0
+            for text in texts:
+                text_chars = len(text)
+                if batch and (
+                    batch_chars + text_chars > self._MAX_CHARS_PER_BATCH
+                    or len(batch) >= self._MAX_ITEMS_PER_BATCH
+                ):
+                    embeddings.extend(self._post_batch(client, batch))
+                    batch = []
+                    batch_chars = 0
+                batch.append(text)
+                batch_chars += text_chars
+            if batch:
+                embeddings.extend(self._post_batch(client, batch))
+            dense_vecs = [list(emb) for emb in embeddings]
 
         # TEI doesn't produce sparse vectors natively
         # Synthesize TF-based sparse (same as ONNX/Ollama providers)

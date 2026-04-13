@@ -1,4 +1,4 @@
-.PHONY: setup start stop api dashboard crawl ingest search test test-unit test-integration test-e2e
+.PHONY: setup start stop api dashboard crawl ingest search test test-unit test-integration test-e2e tei-refresh
 
 # === Setup ===
 setup:
@@ -19,8 +19,13 @@ stop:
 	docker compose down
 
 # === Services ===
-api:
+api: tei-refresh
 	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --workers 2 --timeout-keep-alive 300
+
+# Sync current egress IP to the TEI/PaddleOCR security group (jbkim-auto-* rules).
+# Idempotent — safe to run before any service that needs BGE/Reranker/PaddleOCR.
+tei-refresh:
+	@uv run python scripts/refresh_tei_access.py
 
 dashboard:
 	uv run streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
@@ -36,7 +41,7 @@ mcp-sse:
 crawl:
 	uv run python -m cli.crawl $(ARGS)
 
-ingest:
+ingest: tei-refresh
 	uv run python -m cli.ingest $(ARGS)
 
 search:
