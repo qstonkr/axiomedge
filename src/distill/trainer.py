@@ -62,7 +62,9 @@ class DistillTrainer:
         try:
             from huggingface_hub import try_to_load_from_cache
             cached = try_to_load_from_cache(base_ref, "tokenizer.model")
-            if cached and Path(cached).exists():
+            # try_to_load_from_cache 는 str | None | _CACHED_NO_EXIST 반환.
+            # sentinel 은 truthy 라 Path() 에서 TypeError — isinstance 로 필터.
+            if isinstance(cached, str) and Path(cached).exists():
                 shutil.copy(cached, tm_target)
                 logger.info("Copied tokenizer.model from HF cache (%s)", base_ref)
                 return
@@ -113,6 +115,10 @@ class DistillTrainer:
         MIN_LORA_ALPHA = 32
         MIN_EPOCHS = 5
         MAX_LR_FOR_IT = 1e-4
+        # Gemma 3 실측(pbu-store 953 샘플): p90=777, p99=1007 tokens. 512 로
+        # 두면 42.3% 샘플 답변 뒷부분 truncate → 학습 실패. 1024 가 99.5%
+        # 커버 + T4 16GB 안전선.
+        MIN_MAX_SEQ_LEN = 1024
         IS_INSTRUCTION_TUNED = any(
             s in model_id.lower() for s in ("-it", "-instruct", "-chat")
         )
@@ -142,13 +148,21 @@ class DistillTrainer:
                 train_cfg.learning_rate, model_id, MAX_LR_FOR_IT,
             )
             train_cfg = train_cfg.model_copy(update={"learning_rate": MAX_LR_FOR_IT})
+        if train_cfg.max_seq_length < MIN_MAX_SEQ_LEN:
+            logger.warning(
+                "max_seq_length=%d is below safe minimum %d — promoting "
+                "(42.3%% of pbu-store samples exceed 512 tokens)",
+                train_cfg.max_seq_length, MIN_MAX_SEQ_LEN,
+            )
+            train_cfg = train_cfg.model_copy(update={"max_seq_length": MIN_MAX_SEQ_LEN})
 
         logger.info(
             "Final training config: lora(r=%d, alpha=%d), "
-            "epochs=%d, lr=%.0e, batch=%d, grad_accum=%d",
+            "epochs=%d, lr=%.0e, batch=%d, grad_accum=%d, max_seq=%d",
             lora_cfg.r, lora_cfg.alpha,
             train_cfg.epochs, train_cfg.learning_rate,
             train_cfg.batch_size, train_cfg.gradient_accumulation,
+            train_cfg.max_seq_length,
         )
 
         logger.info("Loading base model: %s", model_id)

@@ -87,7 +87,8 @@ class DistillQuantizer:
         try:
             from huggingface_hub import try_to_load_from_cache
             cached = try_to_load_from_cache(base_ref, "tokenizer.model")
-            if cached and Path(cached).exists():
+            # str | None | _CACHED_NO_EXIST — sentinel 방어
+            if isinstance(cached, str) and Path(cached).exists():
                 shutil.copy(cached, tm_target)
                 logger.info("Recovered tokenizer.model from HF cache (%s)", base_ref)
                 return

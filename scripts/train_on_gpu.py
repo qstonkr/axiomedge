@@ -114,6 +114,9 @@ def _clamp_hyperparameters(
     min_lora_alpha = 32
     min_epochs = 5
     max_lr_for_it = 1e-4
+    # Gemma 3 실측(pbu-store 953 샘플): p90=777, p99=1007 tokens. 512 로
+    # 두면 42.3% 샘플 답변 뒷부분 truncate → 학습 실패. 1024 가 99.5% 커버.
+    min_max_seq_len = 1024
 
     if lora_config.get("r", 0) < min_lora_r:
         logger.warning(
@@ -139,6 +142,13 @@ def _clamp_hyperparameters(
             training_config.get("learning_rate"), max_lr_for_it,
         )
         training_config = {**training_config, "learning_rate": max_lr_for_it}
+    if training_config.get("max_seq_length", 0) < min_max_seq_len:
+        logger.warning(
+            "max_seq_length=%s below safe min %d — promoting "
+            "(42.3%% of pbu-store samples exceed 512 tokens)",
+            training_config.get("max_seq_length"), min_max_seq_len,
+        )
+        training_config = {**training_config, "max_seq_length": min_max_seq_len}
 
     return lora_config, training_config
 
@@ -351,7 +361,9 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
         try:
             from huggingface_hub import try_to_load_from_cache
             cached = try_to_load_from_cache(base_model, "tokenizer.model")
-            if cached:
+            # try_to_load_from_cache 는 str | None | _CACHED_NO_EXIST 반환.
+            # sentinel 은 truthy 하지만 str 아님 — os.path.exists 에서 TypeError.
+            if isinstance(cached, str):
                 tm_src_candidates.insert(0, cached)
         except Exception as e:
             logger.debug("HF cache lookup for tokenizer.model failed: %s", e)
