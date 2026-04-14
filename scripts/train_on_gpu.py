@@ -279,16 +279,23 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
         torch_dtype=torch.bfloat16,
     )
 
+    # attention Q/K/V/O + FFN gate/up/down — Gemma3/LLaMA/Qwen 모든 decoder
+    # 모델에서 factual 지식은 FFN 에 저장되므로 attention 만 target 하면
+    # train_loss 가 1.5~2.0 에서 정체되고 학습 데이터 내용을 못 주입한다.
+    # Unsloth · QLoRA · HuggingFace PEFT 공식 튜토리얼 표준.
+    default_target_modules = [
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    ]
     peft_config = LoraConfig(
         r=lora_config.get("r", 16),
         lora_alpha=lora_config.get("alpha", 32),
         lora_dropout=lora_config.get("dropout", 0.05),
-        target_modules=lora_config.get(
-            "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"],
-        ),
+        target_modules=lora_config.get("target_modules", default_target_modules),
         bias="none",
         task_type="CAUSAL_LM",
     )
+    logger.info("LoRA target_modules: %s", peft_config.target_modules)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 

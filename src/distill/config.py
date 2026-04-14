@@ -50,8 +50,16 @@ class LoRAConfig(BaseModel):
     r: int = Field(16, ge=4, le=64)
     alpha: int = Field(32, ge=8, le=128)
     dropout: float = Field(0.05, ge=0.0, le=0.5)
+    # Gemma 3 / LLaMA / Qwen 등 modern decoder 모델에서 factual 지식은 대부분
+    # FFN (gate_proj / up_proj / down_proj) 에 저장된다. Attention 만 target
+    # 하면 표면 패턴만 학습되고 학습 데이터 내용을 주입 못한다 (train_loss 가
+    # 1.5~2.0 에서 정체되는 증상으로 나타남). Unsloth · QLoRA · HuggingFace
+    # PEFT 공식 튜토리얼은 모두 attention + FFN 7 개를 target 한다.
     target_modules: list[str] = Field(
-        default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"],
+        default_factory=lambda: [
+            "q_proj", "k_proj", "v_proj", "o_proj",
+            "gate_proj", "up_proj", "down_proj",
+        ],
     )
 
 
