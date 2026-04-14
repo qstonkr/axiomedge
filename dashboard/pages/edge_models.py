@@ -510,13 +510,28 @@ with tab_curation:
             if not api_failed(stats):
                 mc1, mc2, mc3, mc4 = st.columns(4)
                 with mc1:
-                    st.metric("전체", f"{stats.get('total', 0):,}")
+                    st.metric("승인", f"{stats.get('total', 0):,}")
                 with mc2:
                     st.metric("RAG 로그", f"{stats.get('usage_log', 0):,}")
                 with mc3:
                     st.metric("청크 QA", f"{stats.get('chunk_qa', 0):,}")
                 with mc4:
                     st.metric("수동/재학습", f"{stats.get('manual', 0) + stats.get('retrain', 0):,}")
+
+                # Reformatter 산출물 — pending 이 있으면 눈에 띄게 노출
+                ref_approved = stats.get("reformatted_approved", 0)
+                ref_pending = stats.get("reformatted_pending", 0)
+                if ref_approved or ref_pending:
+                    rc1, rc2, rc3 = st.columns(3)
+                    with rc1:
+                        st.metric("재작성본 승인", f"{ref_approved:,}")
+                    with rc2:
+                        st.metric("재작성본 대기 ⚠️", f"{ref_pending:,}")
+                    with rc3:
+                        if ref_pending:
+                            st.caption(
+                                "↓ 아래 리뷰 섹션에서 '소스 타입 = reformatted' 필터로 확인 후 승인하세요"
+                            )
 
                 st.markdown("---")
 
@@ -539,7 +554,8 @@ with tab_curation:
                     )
                 with fc3:
                     filter_source = st.selectbox(
-                        "소스 타입", options=["test_seed", "usage_log", "chunk_qa", "manual", "retrain", None],
+                        "소스 타입",
+                        options=[None, "reformatted", "test_seed", "usage_log", "chunk_qa", "manual", "retrain"],
                         format_func=lambda x: "전체" if x is None else x,
                         key="cur_source",
                     )

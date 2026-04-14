@@ -115,10 +115,12 @@ class DistillTrainer:
         MIN_LORA_ALPHA = 32
         MIN_EPOCHS = 5
         MAX_LR_FOR_IT = 1e-4
-        # Gemma 3 실측(pbu-store 953 샘플): p90=777, p99=1007 tokens. 512 로
-        # 두면 42.3% 샘플 답변 뒷부분 truncate → 학습 실패. 1024 가 99.5%
-        # 커버 + T4 16GB 안전선.
-        MIN_MAX_SEQ_LEN = 1024
+        # Reformatter (2문단 압축 포맷) 적용 후 실측: p99=347, max=405 tokens.
+        # 384 floor 면 0.2% 만 truncate (borderline OK), 512 면 0% truncate.
+        # 과거 floor 1024 는 RAG style 긴 답변(p99=1007) 시대 기준이라 더 이상
+        # 적용 안 됨. 그래도 누군가 256 같은 너무 작은 값을 넣었을 때를 대비해
+        # 384 를 안전망 floor 로 유지 (256 은 45.7% truncate 라 위험).
+        MIN_MAX_SEQ_LEN = 384
         IS_INSTRUCTION_TUNED = any(
             s in model_id.lower() for s in ("-it", "-instruct", "-chat")
         )

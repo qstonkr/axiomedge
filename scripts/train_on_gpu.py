@@ -9,24 +9,22 @@ EC2 user-data 가 매 부팅 시 S3 (`s3://gs-knowledge-models/scripts/train_on_
 
 흐름:
     1. data_dir/{train.jsonl, config.json} 읽기
-    2. base 모델 로드 (S3 캐시 → HuggingFace fallback)
-    3. LoRA SFT 학습 (trl SFTTrainer, completion_only_loss=True)
-    4. LoRA 어댑터 base 에 merge 후 model_merged/ 저장
-    5. 2단계 양자화: safetensors → f16 GGUF → 목표 quant (q4_k_m 등)
-    6. result.json 저장 (학습 메트릭 + GGUF 메타데이터)
+    2. llama.cpp docker image 확보 (첫 실행만 pull, 이후 EBS 캐시)
+    3. base 모델 로드 (S3 캐시 → HuggingFace fallback)
+    4. LoRA SFT 학습 (trl SFTTrainer, completion_only_loss=True)
+    5. LoRA 어댑터 base 에 merge 후 model_merged/ 저장
+    6. 2단계 양자화 (docker run): safetensors → f16 GGUF → 목표 quant
+    7. result.json 저장 (학습 메트릭 + GGUF 메타데이터)
 
-과거 버그 (2026-04-13 픽스):
-- 단일 호출 `python3 -m llama_cpp.convert ... --outtype q4_k_m` 시도 →
-  llama_cpp.convert 모듈 없음 + q4_k_m 은 convert 단계 outtype 아님.
-- Fallback `llama-quantize` 가 존재하지 않는 `merged_dir/ggml-model-f16.gguf`
-  를 입력으로 기대 → 항상 실패.
-- 양쪽 다 실패해도 `gguf_path = None` 으로 조용히 처리 → result.json 에
-  `gguf_size_mb: null` 만 남고 빌드는 "completed" 로 표시됨 (silent failure).
-
-지금 구조:
-- `convert_hf_to_gguf.py` (llama.cpp main repo, AMI 의 /opt/llama.cpp/) 로 f16 변환
-- `llama-quantize` 바이너리로 q4_k_m 등 추가 양자화
-- 어느 단계든 실패하면 명시적 실패로 result.json 에 status="failed" 작성
+GGUF 양자화 환경 (2026-04-14 픽스):
+- 이전에 AMI 의 구버전 llama.cpp 를 cmake 로 master 빌드 시도 → 4번 실패
+  (DLAMI gcc 11 vs llama.cpp CI 가 요구하는 gcc-14 호환성 등)
+- 해결: llama.cpp 공식 docker image (`ghcr.io/ggml-org/llama.cpp:full-cuda`) 사용.
+  공식 CI 가 직접 빌드해 GHCR 에 배포. 이미지 안에 convert_hf_to_gguf.py +
+  llama-quantize + gguf-py 모두 포함. nvidia-container-toolkit 으로 GPU 마운트 가능.
+  사전 검증 완료 (debug/docker-verify-20260414-0832.log).
+- 어느 단계든 실패하면 명시적 status="failed" + error_log_tail 로 보고
+  (silent failure 방지).
 
 trainer 설정도 src/distill/trainer.py 와 동기화:
 - bf16=True (Gemma-3 는 bf16 네이티브, fp16 은 수치 불안정)
@@ -37,6 +35,7 @@ trainer 설정도 src/distill/trainer.py 와 동기화:
 추가로 unsafe 하이퍼파라미터 자동 promote 가드:
 - LoRA r >= 16, alpha >= 32, epochs >= 5
 - instruction-tuned 모델은 lr <= 1e-4 강제
+- max_seq_length >= 384 (reformatter 적용 후 p99=347 토큰 기준)
 """
 
 from __future__ import annotations
@@ -64,10 +63,19 @@ S3_MODEL_BUCKET = os.getenv("DISTILL_S3_BUCKET", "gs-knowledge-models")
 S3_MODEL_PREFIX = "models"
 AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
 
-# llama.cpp 경로 (EC2 AMI 에 빌드/설치된 위치)
-LLAMA_CPP_DIR = Path(os.getenv("LLAMA_CPP_DIR", "/opt/llama.cpp"))
-CONVERT_SCRIPT = LLAMA_CPP_DIR / "convert_hf_to_gguf.py"
-LLAMA_QUANTIZE_BIN = LLAMA_CPP_DIR / "build" / "bin" / "llama-quantize"
+# llama.cpp 공식 Docker 이미지 — Gemma3 Q4_K_M 양자화 환경.
+#
+# 이전에 cmake 소스 빌드 (gcc-14 vs DLAMI 11.x 호환성 등) 로 4번 실패 후,
+# llama.cpp 공식 CI 가 직접 빌드/배포하는 Docker 이미지로 전환.
+# 이미지 사용 검증 완료 (2026-04-14):
+#   - Tesla T4 GPU 가 컨테이너 내 nvidia-smi 로 인식됨 (nvidia-container-toolkit OK)
+#   - convert_hf_to_gguf.py 경로: /app/convert_hf_to_gguf.py
+#   - llama-quantize binary 경로: /app/llama-quantize
+#   - gguf-py 경로: /app/gguf-py
+#   - 이미지 크기 ~3.3 GB, 첫 pull 후 EBS 에 캐시 영속
+LLAMA_CPP_DOCKER_IMAGE = os.getenv(
+    "LLAMA_CPP_DOCKER_IMAGE", "ghcr.io/ggml-org/llama.cpp:full-cuda",
+)
 
 
 def _resolve_model_path(base_model: str) -> str:
@@ -114,9 +122,18 @@ def _clamp_hyperparameters(
     min_lora_alpha = 32
     min_epochs = 5
     max_lr_for_it = 1e-4
-    # Gemma 3 실측(pbu-store 953 샘플): p90=777, p99=1007 tokens. 512 로
-    # 두면 42.3% 샘플 답변 뒷부분 truncate → 학습 실패. 1024 가 99.5% 커버.
-    min_max_seq_len = 1024
+    # Reformatter (2문단 압축 포맷) 적용 후 실측: p99=347, max=405 tokens.
+    # 384 floor → 0.2% truncate (borderline OK), 512 권장 → 0% truncate.
+    # 과거 floor 1024 는 이전 RAG 긴 답변(p99=1007) 시대 기준.
+    min_max_seq_len = 384
+    # FFN 이 빠진 target_modules 는 학습 효과 없음 (train_loss 정체).
+    # service.py 가 구 코드라 config.json 에 4개만 들어올 수 있으니 여기서
+    # 방어적으로 7개로 승격. 기존에 7개면 그대로 유지.
+    required_ffn_modules = {"gate_proj", "up_proj", "down_proj"}
+    full_target_modules = [
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    ]
 
     if lora_config.get("r", 0) < min_lora_r:
         logger.warning(
@@ -150,98 +167,261 @@ def _clamp_hyperparameters(
         )
         training_config = {**training_config, "max_seq_length": min_max_seq_len}
 
+    # target_modules force-promote: config.json 에 4개만 있어도 7개로 확장.
+    # service.py 가 구 코드 (API restart 전) 로 4개를 보낼 수 있어서 방어.
+    current_tm = set(lora_config.get("target_modules", []))
+    if not required_ffn_modules.issubset(current_tm):
+        missing = sorted(required_ffn_modules - current_tm)
+        logger.warning(
+            "target_modules missing FFN layers %s — forcing full 7-module set",
+            missing,
+        )
+        lora_config = {**lora_config, "target_modules": full_target_modules}
+
     return lora_config, training_config
+
+
+def _ensure_docker_image() -> None:
+    """llama.cpp 공식 Docker 이미지 확보 — 양자화 환경.
+
+    배경:
+        AMI 사전 빌드된 llama.cpp 는 Gemma3 미지원, 소스 빌드 (cmake) 는 DLAMI 의
+        gcc 11 vs llama.cpp CI 의 gcc-14 호환 문제로 4번 실패.
+        해결: llama.cpp 공식 CI 가 직접 빌드/배포하는 Docker 이미지 사용.
+        이미지에 convert_hf_to_gguf.py + llama-quantize + gguf-py 모두 포함.
+
+    Idempotency:
+        Docker 가 이미지를 EBS 에 캐시. 두 번째 실행부터 pull 안 함.
+        DeleteOnTermination=false 면 인스턴스 재시작 후에도 캐시 유지.
+
+    실패 처리:
+        pull 실패 시 RuntimeError → 상위 train() 에서 잡아 result.json 에
+        status="failed" + error_log_tail 로 기록.
+    """
+    image = LLAMA_CPP_DOCKER_IMAGE
+
+    # 이미 pull 됐는지 확인
+    inspect = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True, text=True, timeout=30,
+    )
+    if inspect.returncode == 0:
+        logger.info("Docker image 이미 캐시됨: %s", image)
+        return
+
+    logger.info("=== Docker pull %s (~3.3 GB, first run only) ===", image)
+    result = subprocess.run(
+        ["docker", "pull", image],
+        capture_output=True, text=True, timeout=900,
+    )
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or "")[-1500:]
+        stdout_tail = (result.stdout or "")[-1500:]
+        logger.error(
+            "docker pull failed (rc=%d):\nstderr: %s\nstdout: %s",
+            result.returncode, stderr_tail, stdout_tail,
+        )
+        raise RuntimeError(f"docker pull failed for {image}")
+    logger.info("Docker pull 완료: %s", image)
+
+
+def _log_environment_diagnostics() -> None:
+    """빌드 환경 진단 — Docker, host GPU, 이미지 캐시 상태.
+
+    실패 시 어떤 환경에서 동작했는지 추후 추적 가능하도록 result.json 에 캡처.
+    """
+    logger.info("=== Environment diagnostics ===")
+
+    # Docker 버전
+    try:
+        result = subprocess.run(
+            ["docker", "--version"], capture_output=True, text=True, timeout=10,
+        )
+        logger.info("Docker: %s", (result.stdout or result.stderr).strip())
+    except Exception as e:
+        logger.info("Docker check failed: %s", e)
+
+    # Host GPU (DLAMI 의 nvidia-smi)
+    # nvidia-container-toolkit 의 GPU 마운트는 _quantize_gguf 의 docker run --gpus all
+    # 에서 실패해야 알 수 있음. 여기서 별도 컨테이너 띄워 검증하면 nvidia/cuda 이미지를
+    # 불필요하게 pull 하므로, host 만 확인 (시간 절약).
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "-L"], capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            logger.info("Host GPU: %s", result.stdout.strip())
+        else:
+            logger.warning("nvidia-smi failed: %s", result.stderr[:300])
+    except Exception as e:
+        logger.warning("nvidia-smi check error: %s", e)
+
+    # llama.cpp 이미지 캐시 상태
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", LLAMA_CPP_DOCKER_IMAGE,
+             "--format", "{{.Id}} ({{.Size}} bytes)"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            logger.info("llama.cpp image cached: %s", result.stdout.strip())
+        else:
+            logger.info("llama.cpp image not yet cached (will pull)")
+    except Exception as e:
+        logger.info("Image inspect error: %s", e)
+
+
+def _tail_boot_log(max_lines: int = 150) -> str | None:
+    """distill-boot.log 의 tail 을 result.json 에 실어 중앙에서 읽을 수 있도록.
+
+    SSM/SSH 가 막혀 있어서 실패 시 EC2 내 로그를 직접 읽을 수 없음 — result.json
+    에 포함시켜 S3 로 올라오게 해야 중앙 대시보드/DB 에서 디버깅 가능.
+    """
+    log_path = Path("/var/log/distill-boot.log")
+    if not log_path.exists():
+        return None
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[-max_lines:])
+    except OSError as e:
+        return f"<failed to read boot log: {e}>"
 
 
 def _quantize_gguf(
     merged_dir: str, output_dir: str, quantize_method: str,
 ) -> str | None:
-    """2단계 GGUF 양자화: HF safetensors → f16 GGUF → 목표 quant.
+    """2단계 GGUF 양자화 — 공식 docker 이미지 사용.
+
+    Step 1: HF safetensors → f16 GGUF (convert_hf_to_gguf.py)
+    Step 2: f16 GGUF → 목표 quant (llama-quantize)
+    둘 다 ghcr.io/ggml-org/llama.cpp:full-cuda 컨테이너 안에서 실행.
+
+    호스트 경로 마운트:
+        -v {output_dir}:/work
+        merged_dir 가 output_dir 내부에 있어야 한 번의 마운트로 둘 다 접근 가능.
+        (현재 train() 가 merged_dir = output_dir/model_merged 로 만들어서 OK)
 
     Returns:
         성공 시 최종 GGUF 경로, 실패 시 None (호출자가 명시적 실패 처리).
     """
-    f16_path = os.path.join(output_dir, "model_f16.gguf")
-    final_path = os.path.join(output_dir, "model.gguf")
-
-    if not CONVERT_SCRIPT.exists():
-        logger.error("convert_hf_to_gguf.py not found at %s", CONVERT_SCRIPT)
+    output_dir_p = Path(output_dir).resolve()
+    merged_dir_p = Path(merged_dir).resolve()
+    if not str(merged_dir_p).startswith(str(output_dir_p)):
+        logger.error(
+            "merged_dir (%s) must be under output_dir (%s) for docker volume mount",
+            merged_dir_p, output_dir_p,
+        )
         return None
-    if quantize_method != "f16" and not LLAMA_QUANTIZE_BIN.exists():
-        logger.error("llama-quantize not found at %s", LLAMA_QUANTIZE_BIN)
-        return None
 
-    # Step 3a: safetensors → f16 GGUF
-    logger.info("Step 3a: convert HF safetensors → f16 GGUF")
+    rel_merged = merged_dir_p.relative_to(output_dir_p)
+    f16_name = "model_f16.gguf"
+    final_name = "model.gguf"
+    f16_path = output_dir_p / f16_name
+    final_path = output_dir_p / final_name
+
+    # Step 3a: safetensors → f16 GGUF (docker)
+    logger.info("Step 3a: convert HF → f16 GGUF (docker)")
+    cmd_convert = [
+        "docker", "run", "--rm", "--gpus", "all",
+        "-v", f"{output_dir_p}:/work",
+        "--entrypoint", "python3",
+        LLAMA_CPP_DOCKER_IMAGE,
+        "/app/convert_hf_to_gguf.py",
+        f"/work/{rel_merged}",
+        "--outfile", f"/work/{f16_name}",
+        "--outtype", "f16",
+    ]
+    logger.info("$ %s", " ".join(cmd_convert))
     try:
         result = subprocess.run(
-            [
-                "python3", str(CONVERT_SCRIPT),
-                merged_dir,
-                "--outfile", f16_path,
-                "--outtype", "f16",
-            ],
-            check=True, capture_output=True, text=True, timeout=900,
+            cmd_convert, capture_output=True, text=True, timeout=900,
         )
-        tail = "\n".join(result.stdout.strip().split("\n")[-3:])
-        logger.info("convert_hf_to_gguf stdout (last lines):\n%s", tail)
-    except subprocess.CalledProcessError as e:
-        logger.error(
-            "convert_hf_to_gguf failed (rc=%d):\nstdout: %s\nstderr: %s",
-            e.returncode, e.stdout, e.stderr,
-        )
+    except subprocess.TimeoutExpired:
+        logger.error("convert_hf_to_gguf timed out (15min)")
         return None
     except Exception as e:
         logger.error("convert_hf_to_gguf unexpected error: %s", e)
         return None
 
-    if not os.path.exists(f16_path):
+    if result.returncode != 0:
+        logger.error(
+            "convert_hf_to_gguf failed (rc=%d):\nstdout (tail): %s\nstderr (tail): %s",
+            result.returncode,
+            (result.stdout or "")[-2000:],
+            (result.stderr or "")[-2000:],
+        )
+        return None
+    tail = "\n".join((result.stdout or "").strip().split("\n")[-5:])
+    logger.info("convert_hf_to_gguf stdout (tail):\n%s", tail)
+
+    if not f16_path.exists():
         logger.error("f16 GGUF not produced at %s", f16_path)
         return None
-    f16_size_mb = os.path.getsize(f16_path) / (1024 * 1024)
+    f16_size_mb = f16_path.stat().st_size / (1024 * 1024)
     logger.info("f16 GGUF: %.1f MB", f16_size_mb)
 
     # 목표가 f16 면 그대로 사용
     if quantize_method == "f16":
-        shutil.move(f16_path, final_path)
-        return final_path
+        f16_path.rename(final_path)
+        return str(final_path)
 
-    # Step 3b: f16 → 목표 quant
-    logger.info("Step 3b: quantize f16 GGUF → %s", quantize_method)
+    # Step 3b: f16 → 목표 quant (docker)
+    logger.info("Step 3b: quantize f16 GGUF → %s (docker)", quantize_method)
+    cmd_quant = [
+        "docker", "run", "--rm",
+        "-v", f"{output_dir_p}:/work",
+        "--entrypoint", "/app/llama-quantize",
+        LLAMA_CPP_DOCKER_IMAGE,
+        f"/work/{f16_name}",
+        f"/work/{final_name}",
+        quantize_method.upper(),
+    ]
+    logger.info("$ %s", " ".join(cmd_quant))
     try:
         result = subprocess.run(
-            [str(LLAMA_QUANTIZE_BIN), f16_path, final_path, quantize_method],
-            check=True, capture_output=True, text=True, timeout=600,
+            cmd_quant, capture_output=True, text=True, timeout=600,
         )
-        tail = "\n".join(result.stdout.strip().split("\n")[-3:])
-        logger.info("llama-quantize stdout (last lines):\n%s", tail)
-    except subprocess.CalledProcessError as e:
-        logger.error(
-            "llama-quantize failed (rc=%d):\nstdout: %s\nstderr: %s",
-            e.returncode, e.stdout, e.stderr,
-        )
+    except subprocess.TimeoutExpired:
+        logger.error("llama-quantize timed out (10min)")
         return None
     except Exception as e:
         logger.error("llama-quantize unexpected error: %s", e)
         return None
 
-    if not os.path.exists(final_path):
+    if result.returncode != 0:
+        logger.error(
+            "llama-quantize failed (rc=%d):\nstdout (tail): %s\nstderr (tail): %s",
+            result.returncode,
+            (result.stdout or "")[-2000:],
+            (result.stderr or "")[-2000:],
+        )
+        return None
+    tail = "\n".join((result.stdout or "").strip().split("\n")[-5:])
+    logger.info("llama-quantize stdout (tail):\n%s", tail)
+
+    if not final_path.exists():
         logger.error("Final GGUF not produced at %s", final_path)
         return None
 
     # f16 임시 파일 정리 (디스크 절약)
     try:
-        os.remove(f16_path)
+        f16_path.unlink()
     except OSError:
         pass
 
-    return final_path
+    return str(final_path)
 
 
 def train(data_dir: str, output_dir: str, build_id: str) -> dict:
     """LoRA SFT 학습 + GGUF 양자화."""
     config_path = os.path.join(data_dir, "config.json")
     data_path = os.path.join(data_dir, "train.jsonl")
+
+    # llama.cpp 공식 docker image 확보 — Gemma3 양자화에 필요한 도구 일체 포함.
+    # 첫 실행만 ~3.3GB pull, 이후 EBS 캐시 (DeleteOnTermination=false 면 영속).
+    _ensure_docker_image()
+    _log_environment_diagnostics()
 
     with open(config_path) as f:
         config = json.load(f)
@@ -410,6 +590,10 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
     }
     if quantize_failed:
         result["error"] = "GGUF quantization failed (see logs)"
+        # SSM/SSH 막혀서 EC2 로그 직접 조회 불가 — tail 을 result 에 실어 보냄.
+        boot_tail = _tail_boot_log(max_lines=150)
+        if boot_tail:
+            result["error_log_tail"] = boot_tail
 
     result_path = os.path.join(output_dir, "result.json")
     with open(result_path, "w") as f:

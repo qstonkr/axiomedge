@@ -25,6 +25,28 @@ _re_num_pattern = re.compile(r"^\d+[개월주년일편점]")
 _GPU_TRAINED = "__GPU_TRAINED__"
 
 
+def _prefer_reformatted(rows: list[dict]) -> list[dict]:
+    """Reformatter 산출물 우선 적용.
+
+    동일한 원본에 대해 source_type="reformatted" 행이 있으면 원본은 제거하고
+    reformatted 로 대체한다. reformatted 가 없는 원본은 그대로 유지.
+
+    이 함수는 curated training data export 시 호출돼서, 1B 학습에 유리한 2문단
+    포맷이 있으면 자동으로 쓰도록 한다. 원본/재작성 공존 기간 동안의 점진 전환용.
+    """
+    reformatted = [r for r in rows if r.get("source_type") == "reformatted"]
+    if not reformatted:
+        return rows
+    # augmented_from 이 가리키는 원본 id 집합
+    replaced_ids = {r.get("augmented_from") for r in reformatted if r.get("augmented_from")}
+    # reformatted 본인도 원본 목록에서 제외 (양쪽 다 approved 일 수 있음)
+    reformatted_ids = {r.get("id") for r in reformatted}
+    return [
+        r for r in rows
+        if r.get("id") not in replaced_ids and r.get("id") not in reformatted_ids
+    ] + reformatted
+
+
 class DistillService:
     """Distill 파이프라인 오케스트레이터."""
 
@@ -576,11 +598,25 @@ class DistillService:
             if not approved:
                 raise ValueError("No approved training data. Run data curation first.")
 
+            # Reformatter 경로 우선 적용 — source_type="reformatted" 행이 있으면
+            # 동일 원본(augmented_from) 의 원본 행을 제거하고 reformatted 로 대체.
+            # 이렇게 하면 기존 긴 RAG 답변 대신 1B 가 학습 가능한 2문단 포맷이 들어감.
+            # reformatted 가 아직 없는 샘플은 원본 그대로 유지 (점진 전환).
+            approved = _prefer_reformatted(approved)
+
             data_path = str(build_dir / "train.jsonl")
             from src.distill.data_gen.dataset_builder import DatasetBuilder
             count = DatasetBuilder.export_jsonl(approved, data_path)
 
-            data_sources = {"approved": count, "source": "curated"}
+            reformatted_count = sum(
+                1 for q in approved if q.get("source_type") == "reformatted"
+            )
+            data_sources = {
+                "approved": count,
+                "reformatted": reformatted_count,
+                "original": count - reformatted_count,
+                "source": "curated",
+            }
             await repo.update_build(
                 build_id, training_samples=count,
                 data_sources=json.dumps(data_sources, ensure_ascii=False),

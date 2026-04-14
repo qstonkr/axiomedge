@@ -67,15 +67,16 @@ class TrainingConfig(BaseModel):
     # learning_rate=5e-5: -it (instruction-tuned) 모델에 2e-4는 과함 —
     # pretrained 가중치 교란 후 수렴 실패. 5e-5 가 안전선.
     # epochs=5: 3 epochs는 953 샘플 기준 부족. 5~7 권장.
-    # max_seq_length=1024: Gemma 3 실측, 953 pbu-store 샘플에서 p90=777,
-    # p99=1007 토큰. 512 로 두면 42.3% 샘플의 답변 뒷부분이 잘려 학습된다
-    # (train_loss 정체 + echo 증상 악화). 1024 가 99.5% 커버 + T4 16GB
-    # 안전선.
+    # max_seq_length=512: Reformatter (2문단 ~200~350자 포맷) 적용 후 Gemma 3
+    # tokenizer 실측 결과 p99=347, max=405 tokens. 512 는 p99 대비 1.47배 여유
+    # 로 0% truncation. 1024 는 63% padding 낭비 (이전 데이터 기준이었음).
+    # 과거 1024 근거였던 "p99=1007 tokens"는 RAG style 긴 답변이었고, 지금은
+    # reformatter 가 답변을 압축해서 적용 불가.
     epochs: int = Field(5, ge=1, le=50)
     batch_size: int = Field(4, ge=1, le=128)
     gradient_accumulation: int = Field(8, ge=1, le=64)
     learning_rate: float = Field(5e-5, gt=0)
-    max_seq_length: int = Field(1024, ge=128, le=4096)
+    max_seq_length: int = Field(512, ge=128, le=4096)
 
 
 class QAStyleConfig(BaseModel):
