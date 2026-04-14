@@ -95,6 +95,8 @@ class DistillTrainingDataRepository:
         async with self._session_maker() as session:
             base = DistillTrainingDataModel.profile_name == profile_name
             approved = DistillTrainingDataModel.status == "approved"
+            pending = DistillTrainingDataModel.status == "pending"
+            is_reformatted = DistillTrainingDataModel.source_type == "reformatted"
 
             total = (await session.execute(
                 select(func.count()).select_from(DistillTrainingDataModel).where(base, approved)
@@ -107,6 +109,17 @@ class DistillTrainingDataRepository:
                     .where(base, approved, DistillTrainingDataModel.source_type == src_type)
                 )).scalar() or 0
                 stats[src_type] = count
+
+            # Reformatter 산출물은 status 를 승인/대기 양쪽 다 봐야 함
+            # (pending 은 "리뷰 필요" 라서 사용자에게 반드시 노출해야 함)
+            stats["reformatted_approved"] = (await session.execute(
+                select(func.count()).select_from(DistillTrainingDataModel)
+                .where(base, approved, is_reformatted)
+            )).scalar() or 0
+            stats["reformatted_pending"] = (await session.execute(
+                select(func.count()).select_from(DistillTrainingDataModel)
+                .where(base, pending, is_reformatted)
+            )).scalar() or 0
 
             return stats
 
