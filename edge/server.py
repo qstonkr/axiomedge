@@ -177,9 +177,15 @@ async def ask(request: AskRequest, _: None = Depends(verify_api_key)):
     llm = _get_llm()
     t0 = time.monotonic()
     try:
+        # stop 파라미터는 필수: Gemma 3 는 턴 경계에 <end_of_turn> (token 106) 을
+        # 생성하도록 학습됐지만, GGUF 메타의 eos_token_id 는 <eos> (token 1) 하나만
+        # 담겨 llama.cpp 가 106 을 멈춤 조건으로 인식 못 한다. 결과로 모델이
+        # <end_of_turn> 다음 학습 데이터 패턴인 <start_of_turn>user 를 계속
+        # 이어붙여 무한 에코 루프가 된다. stop 문자열로 명시 차단.
         output = llm.create_chat_completion(
             messages=[{"role": "user", "content": request.query}],
             max_tokens=MAX_TOKENS,
+            stop=["<end_of_turn>", "<start_of_turn>"],
         )
         answer = output["choices"][0]["message"]["content"].strip()
         latency_ms = int((time.monotonic() - t0) * 1000)
@@ -325,6 +331,7 @@ async def reload_model():
     try:
         _llm.create_chat_completion(
             messages=[{"role": "user", "content": "테스트"}], max_tokens=5,
+            stop=["<end_of_turn>", "<start_of_turn>"],
         )
     except Exception as e:
         logger.error("Health check after reload failed: %s", e)
