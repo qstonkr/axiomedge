@@ -117,6 +117,14 @@ def _clamp_hyperparameters(
     # Gemma 3 실측(pbu-store 953 샘플): p90=777, p99=1007 tokens. 512 로
     # 두면 42.3% 샘플 답변 뒷부분 truncate → 학습 실패. 1024 가 99.5% 커버.
     min_max_seq_len = 1024
+    # FFN 이 빠진 target_modules 는 학습 효과 없음 (train_loss 정체).
+    # service.py 가 구 코드라 config.json 에 4개만 들어올 수 있으니 여기서
+    # 방어적으로 7개로 승격. 기존에 7개면 그대로 유지.
+    required_ffn_modules = {"gate_proj", "up_proj", "down_proj"}
+    full_target_modules = [
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    ]
 
     if lora_config.get("r", 0) < min_lora_r:
         logger.warning(
@@ -150,7 +158,74 @@ def _clamp_hyperparameters(
         )
         training_config = {**training_config, "max_seq_length": min_max_seq_len}
 
+    # target_modules force-promote: config.json 에 4개만 있어도 7개로 확장.
+    # service.py 가 구 코드 (API restart 전) 로 4개를 보낼 수 있어서 방어.
+    current_tm = set(lora_config.get("target_modules", []))
+    if not required_ffn_modules.issubset(current_tm):
+        missing = sorted(required_ffn_modules - current_tm)
+        logger.warning(
+            "target_modules missing FFN layers %s — forcing full 7-module set",
+            missing,
+        )
+        lora_config = {**lora_config, "target_modules": full_target_modules}
+
     return lora_config, training_config
+
+
+def _log_environment_diagnostics() -> None:
+    """빌드 환경 진단 — llama.cpp 버전/바이너리 존재/gguf 패키지 버전.
+
+    04-13 실패 원인 중 하나가 AMI 에 빌드된 구버전 llama-quantize 라서,
+    어떤 버전으로 동작했는지 result.json 업로드 전 로그에 남겨둬야 추후 추적 가능.
+    """
+    logger.info("=== Environment diagnostics ===")
+    version_file = LLAMA_CPP_DIR / ".version"
+    if version_file.exists():
+        try:
+            logger.info("llama.cpp commit: %s", version_file.read_text().strip())
+        except OSError as e:
+            logger.info("llama.cpp .version read failed: %s", e)
+    else:
+        logger.info("llama.cpp .version file missing (old AMI build)")
+
+    logger.info("CONVERT_SCRIPT exists: %s (%s)", CONVERT_SCRIPT.exists(), CONVERT_SCRIPT)
+    logger.info("LLAMA_QUANTIZE_BIN exists: %s (%s)", LLAMA_QUANTIZE_BIN.exists(), LLAMA_QUANTIZE_BIN)
+
+    try:
+        import gguf  # type: ignore
+        logger.info("gguf package version: %s", getattr(gguf, "__version__", "unknown"))
+        from gguf import MODEL_ARCH  # type: ignore
+        logger.info("gguf MODEL_ARCH has GEMMA3: %s", hasattr(MODEL_ARCH, "GEMMA3"))
+    except Exception as e:
+        logger.info("gguf package import failed: %s", e)
+
+    if LLAMA_QUANTIZE_BIN.exists():
+        try:
+            result = subprocess.run(
+                [str(LLAMA_QUANTIZE_BIN), "--help"],
+                capture_output=True, text=True, timeout=5,
+            )
+            first_line = (result.stdout or result.stderr).strip().split("\n")[0]
+            logger.info("llama-quantize --help head: %s", first_line)
+        except Exception as e:
+            logger.info("llama-quantize --help failed: %s", e)
+
+
+def _tail_boot_log(max_lines: int = 150) -> str | None:
+    """distill-boot.log 의 tail 을 result.json 에 실어 중앙에서 읽을 수 있도록.
+
+    SSM/SSH 가 막혀 있어서 실패 시 EC2 내 로그를 직접 읽을 수 없음 — result.json
+    에 포함시켜 S3 로 올라오게 해야 중앙 대시보드/DB 에서 디버깅 가능.
+    """
+    log_path = Path("/var/log/distill-boot.log")
+    if not log_path.exists():
+        return None
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        return "".join(lines[-max_lines:])
+    except OSError as e:
+        return f"<failed to read boot log: {e}>"
 
 
 def _quantize_gguf(
@@ -242,6 +317,8 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
     """LoRA SFT 학습 + GGUF 양자화."""
     config_path = os.path.join(data_dir, "config.json")
     data_path = os.path.join(data_dir, "train.jsonl")
+
+    _log_environment_diagnostics()
 
     with open(config_path) as f:
         config = json.load(f)
@@ -410,6 +487,10 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
     }
     if quantize_failed:
         result["error"] = "GGUF quantization failed (see logs)"
+        # SSM/SSH 막혀서 EC2 로그 직접 조회 불가 — tail 을 result 에 실어 보냄.
+        boot_tail = _tail_boot_log(max_lines=150)
+        if boot_tail:
+            result["error_log_tail"] = boot_tail
 
     result_path = os.path.join(output_dir, "result.json")
     with open(result_path, "w") as f:
