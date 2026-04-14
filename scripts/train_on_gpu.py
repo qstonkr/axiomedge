@@ -114,6 +114,9 @@ def _clamp_hyperparameters(
     min_lora_alpha = 32
     min_epochs = 5
     max_lr_for_it = 1e-4
+    # Gemma 3 실측(pbu-store 953 샘플): p90=777, p99=1007 tokens. 512 로
+    # 두면 42.3% 샘플 답변 뒷부분 truncate → 학습 실패. 1024 가 99.5% 커버.
+    min_max_seq_len = 1024
 
     if lora_config.get("r", 0) < min_lora_r:
         logger.warning(
@@ -139,6 +142,13 @@ def _clamp_hyperparameters(
             training_config.get("learning_rate"), max_lr_for_it,
         )
         training_config = {**training_config, "learning_rate": max_lr_for_it}
+    if training_config.get("max_seq_length", 0) < min_max_seq_len:
+        logger.warning(
+            "max_seq_length=%s below safe min %d — promoting "
+            "(42.3%% of pbu-store samples exceed 512 tokens)",
+            training_config.get("max_seq_length"), min_max_seq_len,
+        )
+        training_config = {**training_config, "max_seq_length": min_max_seq_len}
 
     return lora_config, training_config
 
@@ -279,16 +289,23 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
         torch_dtype=torch.bfloat16,
     )
 
+    # attention Q/K/V/O + FFN gate/up/down — Gemma3/LLaMA/Qwen 모든 decoder
+    # 모델에서 factual 지식은 FFN 에 저장되므로 attention 만 target 하면
+    # train_loss 가 1.5~2.0 에서 정체되고 학습 데이터 내용을 못 주입한다.
+    # Unsloth · QLoRA · HuggingFace PEFT 공식 튜토리얼 표준.
+    default_target_modules = [
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj",
+    ]
     peft_config = LoraConfig(
         r=lora_config.get("r", 16),
         lora_alpha=lora_config.get("alpha", 32),
         lora_dropout=lora_config.get("dropout", 0.05),
-        target_modules=lora_config.get(
-            "target_modules", ["q_proj", "v_proj", "k_proj", "o_proj"],
-        ),
+        target_modules=lora_config.get("target_modules", default_target_modules),
         bias="none",
         task_type="CAUSAL_LM",
     )
+    logger.info("LoRA target_modules: %s", peft_config.target_modules)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
@@ -344,7 +361,9 @@ def train(data_dir: str, output_dir: str, build_id: str) -> dict:
         try:
             from huggingface_hub import try_to_load_from_cache
             cached = try_to_load_from_cache(base_model, "tokenizer.model")
-            if cached:
+            # try_to_load_from_cache 는 str | None | _CACHED_NO_EXIST 반환.
+            # sentinel 은 truthy 하지만 str 아님 — os.path.exists 에서 TypeError.
+            if isinstance(cached, str):
                 tm_src_candidates.insert(0, cached)
         except Exception as e:
             logger.debug("HF cache lookup for tokenizer.model failed: %s", e)

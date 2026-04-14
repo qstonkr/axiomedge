@@ -87,7 +87,8 @@ class DistillQuantizer:
         try:
             from huggingface_hub import try_to_load_from_cache
             cached = try_to_load_from_cache(base_ref, "tokenizer.model")
-            if cached and Path(cached).exists():
+            # str | None | _CACHED_NO_EXIST — sentinel 방어
+            if isinstance(cached, str) and Path(cached).exists():
                 shutil.copy(cached, tm_target)
                 logger.info("Recovered tokenizer.model from HF cache (%s)", base_ref)
                 return
@@ -172,9 +173,12 @@ raise NotImplementedError('Manual GGUF conversion needed')
 
         try:
             llm = Llama(model_path=gguf_path, n_ctx=128, n_threads=2, verbose=False)
+            # Gemma 3: <end_of_turn> (106) 는 GGUF eos 에 안 들어가서
+            # 명시 차단 필요. edge/server.py 와 동일 방어선.
             output = llm.create_chat_completion(
                 messages=[{"role": "user", "content": "테스트"}],
                 max_tokens=10,
+                stop=["<end_of_turn>", "<start_of_turn>"],
             )
             test_output = output["choices"][0]["message"]["content"]
             del llm
