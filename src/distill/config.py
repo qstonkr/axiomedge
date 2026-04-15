@@ -92,7 +92,25 @@ class DataQualityConfig(BaseModel):
     self_consistency_samples: int = 3
     self_consistency_threshold: float = 0.75
     enable_self_consistency: bool = True
+    # ── 레거시 augmentation (dataset_builder.augment_questions) ──
+    # NOTE: 이 값은 레거시 auto-generation 경로에서만 사용. 신규 경로는
+    # question_augmenter_count 를 사용한다.
     augmentation_count: int = 3
+
+    # ── Phase 1.5: Answer reformatter ──
+    # 기존 긴 RAG 답변을 1B 모델이 학습하기 쉬운 2문단 포맷으로 재작성.
+    # Reformatter 모듈: src/distill/data_gen/reformatter.py
+    reformat_enabled: bool = False  # 신규 프로필은 True 권장
+
+    # ── Phase 1.5: Question augmenter (LLM judge verification) ──
+    # 하나의 fact 에 대해 N 개 질문 표현 생성 → exposures 증가로 memorization
+    # 효과 극대화. Physics of LMs Part 3.3 의 "100 exposures for half capacity"
+    # 이론에 기반.
+    # 모듈: src/distill/data_gen/question_augmenter.py
+    # 0 이면 신규 augmenter 비활성화 (레거시 augmentation_count 만 사용).
+    question_augmenter_count: int = 0
+    question_augmenter_verify: bool = True  # LLM judge (semantic + leak 검출)
+    question_augmenter_concurrency: int = 4
 
 
 class DeployConfig(BaseModel):
