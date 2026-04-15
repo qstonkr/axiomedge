@@ -1,4 +1,4 @@
-.PHONY: setup start stop api dashboard crawl ingest search test test-unit test-integration test-e2e tei-refresh
+.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-integration test-e2e tei-refresh
 
 # === Setup ===
 setup:
@@ -7,6 +7,13 @@ setup:
 	@echo "  huggingface-cli download BAAI/bge-m3 --local-dir ./models/bge-m3"
 	@echo "Pull EXAONE model:"
 	@echo "  docker exec -it $$(docker ps -q -f name=ollama) ollama pull exaone3.5:7.8b"
+
+# Build llama.cpp toolchain (convert_hf_to_gguf.py + llama-quantize + libllama)
+# from a single matching commit. 파이썬 convert 스크립트와 C++ quantize/libllama
+# 가 버전 드리프트 있으면 신규 아키텍처 (EXAONE, Kanana2 등) 가 깨진다.
+# 업스트림 llama.cpp 에 새 아키텍처 지원 추가 시 재실행해서 갱신.
+setup-distill-toolchain:
+	@./scripts/setup_distill_toolchain.sh
 
 # === Infrastructure ===
 start:

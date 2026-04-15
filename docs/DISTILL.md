@@ -258,3 +258,43 @@ AWS_PROFILE=jeongbeomkim uv run python scripts/distill_pilot_compare.py \
 | `dashboard/components/sidebar.py` | 외부 연동 그룹 추가 |
 | `dashboard/components/constants.py` | DISTILL_STATUS_ICONS 추가 |
 | `dashboard/services/api_client.py` | distill 모듈 re-export |
+
+## 베이스 모델 레지스트리 (2026-04-16 기준)
+
+드롭다운 SSOT: `distill_base_models` 테이블 (코드 seed: `src/distill/seed.py::DEFAULT_BASE_MODELS`).
+Admin UI 에서 추가/편집/토글 가능. Seed 는 insert-if-missing 으로 admin 편집 보존.
+
+### 등록 모델 (dry-run 검증 완료)
+
+| 순위 | 모델 | 크기(Q4) | 속도 | 라이선스 | Default | 비고 |
+|------|------|---------|------|---------|---------|------|
+| 10 | `google/gemma-3-4b-it` | 2.4GB | 6-8 tok/s | Gemma (상업 OK) | ✅ | 멀티모달 wrapper, convert 가 text tower 자동 추출 |
+| 20 | `kakaocorp/kanana-nano-2.1b-instruct` | 1.3GB | 6-15 tok/s | Kanana (재확인 필요) | | `LlamaForCausalLM`, 상업 승격 가능 |
+| 30 | `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` | 1.4GB | 18-34 tok/s | research-only | | **convert 패치 필요** — `scripts/patches/convert_hf_to_gguf_exaone.patch`, 상업 배포 전 LG AI Research 계약 필수 |
+| 40 | `naver-hyperclovax/HyperCLOVAX-SEED-Text-Instruct-1.5B` | 1.0GB | 18-34 tok/s | HyperCLOVA X SEED (제한적) | | 엣지 SBC 최적, 한국어 특화 |
+
+### 기본값 정책 — Gemma 3 4B
+
+드롭다운 첫 항목 (`sort_order=10`) 은 **반드시 상업 배포 가능한 모델** 이어야 합니다.
+
+1. **사고 방지**: 프로필 신규 생성 시 기본 선택이 `EXAONE` / `HyperCLOVA` 이면, 관리자가 라이선스 계약 체결 확인 없이 프로덕션 빌드 트리거할 위험. 상업 OK 기본값은 이 사고를 원천 차단.
+2. **상업 대안 부족**: 상업 OK 등록 모델 중 한국어 품질이 충분한 건 Gemma 3 4B 하나. (Kanana 는 라이선스 재확인 필요, Qwen3 4B 는 한국어 부적합으로 제거)
+3. **명시 선택 강제**: non-commercial 모델은 드롭다운에서 `[상업X · research-only]` 라벨이 붙어 관리자가 고의적으로 선택해야 사용됨.
+
+**예외 — `pbu-store` 프로필**: GS Retail 내부 테스트용으로 EXAONE 3.5 2.4B 사용 중 (2026-04-15 관리자 명시 선택). 상업 배포 전 LG AI Research 와 별도 계약 체결 필수.
+
+### 제거된 후보
+
+- `Qwen/Qwen3-4B` — 파이프라인은 통과하지만 기본 `<think>` 모드 + 영어 답변 + 한국사 날짜 오답 (1392-1408, 1408-1419 로 run 마다 변동) 일관. 한국어 도메인 부적합. 2026-04-16 dry-run 2회 재현 확인 후 제거.
+
+### 새 모델 추가 절차
+
+1. `make setup-distill-toolchain` 으로 툴체인 최신화
+2. Ad-hoc 스크립트로 download → convert → quantize → llama-cpp-python load → 한국어 QA 1~2개 확인
+3. 통과하면 `src/distill/seed.py::DEFAULT_BASE_MODELS` 에 추가 (verified=True)
+4. 또는 Admin UI 에서 직접 추가 (DB 에만 기록, seed 파일 미반영)
+5. 새 아키텍처 (convert 가 모르는 모델) 인 경우 → `docs/DISTILL_TOOLCHAIN.md` 의 패치 관리 절차 참고
+
+### 툴체인 요구사항
+
+`src/distill/quantizer.py` 는 `DISTILL_CONVERT_SCRIPT` / `DISTILL_QUANTIZE_BIN` 환경변수로 경로 SSOT. Homebrew bottle 은 드리프트 위험 있으므로 `make setup-distill-toolchain` 으로 소스 빌드 권장. 상세: `docs/DISTILL_TOOLCHAIN.md`.

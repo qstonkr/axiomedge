@@ -1,12 +1,29 @@
 """GGUF 양자화.
 
 HuggingFace 모델을 llama.cpp GGUF 포맷으로 변환 + 양자화.
+
+툴체인 요구사항 (SSOT — 2026-04-16):
+    convert_hf_to_gguf.py 와 llama-quantize 는 **반드시 같은 llama.cpp 커밋**
+    에서 나와야 한다. 드리프트가 있으면 신규 아키텍처 (EXAONE, Kanana2 등)
+    의 GGUF metadata 키 네이밍이 불일치해서 "key not found in model" 로
+    파이프라인이 깨진다.
+
+    경로 해결 순서:
+      1. 환경변수 ``DISTILL_CONVERT_SCRIPT`` / ``DISTILL_QUANTIZE_BIN``
+         → SSOT. 설정 필수 권장 (``make setup-distill-toolchain`` 출력 참고).
+      2. 없으면 ``$PATH`` 검색 — 그러나 Homebrew bottle 은 드리프트 가능성
+         높아 경고만 찍고 시도 (CI/신규 환경 safety net).
+      3. 경로가 전혀 없으면 Python fallback (``gguf`` 패키지 직접 사용).
+
+    설치/업그레이드: ``make setup-distill-toolchain``
+    상세: ``docs/DISTILL_TOOLCHAIN.md``
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,6 +31,55 @@ from pathlib import Path
 from src.distill.config import DistillProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_convert_script() -> str | None:
+    """DISTILL_CONVERT_SCRIPT env var 또는 $PATH 에서 convert_hf_to_gguf.py 찾기.
+
+    env var 가 설정돼 있으면 그것만 사용 (SSOT). 없으면 $PATH fallback 후 경고.
+    """
+    env_path = os.getenv("DISTILL_CONVERT_SCRIPT")
+    if env_path:
+        if Path(env_path).exists():
+            return env_path
+        logger.error(
+            "DISTILL_CONVERT_SCRIPT is set but not found: %s — "
+            "run `make setup-distill-toolchain`", env_path,
+        )
+        return None
+    which_path = shutil.which("convert_hf_to_gguf.py")
+    if which_path:
+        logger.warning(
+            "DISTILL_CONVERT_SCRIPT not set — falling back to $PATH (%s). "
+            "This may drift from llama-quantize version. "
+            "Run `make setup-distill-toolchain` and export DISTILL_CONVERT_SCRIPT.",
+            which_path,
+        )
+        return which_path
+    return None
+
+
+def _resolve_quantize_bin() -> str | None:
+    """DISTILL_QUANTIZE_BIN env var 또는 $PATH 에서 llama-quantize 찾기."""
+    env_path = os.getenv("DISTILL_QUANTIZE_BIN")
+    if env_path:
+        if Path(env_path).exists() and os.access(env_path, os.X_OK):
+            return env_path
+        logger.error(
+            "DISTILL_QUANTIZE_BIN is set but not executable: %s — "
+            "run `make setup-distill-toolchain`", env_path,
+        )
+        return None
+    which_path = shutil.which("llama-quantize")
+    if which_path:
+        logger.warning(
+            "DISTILL_QUANTIZE_BIN not set — falling back to $PATH (%s). "
+            "This may drift from convert_hf_to_gguf.py version. "
+            "Run `make setup-distill-toolchain` and export DISTILL_QUANTIZE_BIN.",
+            which_path,
+        )
+        return which_path
+    return None
 
 
 class DistillQuantizer:
@@ -48,14 +114,17 @@ class DistillQuantizer:
         return str(output_path)
 
     def _convert_hf_to_gguf(self, model_path: Path, output_path: Path) -> None:
-        """HuggingFace → GGUF f16 변환."""
+        """HuggingFace → GGUF f16 변환.
+
+        경로는 ``DISTILL_CONVERT_SCRIPT`` env var 를 우선 사용 (SSOT).
+        설정 안 돼 있으면 $PATH fallback 후 경고. 둘 다 실패 시 Python fallback.
+        """
         # 방어선: convert_hf_to_gguf.py의 Gemma3 경로는 tokenizer.model 유무로
         # SentencePiece / gpt2 BPE 분기한다. 없으면 BPE fallback 되어 한국어가 깨짐.
         # 학습 파이프라인이 tokenizer.model을 빼먹었을 경우 여기서 마지막 복구.
         self._ensure_tokenizer_model(model_path)
 
-        # llama.cpp CLI 사용 (convert_hf_to_gguf.py)
-        convert_script = shutil.which("convert_hf_to_gguf.py")
+        convert_script = _resolve_convert_script()
         if convert_script:
             cmd = [
                 "python", convert_script,
@@ -63,21 +132,17 @@ class DistillQuantizer:
                 "--outtype", "f16",
                 str(model_path),
             ]
-        else:
-            # pip install llama-cpp-python[server] 또는 직접 변환
-            cmd = [
-                "python", "-m", "llama_cpp.llama_convert",
-                "--outfile", str(output_path),
-                "--outtype", "f16",
-                str(model_path),
-            ]
+            logger.info("Converting HF → GGUF f16: %s", " ".join(cmd))
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode == 0:
+                return
+            logger.warning(
+                "CLI convert failed (%s), trying Python fallback: %s",
+                convert_script, result.stderr[:200],
+            )
 
-        logger.info("Converting HF → GGUF f16: %s", " ".join(cmd))
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            # Fallback: transformers + gguf 라이브러리
-            logger.warning("CLI convert failed, trying Python fallback: %s", result.stderr[:200])
-            self._python_convert_to_gguf(model_path, output_path)
+        # Fallback: Python gguf 라이브러리 직접 사용
+        self._python_convert_to_gguf(model_path, output_path)
 
     def _ensure_tokenizer_model(self, model_path: Path) -> None:
         tm_target = model_path / "tokenizer.model"
@@ -109,8 +174,11 @@ class DistillQuantizer:
         )
 
     def _quantize_gguf(self, input_path: Path, output_path: Path) -> None:
-        """GGUF f16 → 양자화 (Q4_K_M 등)."""
-        quantize_bin = shutil.which("llama-quantize")
+        """GGUF f16 → 양자화 (Q4_K_M 등).
+
+        경로는 ``DISTILL_QUANTIZE_BIN`` env var 를 우선 사용 (SSOT).
+        """
+        quantize_bin = _resolve_quantize_bin()
         if quantize_bin:
             cmd = [quantize_bin, str(input_path), str(output_path), self.quantize_method.upper()]
             logger.info("Quantizing: %s", " ".join(cmd))
@@ -118,8 +186,12 @@ class DistillQuantizer:
             if result.returncode != 0:
                 raise RuntimeError(f"Quantization failed: {result.stderr[:200]}")
         else:
-            # llama-quantize 바이너리 없으면 f16을 그대로 사용
-            logger.warning("llama-quantize not found, using f16 model as-is")
+            # llama-quantize 바이너리 없으면 f16을 그대로 사용. 엣지 배포 품질
+            # 떨어지지만 파이프라인은 진행. 사용자는 로그로 알 수 있음.
+            logger.warning(
+                "llama-quantize not resolved — using f16 as-is. "
+                "Run `make setup-distill-toolchain` and export DISTILL_QUANTIZE_BIN.",
+            )
             shutil.copy2(str(input_path), str(output_path))
 
     @staticmethod

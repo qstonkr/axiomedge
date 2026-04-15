@@ -1,0 +1,19 @@
+diff --git a/convert_hf_to_gguf.py b/convert_hf_to_gguf.py
+index f6441b8..4c02e8b 100755
+--- a/convert_hf_to_gguf.py
++++ b/convert_hf_to_gguf.py
+@@ -10387,6 +10387,14 @@ class ExaoneModel(TextModel):
+ 
+         assert (hparams["activation_function"] == "silu")
+ 
++        # [LOCAL PATCH] EXAONE uses RMSNorm but config.json names it
++        # `layer_norm_epsilon` (legacy). C++ side (llama-model.cpp:2254) reads
++        # LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, so the Python writer must call
++        # add_layer_norm_rms_eps — super().set_gguf_parameters() doesn't do this
++        # because it only matches `rms_norm_eps` by name.
++        if (eps := hparams.get("layer_norm_epsilon")) is not None:
++            self.gguf_writer.add_layer_norm_rms_eps(eps)
++
+         rotary_factor = self.find_hparam(["partial_rotary_factor", "rope_pct"], optional=True)
+         rotary_factor = rotary_factor if rotary_factor is not None else 1.0
+         self.gguf_writer.add_rope_dimension_count(int(rotary_factor * (hparams["hidden_size"] // hparams["num_attention_heads"])))
