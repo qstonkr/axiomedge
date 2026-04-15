@@ -150,7 +150,12 @@ async def _poll_s3_output(
             status = result.get("status", "unknown")
             if status == "completed":
                 logger.info("Training completed: %s", result)
-                return {"status": "success", **result}
+                # result.json 의 status ("completed") 가 wrapper 의 "success" 를
+                # dict merge 에서 덮어쓰지 않도록 status 를 마지막에 재설정.
+                # 과거 bug: {"status": "success", **result} 는 result 의
+                # "status": "completed" 가 이겨서 service.py 의
+                # `result["status"] != "success"` 체크가 실패 처리했다.
+                return {**result, "status": "success"}
             if status == "failed":
                 logger.error("Training failed: %s", result.get("error", ""))
                 return {"status": "failed", "error": result.get("error", "unknown")}
