@@ -350,18 +350,26 @@ async def _run_ingestion(
         legal_graph_extractor=legal_graph_extractor,
     )
 
-    # TEI server advertises max_batch_requests=8; Semaphore(4) left half the
-    # parallel slots idle during legalize-kr. Bump to 8 to saturate the
-    # embedding path without overloading Neo4j (graph saves are ~1s and the
-    # bumped 3g heap / 1.5g tx ceiling absorbs the parallel writes).
-    semaphore = asyncio.Semaphore(8)
+    # Size-based dual semaphore: small docs run 8-wide to saturate TEI's
+    # parallel slots (max_batch_requests=8), but large docs (>80KB) bottleneck
+    # TEI CPU when run 8-wide — a single 300KB statute can take 60-150s on
+    # BGE-M3 CPU, and 8 of them in flight at once pushes each httpx call past
+    # the 180s timeout, cascading into ReadTimeout failures. Giving large
+    # docs their own 2-wide lane keeps their embeddings inside the timeout
+    # budget while letting the bulk of the corpus (mostly < 80KB) still run
+    # at full concurrency. Threshold 80KB keeps the slow lane ~25% of docs.
+    LARGE_DOC_BYTES = 80_000
+    semaphore_small = asyncio.Semaphore(8)
+    semaphore_large = asyncio.Semaphore(2)
     total_chunks = 0
     docs_ingested = 0
     errors: list[str] = []
 
     async def _ingest_one(doc: Any) -> None:
         nonlocal total_chunks, docs_ingested
-        async with semaphore:
+        size = (doc.metadata or {}).get("file_size_bytes", 0)
+        sem = semaphore_large if size >= LARGE_DOC_BYTES else semaphore_small
+        async with sem:
             try:
                 r = await pipeline.ingest(doc, collection_name=kb_id)
                 if r.chunks_stored > 0:
