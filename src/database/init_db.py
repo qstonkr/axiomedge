@@ -37,20 +37,31 @@ async def init_database(database_url: str | None = None) -> None:
 
     engine = create_async_engine(url, echo=False)
 
-    async with engine.begin() as conn:
-        # Create KnowledgeBase tables (Text-column based, cross-dialect)
-        await conn.run_sync(KnowledgeBase.metadata.create_all)
-        logger.info("KnowledgeBase tables created (%d tables)", len(KnowledgeBase.metadata.tables))
+    try:
+        async with engine.begin() as conn:
+            # Create KnowledgeBase tables (Text-column based, cross-dialect)
+            await conn.run_sync(KnowledgeBase.metadata.create_all)
+            logger.info("KnowledgeBase tables created (%d tables)", len(KnowledgeBase.metadata.tables))
 
-        # Create RegistryBase tables (JSONB-based, PG-specific)
-        await conn.run_sync(RegistryBase.metadata.create_all)
-        logger.info("RegistryBase tables created (%d tables)", len(RegistryBase.metadata.tables))
+            # Create RegistryBase tables (JSONB-based, PG-specific)
+            await conn.run_sync(RegistryBase.metadata.create_all)
+            logger.info("RegistryBase tables created (%d tables)", len(RegistryBase.metadata.tables))
 
-        # Create DistillBase tables (edge model distillation)
-        await conn.run_sync(DistillBase.metadata.create_all)
-        logger.info("DistillBase tables created (%d tables)", len(DistillBase.metadata.tables))
+            # Create DistillBase tables (edge model distillation)
+            await conn.run_sync(DistillBase.metadata.create_all)
+            logger.info("DistillBase tables created (%d tables)", len(DistillBase.metadata.tables))
 
-    await engine.dispose()
+        # Seed distill base model registry (idempotent upsert)
+        # 대시보드 드롭다운 SSOT. 코드의 DEFAULT_BASE_MODELS 변경 시 앱 재시작
+        # 하면 자동 반영. 사용자가 대시보드로 추가한 커스텀 행은 건드리지 않음.
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+        from src.distill.repository import DistillRepository
+        from src.distill.seed import seed_base_models
+        session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        repo = DistillRepository(session_maker)
+        await seed_base_models(repo)
+    finally:
+        await engine.dispose()
     logger.info("Database initialization complete")
 
 

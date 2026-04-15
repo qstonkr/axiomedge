@@ -32,8 +32,8 @@ _profiles_ok = not api_failed(_profiles_result)
 _all_profiles = _profiles_result.get("profiles", {}) if _profiles_ok else {}
 _enabled_profiles = [k for k, v in _all_profiles.items() if v.get("enabled")]
 
-tab_settings, tab_train, tab_curation, tab_servers, tab_ops = st.tabs([
-    "설정", "학습/모델관리", "데이터 큐레이션", "엣지 서버", "운영",
+tab_settings, tab_train, tab_curation, tab_servers, tab_ops, tab_base_models = st.tabs([
+    "설정", "학습/모델관리", "데이터 큐레이션", "엣지 서버", "운영", "베이스 모델 레지스트리",
 ])
 
 
@@ -135,15 +135,65 @@ with tab_settings:
                     index=default_group_idx,
                 )
 
-                model_options = [
-                    "Qwen/Qwen2.5-0.5B-Instruct",
-                    "Qwen/Qwen2.5-1.5B-Instruct",
-                    "google/gemma-3-1b-it",
-                ]
-                default_model_idx = 0
-                if editing.get("base_model") in model_options:
-                    default_model_idx = model_options.index(editing["base_model"])
-                form_model = st.selectbox("베이스 모델", options=model_options, index=default_model_idx)
+                # 베이스 모델 후보는 API (distill_base_models 테이블) 에서 로드.
+                # SSOT: src/distill/seed.py 의 DEFAULT_BASE_MODELS + 대시보드/DB 수정분.
+                base_models_result = api_client.list_distill_base_models()
+                base_models_rows = (
+                    base_models_result.get("models", [])
+                    if not api_failed(base_models_result) else []
+                )
+                registry_empty = not base_models_rows
+
+                def _build_model_label(m: dict) -> str:
+                    """드롭다운 라벨 — hf_id + 라이선스/검증 플래그 + notes."""
+                    flags: list[str] = []
+                    if m.get("commercial_use"):
+                        flags.append("상업OK")
+                    else:
+                        flags.append("상업X")
+                    if not m.get("verified"):
+                        flags.append("미검증")
+                    tag = " · ".join(flags)
+                    label = f"{m['hf_id']}  [{tag}]"
+                    notes = m.get("notes")
+                    if notes:
+                        label += f" {notes}"
+                    return label
+
+                model_options = [m["hf_id"] for m in base_models_rows]
+                model_labels = {m["hf_id"]: _build_model_label(m) for m in base_models_rows}
+
+                # 기존 DB 프로필이 레지스트리에 없는 레거시 모델을 참조하면
+                # 선택지에 "legacy" 라벨로 추가해서 저장된 값이 silent migration
+                # 되지 않도록 보존한다. 사용자가 능동적으로 새 모델을 고를 때까지 유지.
+                current_model = editing.get("base_model")
+                if current_model and current_model not in model_options:
+                    model_options = [current_model, *model_options]
+                    model_labels[current_model] = f"{current_model}  [legacy · 교체 권장]"
+
+                if registry_empty and not model_options:
+                    # 레지스트리도 비어 있고 편집할 레거시 값도 없음 → 저장 불가
+                    st.error(
+                        "베이스 모델 레지스트리가 비어 있습니다. "
+                        "API/DB 를 확인하세요. 프로필 저장이 비활성화됩니다.",
+                    )
+                    form_model = ""
+                else:
+                    default_model_idx = (
+                        model_options.index(current_model)
+                        if current_model in model_options else 0
+                    )
+                    form_model = st.selectbox(
+                        "베이스 모델",
+                        options=model_options,
+                        index=default_model_idx,
+                        format_func=lambda m: model_labels.get(m, m),
+                    )
+                    if registry_empty:
+                        st.warning(
+                            "베이스 모델 레지스트리가 비어 있어 새 모델을 선택할 수 없습니다. "
+                            "기존 legacy 값만 유지 가능합니다.",
+                        )
                 form_enabled = st.checkbox("활성화", value=editing.get("enabled", True))
 
                 st.markdown("**LoRA 설정**")
@@ -183,7 +233,13 @@ with tab_settings:
                         "최대 응답 토큰", value=qa_cfg.get("max_answer_tokens", 256), min_value=64, max_value=2048,
                     )
 
-                submitted = st.form_submit_button("저장", type="primary")
+                # 베이스 모델 미선택 상태면 저장 차단 — 레지스트리 빈 상태에서
+                # 잘못된 값이 DB 에 들어가는 걸 프론트 단에서 1차 방어 (서버도
+                # _validate_base_model 로 2차 방어).
+                submit_disabled = not form_model
+                submitted = st.form_submit_button(
+                    "저장", type="primary", disabled=submit_disabled,
+                )
                 if submitted:
                     body = {
                         "name": form_name,
@@ -1213,3 +1269,161 @@ with tab_ops:
                                 st.rerun()
                             else:
                                 st.error(f"실패: {result.get('error', '')}")
+
+
+# =============================================================================
+# Tab 6: 베이스 모델 레지스트리 관리
+# =============================================================================
+with tab_base_models:
+    st.caption(
+        "프로필 생성 시 선택 가능한 베이스 모델 목록을 관리합니다. "
+        "여기서 추가/수정하면 `설정` 탭 드롭다운에 즉시 반영됩니다 "
+        "(캐시 TTL 5분)."
+    )
+
+    # Admin 은 disabled 행도 봐야 함
+    all_models_result = api_client.list_distill_base_models(enabled_only=False)
+    if api_failed(all_models_result):
+        st.error("API 연결 실패 — 베이스 모델 레지스트리를 불러올 수 없습니다.")
+        if st.button("🔄 재시도", key="bm_retry"):
+            st.cache_data.clear()
+            st.rerun()
+    else:
+        all_models = all_models_result.get("models", [])
+
+        # ── 현황 테이블 ──
+        st.markdown("#### 현재 등록된 모델")
+        if not all_models:
+            st.info("등록된 베이스 모델이 없습니다. 아래에서 새로 추가하세요.")
+        else:
+            table_rows = [
+                {
+                    "정렬": m.get("sort_order", 0),
+                    "hf_id": m["hf_id"],
+                    "표시명": m.get("display_name", ""),
+                    "파라미터": m.get("params") or "",
+                    "라이선스": m.get("license") or "",
+                    "상업": "✓" if m.get("commercial_use") else "",
+                    "검증": "✓" if m.get("verified") else "",
+                    "enabled": "✓" if m.get("enabled") else "",
+                    "주의사항": (m.get("notes") or "")[:60],
+                }
+                for m in all_models
+            ]
+            st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── 편집/추가 폼 ──
+        st.markdown("#### 추가 / 편집")
+
+        edit_options = ["(새로 추가)"] + [m["hf_id"] for m in all_models]
+        edit_target = st.selectbox(
+            "편집 대상", options=edit_options, key="bm_edit_target",
+        )
+
+        editing_bm: dict = {}
+        if edit_target != "(새로 추가)":
+            editing_bm = next(
+                (m for m in all_models if m["hf_id"] == edit_target), {},
+            )
+
+        with st.form("base_model_form", clear_on_submit=False):
+            bc1, bc2 = st.columns([2, 1])
+            with bc1:
+                form_bm_hf_id = st.text_input(
+                    "HF ID (org/repo)",
+                    value=editing_bm.get("hf_id", ""),
+                    disabled=bool(editing_bm),  # PK — 편집 시 수정 불가
+                    placeholder="google/gemma-3-4b-it",
+                    help="Hugging Face 모델 경로. 저장 후 수정 불가.",
+                )
+                form_bm_display = st.text_input(
+                    "표시명",
+                    value=editing_bm.get("display_name", ""),
+                    placeholder="Gemma 3 4B it",
+                )
+                form_bm_notes = st.text_area(
+                    "주의사항 / 라벨 (notes)",
+                    value=editing_bm.get("notes") or "",
+                    height=80,
+                    help="드롭다운에 함께 표시됩니다.",
+                )
+            with bc2:
+                form_bm_params = st.text_input(
+                    "파라미터 수",
+                    value=editing_bm.get("params") or "",
+                    placeholder="4B",
+                )
+                form_bm_license = st.text_input(
+                    "라이선스",
+                    value=editing_bm.get("license") or "",
+                    placeholder="Apache 2.0",
+                )
+                form_bm_sort_order = st.number_input(
+                    "정렬 순서",
+                    value=editing_bm.get("sort_order", 0),
+                    min_value=0, max_value=10000, step=10,
+                    help="낮을수록 드롭다운 상단.",
+                )
+                form_bm_commercial = st.checkbox(
+                    "상업 배포 허용",
+                    value=editing_bm.get("commercial_use", False),
+                )
+                form_bm_verified = st.checkbox(
+                    "엣지 스택 검증 완료",
+                    value=editing_bm.get("verified", False),
+                    help="llama.cpp GGUF + LoRA SFT dry-run 통과.",
+                )
+                form_bm_enabled = st.checkbox(
+                    "드롭다운 노출 (enabled)",
+                    value=editing_bm.get("enabled", True),
+                )
+
+            bs1, bs2, _ = st.columns([1, 1, 4])
+            with bs1:
+                bm_submitted = st.form_submit_button("💾 저장", type="primary")
+            with bs2:
+                bm_delete_clicked = st.form_submit_button(
+                    "🗑 삭제",
+                    type="secondary",
+                    disabled=not editing_bm,
+                    help="편집 중인 행만 삭제 가능.",
+                )
+
+            if bm_submitted:
+                if not form_bm_hf_id or not form_bm_display:
+                    st.error("hf_id 와 표시명은 필수입니다.")
+                else:
+                    body = {
+                        "hf_id": form_bm_hf_id.strip(),
+                        "display_name": form_bm_display.strip(),
+                        "params": (form_bm_params.strip() or None),
+                        "license": (form_bm_license.strip() or None),
+                        "commercial_use": form_bm_commercial,
+                        "verified": form_bm_verified,
+                        "notes": form_bm_notes.strip(),
+                        "enabled": form_bm_enabled,
+                        "sort_order": int(form_bm_sort_order),
+                    }
+                    result = api_client.upsert_distill_base_model(body)
+                    if api_failed(result):
+                        st.error(f"저장 실패: {result.get('error', '')}")
+                    else:
+                        st.success(f"저장 완료: {form_bm_hf_id}")
+                        api_client.list_distill_base_models.clear()
+                        st.rerun()
+
+            if bm_delete_clicked and editing_bm:
+                result = api_client.delete_distill_base_model(editing_bm["hf_id"])
+                if api_failed(result):
+                    st.error(f"삭제 실패: {result.get('error', '')}")
+                else:
+                    st.success(f"삭제 완료: {editing_bm['hf_id']}")
+                    api_client.list_distill_base_models.clear()
+                    st.rerun()
+
+        st.caption(
+            "💡 제거 대신 **enabled 토글**을 권장합니다 — 실제 삭제 시 이 모델을 "
+            "참조하는 기존 프로필은 드롭다운에서 'legacy' 로 표시됩니다."
+        )

@@ -139,7 +139,9 @@ class DistillProfile(BaseModel):
     enabled: bool = False
     description: str = ""
     search_group: str
-    base_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    # 필수 필드 — 디폴트 하드코딩 금지. 선택은 distill_base_models 레지스트리
+    # (SSOT) 에서 대시보드/API 가 주어야 한다. Pydantic 레벨에서 강제.
+    base_model: str = Field(..., min_length=1, max_length=200)
     lora: LoRAConfig = Field(default_factory=LoRAConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     qa_style: QAStyleConfig = Field(default_factory=QAStyleConfig)
