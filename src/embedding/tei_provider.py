@@ -36,7 +36,7 @@ class TEIEmbeddingProvider:
     backend = "tei"
     _DENSE_DIM: int = _w.embedding.dimension
 
-    def __init__(self, base_url: str | None = None, timeout: float = 180.0):
+    def __init__(self, base_url: str | None = None, timeout: float = 300.0):
         self._base_url = (
             base_url or os.getenv("BGE_TEI_URL", "http://localhost:8080")
         ).rstrip("/")

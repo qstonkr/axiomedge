@@ -311,6 +311,40 @@ class TestPreferReformatted:
         b_row = next(r for r in result if r["id"] == "b")
         assert b_row["answer"] == "긴원본2"
 
+    def test_reformatted_aug_included(self) -> None:
+        """Phase 1.5: reformatted_aug 는 reformatted 를 대체하지 않고 함께 포함."""
+        from src.distill.service import _prefer_reformatted
+        rows = [
+            {"id": "orig1", "source_type": "usage_log", "answer": "원본답변"},
+            {"id": "ref1", "source_type": "reformatted",
+             "question": "원본질문", "answer": "재작성답변", "augmented_from": "orig1"},
+            {"id": "aug1", "source_type": "reformatted_aug",
+             "question": "변형질문1", "answer": "재작성답변", "augmented_from": "ref1"},
+            {"id": "aug2", "source_type": "reformatted_aug",
+             "question": "변형질문2", "answer": "재작성답변", "augmented_from": "ref1"},
+            {"id": "aug3", "source_type": "reformatted_aug",
+             "question": "변형질문3", "answer": "재작성답변", "augmented_from": "ref1"},
+        ]
+        result = _prefer_reformatted(rows)
+        ids = {r["id"] for r in result}
+        # orig1 제거, ref1 + aug1..3 모두 포함 = 4 rows
+        assert "orig1" not in ids
+        assert ids == {"ref1", "aug1", "aug2", "aug3"}
+        assert len(result) == 4
+
+    def test_reformatted_aug_without_reformatted(self) -> None:
+        """drop 경우: reformatted 없이 reformatted_aug 만 있어도 보존."""
+        from src.distill.service import _prefer_reformatted
+        rows = [
+            {"id": "a", "source_type": "usage_log", "answer": "긴원본"},
+            {"id": "aug1", "source_type": "reformatted_aug",
+             "question": "Q1", "answer": "A", "augmented_from": "ref-gone"},
+        ]
+        result = _prefer_reformatted(rows)
+        ids = {r["id"] for r in result}
+        # a 는 reformatted 대체 없으니 유지, aug1 도 포함
+        assert ids == {"a", "aug1"}
+
 
 def test_batch_summary_record() -> None:
     summary = BatchSummary()

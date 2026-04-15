@@ -22,6 +22,32 @@ class DistillBase(DeclarativeBase):
 
 
 # ---------------------------------------------------------------------------
+# Base Models — 프로필 생성 시 선택 가능한 베이스 모델 레지스트리
+# ---------------------------------------------------------------------------
+
+class DistillBaseModelEntry(DistillBase):
+    """베이스 모델 후보 레지스트리.
+
+    대시보드 드롭다운의 SSOT. 모델 추가/비활성화를 코드 배포 없이 DB 에서
+    관리할 수 있게 하고, 검증 상태/라이선스/주의사항 메타데이터를 함께 보관.
+    """
+
+    __tablename__ = "distill_base_models"
+
+    hf_id = Column(String(200), primary_key=True)  # e.g. "google/gemma-3-4b-it"
+    display_name = Column(String(200), nullable=False)  # e.g. "Gemma 3 4B it"
+    params = Column(String(20), nullable=True)  # e.g. "4B"
+    license = Column(String(100), nullable=True)  # e.g. "Gemma", "Apache 2.0"
+    commercial_use = Column(Boolean, nullable=False, default=False)  # 상업 배포 허용
+    verified = Column(Boolean, nullable=False, default=False)  # 엣지 스택 검증 완료
+    notes = Column(Text, default="")  # 주의사항/라벨 (e.g. "research-only", "미검증")
+    enabled = Column(Boolean, nullable=False, default=True)  # 드롭다운 노출 여부
+    sort_order = Column(Integer, nullable=False, default=0)  # 표시 순서
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
+
+
+# ---------------------------------------------------------------------------
 # Profiles — 빌드 설정 (distill.yaml → DB 이관)
 # ---------------------------------------------------------------------------
 
@@ -34,7 +60,9 @@ class DistillProfileModel(DistillBase):
     enabled = Column(Boolean, nullable=False, default=False)
     description = Column(Text, default="")
     search_group = Column(String(100), nullable=False)
-    base_model = Column(String(200), nullable=False, default="Qwen/Qwen2.5-0.5B-Instruct")
+    # 디폴트 하드코딩 금지. 베이스 모델 선택은 distill_base_models 레지스트리
+    # (SSOT). 호출자가 반드시 값을 지정해야 함 (nullable=False).
+    base_model = Column(String(200), nullable=False)
     config = Column(Text, nullable=False, default="{}")  # JSON: lora, training, qa_style 등
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)

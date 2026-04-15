@@ -46,6 +46,21 @@ class DistillDataGenerator:
         self._qa_gen = QAGenerator(self._llm_helper, self._quality, profile)
         self._builder = DatasetBuilder(self._llm_helper, profile)
 
+    # Phase 1.5 reformatter/augmenter 가 같은 LLMHelper 를 재사용할 수 있도록
+    # 공개. 새 인스턴스를 만들면 concurrency 카운트가 분리돼서 SageMaker 동시
+    # 호출 한도를 초과할 수 있다.
+    @property
+    def llm_helper(self) -> LLMHelper:
+        return self._llm_helper
+
+    @property
+    def quality_filter(self) -> QualityFilter:
+        return self._quality
+
+    @property
+    def dataset_builder(self) -> DatasetBuilder:
+        return self._builder
+
     # QA 생성 (delegate)
     async def generate_from_chunks(
         self, kb_ids: list[str], max_chunks_per_kb: int = 200,

@@ -12,10 +12,13 @@ Tech stack: Python 3.12+, FastAPI, Streamlit, Qdrant (vector), Neo4j (graph), Po
 
 ```bash
 # Local dev
-make setup              # uv sync
-make start / stop       # docker compose up/down
-make api                # FastAPI :8000
-make dashboard          # Streamlit :8501
+make setup                      # uv sync
+make setup-distill-toolchain    # llama.cpp convert+quantize+libllama (one-matched-commit build)
+                                # — 필수 for distill 빌드. 신규 아키텍처 추가 시 재실행.
+                                # 상세: docs/DISTILL_TOOLCHAIN.md
+make start / stop               # docker compose up/down
+make api                        # FastAPI :8000
+make dashboard                  # Streamlit :8501
 
 # CLI
 make ingest ARGS="--source ./docs/ --kb-id my-kb"

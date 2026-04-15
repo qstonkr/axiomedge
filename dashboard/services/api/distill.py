@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import streamlit as st
 
 from services.api._core import _delete, _get, _post, _put
@@ -33,6 +35,31 @@ def delete_distill_profile(name: str) -> dict:
 @st.cache_data(ttl=300)
 def list_search_groups_for_distill() -> dict:
     return _get("/api/v1/distill/search-groups")
+
+
+@st.cache_data(ttl=300)
+def list_distill_base_models(enabled_only: bool = True) -> dict:
+    """베이스 모델 레지스트리 조회.
+
+    Args:
+        enabled_only: True 면 드롭다운 노출 대상 (기본). Admin UI 는 False.
+    """
+    return _get("/api/v1/distill/base-models", enabled_only=enabled_only)
+
+
+def upsert_distill_base_model(body: dict) -> dict:
+    """베이스 모델 레지스트리 추가/갱신. Admin UI 전용."""
+    return _post("/api/v1/distill/base-models", body)
+
+
+def delete_distill_base_model(hf_id: str) -> dict:
+    """베이스 모델 레지스트리 삭제. Admin UI 전용.
+
+    ``hf_id`` 는 ``org/repo`` 형식이므로 슬래시는 보존하고 나머지 특수문자
+    (공백, ``%``, ``#`` 등) 는 percent-encode 해서 URL 깨짐을 방지.
+    """
+    encoded = quote(hf_id, safe="/")
+    return _delete(f"/api/v1/distill/base-models/{encoded}")
 
 
 # ── 빌드 ──

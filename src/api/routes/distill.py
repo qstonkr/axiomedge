@@ -29,7 +29,9 @@ _background_tasks: set[asyncio.Task] = set()
 class ProfileCreateRequest(BaseModel):
     name: str = Field(..., max_length=100)
     search_group: str
-    base_model: str = "Qwen/Qwen2.5-0.5B-Instruct"
+    # 필수. 디폴트 문자열 금지 — distill_base_models 레지스트리에서 선택한
+    # hf_id 를 클라이언트(대시보드)가 반드시 지정해야 한다.
+    base_model: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     enabled: bool = True
     lora: dict | None = None
@@ -161,6 +163,28 @@ async def get_profile(name: str):
     return profile
 
 
+async def _validate_base_model(repo, hf_id: str) -> None:
+    """base_model 이 distill_base_models 레지스트리에 존재하고 enabled 인지 검증.
+
+    하드코딩 fallback 을 제거한 뒤 방어막 — 대시보드를 우회해 curl/CLI 로
+    직접 POST 하는 케이스에서도 잘못된 모델명이 저장되지 않도록 한다.
+    """
+    entry = await repo.get_base_model(hf_id)
+    if entry is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"base_model '{hf_id}' not found in registry. "
+                "Choose one from GET /api/v1/distill/base-models."
+            ),
+        )
+    if not entry.get("enabled", True):
+        raise HTTPException(
+            status_code=400,
+            detail=f"base_model '{hf_id}' is disabled in registry.",
+        )
+
+
 @router.post("/profiles", status_code=201)
 async def create_profile(request: ProfileCreateRequest):
     """프로필 생성."""
@@ -176,6 +200,8 @@ async def create_profile(request: ProfileCreateRequest):
         if not kb_ids:
             raise HTTPException(status_code=400, detail=f"Search group '{request.search_group}' not found or empty")
 
+    await _validate_base_model(repo, request.base_model)
+
     data = request.model_dump(exclude_none=True)
     return await repo.create_profile(data)
 
@@ -184,6 +210,8 @@ async def create_profile(request: ProfileCreateRequest):
 async def update_profile(name: str, request: ProfileUpdateRequest):
     """프로필 수정."""
     repo = _get_distill_repo()
+    if request.base_model is not None:
+        await _validate_base_model(repo, request.base_model)
     data = request.model_dump(exclude_none=True)
     result = await repo.update_profile(name, data)
     if not result:
@@ -209,6 +237,63 @@ async def list_search_groups():
         return {"groups": []}
     groups = await group_repo.list_all()
     return {"groups": groups}
+
+
+# ---------------------------------------------------------------------------
+# Base Model Registry — 대시보드 드롭다운 SSOT
+# ---------------------------------------------------------------------------
+
+class BaseModelUpsertRequest(BaseModel):
+    """베이스 모델 레지스트리 upsert 요청.
+
+    hf_id 가 이미 있으면 갱신, 없으면 추가. DB 의 distill_base_models 와 1:1.
+    """
+    hf_id: str = Field(..., min_length=1, max_length=200)
+    display_name: str = Field(..., min_length=1, max_length=200)
+    params: str | None = Field(None, max_length=20)
+    license: str | None = Field(None, max_length=100)
+    commercial_use: bool = False
+    verified: bool = False
+    notes: str = ""
+    enabled: bool = True
+    sort_order: int = 0
+
+
+@router.get("/base-models")
+async def list_base_models(enabled_only: bool = True):
+    """선택 가능한 베이스 모델 목록. 대시보드 드롭다운에서 사용.
+
+    admin 화면은 disabled 행도 봐야 하므로 ``enabled_only=false`` 로 호출.
+    """
+    repo = _get_distill_repo()
+    models = await repo.list_base_models(enabled_only=enabled_only)
+    return {"models": models}
+
+
+@router.post("/base-models", status_code=201)
+async def upsert_base_model_endpoint(request: BaseModelUpsertRequest):
+    """베이스 모델 레지스트리 추가/갱신. Admin UI 에서 호출."""
+    repo = _get_distill_repo()
+    data = request.model_dump()
+    return await repo.upsert_base_model(data)
+
+
+@router.delete("/base-models/{hf_id:path}")
+async def delete_base_model_endpoint(hf_id: str):
+    """베이스 모델 레지스트리 삭제.
+
+    ``hf_id`` 는 ``google/gemma-3-4b-it`` 처럼 슬래시가 있어 FastAPI ``:path``
+    converter 로 캡처한다.
+
+    이미 이 모델을 참조 중인 distill_profiles 가 있으면 FK 제약은 없지만
+    드롭다운에서 legacy 라벨로 표시된다. 실제 삭제 대신 ``enabled=False`` 토글
+    을 권장.
+    """
+    repo = _get_distill_repo()
+    deleted = await repo.delete_base_model(hf_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Base model not found")
+    return {"success": True, "hf_id": hf_id}
 
 
 # ---------------------------------------------------------------------------

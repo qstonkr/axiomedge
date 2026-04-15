@@ -42,12 +42,17 @@ class DistillProfileRepository:
                     if key in data:
                         config_fields[key] = data.pop(key)
 
+                if not data.get("base_model"):
+                    raise ValueError(
+                        "base_model is required — pick one from "
+                        "distill_base_models registry",
+                    )
                 model = DistillProfileModel(
                     name=data["name"],
                     enabled=data.get("enabled", False),
                     description=data.get("description", ""),
                     search_group=data["search_group"],
-                    base_model=data.get("base_model", "Qwen/Qwen2.5-0.5B-Instruct"),
+                    base_model=data["base_model"],
                     config=json.dumps(config_fields, ensure_ascii=False),
                 )
                 session.add(model)

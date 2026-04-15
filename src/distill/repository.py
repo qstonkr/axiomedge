@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from src.distill.repositories.base_model import DistillBaseModelRepository
 from src.distill.repositories.build import DistillBuildRepository
 from src.distill.repositories.edge_log import DistillEdgeLogRepository
 from src.distill.repositories.edge_server import DistillEdgeServerRepository
@@ -29,6 +30,27 @@ class DistillRepository:
         self._edge_logs = DistillEdgeLogRepository(session_maker)
         self._training_data = DistillTrainingDataRepository(session_maker)
         self._edge_servers = DistillEdgeServerRepository(session_maker)
+        self._base_models = DistillBaseModelRepository(session_maker)
+
+    # --- Base Models (레지스트리) ---
+    async def list_base_models(
+        self, *, enabled_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        return await self._base_models.list_all(enabled_only=enabled_only)
+
+    async def get_base_model(self, hf_id: str) -> dict[str, Any] | None:
+        return await self._base_models.get(hf_id)
+
+    async def insert_base_model_if_missing(self, data: dict[str, Any]) -> bool:
+        """Seed 전용 — 없으면 삽입, 있으면 스킵 (admin 편집 보존)."""
+        return await self._base_models.insert_if_missing(data)
+
+    async def upsert_base_model(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Admin API 전용 — 덮어쓰기."""
+        return await self._base_models.upsert(data)
+
+    async def delete_base_model(self, hf_id: str) -> bool:
+        return await self._base_models.delete(hf_id)
 
     # --- Profiles ---
     async def list_profiles(self) -> list[dict[str, Any]]:

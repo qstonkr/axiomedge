@@ -17,7 +17,9 @@ profiles:
     enabled: true
     description: "편의점 PBU 엣지 모델"
     search_group: PBU
-    base_model: "Qwen/Qwen2.5-0.5B-Instruct"
+    # EXAONE 3.5 2.4B — 한국어 특화. Research-only 라이선스라 상업 배포 전
+    # LG AI Research 와 별도 계약 필요. Dry-run 검증 완료 (2026-04-15).
+    base_model: "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
     lora:
       r: 8
       alpha: 16
@@ -56,5 +58,5 @@ profiles:
   #   enabled: false
   #   description: "홈쇼핑 HBU 내부용"
   #   search_group: HBU
-  #   base_model: "Qwen/Qwen2.5-1.5B-Instruct"
+  #   base_model: "google/gemma-3-4b-it"
   #   ...

@@ -26,25 +26,36 @@ _GPU_TRAINED = "__GPU_TRAINED__"
 
 
 def _prefer_reformatted(rows: list[dict]) -> list[dict]:
-    """Reformatter 산출물 우선 적용.
+    """Reformatter / Augmenter 산출물 우선 적용.
 
-    동일한 원본에 대해 source_type="reformatted" 행이 있으면 원본은 제거하고
-    reformatted 로 대체한다. reformatted 가 없는 원본은 그대로 유지.
+    우선순위 (source_type 기준):
+      reformatted_aug > reformatted > 원본 (test_seed / usage_log / etc.)
+
+    적용 규칙:
+      - 원본 → reformatted 가 있으면 원본 제거, reformatted 사용
+      - reformatted_aug 는 reformatted 를 대체하지 않고 **함께** 포함됨
+        (Phase 1.5: 같은 fact 의 여러 질문 변형을 모두 exposures 로 사용)
 
     이 함수는 curated training data export 시 호출돼서, 1B 학습에 유리한 2문단
-    포맷이 있으면 자동으로 쓰도록 한다. 원본/재작성 공존 기간 동안의 점진 전환용.
+    포맷 + 질문 증강을 자동으로 쓰도록 한다.
     """
     reformatted = [r for r in rows if r.get("source_type") == "reformatted"]
-    if not reformatted:
+    reformatted_aug = [r for r in rows if r.get("source_type") == "reformatted_aug"]
+
+    if not reformatted and not reformatted_aug:
         return rows
-    # augmented_from 이 가리키는 원본 id 집합
-    replaced_ids = {r.get("augmented_from") for r in reformatted if r.get("augmented_from")}
-    # reformatted 본인도 원본 목록에서 제외 (양쪽 다 approved 일 수 있음)
-    reformatted_ids = {r.get("id") for r in reformatted}
-    return [
+
+    # reformatted 의 augmented_from 이 가리키는 원본 id (제거 대상)
+    replaced_original_ids = {
+        r.get("augmented_from") for r in reformatted if r.get("augmented_from")
+    }
+
+    non_reformatted = [
         r for r in rows
-        if r.get("id") not in replaced_ids and r.get("id") not in reformatted_ids
-    ] + reformatted
+        if r.get("source_type") not in ("reformatted", "reformatted_aug")
+        and r.get("id") not in replaced_original_ids
+    ]
+    return non_reformatted + reformatted + reformatted_aug
 
 
 class DistillService:
@@ -84,9 +95,7 @@ class DistillService:
         generator = DistillDataGenerator(
             self.llm, self.embedder, profile, self.qdrant_url,
         )
-        generality = GeneralityFilter(
-            generator.llm_helper if hasattr(generator, "llm_helper") else None
-        )
+        generality = GeneralityFilter(generator.llm_helper)
 
         # KB IDs 확보 (DB 프로필의 search_group 사용)
         group_repo = SearchGroupRepository(self.session_factory)
@@ -109,24 +118,102 @@ class DistillService:
         # 범용성 점수 부여
         all_qa = await generality.batch_score(all_qa)
 
-        # Augmentation + 검증
-        all_qa = await generator.augment_questions(all_qa)
-        if hasattr(generator, "dataset_builder") and hasattr(generator, "quality_filter"):
+        # Legacy augmentation 경로 — augmentation_count 가 0 이거나 신규
+        # question_augmenter 가 켜져 있으면 스킵 (중복 augmentation 방지).
+        legacy_aug_enabled = (
+            profile.data_quality.augmentation_count > 0
+            and profile.data_quality.question_augmenter_count == 0
+        )
+        if legacy_aug_enabled:
+            all_qa = await generator.augment_questions(all_qa)
             all_qa = await generator.dataset_builder.verify_augmented_questions(
                 all_qa, generator.quality_filter,
             )
 
-        # pending으로 DB 저장
+        # 모든 행에 id 할당 — Phase 1.5 reformatter 가 augmented_from 으로
+        # 원본 id 를 참조하므로 reformat 호출 전에 반드시 부여돼야 함.
         for qa in all_qa:
-            qa["id"] = str(uuid.uuid4())
+            qa.setdefault("id", str(uuid.uuid4()))
             qa["profile_name"] = profile_name
             qa["status"] = "pending"
             qa["generation_batch_id"] = batch_id
 
-        saved = await repo.save_training_data_batch(all_qa)
+        # ── Phase 1.5: Answer reformatter ──
+        # 원본 답변을 1B 친화 2문단 포맷으로 재작성. 원본 행은 그대로 두고
+        # source_type="reformatted" 새 행을 추가한다 (학습 export 시
+        # _prefer_reformatted 가 원본을 대체).
+        reformatted_rows: list[dict] = []
+        if profile.data_quality.reformat_enabled:
+            from src.distill.data_gen.reformatter import (
+                AnswerReformatter,
+                build_reformatted_row,
+            )
+            reformatter = AnswerReformatter(
+                generator.llm_helper,
+                concurrency=profile.data_quality.question_augmenter_concurrency,
+            )
+            summary, results = await reformatter.reformat_batch(all_qa)
+            id_to_qa = {qa["id"]: qa for qa in all_qa}
+            for r in results:
+                if r.success and r.reformatted_answer:
+                    parent = id_to_qa.get(r.source_id)
+                    if parent is None:
+                        continue
+                    reformatted_rows.append(
+                        build_reformatted_row(
+                            parent, r.reformatted_answer, profile_name, batch_id,
+                        ),
+                    )
+            logger.info(
+                "Reformatter: %d/%d success (avg_len=%.0f, failures=%s)",
+                summary.success, summary.total, summary.avg_answer_len,
+                summary.failure_reasons,
+            )
+
+        # ── Phase 1.5: Question augmenter ──
+        # reformatted 행을 parent 로 잡아 N 개 paraphrase 생성. reformat 이
+        # 비활성화돼 있으면 원본 all_qa 를 직접 paraphrase.
+        augmented_rows: list[dict] = []
+        if profile.data_quality.question_augmenter_count > 0:
+            from src.distill.data_gen.question_augmenter import (
+                QuestionAugmenter,
+                build_augmented_row,
+            )
+            parents = reformatted_rows if reformatted_rows else all_qa
+            augmenter = QuestionAugmenter(
+                generator.llm_helper,
+                n_variations=profile.data_quality.question_augmenter_count,
+                concurrency=profile.data_quality.question_augmenter_concurrency,
+                verify=profile.data_quality.question_augmenter_verify,
+            )
+            aug_summary, aug_results = await augmenter.augment_batch(parents)
+            id_to_parent = {p["id"]: p for p in parents}
+            for r in aug_results:
+                parent = id_to_parent.get(r.source_id)
+                if parent is None:
+                    continue
+                for new_q in r.variations:
+                    augmented_rows.append(
+                        build_augmented_row(parent, new_q, profile_name, batch_id),
+                    )
+            logger.info(
+                "Augmenter: %d/%d parents success (%d variations, "
+                "verified=%d, rejected=%d, failures=%s)",
+                aug_summary.success, aug_summary.total,
+                aug_summary.total_variations_generated,
+                aug_summary.total_variations_verified,
+                aug_summary.total_variations_rejected,
+                aug_summary.failure_reasons,
+            )
+
+        # 최종 저장 — 원본 + reformatted + augmented 모두 같은 batch 로
+        rows_to_save = all_qa + reformatted_rows + augmented_rows
+        saved = await repo.save_training_data_batch(rows_to_save)
         logger.info(
-            "Generated %d QA pairs for review (batch=%s, profile=%s)",
+            "Generated %d QA pairs for review (batch=%s, profile=%s, "
+            "original=%d, reformatted=%d, augmented=%d)",
             saved, batch_id, profile_name,
+            len(all_qa), len(reformatted_rows), len(augmented_rows),
         )
 
         return {
@@ -134,6 +221,8 @@ class DistillService:
             "total": saved,
             "usage_log": len(log_qa),
             "chunk_qa": len(chunk_qa),
+            "reformatted": len(reformatted_rows),
+            "augmented": len(augmented_rows),
         }
 
     async def generate_test_data(self, profile_name: str, count: int = 50) -> dict:
