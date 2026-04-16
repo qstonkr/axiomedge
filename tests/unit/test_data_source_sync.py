@@ -622,9 +622,11 @@ class TestRunIngestion:
 
         mock_doc = MagicMock()
         mock_doc.title = "Doc1"
+        mock_doc.metadata = {"file_size_bytes": 1000}
 
         ingest_result = MagicMock()
         ingest_result.chunks_stored = 3
+        ingest_result.success = True
 
         state = {
             "qdrant_store": MagicMock(),
@@ -656,6 +658,7 @@ class TestRunIngestion:
 
         mock_doc = MagicMock()
         mock_doc.title = "FailDoc"
+        mock_doc.metadata = {"file_size_bytes": 500}
 
         state = {
             "qdrant_store": MagicMock(),

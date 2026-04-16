@@ -354,8 +354,12 @@ class TestParsePptx:
         mock_shape.has_table = False
         mock_shape.shape_type = 1  # not GROUP
 
+        mock_shapes = MagicMock()
+        mock_shapes.__iter__ = MagicMock(return_value=iter([mock_shape]))
+        mock_shapes.title = None  # No title placeholder
+
         mock_slide = MagicMock()
-        mock_slide.shapes = [mock_shape]
+        mock_slide.shapes = mock_shapes
         mock_slide.has_notes_slide = False
 
         mock_prs = MagicMock()
