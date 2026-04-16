@@ -375,8 +375,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] TEI embedding/reranker URL SSOT (`TeiSettings` 추가)
 - [x] Timeout 리터럴 → TimeoutConfig SSOT (httpx/subprocess/sagemaker 추가, 7파일)
 - [x] Chunk size 리터럴 → ChunkingConfig (kss_max_chars, ocr_correction_chunk_size)
-- [ ] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest 등)
-- [ ] `ProfileUpdateRequest` 도 동일
+- [x] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest/UpdateRequest → typed sub-models)
 - [x] Ruff custom rule — bare except 방지 (`BLE001` 활성화, 기존 564건 noqa pragma)
 - [x] `config_weights.py` 733줄 → 7 서브모듈 패키지 분할 완료 (facade 유지)
 - [ ] Kanana 라이선스 재확인 → `commercial_use=True` 승격
@@ -400,11 +399,11 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 - [x] `src/search/similarity/matcher.py` (24 tests — penalty, zone, init, L1, CE degradation)
 - [x] `src/pipeline/graphrag/extractor.py` (32 tests — corruption/invalid/reclassify/validate)
 - [ ] `src/connectors/confluence/attachment_parser.py` (1876줄)
-- [ ] `src/distill/service.py` 나머지 메서드
-- [ ] `src/distill/trainer.py`
-- [ ] `src/distill/evaluator.py`
-- [ ] `src/api/routes/auth.py` (repository 직접 쿼리)
-- [ ] `src/api/routes/quality.py` (golden set 로직)
+- [ ] `src/distill/service.py` 나머지 메서드 (orchestration, 별도 세션)
+- [x] `src/distill/trainer.py` (5 tests — init, prepare_dataset, TrainOutput)
+- [x] `src/distill/evaluator.py` (15 tests — judge, similarity, evaluate pass/fail/empty)
+- [x] `src/api/routes/auth.py` (4 tests — refresh_token 503/401/revoke/success)
+- [x] `src/api/routes/quality.py` (5 tests — transparency tally logic)
 
 각 파일 별도 PR. 목표: 전체 line coverage **80% → 85%** 달성.
 
