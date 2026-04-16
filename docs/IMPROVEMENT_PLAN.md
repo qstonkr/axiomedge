@@ -399,9 +399,9 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 - [x] `src/search/similarity/matcher.py` (24 tests — penalty, zone, init, L1, CE degradation)
 - [x] `src/pipeline/graphrag/extractor.py` (32 tests — corruption/invalid/reclassify/validate)
 - [ ] `src/connectors/confluence/attachment_parser.py` (1876줄)
-- [ ] `src/distill/service.py` 나머지 메서드
-- [ ] `src/distill/trainer.py`
-- [ ] `src/distill/evaluator.py`
+- [ ] `src/distill/service.py` 나머지 메서드 (orchestration, 별도 세션)
+- [x] `src/distill/trainer.py` (5 tests — init, prepare_dataset, TrainOutput)
+- [x] `src/distill/evaluator.py` (15 tests — judge, similarity, evaluate pass/fail/empty)
 - [ ] `src/api/routes/auth.py` (repository 직접 쿼리)
 - [ ] `src/api/routes/quality.py` (golden set 로직)
 
