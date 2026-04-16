@@ -151,11 +151,21 @@ class TestDedupPipelineAdd:
 class TestDedupPipelineStages:
     """Test deeper stage flows."""
 
-    async def test_stage1_url_hash_match(self):
+    async def test_stage1_url_hash_match_different_content(self):
+        """Same URL but different content → NOT exact duplicate (fixed: only content hash matters)."""
         pipeline = DedupPipeline(enable_stage4=False)
         doc1 = Document(doc_id="d1", title="T1", content="C1", url="http://example.com/page")
         await pipeline.add(doc1)
         doc2 = Document(doc_id="d2", title="T2", content="C2", url="http://example.com/page")
+        result = await pipeline.check(doc2)
+        assert result.status != DedupStatus.EXACT_DUPLICATE
+
+    async def test_stage1_url_hash_match_same_content(self):
+        """Same URL AND same content → exact duplicate."""
+        pipeline = DedupPipeline(enable_stage4=False)
+        doc1 = Document(doc_id="d1", title="T1", content="Same body", url="http://example.com/page")
+        await pipeline.add(doc1)
+        doc2 = Document(doc_id="d2", title="T2", content="Same body", url="http://example.com/page")
         result = await pipeline.check(doc2)
         assert result.status == DedupStatus.EXACT_DUPLICATE
 
