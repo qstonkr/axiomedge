@@ -228,6 +228,11 @@ AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py g-espa   # 
 | `docs/SECURITY.md` | 인증, prompt injection 방어, 데이터 격리, 답변 안전성 |
 | `docs/DATA_MODEL.md` | DB 스키마 요약 (PostgreSQL/Qdrant/Neo4j/Redis) |
 | `docs/TESTING.md` | Test policy, coverage floor, pragma 허용 기준, backfill 목록 |
+| `docs/GRAPHRAG.md` | GraphRAG entity/relation 추출, 필터링 규칙, graph expansion |
+| `docs/DEVELOPMENT.md` | 코드 컨벤션, async 패턴, 계층 구조, pipeline/provider 패턴 |
+| `docs/OPS.md` | Operations runbook — 장애 대응, 롤백, DB/캐시/엣지 관리 |
+| `docs/MIGRATION_GUIDE.md` | DB 스키마 변경 절차 (Alembic 없음), 환경 전환 |
+| `docs/DATA_MODEL.md` | DB 스키마 요약 (PostgreSQL/Qdrant/Neo4j/Redis) |
 | `docs/CONFIGURATION.md` | All env vars + tuning parameters |
 | `docs/TROUBLESHOOTING.md` | Common issues + solutions |
 | `docs/CONFLUENCE_CRAWLER.md` | Confluence crawler pipeline, PaddleOCR EC2, data source trigger |
