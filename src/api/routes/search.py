@@ -243,16 +243,17 @@ async def _resolve_collections_from_qdrant(state: dict[str, Any]) -> list[str]:
 async def _filter_by_kb_registry(
     collections: list[str], state: dict[str, Any],
 ) -> list[str]:
-    """Filter collections by KB registry active status."""
+    """Filter collections by KB registry active status (cached)."""
+    from src.api.routes.search_helpers import get_active_kb_ids
     kb_registry = state.get("kb_registry")
     if not kb_registry or collections == ["knowledge"]:
         return collections
     try:
-        accessible_kbs = await kb_registry.list_all()
-        active_kb_ids = {kb["kb_id"] for kb in accessible_kbs if kb.get("status") == "active"}
+        active_kb_ids = await get_active_kb_ids(kb_registry)
         filtered = [c for c in collections if c in active_kb_ids]
         return filtered if filtered else collections
-    except Exception:
+    except Exception as e:
+        logger.warning("KB registry filter failed, using unfiltered collections: %s", e)
         return collections
 
 
@@ -482,34 +483,55 @@ async def _step_keyword_fallback(
 
     import httpx
     kw_primary = kw_tokens[0]
+
+    async def _scroll_one(client: httpx.AsyncClient, coll: str) -> list[dict[str, Any]]:
+        """Scroll one collection for the keyword — isolated so gather can parallelize."""
+        coll_name = f"kb_{coll.replace('-', '_')}"
+        try:
+            resp = await client.post(
+                f"{qdrant_url}/collections/{coll_name}/points/scroll",
+                json={
+                    "limit": 5, "with_payload": True, "with_vector": False,
+                    "filter": {"should": [
+                        {"key": "morphemes", "match": {"text": kw_primary}},
+                        {"key": "content", "match": {"text": kw_primary}},
+                    ]},
+                },
+            )
+        except Exception as e:
+            logger.debug("Keyword fallback scroll failed (coll=%s): %s", coll, e)
+            return []
+        if resp.status_code != 200:
+            return []
+        chunks: list[dict[str, Any]] = []
+        for pt in resp.json().get("result", {}).get("points", []):
+            pay = pt.get("payload", {})
+            chunks.append({
+                "chunk_id": str(pt["id"]),
+                "content": pay.get("content", ""),
+                "score": 0.5,
+                "kb_id": coll,
+                "document_name": pay.get("document_name", ""),
+                "source_uri": pay.get("source_uri", ""),
+                "metadata": pay,
+                "_keyword_fallback": True,
+            })
+        return chunks
+
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
-            for coll in collections:
-                coll_name = f"kb_{coll.replace('-', '_')}"
-                resp = await client.post(
-                    f"{qdrant_url}/collections/{coll_name}/points/scroll",
-                    json={
-                        "limit": 5, "with_payload": True, "with_vector": False,
-                        "filter": {"should": [
-                            {"key": "morphemes", "match": {"text": kw_primary}},
-                            {"key": "content", "match": {"text": kw_primary}},
-                        ]},
-                    },
-                )
-                if resp.status_code == 200:
-                    for pt in resp.json().get("result", {}).get("points", []):
-                        pay = pt.get("payload", {})
-                        all_chunks.append({
-                            "chunk_id": str(pt["id"]),
-                            "content": pay.get("content", ""),
-                            "score": 0.5,
-                            "kb_id": coll,
-                            "document_name": pay.get("document_name", ""),
-                            "source_uri": pay.get("source_uri", ""),
-                            "metadata": pay,
-                            "_keyword_fallback": True,
-                        })
-        logger.info("Keyword fallback: injected chunks for '%s'", kw_primary)
+            # 컬렉션들을 병렬로 scroll — 이전엔 직렬 loop 였고, collection 수 × 개별
+            # 타임아웃만큼 latency 가 쌓였음. asyncio.gather 로 max(요청시간)으로 축소.
+            per_collection_chunks = await asyncio.gather(
+                *(_scroll_one(client, coll) for coll in collections),
+                return_exceptions=False,
+            )
+        for chunks in per_collection_chunks:
+            all_chunks.extend(chunks)
+        logger.info(
+            "Keyword fallback: injected %d chunks across %d collections for '%s'",
+            sum(len(c) for c in per_collection_chunks), len(collections), kw_primary,
+        )
     except Exception as e:
         logger.debug("Keyword fallback search failed: %s", e)
 
