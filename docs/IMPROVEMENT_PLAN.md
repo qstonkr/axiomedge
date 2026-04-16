@@ -396,9 +396,9 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 - [ ] `src/pipeline/ingestion.py` (3500+줄)
-- [ ] `src/search/composite_reranker.py`
+- [x] `src/search/composite_reranker.py` (24 tests — entity/keyword/graph/source/position/edge)
 - [ ] `src/search/similarity/matcher.py` (900줄)
-- [ ] `src/pipeline/graphrag/extractor.py`
+- [x] `src/pipeline/graphrag/extractor.py` (32 tests — corruption/invalid/reclassify/validate)
 - [ ] `src/connectors/confluence/attachment_parser.py` (1876줄)
 - [ ] `src/distill/service.py` 나머지 메서드
 - [ ] `src/distill/trainer.py`
