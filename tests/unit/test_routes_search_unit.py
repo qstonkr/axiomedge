@@ -336,7 +336,7 @@ class TestListSearchableKBs:
 class TestExtractQueryKeywords:
     def test_extract_keywords_fallback(self):
         """When KiwiPy is not available, falls back to whitespace split."""
-        from src.api.routes.search import _extract_query_keywords  # noqa: F811
+        from src.api.routes._search_steps import _extract_query_keywords  # noqa: F811
 
         # Reset singleton to force fallback path testing
         result = _extract_query_keywords("hello world testing")
