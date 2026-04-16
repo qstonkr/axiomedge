@@ -52,6 +52,7 @@ class TestTrainerInit:
 
 
 class TestPrepareDataset:
+    @pytest.mark.forked
     def test_loads_jsonl(self, tmp_path) -> None:
         data_file = tmp_path / "train.jsonl"
         data_file.write_text(
