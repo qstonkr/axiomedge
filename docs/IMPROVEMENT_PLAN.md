@@ -388,7 +388,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [ ] Ingestion pipeline 단계 protocol 화 (ingest 14단계 분리)
 - [ ] AttachmentParser PDF / PPT / Image 분리
 - [x] `_init_search_services()` → `SearchServicesFactory` 추출 (src/api/search_services_factory.py)
-- [ ] `run_pipeline()` BuildPipelineExecutor 추출
+- [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
 
 ### 테스트 커버리지 backfill
 
