@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from src.domain.models import RawDocument, IngestionResult
+from src.core.models import RawDocument, IngestionResult
 
 logger = logging.getLogger(__name__)
 

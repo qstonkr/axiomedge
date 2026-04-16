@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..domain.models import ConnectorResult, RawDocument
+from src.core.models import ConnectorResult, RawDocument
 
 _COMBINED_JSON = "crawl_combined.json"
 _COMBINED_JSONL = "crawl_combined.jsonl"

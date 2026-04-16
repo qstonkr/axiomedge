@@ -161,7 +161,7 @@ def build_raw_document(rel_path: str):
     the pipeline routes through LegalGraphExtractor.
     """
     from src.connectors.git.frontmatter import parse_frontmatter, promote_legal_metadata
-    from src.domain.models import RawDocument
+    from src.core.models import RawDocument
 
     abs_path = REPO_ROOT / rel_path
     if not abs_path.is_file():

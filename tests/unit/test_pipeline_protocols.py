@@ -15,7 +15,7 @@ from src.pipeline.stages.protocol import (
     IngestionPipelineRunner,
     IngestionStage,
 )
-from src.domain.models import RawDocument, IngestionResult
+from src.core.models import RawDocument, IngestionResult
 
 
 # ==========================================================================

@@ -249,7 +249,7 @@ class TestStage2Ingest:
             with patch("src.api.routes.rag.is_cancelled", new_callable=AsyncMock, return_value=False), \
                  patch("src.pipeline.jsonl_checkpoint.JsonlCheckpointReader") as mock_reader, \
                  patch("src.api.routes.rag.update_job", new_callable=AsyncMock), \
-                 patch("src.domain.models.RawDocument") as mock_raw:
+                 patch("src.core.models.RawDocument") as mock_raw:
                 mock_reader_inst = MagicMock()
                 mock_reader_inst.__iter__ = MagicMock(return_value=iter([(record, parse_result)]))
                 mock_reader.return_value = mock_reader_inst

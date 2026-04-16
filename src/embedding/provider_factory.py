@@ -4,6 +4,6 @@
 기존 import 경로 유지를 위한 re-export.
 """
 
-from src.providers.embedding import (  # noqa: F401
+from src.core.providers.embedding import (  # noqa: F401
     create_embedding_provider,
 )

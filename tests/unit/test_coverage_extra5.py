@@ -16,7 +16,7 @@ import pytest
 # Lifecycle State Machine
 # ===========================================================================
 
-from src.domain.lifecycle import (
+from src.core.lifecycle import (
     LifecycleStateMachine,
     LifecycleStatus,
     TransitionError,

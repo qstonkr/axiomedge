@@ -121,7 +121,7 @@ class TestRunDataSourceSync:
     @pytest.mark.asyncio
     async def test_successful_crawl_and_ingest(self, mock_state, source):
         from src.connectors.confluence.models import CrawlSpaceResult
-        from src.domain.models import RawDocument, ConnectorResult
+        from src.core.models import RawDocument, ConnectorResult
 
         fake_crawl_result = CrawlSpaceResult(pages=[], page_dicts=[])
         fake_docs = [
@@ -170,7 +170,7 @@ class TestRunDataSourceSync:
     @pytest.mark.asyncio
     async def test_no_documents_still_completes(self, mock_state, source):
         from src.connectors.confluence.models import CrawlSpaceResult
-        from src.domain.models import ConnectorResult
+        from src.core.models import ConnectorResult
 
         fake_crawl_result = CrawlSpaceResult(pages=[], page_dicts=[])
         empty_result = ConnectorResult(

@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from ...domain.models import ConnectorResult, RawDocument
+from src.core.models import ConnectorResult, RawDocument
 from ...pipeline.document_parser import parse_file
 from .client import GitClient, GitCommandError
 from .config import GitConnectorConfig

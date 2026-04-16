@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from ...domain.models import RawDocument
+from src.core.models import RawDocument
 from ..graphrag.extractor import GraphRAGExtractor
 from ..graphrag.models import ExtractionResult, GraphNode, GraphRelationship
 

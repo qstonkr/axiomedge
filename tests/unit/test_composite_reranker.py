@@ -1,7 +1,7 @@
 """Unit tests for the CompositeReranker."""
 
 from src.search.composite_reranker import CompositeReranker
-from src.domain.models import SearchChunk
+from src.core.models import SearchChunk
 
 
 def _make_chunk(

@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from src.connectors.crawl_result import CrawlResultConnector
-from src.domain.models import RawDocument
+from src.core.models import RawDocument
 
 
 # ---------------------------------------------------------------------------

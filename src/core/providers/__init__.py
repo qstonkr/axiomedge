@@ -19,13 +19,13 @@ provider 추가 시 3~5 파일 수정이 필요했다. Registry 패턴으로 1~2
 
 from __future__ import annotations
 
-from src.providers.auth import (
+from src.core.providers.auth import (
     AUTH_PROVIDER_REGISTRY,
     create_auth_provider,
     register_auth_provider,
 )
-from src.providers.embedding import create_embedding_provider
-from src.providers.llm import (
+from src.core.providers.embedding import create_embedding_provider
+from src.core.providers.llm import (
     LLM_PROVIDER_REGISTRY,
     create_llm_client,
     register_llm_provider,

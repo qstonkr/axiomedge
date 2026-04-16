@@ -18,7 +18,7 @@ from pathlib import Path
 
 from src.connectors.git.connector import _law_file_kind  # noqa: F401
 from src.connectors.git.frontmatter import parse_frontmatter, promote_legal_metadata
-from src.domain.models import RawDocument
+from src.core.models import RawDocument
 from src.pipeline.chunker import Chunker
 
 

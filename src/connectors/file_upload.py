@@ -23,7 +23,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..domain.models import ConnectorResult, RawDocument
+from src.core.models import ConnectorResult, RawDocument
 from ..pipeline.document_parser import parse_file
 
 

@@ -185,7 +185,7 @@ async def _init_database(state: AppState, settings) -> None:
 
     # Lifecycle State Machine
     try:
-        from src.domain.lifecycle import LifecycleStateMachine
+        from src.core.lifecycle import LifecycleStateMachine
         state["lifecycle_service"] = LifecycleStateMachine(
             lifecycle_repo=state.get("lifecycle_repo"),
         )
@@ -510,7 +510,7 @@ async def _init_llm(state: AppState, settings) -> None:
     """
     await asyncio.sleep(0)
     try:
-        from src.providers.llm import create_llm_client
+        from src.core.providers.llm import create_llm_client
         state["llm"] = create_llm_client(settings=settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("LLM init failed: %s", e)
@@ -546,7 +546,7 @@ async def _init_auth(state: AppState, settings) -> None:
         from src.auth.abac import DEFAULT_ABAC_POLICIES, ABACEngine
         from src.auth.rbac import RBACEngine
         from src.auth.service import AuthService
-        from src.providers.auth import create_auth_provider
+        from src.core.providers.auth import create_auth_provider
 
         auth_settings = settings.auth
 

@@ -5,7 +5,7 @@ and edge cases not covered by existing test_composite_reranker.py.
 """
 
 from src.search.composite_reranker import CompositeReranker
-from src.domain.models import SearchChunk
+from src.core.models import SearchChunk
 
 
 def _make_chunk(

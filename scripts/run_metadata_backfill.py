@@ -57,7 +57,7 @@ def _compute_doc_metadata(payload: dict) -> dict:
         extract_owner, classify_l1_category, calculate_quality_score,
         _calculate_metrics, _determine_quality_tier,
     )
-    from src.domain.models import RawDocument
+    from src.core.models import RawDocument
 
     doc_id = payload.get("doc_id", "")
     doc_name = payload.get("document_name", "")

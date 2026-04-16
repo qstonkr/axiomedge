@@ -132,7 +132,7 @@ class TestGetAnalyzer:
 # ===========================================================================
 
 from src.search.composite_reranker import CompositeReranker, CompositeRerankerConfig
-from src.domain.models import SearchChunk
+from src.core.models import SearchChunk
 
 
 class TestCompositeRerankerConfig:

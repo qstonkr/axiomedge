@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from src.domain.models import RawDocument
+from src.core.models import RawDocument
 
 # ===========================================================================
 # IngestionGate

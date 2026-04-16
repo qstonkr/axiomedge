@@ -200,7 +200,7 @@ async def _stage2_ingest_from_jsonl(
 
     Returns (total_docs, total_chunks, errors).
     """
-    from src.domain.models import RawDocument
+    from src.core.models import RawDocument
     from src.pipeline.jsonl_checkpoint import JsonlCheckpointReader
 
     reader = JsonlCheckpointReader(jsonl_path)

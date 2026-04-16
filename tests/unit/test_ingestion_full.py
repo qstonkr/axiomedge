@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.domain.models import RawDocument, IngestionResult
+from src.core.models import RawDocument, IngestionResult
 from src.pipeline.ingestion_contracts import (
     NoOpEmbedder,
     NoOpSparseEmbedder,

@@ -151,7 +151,7 @@ async def _ingest_single_file(
     fpath: str, fname: str, kb_id: str, pipeline: Any,
 ) -> int:
     """Parse and ingest a single file. Returns chunks_stored or 0 on skip."""
-    from src.domain.models import RawDocument
+    from src.core.models import RawDocument
     from src.pipeline.document_parser import parse_file_enhanced
 
     result = parse_file_enhanced(fpath)
@@ -213,7 +213,7 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
 async def ingest_file(file_path: str, kb_id: str):
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
-    from src.domain.models import RawDocument
+    from src.core.models import RawDocument
     from src.pipeline.document_parser import parse_file_enhanced
     from src.pipeline.ingestion import IngestionPipeline
 

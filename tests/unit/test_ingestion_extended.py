@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.domain.models import RawDocument
+from src.core.models import RawDocument
 from src.pipeline.document_parser import ParseResult
 from src.pipeline.ingestion import (
     IngestionPipeline,

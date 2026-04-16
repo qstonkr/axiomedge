@@ -18,7 +18,7 @@ from fastapi import HTTPException
 from src.api.routes.metrics import inc as metrics_inc
 from src.config.weights import weights as _w  # alias for timeout refs
 from src.config.weights import weights
-from src.domain.models import SearchChunk
+from src.core.models import SearchChunk
 from src.search.crag_evaluator import RetrievalAction
 from src.search.transparency_formatter import SourceType, TransparencyFormatter
 from src.search.trust_score_service import SOURCE_CREDIBILITY

@@ -35,7 +35,7 @@ from enum import Enum
 from typing import Any
 
 from ..config.weights import weights
-from ..domain.models import RawDocument
+from src.core.models import RawDocument
 
 logger = logging.getLogger(__name__)
 

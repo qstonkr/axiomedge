@@ -116,7 +116,7 @@ async def ingest_directory(request: IngestRequest):
         await collections.ensure_collection(request.kb_id)
 
     try:
-        from src.domain.models import RawDocument
+        from src.core.models import RawDocument
         from src.pipeline.document_parser import parse_file_enhanced
         from src.pipeline.ingestion import IngestionPipeline
 
@@ -209,7 +209,7 @@ async def upload_file(
         await asyncio.to_thread(tmp.close)
 
     try:
-        from src.domain.models import RawDocument
+        from src.core.models import RawDocument
         from src.pipeline.document_parser import parse_file_enhanced
         from src.pipeline.ingestion import IngestionPipeline
 

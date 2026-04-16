@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from ..domain.models import RawDocument
+from src.core.models import RawDocument
 
 _MAX_PREFIX_CHARS = 150  # Prefix should be <15% of typical 2500-char chunk
 

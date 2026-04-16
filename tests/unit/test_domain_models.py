@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.domain.models import (
+from src.core.models import (
     ConnectorResult,
     IngestionResult,
     KBConfig,

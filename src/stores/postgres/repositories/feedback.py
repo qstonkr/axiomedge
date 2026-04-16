@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.stores.postgres.models import KnowledgeFeedbackModel
 from src.stores.postgres.repositories.base import BaseRepository
-from src.domain.models import FeedbackType
+from src.core.models import FeedbackType
 
 logger = logging.getLogger(__name__)
 
