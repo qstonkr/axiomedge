@@ -247,15 +247,20 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 - **Severity**: — (인프라)
 - **축**: Quality (테스트)
-- **Why**: 사용자 요청 — 모든 향후 PR 이 커버리지 80% 를 지키려면 먼저 현재 상태를 측정하고 CI 로 강제해야 함.
+- **Why**: 모든 향후 PR 이 커버리지 80% 를 지키려면 현재 상태 측정 + CI 강제 필요.
+- **베이스라인**: **77.0%** (5,631 pass tests, 28,833 statements)
 - **Files**:
-  - [ ] `pyproject.toml::[tool.pytest.ini_options]` — `addopts = "--cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=<현재치>"` 추가
-  - [ ] `scripts/coverage_gate.py` — `git diff --name-only main...HEAD` 로 touched file 만 80% 강제
-  - [ ] 신규 `docs/TESTING.md` — 테스트 가이드, mock 패턴, fixtures, `pragma: no cover` 허용 기준, 베이스라인 숫자, backfill 대상
-  - [ ] `Makefile` — `make test-unit` 이 cov 리포트 같이 출력
-  - [ ] Bitbucket Pipelines 또는 `.github/workflows/*.yml` CI 설정 (현재 CI 구조 확인 후 결정)
-- **Effort**: 4~5h (베이스라인 측정 + 문서 작성 포함)
-- **Test plan**: `make test-unit` 실행해 cov 리포트 생성 확인. CI 시뮬레이션 로컬 실행.
+  - [x] `pyproject.toml::[tool.coverage.*]` — source=["src"], omit, exclude_lines (fail_under 는 Makefile/CI 에 명시)
+  - [x] 신규 `scripts/coverage_gate.py` — touched file 80% floor + missing file detection
+  - [x] 신규 `docs/TESTING.md` — 정책/실행/작성 가이드/pragma 기준/backfill 목록
+  - [x] `Makefile` — `test-unit` coverage 통합 (`--cov-fail-under=75`), `test-unit-fast` 분리, `test-coverage-gate` target 신규
+  - [x] `.gitignore` — `.coverage*`, `htmlcov/`, `coverage.json`
+  - [x] 신규 `tests/unit/test_coverage_gate.py` (15 cases — filter/loader/main flow)
+- **Follow-up (Phase B 내)**:
+  - Bitbucket Pipelines CI 에 `make test-unit && make test-coverage-gate` 추가 (CI 파일 위치 확인 후)
+- **Known issue** (별도 처리):
+  - `test_data_source_sync::TestRunIngestion` 2개, `test_document_parser_extended::TestParsePptx` 1개 — 기존부터 fail (main 머지 이전부터). Phase C 에서 fix.
+  - `test_summary_tree_builder` 7개 — flaky, seed 고정 필요. Phase C 에서 fix.
 
 ---
 
