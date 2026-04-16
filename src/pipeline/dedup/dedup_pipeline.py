@@ -404,26 +404,18 @@ class DedupPipeline:
     def _stage1_prefilter(self, document: Document) -> str | None:
         """Stage 1: Metadata Pre-filter.
 
-        Bloom Filter + Hash Index check for URL/title/content hashes.
-        H7 fix: O(n) -> O(1) hash lookup via reverse index.
+        Only **content hash** identity counts as an exact duplicate.
+        URL/title collisions are intentionally ignored here — documents
+        with the same title but different content (e.g. 시행규칙.md vs
+        시행규칙(기획재정부령).md, different ministry-era versions of the
+        same regulation) must NOT be treated as duplicates.  Stage 2
+        (LSH Jaccard) will catch near-duplicates if the bodies are
+        actually similar.
 
         Returns:
             Duplicate document ID or None
         """
-        # URL hash check (O(1) via index)
-        if document.url_hash:
-            if document.url_hash in self._bloom:
-                dup_id = self._url_hash_index.get(document.url_hash)
-                if dup_id and dup_id in self._documents:
-                    return dup_id
-
-        # Title hash check (O(1) via index)
-        if document.title_hash in self._bloom:
-            dup_id = self._title_hash_index.get(document.title_hash)
-            if dup_id and dup_id in self._documents:
-                return dup_id
-
-        # Content hash check (O(1) via index)
+        # Content hash check — the only reliable exact-duplicate signal.
         if document.content_hash in self._bloom:
             dup_id = self._content_hash_index.get(document.content_hash)
             if dup_id and dup_id in self._documents:
