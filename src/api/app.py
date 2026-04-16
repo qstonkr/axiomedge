@@ -526,97 +526,13 @@ async def _init_llm(state: AppState, settings) -> None:
 
 
 async def _init_search_services(state: AppState) -> None:
-    """Initialize all search services + RAG pipeline."""
+    """Initialize all search services + RAG pipeline.
+
+    Delegates to ``SearchServicesFactory`` for testability.
+    """
     await asyncio.sleep(0)
-    # QueryPreprocessor
-    try:
-        from src.search.query_preprocessor import QueryPreprocessor
-
-        state["query_preprocessor"] = QueryPreprocessor()
-        logger.info("QueryPreprocessor initialized")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("QueryPreprocessor init failed: %s", e)
-
-    # CompositeReranker
-    try:
-        from src.search.composite_reranker import CompositeReranker
-
-        state["composite_reranker"] = CompositeReranker()
-        logger.info("CompositeReranker initialized")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("CompositeReranker init failed: %s", e)
-
-    # Cross-encoder warmup (fire-and-forget background model load)
-    try:
-        from src.search.cross_encoder_reranker import warmup as ce_warmup
-        ce_warmup()
-        logger.info("Cross-encoder warmup started")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Cross-encoder warmup failed: %s", e)
-
-    # QueryClassifier (cached singleton, P1-4 perf fix)
-    try:
-        from src.search.query_classifier import QueryClassifier
-
-        state["query_classifier"] = QueryClassifier()
-        logger.info("QueryClassifier initialized")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("QueryClassifier init failed: %s", e)
-
-    # TieredResponseGenerator
-    if state.get("llm"):
-        try:
-            from src.search.tiered_response import TieredResponseGenerator
-
-            state["tiered_response_generator"] = TieredResponseGenerator(
-                llm_client=state["llm"],
-            )
-            logger.info("TieredResponseGenerator initialized")
-        except Exception as e:  # noqa: BLE001
-            logger.warning("TieredResponseGenerator init failed: %s", e)
-
-    # AnswerService (singleton - avoid per-request lazy init race)
-    if state.get("llm"):
-        try:
-            from src.search.answer_service import AnswerService
-
-            state["answer_service"] = AnswerService(llm_client=state["llm"])
-            logger.info("AnswerService initialized")
-        except Exception as e:  # noqa: BLE001
-            logger.warning("AnswerService init failed: %s", e)
-
-    # CRAGRetrievalEvaluator (singleton, avoid per-request construction)
-    try:
-        from src.search.crag_evaluator import CRAGRetrievalEvaluator
-
-        state["crag_evaluator"] = CRAGRetrievalEvaluator()
-        logger.info("CRAGRetrievalEvaluator initialized")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("CRAGRetrievalEvaluator init failed: %s", e)
-
-    # QueryExpansionService
-    try:
-        from src.search.query_expansion import QueryExpansionService
-        state["query_expander"] = QueryExpansionService(glossary_repository=state.get("glossary_repo"))
-        logger.info("QueryExpansionService initialized")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("QueryExpansionService init failed: %s", e)
-
-    # RAG pipeline
-    from src.search.rag_pipeline import KnowledgeRAGPipeline
-
-    state["rag_pipeline"] = KnowledgeRAGPipeline(
-        search_engine=state.get("qdrant_search"),
-        llm_client=state.get("llm"),
-        graph_client=state.get("neo4j"),
-        embedder=state.get("embedder"),
-        query_preprocessor=state.get("query_preprocessor"),
-        query_expander=state.get("query_expander"),
-    )
-
-    missing = [k for k in ["qdrant_search", "embedder", "llm"] if k not in state]
-    if missing:
-        logger.warning("RAG pipeline initialized without: %s", missing)
+    from src.api.search_services_factory import SearchServicesFactory
+    await SearchServicesFactory(state).initialize()
 
 
 async def _init_auth(state: AppState, settings) -> None:

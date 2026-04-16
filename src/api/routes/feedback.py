@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query
 
 from src.api.app import _get_state
+from src.domain.models import FeedbackType
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ async def create_feedback(body: dict[str, Any]):
                 "entry_id": body.get("entry_id", body.get("document_id", "unknown")),
                 "kb_id": body.get("kb_id", "default"),
                 "user_id": body.get("user_id", body.get("reporter", "anonymous")),
-                "feedback_type": body.get("feedback_type", body.get("type", "general")),
+                "feedback_type": FeedbackType(body.get("feedback_type", body.get("type", "general"))).value,
                 "status": body.get("status", "pending"),
                 "description": body.get("description", body.get("content", "")),
                 "error_category": body.get("error_category"),
@@ -124,8 +125,8 @@ async def get_feedback_stats():
             total = await repo.count()
             pending = await repo.count(status="pending")
             # Use count with feedback_type filters instead of loading all items
-            positive = await repo.count(feedback_type="upvote")
-            negative = await repo.count(feedback_type="downvote")
+            positive = await repo.count(feedback_type=FeedbackType.UPVOTE)
+            negative = await repo.count(feedback_type=FeedbackType.DOWNVOTE)
             neutral = max(0, total - positive - negative)
             by_type = {"upvote": positive, "downvote": negative, "other": neutral}
             return {"total": total, "pending": pending, "positive": positive, "negative": negative, "neutral": neutral, "by_type": by_type}
