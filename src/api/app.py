@@ -768,50 +768,9 @@ if os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true":
         os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"),
     )
 
-# Register routes
-from src.api.routes import (  # noqa: E402
-    health, search, ingest, admin, kb,
-    glossary, ownership, pipeline, quality,
-    feedback, data_sources, search_analytics,
-    rag,
-)
-from src.api.routes import metrics as metrics_route  # noqa: E402
-from src.api.routes import jobs as jobs_route  # noqa: E402
-
-app.include_router(health.router)
-app.include_router(search.router)
-app.include_router(ingest.router)
-app.include_router(admin.router)
-app.include_router(kb.router)
-app.include_router(kb.admin_router)
-app.include_router(glossary.router)
-app.include_router(ownership.admin_router)
-app.include_router(ownership.knowledge_router)
-app.include_router(pipeline.router)
-app.include_router(quality.router)
-app.include_router(feedback.admin_router)
-app.include_router(feedback.knowledge_router)
-app.include_router(data_sources.router)
-app.include_router(search_analytics.router)
-app.include_router(rag.knowledge_router)
-app.include_router(rag.rag_query_router)
-app.include_router(metrics_route.router)
-app.include_router(jobs_route.router)
-
-from src.api.routes import search_groups  # noqa: E402
-app.include_router(search_groups.router)
-
-from src.api.routes import auth as auth_routes  # noqa: E402
-app.include_router(auth_routes.router)
-
-from src.api.routes import distill as distill_routes  # noqa: E402
-from src.api.routes import distill_builds  # noqa: E402
-from src.api.routes import distill_training_data  # noqa: E402
-from src.api.routes import distill_edge  # noqa: E402
-app.include_router(distill_routes.router)
-app.include_router(distill_builds.router)
-app.include_router(distill_training_data.router)
-app.include_router(distill_edge.router)
+# Register routes — auto-discover all modules in src.api.routes/
+from src.api.route_discovery import discover_and_register_routes  # noqa: E402
+discover_and_register_routes(app)
 
 # Auth middleware (adds user context + activity logging)
 from src.auth.middleware import AuthMiddleware  # noqa: E402
