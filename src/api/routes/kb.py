@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +259,7 @@ async def _get_avg_quality_score(
         import httpx
         quality_sum = 0.0
         quality_count = 0
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_kb_scroll) as client:
             raw_names = await collections.get_existing_collection_names()
             for raw_name in raw_names:
                 resp = await client.post(
@@ -430,7 +431,7 @@ async def _scroll_kb_documents(
     docs: dict[str, dict] = {}
     offset = None
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=_w.timeouts.httpx_kb_scroll) as client:
         while len(docs) < max_docs:
             body: dict[str, Any] = {
                 "limit": 100,
@@ -525,7 +526,7 @@ async def admin_kb_categories(kb_id: str):
         cat_counter: Counter[str] = Counter()
         offset = None
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_kb_scroll) as client:
             while True:
                 body: dict[str, Any] = {"limit": 100, "with_payload": ["l1_category"], "with_vector": False}
                 if offset:

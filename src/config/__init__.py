@@ -22,6 +22,7 @@ from src.config.settings import (  # noqa: F401
     # Settings classes
     ApiSettings,
     AuthSettings,
+    AwsSettings,
     ConfluenceSettings,
     DashboardSettings,
     DatabaseSettings,
@@ -49,6 +50,7 @@ __all__ = [
     "DEFAULT_RUNTIME_BASE_DIR",
     "ApiSettings",
     "AuthSettings",
+    "AwsSettings",
     "ConfluenceSettings",
     "DashboardSettings",
     "DatabaseSettings",

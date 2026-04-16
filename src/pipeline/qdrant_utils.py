@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 import logging
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -51,5 +52,5 @@ def create_qdrant_client():
 
     return QdrantClient(
         url=get_qdrant_url(),
-        timeout=30,
+        timeout=_w.timeouts.httpx_default,
     )

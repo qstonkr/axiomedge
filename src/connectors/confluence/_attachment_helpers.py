@@ -353,7 +353,7 @@ def _try_catppt_extract(file_path: Path) -> AttachmentParseResult | None:
     try:
         result = subprocess.run(
             [catppt_path, str(file_path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=_w.timeouts.httpx_default,
         )
         if result.returncode == 0 and result.stdout.strip():
             text = result.stdout.strip()

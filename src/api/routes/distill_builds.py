@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +281,7 @@ async def trigger_retrain(request: RetrainRequest):
                     resp = await client.post(
                         f"{rag_url}/api/v1/search/hub",
                         json={"query": question, "top_k": 5, "include_answer": True},
-                        timeout=60,
+                        timeout=_w.timeouts.httpx_distill_teacher,
                     )
                     resp.raise_for_status()
                     answer = resp.json().get("answer", "")

@@ -75,6 +75,14 @@ class TimeoutConfig:
     httpx_sagemaker_read: int = 180
     httpx_sagemaker_connect: int = 30
 
+    # Route-level httpx (KB scroll, search helpers, quality, distill)
+    httpx_kb_scroll: float = 10.0
+    httpx_search_scroll: float = 3.0
+    httpx_quality: float = 30.0
+    httpx_distill_teacher: float = 60.0
+    httpx_rag: float = 30.0
+    httpx_confluence: float = 5.0
+
     # Subprocess (quantize, convert, OCR CLI)
     subprocess_convert: int = 600
     subprocess_quantize: int = 600

@@ -375,7 +375,7 @@ async def _count_qdrant_transparency(
         return counts
 
     raw_names = await collections.get_existing_collection_names()
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=_w.timeouts.httpx_quality) as client:
         for raw_name in raw_names:
             await _scroll_collection_transparency(client, qdrant_url, raw_name, counts)
     return counts

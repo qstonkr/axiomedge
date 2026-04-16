@@ -519,7 +519,7 @@ async def _step_keyword_fallback(
         return chunks
 
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as client:
             # 컬렉션들을 병렬로 scroll — 이전엔 직렬 loop 였고, collection 수 × 개별
             # 타임아웃만큼 latency 가 쌓였음. asyncio.gather 로 max(요청시간)으로 축소.
             per_collection_chunks = await asyncio.gather(
