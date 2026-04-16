@@ -386,7 +386,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] Feedback type enum 화 (FeedbackType + FeedbackStatus in domain/models.py)
 - [ ] Search pipeline 단계 protocol 화 (hub_search 13단계 분리)
 - [ ] Ingestion pipeline 단계 protocol 화 (ingest 14단계 분리)
-- [ ] AttachmentParser PDF / PPT / Image 분리
+- [x] AttachmentParser module-level 함수 26개 → `_attachment_helpers.py` 분리 (1879→1419줄)
 - [x] `_init_search_services()` → `SearchServicesFactory` 추출 (src/api/search_services_factory.py)
 - [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
 
