@@ -97,6 +97,63 @@ def parse_failed_docs_from_log(log_path: str) -> list[str]:
     return rels
 
 
+def find_unprocessed_files() -> list[str]:
+    """Compare repo files against Qdrant doc_ids to find unprocessed files.
+
+    Queries Qdrant for all doc_ids in kb_legal_kr, then diffs against
+    the full file list in REPO_ROOT/kr/ to find files that were never
+    ingested (due to mid-run termination or dedup skip).
+    """
+    import httpx
+
+    qdrant_url = os.environ.get("QDRANT_URL", "http://localhost:6333")
+
+    # 1. Get all unique doc_ids from Qdrant via scroll
+    stored_doc_ids: set[str] = set()
+    offset = None
+    while True:
+        body: dict = {"limit": 1000, "with_payload": {"include": ["doc_id"]}, "with_vector": False}
+        if offset is not None:
+            body["offset"] = offset
+        resp = httpx.post(
+            f"{qdrant_url}/collections/kb_legal_kr/points/scroll",
+            json=body, timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()["result"]
+        points = data.get("points", [])
+        if not points:
+            break
+        for p in points:
+            doc_id = (p.get("payload") or {}).get("doc_id", "")
+            if doc_id:
+                stored_doc_ids.add(doc_id)
+        offset = data.get("next_page_offset")
+        if offset is None:
+            break
+
+    print(f"  Qdrant: {len(stored_doc_ids)} unique doc_ids in kb_legal_kr")
+
+    # 2. List all .md files in repo
+    repo_kr = REPO_ROOT / "kr"
+    all_files: list[str] = []
+    for md_file in repo_kr.rglob("*.md"):
+        rel = str(md_file.relative_to(REPO_ROOT))
+        all_files.append(rel)
+
+    print(f"  Repo:   {len(all_files)} .md files in kr/")
+
+    # 3. Diff — files whose doc_id is NOT in Qdrant
+    unprocessed: list[str] = []
+    for rel in all_files:
+        doc_id = f"git:legalize-kr:{rel}"
+        if doc_id not in stored_doc_ids:
+            unprocessed.append(rel)
+
+    print(f"  Unprocessed: {len(unprocessed)} files")
+    return unprocessed
+
+
 def build_raw_document(rel_path: str):
     """Mirror GitConnector._build_documents for a single file.
 
@@ -282,25 +339,46 @@ async def preflight_check(allow_force: bool) -> tuple[bool, str]:
     return True, f"last run status={status!r}"
 
 
-async def main_async(args) -> int:
-    if args.files:
+async def _collect_rels(args) -> list[str]:
+    """Collect file paths from --auto-detect, --file-list, --files, or log parsing."""
+    rels: list[str] = []
+    if args.auto_detect:
+        print("Auto-detecting unprocessed files (Qdrant scan)...")
+        rels = find_unprocessed_files()
+    elif args.file_list:
+        p = Path(args.file_list)
+        if not p.exists():
+            print(f"[error] file list not found: {p}", file=sys.stderr)
+            return []
+        rels = [line.strip() for line in p.read_text().splitlines() if line.strip()]
+    elif args.files:
         rels = [p.strip() for p in args.files.split(",") if p.strip()]
     else:
         rels = parse_failed_docs_from_log(args.log)
+    return rels
+
+
+async def main_async(args) -> int:
+    rels = await _collect_rels(args)
 
     if not rels:
         print("No failed docs to re-ingest.")
         return 0
 
-    print(f"Found {len(rels)} failed doc(s):")
-    for r in rels:
-        abs_path = REPO_ROOT / r
-        size = abs_path.stat().st_size if abs_path.exists() else 0
-        marker = " ✓" if abs_path.exists() else " ✗ MISSING"
-        print(f"  {size:>9} B  {r}{marker}")
+    # Validate files exist
+    missing = [r for r in rels if not (REPO_ROOT / r).is_file()]
+    existing = [r for r in rels if (REPO_ROOT / r).is_file()]
+    print(f"Found {len(rels)} doc(s): {len(existing)} exist, {len(missing)} missing")
+    if missing and len(missing) <= 20:
+        for m in missing:
+            print(f"  ✗ MISSING: {m}")
+    elif missing:
+        print(f"  ✗ {len(missing)} files missing (first 5: {missing[:5]})")
+    rels = existing
 
     if args.dry_run:
-        print("\n--dry-run — not executing")
+        total_bytes = sum((REPO_ROOT / r).stat().st_size for r in rels)
+        print(f"\n--dry-run — {len(rels)} files, {total_bytes:,} bytes total")
         return 0
 
     print("\nPre-flight check: main ingestion status...")
@@ -310,10 +388,11 @@ async def main_async(args) -> int:
         print("\n❌ Aborting. Re-run after main ingestion completes, or pass --force.")
         return 3
 
+    concurrency = args.concurrency
     print(f"\nTarget KB:        {KB_ID}")
     print(f"Qdrant collection: kb_{KB_ID.replace('-', '_')}")
     print(f"TEI timeout:       {args.timeout}s")
-    print(f"Docs to process:   {len(rels)} (sequential)")
+    print(f"Docs to process:   {len(rels)} (concurrency={concurrency})")
     if not args.yes:
         resp = input("\nProceed? [y/N] ").strip().lower()
         if resp not in ("y", "yes"):
@@ -323,30 +402,38 @@ async def main_async(args) -> int:
     print(f"\nInitializing pipeline (TEI timeout={args.timeout}s)...")
     pipeline, state = await init_pipeline(args.timeout)
 
-    print("\nProcessing sequentially...")
     successes: list[str] = []
     failures: list[tuple[str, str]] = []
-    for rel in rels:
+    sem = asyncio.Semaphore(concurrency)
+    completed = 0
+
+    async def _ingest_one(rel: str) -> None:
+        nonlocal completed
         try:
             raw = build_raw_document(rel)
         except Exception as e:
             print(f"  ✗ {rel} (build failed: {e})")
             failures.append((rel, f"build: {e}"))
-            continue
+            return
 
-        print(f"  → {rel} ({len(raw.content):,} chars)")
-        try:
-            result = await pipeline.ingest(raw, collection_name=KB_ID)
-            if getattr(result, "chunks_stored", 0) > 0:
-                print(f"    ✓ chunks_stored={result.chunks_stored}")
-                successes.append(rel)
-            else:
-                reason = getattr(result, "reason", "no chunks stored")
-                print(f"    ⚠ {reason}")
-                failures.append((rel, reason))
-        except Exception as e:
-            print(f"    ✗ {type(e).__name__}: {e}")
-            failures.append((rel, f"{type(e).__name__}: {e}"))
+        async with sem:
+            try:
+                result = await pipeline.ingest(raw, collection_name=KB_ID)
+                completed += 1
+                if getattr(result, "chunks_stored", 0) > 0:
+                    print(f"  [{completed}/{len(rels)}] ✓ {rel} chunks={result.chunks_stored}")
+                    successes.append(rel)
+                else:
+                    reason = getattr(result, "reason", "no chunks stored")
+                    print(f"  [{completed}/{len(rels)}] ⚠ {rel}: {reason}")
+                    failures.append((rel, reason))
+            except Exception as e:
+                completed += 1
+                print(f"  [{completed}/{len(rels)}] ✗ {rel}: {type(e).__name__}: {e}")
+                failures.append((rel, f"{type(e).__name__}: {e}"))
+
+    print(f"\nProcessing {len(rels)} docs (concurrency={concurrency})...")
+    await asyncio.gather(*[_ingest_one(rel) for rel in rels])
 
     print()
     print(f"Summary: {len(successes)} success, {len(failures)} failed")
@@ -369,8 +456,20 @@ def main() -> int:
         help="Comma-separated relative paths (overrides --log)",
     )
     parser.add_argument(
+        "--file-list", default="",
+        help="Path to a text file with one relative path per line (overrides --files and --log)",
+    )
+    parser.add_argument(
         "--timeout", type=float, default=600.0,
         help="TEI httpx timeout in seconds (default: 600)",
+    )
+    parser.add_argument(
+        "--concurrency", type=int, default=6,
+        help="Number of concurrent ingestion tasks (default: 6)",
+    )
+    parser.add_argument(
+        "--auto-detect", action="store_true",
+        help="Auto-detect unprocessed files by scanning Qdrant vs repo (overrides all other sources)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
