@@ -347,7 +347,7 @@ async def _create_collection_via_rest(collections, kb_id: str) -> None:
                 "vectors": {_dense_name: {"size": _embed_dim, "distance": "Cosine"}},
                 "sparse_vectors": {_sparse_name: {}},
             },
-            timeout=30,
+            timeout=_w.timeouts.httpx_rag,
         )
         if resp.status_code in (200, 409):
             logger.info("Collection %s created via REST API", coll_name)

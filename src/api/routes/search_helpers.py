@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
 from typing import Any
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -128,13 +130,16 @@ async def identifier_search(
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            for ident in _identifiers[:3]:  # Max 3 identifiers
-                for coll in collections:
-                    new = await _scroll_identifier_chunks(
-                        client, ident, coll, qdrant_url, _existing_ids,
-                    )
-                    all_chunks.extend(new)
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as client:
+            tasks = [
+                _scroll_identifier_chunks(client, ident, coll, qdrant_url, _existing_ids)
+                for ident in _identifiers[:3]
+                for coll in collections
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, list):
+                    all_chunks.extend(r)
         _id_count = sum(1 for c in all_chunks if c.get("_identifier_match"))
         if _id_count:
             logger.info(
@@ -255,7 +260,7 @@ async def date_filter_search(
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=3.0) as dc:
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as dc:
             for coll in collections:
                 _coll_name = f"kb_{coll.replace('-', '_')}"
                 resp = await dc.post(
@@ -432,7 +437,7 @@ async def week_name_search(
     try:
         import httpx
 
-        async with httpx.AsyncClient(timeout=3.0) as wk_client:
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as wk_client:
             await _scroll_week_variants(
                 wk_client, qdrant_url, collections, filter_texts,
                 existing_docs, d1_month, d1_day, all_chunks,
@@ -544,7 +549,7 @@ async def _inject_graph_docs(
     """Inject graph-found documents into chunks via Qdrant scroll."""
     import httpx
 
-    async with httpx.AsyncClient(timeout=3.0) as qc:
+    async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as qc:
         for doc_name in list(new_docs)[:5]:
             for coll in collections:
                 try:

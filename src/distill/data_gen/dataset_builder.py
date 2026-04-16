@@ -68,10 +68,11 @@ class DatasetBuilder:
 
         for qa in qa_pairs:
             question = qa["question"]
+            from src.llm.prompt_safety import safe_user_input
             prompt = (
                 f"다음 질문을 {n}가지 다른 표현으로 바꿔주세요. "
                 "의미는 같게, 편의점 직원이 실제로 물어볼 법한 구어체로.\n\n"
-                f"원본: {question}\n\n"
+                f"{safe_user_input('원본 질문', question)}\n\n"
                 "다른 표현 (한 줄에 하나씩):"
             )
             try:
@@ -116,8 +117,10 @@ class DatasetBuilder:
         async def _verify_one(qa: dict) -> dict | None:
             async with sem:
                 try:
+                    from src.llm.prompt_safety import safe_user_input
                     teacher_answer = await self.llm.call(
-                        f"다음 질문에 답변하세요: {qa['question']}", temperature=0.1,
+                        f"다음 질문에 답변하세요:\n{safe_user_input('질문', qa['question'])}",
+                        temperature=0.1,
                     )
                     if not teacher_answer:
                         return None

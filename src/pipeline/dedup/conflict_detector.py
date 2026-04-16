@@ -27,6 +27,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ class OllamaLLMClient(ILLMClient):
 
         use_model = model or self._model
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=_w.timeouts.httpx_distill_teacher) as client:
                 response = await client.post(
                     f"{self._base_url}/api/generate",
                     json={

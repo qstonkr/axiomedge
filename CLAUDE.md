@@ -100,14 +100,28 @@ Large files are split into helpers/sub-modules with **facade re-exports** for ba
 | `src/distill/` | service + data_gen/ + repositories/ | Edge model distillation (QA curation, LoRA SFT, GGUF, S3 deploy) |
 | `src/distill/data_gen/` | 5-module pkg | Data generation (qa_generator, quality_filter, generality_filter, dataset_builder, test_data_templates) |
 | `src/distill/repositories/` | 5-module pkg | Distill DB repos (profile, build, training_data, edge_log, edge_server) |
+| `src/distill/pipeline/` | stages.py + data_gen_stages.py | DataGenStage Protocol + 6 stage (QA/Generality/Augment/Reformat) |
+| `src/distill/build_executor.py` | standalone | Build pipeline orchestrator (generate→train→quantize→evaluate→deploy) |
 | `edge/` | server.py + sync.py + install scripts | Edge server (llama-cpp inference, heartbeat, cross-platform deploy) |
+
+**Infrastructure & Initialization:**
+
+| Module | Role |
+|--------|------|
+| `src/config/` | Settings 패키지 (16개 Settings 클래스 — DB, Qdrant, Neo4j, Ollama, Redis, Confluence, TEI, AWS 등). `from src.config import get_settings` |
+| `src/config_weights/` | 하이퍼파라미터 패키지 (7 서브모듈 — search, confidence, quality, pipeline, llm, cache, _helpers) |
+| `src/providers/` | Provider registry (llm, auth, embedding, connector) + Protocol re-exports (protocols.py) |
+| `src/api/route_discovery.py` | Route auto-discover — routes/ 자동 스캔 + include_router |
+| `src/api/search_services_factory.py` | Search 서비스 초기화 factory (8개 서비스) |
+| `src/search/pipeline/` | SearchStage Protocol + SearchPipeline builder |
+| `src/pipeline/stages/` | IngestionStage Protocol + IngestionPipelineRunner (early-exit) |
 
 **All existing imports continue to work** — original files are facades.
 
 ### Key Patterns
 
-- **SSOT**: `config.py` (env vars — 15개 Settings 클래스: Database, Qdrant, Neo4j, Ollama, Embedding, Quality, Pipeline, Auth, Redis, Confluence, TEI, Api, Dashboard, Distill, TreeIndex), `config_weights.py` (thresholds/weights). 서비스 URL 추가 시 반드시 `config.py`에 Settings 클래스 추가 후 `get_settings()` 로 참조.
-- **Protocols**: `EmbeddingProvider`, `LLMClient`, `GraphRepository` — structural typing, runtime_checkable.
+- **SSOT**: `src/config/` (env vars — 16개 Settings 클래스 incl. AwsSettings), `src/config_weights/` (thresholds/weights). 서비스 URL 추가 시 반드시 `config/settings.py`에 Settings 클래스 추가 후 `get_settings()` 로 참조.
+- **Protocols**: `IVectorStore`, `IGraphStore`, `ISearchEngine`, `IEmbedder`, `ISparseEmbedder`, `IConnector`, `SearchStage`, `IngestionStage`, `DataGenStage` — structural typing, runtime_checkable.
 - **Repository**: `BaseRepository` in `src/database/repositories/base.py` for all domain repos.
 - **AppState**: `src/api/state.py` — typed dataclass, dict-compatible. Routes access via `_get_state()`.
 - **Entity boost**: `composite_reranker.py` extracts store/person names from query, boosts matching chunks.

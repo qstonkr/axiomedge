@@ -15,6 +15,7 @@ from pathlib import Path
 
 from src.distill.config import DistillConfig, DistillProfile
 from src.distill.repository import DistillRepository
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +280,7 @@ class DistillService:
         kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
 
         verified: list[dict] = []
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=_w.timeouts.httpx_distill_teacher) as client:
             for variant in new_variants:
                 try:
                     resp = await client.post(

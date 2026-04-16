@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from typing import Any
+from src.config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class LLMHelper:
                 body["offset"] = offset
 
             try:
-                async with httpx.AsyncClient(timeout=30) as client:
+                async with httpx.AsyncClient(timeout=_w.timeouts.httpx_default) as client:
                     resp = await client.post(
                         f"{self.qdrant_url}/collections/{kb_id}/points/scroll",
                         json=body,

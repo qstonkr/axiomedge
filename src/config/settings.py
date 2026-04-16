@@ -197,6 +197,21 @@ class DashboardSettings(BaseSettings):
     search_timeout: int = Field(default=60)
 
 
+class AwsSettings(BaseSettings):
+    """AWS 인프라 설정 — SageMaker, S3 등."""
+
+    model_config = SettingsConfigDict(env_prefix="")
+
+    region: str = Field(default="ap-northeast-2", alias="AWS_REGION")
+    profile: str = Field(default="", alias="AWS_PROFILE")
+    sagemaker_endpoint: str = Field(
+        default="oreo-exaone-dev", alias="SAGEMAKER_ENDPOINT_NAME",
+    )
+    s3_model_bucket: str = Field(
+        default="oreo-dev-ml-artifacts", alias="DISTILL_S3_BUCKET",
+    )
+
+
 class DistillSettings(BaseSettings):
     """Distill Plugin 인프라 설정. 프로필(학습 파라미터)은 distill.yaml/DB에서 관리."""
 
@@ -250,6 +265,7 @@ class Settings(BaseSettings):
     tei: TeiSettings = Field(default_factory=TeiSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
+    aws: AwsSettings = Field(default_factory=AwsSettings)
     distill: DistillSettings = Field(default_factory=DistillSettings)
     tree_index: TreeIndexSettings = Field(default_factory=TreeIndexSettings)
 
