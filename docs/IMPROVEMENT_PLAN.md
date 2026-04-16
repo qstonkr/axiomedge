@@ -341,18 +341,18 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **Effort**: 6~8h
 - **리스크**: import path 대량 변경 — facade 로 완화
 
-### PR12. Major 문서 6개 ⏳
+### PR12. Major 문서 6개 🔀
 
 - **Severity**: 🟠 Major
 - **축**: Documentation
 - **Files**:
-  - [ ] `docs/GRAPHRAG.md` — entity/relation 추출 규칙, prompt 설계, Neo4j 로더
-  - [ ] `docs/GLOSSARY.md` — PBU/HBU/FBU, KB naming convention, entity types, distill profile 명칭
-  - [ ] `docs/DEVELOPMENT.md` — async 패턴, repository/service 계층, Pydantic/SQLAlchemy 규칙
-  - [ ] `docs/OPS.md` — 장애 대응, 롤백, DB migration 수동 절차
-  - [ ] `docs/SECURITY.md` — 인증, API key, prompt injection 방어, output safety, data isolation
-  - [ ] `docs/MIGRATION_GUIDE.md` — Alembic 없이 schema 변경 절차
-- **Effort**: 10~12h
+  - [x] `docs/GRAPHRAG.md` — entity/relation 추출 규칙, prompt 설계, Neo4j 로더
+  - [x] `docs/GLOSSARY.md` — PBU/HBU/FBU, KB naming convention, entity types, distill profile 명칭
+  - [x] `docs/DEVELOPMENT.md` — async 패턴, repository/service 계층, Pydantic/SQLAlchemy 규칙
+  - [x] `docs/OPS.md` — 장애 대응, 롤백, DB migration 수동 절차
+  - [x] `docs/SECURITY.md` — 인증, API key, prompt injection 방어, output safety, data isolation
+  - [x] `docs/MIGRATION_GUIDE.md` — Alembic 없이 schema 변경 절차
+- **머지**: PR #30 (GLOSSARY/SECURITY/DATA_MODEL) + PR #31 (GRAPHRAG/DEVELOPMENT/OPS/MIGRATION_GUIDE)
 
 ---
 
