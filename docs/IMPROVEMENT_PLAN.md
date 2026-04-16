@@ -333,14 +333,11 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **축**: SSOT
 - **Why**: config 가 `config.py`, `config_weights.py`, `distill/config.py`, `distill.yaml` 4개 파일에 분산. 687줄 단일 파일 (`config_weights.py`) 도 비대.
 - **Files**:
-  - [ ] 신규 `src/config/__init__.py` — 모든 re-export
-  - [ ] 신규 `src/config/settings.py` ← 기존 `src/config.py`
-  - [ ] 신규 `src/config/weights/search.py` ← 기존 `config_weights.py` 의 RerankerWeights 등
-  - [ ] 신규 `src/config/weights/embedding.py`
-  - [ ] 신규 `src/config/weights/distill.py`
-  - [ ] 신규 `src/config/weights/chunking.py`
-  - [ ] 신규 `src/config/profiles.py` ← 기존 `src/distill/config.py::DistillProfile`
-  - [ ] 기존 `src/config.py`, `src/config_weights.py` 는 facade 로 유지 (backward compat)
+  - [x] `src/config/__init__.py` — 모든 re-export (facade)
+  - [x] `src/config/settings.py` ← 기존 `src/config.py` 이동
+  - [x] `src/config_weights/` — Phase C에서 7 서브모듈 분할 완료
+  - [ ] `src/config/profiles.py` ← `src/distill/config.py::DistillProfile` 이동 (후속)
+  - [x] 기존 import 경로 `from src.config import ...` 유지 (facade)
 - **Effort**: 6~8h
 - **리스크**: import path 대량 변경 — facade 로 완화
 
