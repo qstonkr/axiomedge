@@ -379,8 +379,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
 - [x] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
 - [x] Feedback type enum 화 (FeedbackType + FeedbackStatus in domain/models.py)
-- [~] Search pipeline — hub_search 이미 `_step_*` 13단계 분리 완료. Protocol 클래스 전환은 Phase D.
-- [~] Ingestion pipeline — ingest 이미 stage 함수 분리 완료. Protocol 클래스 전환은 Phase D.
+- [x] Search pipeline — `_step_*` 13단계 분리 + `SearchStage` Protocol + `SearchPipeline` builder
+- [x] Ingestion pipeline — stage 함수 분리 + `IngestionStage` Protocol + `IngestionPipelineRunner` (early-exit)
 - [x] AttachmentParser module-level 함수 26개 → `_attachment_helpers.py` 분리 (1879→1419줄)
 - [x] `_init_search_services()` → `SearchServicesFactory` 추출 (src/api/search_services_factory.py)
 - [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
@@ -408,7 +408,7 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 - [x] VectorStore Protocol 확장 (IVectorStore CRUD + ISearchEngine, NoOp 구현)
 - [x] GraphStore Protocol 확장 (IGraphStore entity/relationship/search/stats, NoOp 구현)
-- [~] `routes/user/` vs `routes/admin/` — 이미 prefix로 분리됨. 디렉터리 분리는 SPA 도입 시
+- [x] `routes/user/` vs `routes/admin/` — prefix 분리 완료 (/admin/ vs /knowledge/). 디렉터리 분리는 SPA 도입 시
 - [x] Plugin auto-discover for routes (`src/api/route_discovery.py` — 24개 수동 등록 → 자동 스캔)
 - [x] Ingestion pipeline stage protocol (`IngestionStage` + `IngestionPipelineRunner` + early-exit 지원)
 - [x] Connector plugin registry (`@register_connector` + `create_connector` + `IConnector` Protocol)
