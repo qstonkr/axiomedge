@@ -788,7 +788,7 @@ def _resolve_llm_client(state: dict[str, Any]) -> Any | None:
     if os.getenv("USE_SAGEMAKER_LLM", "false").lower() not in ("true", "1"):
         return None
     try:
-        from src.llm.sagemaker_client import SageMakerLLMClient
+        from src.nlp.llm.sagemaker_client import SageMakerLLMClient
         logger.info("AI classify: using SageMaker LLM (fallback)")
         return SageMakerLLMClient()
     except Exception as e:  # noqa: BLE001

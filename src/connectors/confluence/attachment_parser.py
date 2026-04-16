@@ -1148,7 +1148,7 @@ class AttachmentParser:
         """싱글톤 PaddleOCR 인스턴스 반환 (amd64 only, no fallback)."""
         if cls._ocr_instance is None:
             try:
-                from src.ocr.paddle_ocr_provider import PaddleOCRProvider
+                from src.nlp.ocr.paddle_ocr_provider import PaddleOCRProvider
                 cls._ocr_instance = PaddleOCRProvider()
                 cls._ocr_type = "paddle"
                 logger.info("[OCR] PaddleOCR singleton created")

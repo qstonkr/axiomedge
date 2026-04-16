@@ -8,7 +8,7 @@ Registry + factory 패턴으로 LLMClient 구현체를 plug-in 처럼 등록한�
 
 ```python
 from src.core.providers.llm import register_llm_provider
-from src.llm.types import LLMClient
+from src.nlp.llm.types import LLMClient
 
 @register_llm_provider("claude")
 def create_claude(settings) -> LLMClient:
@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from src.config import Settings
-    from src.llm.types import LLMClient
+    from src.nlp.llm.types import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ def _resolve_provider_name(explicit: str | None) -> str:
 
 @register_llm_provider("ollama")
 def _create_ollama(settings: "Settings") -> "LLMClient":
-    from src.llm.ollama_client import OllamaClient, OllamaConfig
+    from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
     config = OllamaConfig(
         base_url=settings.ollama.base_url,
         model=settings.ollama.model,
@@ -130,5 +130,5 @@ def _create_ollama(settings: "Settings") -> "LLMClient":
 
 @register_llm_provider("sagemaker")
 def _create_sagemaker(settings: "Settings") -> "LLMClient":  # noqa: ARG001 (settings 미사용 — SageMakerConfig 가 env 로드)
-    from src.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
+    from src.nlp.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
     return SageMakerLLMClient(config=SageMakerConfig())

@@ -1,6 +1,6 @@
 """Unit tests for shared LLM utilities."""
 
-from src.llm.utils import sanitize_text, estimate_token_count
+from src.nlp.llm.utils import sanitize_text, estimate_token_count
 
 
 class TestSanitizeText:

@@ -1,7 +1,7 @@
 """OCR data models and provider abstraction.
 
 Usage:
-    from src.ocr.models import OCRResult, OCRProvider, OCRInput
+    from src.nlp.ocr.models import OCRResult, OCRProvider, OCRInput
 """
 
 from __future__ import annotations

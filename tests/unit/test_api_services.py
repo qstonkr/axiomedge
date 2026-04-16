@@ -138,7 +138,7 @@ class TestImportCsv:
 class TestBuildTermData:
     def test_build_basic(self):
         from src.api.services.glossary_import_service import _build_term_data
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
 
         normalizer = TermNormalizer()
         row = {"term_ko": "서버명", "definition": "서버 이름", "synonyms": "srv,svr", "abbreviations": ""}
@@ -150,7 +150,7 @@ class TestBuildTermData:
 
     def test_build_with_physical_meaning(self):
         from src.api.services.glossary_import_service import _build_term_data
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
 
         normalizer = TermNormalizer()
         row = {"physical_meaning": "server name", "term_ko": "", "synonyms": "", "abbreviations": ""}
@@ -159,7 +159,7 @@ class TestBuildTermData:
 
     def test_build_auto_detect_word(self):
         from src.api.services.glossary_import_service import _build_term_data
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
 
         normalizer = TermNormalizer()
         row = {"composition_info": "단일", "synonyms": "", "abbreviations": ""}
@@ -168,7 +168,7 @@ class TestBuildTermData:
 
     def test_build_auto_detect_term(self):
         from src.api.services.glossary_import_service import _build_term_data
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
 
         normalizer = TermNormalizer()
         row = {"composition_info": "서버 이름 코드", "synonyms": "", "abbreviations": ""}
@@ -177,7 +177,7 @@ class TestBuildTermData:
 
     def test_build_source_from_csv(self):
         from src.api.services.glossary_import_service import _build_term_data
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
 
         normalizer = TermNormalizer()
         row = {"source": "custom_source", "synonyms": "", "abbreviations": ""}

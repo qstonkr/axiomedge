@@ -25,8 +25,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.config.weights import weights as _w
-from src.nlp.term_normalizer import TermNormalizer
-from src.nlp.lexical_scorer import LexicalScorer
+from src.nlp.korean.term_normalizer import TermNormalizer
+from src.nlp.korean.lexical_scorer import LexicalScorer
 
 logger = logging.getLogger(__name__)
 

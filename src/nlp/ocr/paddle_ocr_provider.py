@@ -11,7 +11,7 @@ Features:
     - Supports both file-path and bytes input (bytes are written to a temp file)
 
 Usage:
-    from src.ocr import PaddleOCRProvider
+    from src.nlp.ocr import PaddleOCRProvider
 
     Examples:
         provider = PaddleOCRProvider(model_name="korean_PP-OCRv5_server_rec", use_gpu=False)

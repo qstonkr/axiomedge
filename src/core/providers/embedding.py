@@ -16,7 +16,7 @@ import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.embedding.types import EmbeddingProvider
+    from src.nlp.embedding.types import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
 
 
 def _create_tei(**kwargs) -> EmbeddingProvider:
-    from src.embedding.tei_provider import TEIEmbeddingProvider
+    from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
 
     from src.config import get_settings as _gs
     base_url = kwargs.get("base_url") or _gs().tei.embedding_url
@@ -103,7 +103,7 @@ def _create_tei(**kwargs) -> EmbeddingProvider:
 
 
 def _create_ollama(**kwargs) -> EmbeddingProvider:
-    from src.embedding.ollama_provider import OllamaEmbeddingProvider
+    from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
 
     from src.config import DEFAULT_EMBEDDING_MODEL, get_settings as _gs2
     base_url = kwargs.get("base_url") or _gs2().ollama.base_url
@@ -113,7 +113,7 @@ def _create_ollama(**kwargs) -> EmbeddingProvider:
 
 
 def _create_onnx(**kwargs) -> EmbeddingProvider:
-    from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+    from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
     model_path = kwargs.get("model_path") or os.getenv("KNOWLEDGE_BGE_ONNX_MODEL_PATH", "")
     from src.config import DEFAULT_EMBEDDING_MODEL_HF

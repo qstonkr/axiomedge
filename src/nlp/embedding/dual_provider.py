@@ -46,8 +46,8 @@ class DualEmbeddingProvider:
 
     Usage::
 
-        from src.embedding.dual_provider import DualEmbeddingProvider
-        from src.embedding.ollama_provider import OllamaEmbeddingProvider
+        from src.nlp.embedding.dual_provider import DualEmbeddingProvider
+        from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
 
         ollama = OllamaEmbeddingProvider()
         dual = DualEmbeddingProvider(provider=ollama)

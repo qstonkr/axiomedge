@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import numpy as np
 import pytest
 
-from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
 
 def _run(coro):

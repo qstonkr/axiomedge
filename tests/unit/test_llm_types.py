@@ -1,7 +1,7 @@
 """Unit tests for LLMClient Protocol compliance."""
 
-from src.llm.types import LLMClient
-from src.llm.ollama_client import OllamaClient
+from src.nlp.llm.types import LLMClient
+from src.nlp.llm.ollama_client import OllamaClient
 
 
 class TestLLMClientProtocol:

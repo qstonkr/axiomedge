@@ -110,7 +110,7 @@ class TEIEmbeddingProvider:
         # Synthesize TF-based sparse (same as ONNX/Ollama providers)
         sparse_vecs = []
         if return_sparse:
-            from src.embedding.embedding_guard import sparse_token_hash
+            from src.nlp.embedding.embedding_guard import sparse_token_hash
             for text in texts:
                 tokens = text.split()
                 sparse: dict[int, float] = {}

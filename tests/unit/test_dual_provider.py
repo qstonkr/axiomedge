@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.embedding.dual_provider import DualEmbeddingProvider, DualEmbedding
-from src.embedding.embedding_guard import EXPECTED_DIMENSION
+from src.nlp.embedding.dual_provider import DualEmbeddingProvider, DualEmbedding
+from src.nlp.embedding.embedding_guard import EXPECTED_DIMENSION
 
 
 # ---------------------------------------------------------------------------

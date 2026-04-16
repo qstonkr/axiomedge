@@ -16,7 +16,7 @@ import pytest
 # KoreanMorphemeAnalyzer
 # ===========================================================================
 
-from src.nlp.morpheme_analyzer import (
+from src.nlp.korean.morpheme_analyzer import (
     KoreanMorphemeAnalyzer,
     MorphemeToken,
     AnalysisResult,

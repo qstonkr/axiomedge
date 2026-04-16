@@ -5,7 +5,7 @@ All oreo-specific framework dependencies (StatsD, input_sanitizer, LiteLLM,
 domain vocabulary) have been removed.
 
 Usage:
-    from src.llm.ollama_client import OllamaClient, OllamaConfig
+    from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
 
     config = OllamaConfig(base_url="http://localhost:11434", model="exaone3.5:7.8b")
     client = OllamaClient(config)

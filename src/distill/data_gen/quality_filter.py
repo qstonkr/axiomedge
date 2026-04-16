@@ -10,7 +10,7 @@ from rapidfuzz import fuzz
 
 from src.distill.config import ESTIMATED_CHARS_PER_TOKEN, DistillProfile
 from src.distill.data_gen.llm_helper import LLMHelper
-from src.llm.prompt_safety import safe_user_input
+from src.nlp.llm.prompt_safety import safe_user_input
 
 logger = logging.getLogger(__name__)
 

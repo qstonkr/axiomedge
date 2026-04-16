@@ -34,7 +34,7 @@ async def search(query: str, kb_id: str, top_k: int, with_answer: bool):
     engine = QdrantSearchEngine(provider, cm)
 
     # Embed query
-    from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+    from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
     model_path = settings.embedding.onnx_model_path or os.getenv("KNOWLEDGE_BGE_ONNX_MODEL_PATH", "")
     embedder = OnnxBgeEmbeddingProvider(model_path=model_path)
@@ -66,7 +66,7 @@ async def search(query: str, kb_id: str, top_k: int, with_answer: bool):
         print()
 
     if with_answer and results:
-        from src.llm.ollama_client import OllamaClient, OllamaConfig
+        from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
 
         llm = OllamaClient(OllamaConfig(
             base_url=settings.ollama.base_url,

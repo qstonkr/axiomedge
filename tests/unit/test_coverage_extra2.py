@@ -229,7 +229,7 @@ class TestSemHash:
 # OllamaClient
 # ===========================================================================
 
-from src.llm.ollama_client import OllamaClient, OllamaConfig
+from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
 
 
 class TestOllamaConfig:

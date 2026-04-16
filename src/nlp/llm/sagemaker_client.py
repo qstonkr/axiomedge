@@ -5,7 +5,7 @@ Supports: generate_response, generate, chat, classify_batch, check_health,
 generate_with_context. Streaming is NOT supported (falls back to non-streaming).
 
 Usage:
-    from src.llm.sagemaker_client import SageMakerLLMClient
+    from src.nlp.llm.sagemaker_client import SageMakerLLMClient
 
     client = SageMakerLLMClient()
     response = await client.generate_response(query, context_chunks)

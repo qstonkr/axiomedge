@@ -12,7 +12,7 @@ Features:
     - Uses sentence_embedding output directly (already pooled, 1024-dim)
 
 Usage:
-    from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+    from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
     provider = OnnxBgeEmbeddingProvider(model_name="BAAI/bge-m3")
     output = provider.encode(["sample query"])

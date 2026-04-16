@@ -225,7 +225,7 @@ class _SageMakerLLMClient:
 class _OllamaLLMClient:
     """Local Ollama LLM adapter for GraphRAG extraction.
 
-    Uses the OllamaClient from src.llm for LLM calls.
+    Uses the OllamaClient from src.nlp.llm for LLM calls.
     """
 
     def __init__(self, base_url: str, model: str) -> None:
@@ -261,7 +261,7 @@ class _OllamaLLMClient:
             loop = None
 
         # Create fresh client each call to avoid event loop binding issues
-        from src.llm.ollama_client import OllamaClient, OllamaConfig
+        from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
         fresh_client = OllamaClient(OllamaConfig(
             base_url=self._base_url,
             model=self._model,

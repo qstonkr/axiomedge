@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from src.llm.prompt_safety import (
+from src.nlp.llm.prompt_safety import (
     _escape_tags,
     neutralize_instructions,
     parse_strict_score,

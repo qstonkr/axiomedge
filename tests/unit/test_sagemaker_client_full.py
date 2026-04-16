@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
+from src.nlp.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
 
 
 # ===========================================================================

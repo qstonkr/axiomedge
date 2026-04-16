@@ -425,7 +425,7 @@ def _try_tei_embedding(_settings):
         logger.info("Cloud embedding disabled (USE_CLOUD_EMBEDDING=false), using local")
         return None
     try:
-        from src.embedding.tei_provider import TEIEmbeddingProvider
+        from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
 
         from src.config import get_settings as _gs
         tei_url = _gs().tei.embedding_url
@@ -441,7 +441,7 @@ def _try_tei_embedding(_settings):
 def _try_ollama_embedding(settings):
     """Try to initialize Ollama embedding provider."""
     try:
-        from src.embedding.ollama_provider import OllamaEmbeddingProvider
+        from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
 
         ollama_embedder = OllamaEmbeddingProvider(
             base_url=settings.ollama.base_url,
@@ -458,7 +458,7 @@ def _try_ollama_embedding(settings):
 def _try_onnx_embedding(settings):
     """Try to initialize ONNX embedding provider."""
     try:
-        from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+        from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
         model_path = settings.embedding.onnx_model_path or os.getenv(
             "KNOWLEDGE_BGE_ONNX_MODEL_PATH", ""

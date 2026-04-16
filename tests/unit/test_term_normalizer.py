@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.nlp.term_normalizer import TermNormalizer
+from src.nlp.korean.term_normalizer import TermNormalizer
 
 
 # ---------------------------------------------------------------------------

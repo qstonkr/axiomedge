@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.embedding.provider_factory import create_embedding_provider
+from src.nlp.embedding.provider_factory import create_embedding_provider
 
 
 class TestCreateEmbeddingProvider:

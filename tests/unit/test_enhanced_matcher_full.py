@@ -654,7 +654,7 @@ class TestBruteForceSplit:
 
     def test_match_found(self):
         m = _make_matcher()
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
         m._word_lookup = {
             TermNormalizer.normalize_for_comparison("테스트"): FakeTerm(term="테스트"),
             TermNormalizer.normalize_for_comparison("시스템"): FakeTerm(term="시스템"),

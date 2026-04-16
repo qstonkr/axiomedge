@@ -241,7 +241,7 @@ async def init_pipeline(tei_timeout: float):
 
     # Override the embedder with a long-timeout client. The live API's
     # embedder uses 180s; large statutes with many chunks blew past that.
-    from src.embedding.tei_provider import TEIEmbeddingProvider
+    from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
 
     embedder = TEIEmbeddingProvider(timeout=tei_timeout)
     if not embedder.is_ready():

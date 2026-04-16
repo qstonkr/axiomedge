@@ -704,7 +704,7 @@ class TermExtractor:
         _kb_id: str,
     ) -> list[ExtractedTerm]:
         """Remove candidates that already exist as scope='global'."""
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
 
         get_fn = getattr(self._glossary_repo, "get_by_term", None)
         if not get_fn or not callable(get_fn):

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-from src.nlp.term_normalizer import TermNormalizer
+from src.nlp.korean.term_normalizer import TermNormalizer
 
 _KOREAN_CHAR_RE = re.compile(r"[\uac00-\ud7a3]")
 

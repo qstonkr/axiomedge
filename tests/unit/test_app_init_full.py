@@ -189,7 +189,7 @@ class TestInitEmbedding:
         state = AppState()
         settings = MagicMock()
 
-        with patch("src.embedding.tei_provider.TEIEmbeddingProvider") as MockTEI:
+        with patch("src.nlp.embedding.tei_provider.TEIEmbeddingProvider") as MockTEI:
             instance = MagicMock()
             instance.is_ready.return_value = True
             MockTEI.return_value = instance
@@ -206,9 +206,9 @@ class TestInitEmbedding:
         settings.ollama.embedding_model = "bge-m3"
         settings.embedding.onnx_model_path = ""
 
-        with patch("src.embedding.tei_provider.TEIEmbeddingProvider", side_effect=Exception("no tei")), \
-             patch("src.embedding.ollama_provider.OllamaEmbeddingProvider") as MockOllama, \
-             patch("src.embedding.onnx_provider.OnnxBgeEmbeddingProvider") as MockOnnx:
+        with patch("src.nlp.embedding.tei_provider.TEIEmbeddingProvider", side_effect=Exception("no tei")), \
+             patch("src.nlp.embedding.ollama_provider.OllamaEmbeddingProvider") as MockOllama, \
+             patch("src.nlp.embedding.onnx_provider.OnnxBgeEmbeddingProvider") as MockOnnx:
             MockOllama.return_value.is_ready.return_value = False
             MockOnnx.return_value.is_ready.return_value = False
             await _init_embedding(state, settings)
@@ -231,8 +231,8 @@ class TestInitLLM:
         settings.ollama.context_length = 8192
 
         with patch.dict("os.environ", {"USE_SAGEMAKER_LLM": "false"}), \
-             patch("src.llm.ollama_client.OllamaClient") as MockClient, \
-             patch("src.llm.ollama_client.OllamaConfig"):
+             patch("src.nlp.llm.ollama_client.OllamaClient") as MockClient, \
+             patch("src.nlp.llm.ollama_client.OllamaConfig"):
             MockClient.return_value = MagicMock()
             await _init_llm(state, settings)
 
@@ -245,8 +245,8 @@ class TestInitLLM:
         settings = MagicMock()
 
         with patch.dict("os.environ", {"USE_SAGEMAKER_LLM": "true"}), \
-             patch("src.llm.sagemaker_client.SageMakerLLMClient") as MockSM, \
-             patch("src.llm.sagemaker_client.SageMakerConfig"):
+             patch("src.nlp.llm.sagemaker_client.SageMakerLLMClient") as MockSM, \
+             patch("src.nlp.llm.sagemaker_client.SageMakerConfig"):
             MockSM.return_value = MagicMock()
             await _init_llm(state, settings)
 

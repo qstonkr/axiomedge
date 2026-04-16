@@ -44,7 +44,7 @@ class OnnxSparseEmbedder:
 async def _init_services():
     """Initialize required services."""
     from src.config import get_settings
-    from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+    from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
     from src.stores.qdrant.client import QdrantConfig, QdrantClientProvider
     from src.stores.qdrant.collections import QdrantCollectionManager
     from src.stores.qdrant.store import QdrantStoreOperations

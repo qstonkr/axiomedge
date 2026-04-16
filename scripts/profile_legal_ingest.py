@@ -93,7 +93,7 @@ async def main() -> None:
     print(f"  chunks: {chunk_result.total_chunks}")
 
     # Step 2: embed (cloud TEI — same path the API uses in prod)
-    from src.embedding.tei_provider import TEIEmbeddingProvider
+    from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
 
     tei_url = os.getenv("BGE_TEI_URL", "http://54.180.231.139:8080")
     embedder = TEIEmbeddingProvider(base_url=tei_url)

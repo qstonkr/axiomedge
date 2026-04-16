@@ -50,7 +50,7 @@ async def _run(profile_name: str, limit: int, dry_run: bool, concurrency: int) -
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     # Teacher LLM — service 경로와 동일하게 SageMaker EXAONE
-    from src.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
+    from src.nlp.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
     llm_client = SageMakerLLMClient(config=SageMakerConfig())
     llm_helper = LLMHelper(
         llm_client,

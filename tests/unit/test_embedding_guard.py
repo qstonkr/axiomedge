@@ -1,6 +1,6 @@
 """Unit tests for embedding guard: sparse_token_hash + vector validation."""
 
-from src.embedding.embedding_guard import (
+from src.nlp.embedding.embedding_guard import (
     EXPECTED_DIMENSION,
     sparse_token_hash,
     validate_vector,

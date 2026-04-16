@@ -1,9 +1,9 @@
 """Unit tests for EmbeddingProvider Protocol compliance."""
 
-from src.embedding.types import EmbeddingProvider
-from src.embedding.ollama_provider import OllamaEmbeddingProvider
-from src.embedding.tei_provider import TEIEmbeddingProvider
-from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+from src.nlp.embedding.types import EmbeddingProvider
+from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
+from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
+from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
 
 class TestEmbeddingProviderProtocol:

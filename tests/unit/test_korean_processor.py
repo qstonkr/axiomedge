@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.nlp.korean_processor import ChunkResult, KoreanProcessor, MorphemeResult
+from src.nlp.korean.korean_processor import ChunkResult, KoreanProcessor, MorphemeResult
 
 
 # ---------------------------------------------------------------------------

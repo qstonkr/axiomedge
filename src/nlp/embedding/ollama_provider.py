@@ -111,7 +111,7 @@ class OllamaEmbeddingProvider:
         # Synthesize sparse vectors (TF-based, same approach as ONNX provider)
         sparse_vecs = []
         if return_sparse:
-            from src.embedding.embedding_guard import sparse_token_hash
+            from src.nlp.embedding.embedding_guard import sparse_token_hash
             for text in texts:
                 tokens = text.split()
                 sparse: dict[int, float] = {}

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from src.config.weights import weights
-from src.llm.prompt_safety import safe_user_input
+from src.nlp.llm.prompt_safety import safe_user_input
 from .query_classifier import QueryType
 from .citation_formatter import CitationFormatter
 
