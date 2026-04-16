@@ -410,9 +410,9 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 - [x] GraphStore Protocol 확장 (IGraphStore entity/relationship/search/stats, NoOp 구현)
 - [~] `routes/user/` vs `routes/admin/` — 이미 prefix로 분리됨. 디렉터리 분리는 SPA 도입 시
 - [x] Plugin auto-discover for routes (`src/api/route_discovery.py` — 24개 수동 등록 → 자동 스캔)
-- [ ] Ingestion pipeline 완전 plugin 화 (`IngestionStage` registry)
-- [ ] Connector plugin registry (`@ConnectorRegistry.register("notion")`)
-- [ ] Search pipeline 완전 plugin 화 (`SearchStage` registry)
+- [x] Ingestion pipeline stage protocol (`IngestionStage` + `IngestionPipelineRunner` + early-exit 지원)
+- [ ] Connector plugin registry (`@ConnectorRegistry.register("notion")`) — 신규 커넥터 추가 시
+- [x] Search pipeline stage protocol (`SearchStage` + `SearchPipeline` builder)
 
 ---
 
