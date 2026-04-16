@@ -14,6 +14,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi import Header
 from pydantic import BaseModel, Field, field_validator
 
+from src.distill.config import (
+    DataQualityConfig as _DataQualityConfig,
+    DeployConfig as _DeployConfig,
+    LoRAConfig as _LoRAConfig,
+    QAStyleConfig as _QAStyleConfig,
+    TrainingConfig as _TrainingConfig,
+)
+
 # NOTE: `from src.api.app import _get_state` 는 deferred (함수 내부) import.
 # Module-level 로 두면 `from src.api.routes.distill import router` 가 app.py
 # 를 강제 로드해서 test 환경에서 circular import 가 발생한다. 런타임 route
@@ -37,11 +45,11 @@ class ProfileCreateRequest(BaseModel):
     base_model: str = Field(..., min_length=1, max_length=200)
     description: str = ""
     enabled: bool = True
-    lora: dict | None = None
-    training: dict | None = None
-    qa_style: dict | None = None
-    data_quality: dict | None = None
-    deploy: dict | None = None
+    lora: _LoRAConfig | None = None
+    training: _TrainingConfig | None = None
+    qa_style: _QAStyleConfig | None = None
+    data_quality: _DataQualityConfig | None = None
+    deploy: _DeployConfig | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -49,11 +57,11 @@ class ProfileUpdateRequest(BaseModel):
     enabled: bool | None = None
     base_model: str | None = None
     search_group: str | None = None
-    lora: dict | None = None
-    training: dict | None = None
-    qa_style: dict | None = None
-    data_quality: dict | None = None
-    deploy: dict | None = None
+    lora: _LoRAConfig | None = None
+    training: _TrainingConfig | None = None
+    qa_style: _QAStyleConfig | None = None
+    data_quality: _DataQualityConfig | None = None
+    deploy: _DeployConfig | None = None
 
 
 class BuildTriggerRequest(BaseModel):

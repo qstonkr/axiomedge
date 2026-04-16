@@ -375,8 +375,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] TEI embedding/reranker URL SSOT (`TeiSettings` 추가)
 - [x] Timeout 리터럴 → TimeoutConfig SSOT (httpx/subprocess/sagemaker 추가, 7파일)
 - [x] Chunk size 리터럴 → ChunkingConfig (kss_max_chars, ocr_correction_chunk_size)
-- [ ] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest 등)
-- [ ] `ProfileUpdateRequest` 도 동일
+- [x] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest/UpdateRequest → typed sub-models)
 - [x] Ruff custom rule — bare except 방지 (`BLE001` 활성화, 기존 564건 noqa pragma)
 - [x] `config_weights.py` 733줄 → 7 서브모듈 패키지 분할 완료 (facade 유지)
 - [ ] Kanana 라이선스 재확인 → `commercial_use=True` 승격
