@@ -310,7 +310,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] `tests/unit/test_distill_training_data_routes.py` (14 cases)
 - **Follow-up (Phase C)**:
   - [x] distill_edge.py 추출 (13 endpoints, 406줄 — edge servers/heartbeat/manifest/fleet)
-  - distill_profiles, distill_builds 추가 분리 (후속)
+  - [x] distill_builds.py 추출 (builds/retrain/reset/delete/app-info, 440줄)
+  - distill.py 최종: 313줄 (profiles + base-models + edge-logs + helpers)
   - SPA admin prefix 검토
 - **머지**: PR #27 (2026-04-16)
 
