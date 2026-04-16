@@ -310,7 +310,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] `tests/unit/test_distill_training_data_routes.py` (14 cases)
 - **Follow-up (Phase C)**:
   - [x] distill_edge.py 추출 (13 endpoints, 406줄 — edge servers/heartbeat/manifest/fleet)
-  - distill_profiles, distill_builds 추가 분리 (후속)
+  - [x] distill_builds.py 추출 (builds/retrain/reset/delete/app-info, 440줄)
+  - distill.py 최종: 313줄 (profiles + base-models + edge-logs + helpers)
   - SPA admin prefix 검토
 - **머지**: PR #27 (2026-04-16)
 
@@ -333,29 +334,26 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **축**: SSOT
 - **Why**: config 가 `config.py`, `config_weights.py`, `distill/config.py`, `distill.yaml` 4개 파일에 분산. 687줄 단일 파일 (`config_weights.py`) 도 비대.
 - **Files**:
-  - [ ] 신규 `src/config/__init__.py` — 모든 re-export
-  - [ ] 신규 `src/config/settings.py` ← 기존 `src/config.py`
-  - [ ] 신규 `src/config/weights/search.py` ← 기존 `config_weights.py` 의 RerankerWeights 등
-  - [ ] 신규 `src/config/weights/embedding.py`
-  - [ ] 신규 `src/config/weights/distill.py`
-  - [ ] 신규 `src/config/weights/chunking.py`
-  - [ ] 신규 `src/config/profiles.py` ← 기존 `src/distill/config.py::DistillProfile`
-  - [ ] 기존 `src/config.py`, `src/config_weights.py` 는 facade 로 유지 (backward compat)
+  - [x] `src/config/__init__.py` — 모든 re-export (facade)
+  - [x] `src/config/settings.py` ← 기존 `src/config.py` 이동
+  - [x] `src/config_weights/` — Phase C에서 7 서브모듈 분할 완료
+  - [ ] `src/config/profiles.py` ← `src/distill/config.py::DistillProfile` 이동 (후속)
+  - [x] 기존 import 경로 `from src.config import ...` 유지 (facade)
 - **Effort**: 6~8h
 - **리스크**: import path 대량 변경 — facade 로 완화
 
-### PR12. Major 문서 6개 ⏳
+### PR12. Major 문서 6개 🔀
 
 - **Severity**: 🟠 Major
 - **축**: Documentation
 - **Files**:
-  - [ ] `docs/GRAPHRAG.md` — entity/relation 추출 규칙, prompt 설계, Neo4j 로더
-  - [ ] `docs/GLOSSARY.md` — PBU/HBU/FBU, KB naming convention, entity types, distill profile 명칭
-  - [ ] `docs/DEVELOPMENT.md` — async 패턴, repository/service 계층, Pydantic/SQLAlchemy 규칙
-  - [ ] `docs/OPS.md` — 장애 대응, 롤백, DB migration 수동 절차
-  - [ ] `docs/SECURITY.md` — 인증, API key, prompt injection 방어, output safety, data isolation
-  - [ ] `docs/MIGRATION_GUIDE.md` — Alembic 없이 schema 변경 절차
-- **Effort**: 10~12h
+  - [x] `docs/GRAPHRAG.md` — entity/relation 추출 규칙, prompt 설계, Neo4j 로더
+  - [x] `docs/GLOSSARY.md` — PBU/HBU/FBU, KB naming convention, entity types, distill profile 명칭
+  - [x] `docs/DEVELOPMENT.md` — async 패턴, repository/service 계층, Pydantic/SQLAlchemy 규칙
+  - [x] `docs/OPS.md` — 장애 대응, 롤백, DB migration 수동 절차
+  - [x] `docs/SECURITY.md` — 인증, API key, prompt injection 방어, output safety, data isolation
+  - [x] `docs/MIGRATION_GUIDE.md` — Alembic 없이 schema 변경 절차
+- **머지**: PR #30 (GLOSSARY/SECURITY/DATA_MODEL) + PR #31 (GRAPHRAG/DEVELOPMENT/OPS/MIGRATION_GUIDE)
 
 ---
 

@@ -805,9 +805,11 @@ from src.api.routes import auth as auth_routes  # noqa: E402
 app.include_router(auth_routes.router)
 
 from src.api.routes import distill as distill_routes  # noqa: E402
+from src.api.routes import distill_builds  # noqa: E402
 from src.api.routes import distill_training_data  # noqa: E402
 from src.api.routes import distill_edge  # noqa: E402
 app.include_router(distill_routes.router)
+app.include_router(distill_builds.router)
 app.include_router(distill_training_data.router)
 app.include_router(distill_edge.router)
 
