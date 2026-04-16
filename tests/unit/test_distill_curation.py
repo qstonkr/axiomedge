@@ -456,7 +456,7 @@ class TestInitDB:
     """src/database/init_db.py — DistillBase import."""
 
     def test_distill_base_imported(self):
-        from src.database.init_db import DistillBase
+        from src.stores.postgres.init_db import DistillBase
         assert DistillBase is not None
 
 

@@ -203,7 +203,7 @@ def _make_session_maker():
 
 class TestDocumentOwnerRepository:
     def test_save_new(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -220,7 +220,7 @@ class TestDocumentOwnerRepository:
         _run(_go())
 
     def test_save_update(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         maker, session = _make_session_maker()
         existing = MagicMock()
@@ -239,7 +239,7 @@ class TestDocumentOwnerRepository:
         _run(_go())
 
     def test_get_by_document(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         maker, session = _make_session_maker()
         model = MagicMock()
@@ -268,7 +268,7 @@ class TestDocumentOwnerRepository:
         _run(_go())
 
     def test_get_by_document_not_found(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -283,7 +283,7 @@ class TestDocumentOwnerRepository:
         _run(_go())
 
     def test_get_by_owner(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         maker, session = _make_session_maker()
         model = MagicMock()
@@ -314,7 +314,7 @@ class TestDocumentOwnerRepository:
         _run(_go())
 
     def test_get_by_kb(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -336,7 +336,7 @@ class TestDocumentOwnerRepository:
 # ===========================================================================
 class TestTopicOwnerRepository:
     def test_save(self):
-        from src.database.repositories.ownership import TopicOwnerRepository
+        from src.stores.postgres.repositories.ownership import TopicOwnerRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -353,7 +353,7 @@ class TestTopicOwnerRepository:
         _run(_go())
 
     def test_get_by_kb(self):
-        from src.database.repositories.ownership import TopicOwnerRepository
+        from src.stores.postgres.repositories.ownership import TopicOwnerRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -375,7 +375,7 @@ class TestTopicOwnerRepository:
 # ===========================================================================
 class TestErrorReportRepository:
     def test_get_by_id_not_found(self):
-        from src.database.repositories.ownership import ErrorReportRepository
+        from src.stores.postgres.repositories.ownership import ErrorReportRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -390,7 +390,7 @@ class TestErrorReportRepository:
         _run(_go())
 
     def test_get_by_document(self):
-        from src.database.repositories.ownership import ErrorReportRepository
+        from src.stores.postgres.repositories.ownership import ErrorReportRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -412,7 +412,7 @@ class TestErrorReportRepository:
 # ===========================================================================
 class TestProvenanceRepoUpsert:
     def test_upsert_new(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -431,7 +431,7 @@ class TestProvenanceRepoUpsert:
         _run(_go())
 
     def test_upsert_existing(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
 
         maker, session = _make_session_maker()
         existing = MagicMock()

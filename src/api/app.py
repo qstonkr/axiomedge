@@ -69,7 +69,7 @@ def _get_state() -> AppState:
 
 async def _init_db_with_retry(settings) -> None:
     """Attempt DB init with up to 3 retries."""
-    from src.database.init_db import init_database
+    from src.stores.postgres.init_db import init_database
     import asyncio as _asyncio
 
     db_url = settings.database.database_url
@@ -87,22 +87,22 @@ async def _init_db_with_retry(settings) -> None:
 
 def _create_repositories(state: AppState, session_factory, db_url: str):
     """Create all repository instances and store in state."""
-    from src.database.repositories.kb_registry import KBRegistryRepository
-    from src.database.repositories.glossary import GlossaryRepository
-    from src.database.repositories.ownership import (
+    from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
+    from src.stores.postgres.repositories.glossary import GlossaryRepository
+    from src.stores.postgres.repositories.ownership import (
         DocumentOwnerRepository,
         TopicOwnerRepository,
         ErrorReportRepository,
     )
-    from src.database.repositories.feedback import FeedbackRepository
-    from src.database.repositories.ingestion_run import IngestionRunRepository
-    from src.database.repositories.trust_score import TrustScoreRepository
-    from src.database.repositories.lifecycle import DocumentLifecycleRepository
-    from src.database.repositories.data_source import DataSourceRepository
-    from src.database.repositories.traceability import ProvenanceRepository
-    from src.database.repositories.category import CategoryRepository
-    from src.database.repositories.search_group import SearchGroupRepository
-    from src.database.repositories.usage_log import UsageLogRepository
+    from src.stores.postgres.repositories.feedback import FeedbackRepository
+    from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
+    from src.stores.postgres.repositories.trust_score import TrustScoreRepository
+    from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
+    from src.stores.postgres.repositories.data_source import DataSourceRepository
+    from src.stores.postgres.repositories.traceability import ProvenanceRepository
+    from src.stores.postgres.repositories.category import CategoryRepository
+    from src.stores.postgres.repositories.search_group import SearchGroupRepository
+    from src.stores.postgres.repositories.usage_log import UsageLogRepository
 
     state["glossary_repo"] = GlossaryRepository(session_factory)
     state["doc_owner_repo"] = DocumentOwnerRepository(session_factory)
@@ -129,7 +129,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
 
 async def _init_database(state: AppState, settings) -> None:
     """Initialize PostgreSQL + all repositories + domain services."""
-    from src.database.session import create_async_session_factory
+    from src.stores.postgres.session import create_async_session_factory
 
     db_url = settings.database.database_url
     await _init_db_with_retry(settings)
@@ -211,8 +211,8 @@ async def _init_cache(state: AppState) -> None:
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
         redis_url = _default_redis_url()
-        from src.cache.redis_cache import SearchCache
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.redis_cache import SearchCache
+        from src.stores.redis.dedup_cache import DedupCache
 
         state["search_cache"] = SearchCache(redis_url=redis_url)
         state["dedup_cache"] = DedupCache(redis_url=redis_url)
@@ -222,10 +222,10 @@ async def _init_cache(state: AppState) -> None:
 
     # Multi-Layer Cache (L1 memory + L2 Redis semantic)
     try:
-        from src.cache.multi_layer_cache import MultiLayerCache
-        from src.cache.l1_memory_cache import L1InMemoryCache
-        from src.cache.l2_semantic_cache import L2SemanticCache
-        from src.cache.idempotency_cache import IdempotencyCache
+        from src.stores.redis.multi_layer_cache import MultiLayerCache
+        from src.stores.redis.l1_memory_cache import L1InMemoryCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.idempotency_cache import IdempotencyCache
         from src.config.weights import weights as _cache_weights
 
         cache_cfg = _cache_weights.cache
@@ -339,16 +339,16 @@ async def _init_dedup(state: AppState) -> None:
 async def _init_vectordb(state: AppState, settings) -> None:
     """Initialize Qdrant client, collections, search engine, and store."""
     try:
-        from src.vectordb.client import QdrantConfig, QdrantClientProvider
+        from src.stores.qdrant.client import QdrantConfig, QdrantClientProvider
 
         config = QdrantConfig.from_env()
         provider = QdrantClientProvider(config)
         await provider.ensure_client()
         state["qdrant_provider"] = provider
 
-        from src.vectordb.collections import QdrantCollectionManager
-        from src.vectordb.search import QdrantSearchEngine
-        from src.vectordb.store import QdrantStoreOperations
+        from src.stores.qdrant.collections import QdrantCollectionManager
+        from src.stores.qdrant.search import QdrantSearchEngine
+        from src.stores.qdrant.store import QdrantStoreOperations
 
         cm = QdrantCollectionManager(provider)
         state["qdrant_collections"] = cm
@@ -365,7 +365,7 @@ async def _init_graph(state: AppState, settings) -> None:
         return
 
     try:
-        from src.graph.client import Neo4jClient
+        from src.stores.neo4j.client import Neo4jClient
 
         neo4j = Neo4jClient(
             uri=settings.neo4j.uri,
@@ -376,7 +376,7 @@ async def _init_graph(state: AppState, settings) -> None:
         await neo4j.connect()
         state["neo4j"] = neo4j
 
-        from src.graph.repository import Neo4jGraphRepository
+        from src.stores.neo4j.repository import Neo4jGraphRepository
 
         state["graph_repo"] = Neo4jGraphRepository(neo4j)
 
@@ -385,7 +385,7 @@ async def _init_graph(state: AppState, settings) -> None:
 
         # Ensure graph indexes (idempotent)
         try:
-            from src.graph.indexer import ensure_indexes
+            from src.stores.neo4j.indexer import ensure_indexes
             index_result = await ensure_indexes(neo4j)
             logger.info(
                 "Graph indexes ensured: %d constraints, %d indexes, %d fulltext",
@@ -398,8 +398,8 @@ async def _init_graph(state: AppState, settings) -> None:
 
         # Initialize graph integrity checker and multi-hop searcher
         try:
-            from src.graph.integrity import GraphIntegrityChecker
-            from src.graph.multi_hop_searcher import MultiHopSearcher
+            from src.stores.neo4j.integrity import GraphIntegrityChecker
+            from src.stores.neo4j.multi_hop_searcher import MultiHopSearcher
 
             state["graph_integrity"] = GraphIntegrityChecker(
                 neo4j_client=neo4j,

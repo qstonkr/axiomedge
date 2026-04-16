@@ -46,7 +46,7 @@ class TestGlossaryRepository:
         self.maker, self.session = _make_session_maker()
 
     async def test_save_new_term(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = GlossaryRepository(self.maker)
@@ -56,7 +56,7 @@ class TestGlossaryRepository:
         self.session.commit.assert_awaited_once()
 
     async def test_save_update_existing(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         existing = MagicMock()
         existing.synonyms = "[]"
@@ -67,7 +67,7 @@ class TestGlossaryRepository:
         self.session.commit.assert_awaited_once()
 
     async def test_get_by_id(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         model = MagicMock()
         model.id = "t1"
@@ -93,7 +93,7 @@ class TestGlossaryRepository:
         assert result["term"] == "API"
 
     async def test_get_by_id_not_found(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = GlossaryRepository(self.maker)
@@ -102,7 +102,7 @@ class TestGlossaryRepository:
         assert result is None
 
     async def test_delete_found(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         model = MagicMock()
         self.session.execute.return_value = _make_scalars_result([model])
@@ -113,7 +113,7 @@ class TestGlossaryRepository:
         self.session.delete.assert_awaited_once_with(model)
 
     async def test_delete_not_found(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = GlossaryRepository(self.maker)
@@ -122,7 +122,7 @@ class TestGlossaryRepository:
         assert result is False
 
     async def test_count_by_kb(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         result_mock = MagicMock()
         result_mock.scalar.return_value = 42
@@ -133,7 +133,7 @@ class TestGlossaryRepository:
         assert count == 42
 
     async def test_bulk_delete(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         result_mock = MagicMock()
         result_mock.rowcount = 5
@@ -144,21 +144,21 @@ class TestGlossaryRepository:
         assert count == 5
 
     async def test_bulk_delete_empty(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         repo = GlossaryRepository(self.maker)
         count = await repo.bulk_delete([])
         assert count == 0
 
     async def test_scope_filter_all(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         repo = GlossaryRepository(self.maker)
         result = repo._scope_filter("all")
         assert result is None
 
     async def test_scope_filter_specific_kb(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         repo = GlossaryRepository(self.maker)
         result = repo._scope_filter("kb1")
@@ -174,7 +174,7 @@ class TestFeedbackRepository:
         self.maker, self.session = _make_session_maker()
 
     async def test_save_new(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = FeedbackRepository(self.maker)
@@ -183,7 +183,7 @@ class TestFeedbackRepository:
         self.session.add.assert_called_once()
 
     async def test_get_by_id(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
 
         model = MagicMock()
         model.id = "f1"
@@ -210,7 +210,7 @@ class TestFeedbackRepository:
         assert result["feedback_type"] == "upvote"
 
     async def test_delete_found(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
 
         model = MagicMock()
         self.session.execute.return_value = _make_scalars_result([model])
@@ -220,7 +220,7 @@ class TestFeedbackRepository:
         assert result is True
 
     async def test_count(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
 
         result_mock = MagicMock()
         result_mock.scalar.return_value = 10
@@ -240,7 +240,7 @@ class TestDocumentOwnerRepository:
         self.maker, self.session = _make_session_maker()
 
     async def test_save_new(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = DocumentOwnerRepository(self.maker)
@@ -249,7 +249,7 @@ class TestDocumentOwnerRepository:
         self.session.add.assert_called_once()
 
     async def test_get_by_document(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         model = MagicMock()
         model.id = "o1"
@@ -269,7 +269,7 @@ class TestDocumentOwnerRepository:
         assert result["owner_user_id"] == "u1"
 
     async def test_delete(self):
-        from src.database.repositories.ownership import DocumentOwnerRepository
+        from src.stores.postgres.repositories.ownership import DocumentOwnerRepository
 
         model = MagicMock()
         self.session.execute.return_value = _make_scalars_result([model])
@@ -288,7 +288,7 @@ class TestTopicOwnerRepository:
         self.maker, self.session = _make_session_maker()
 
     async def test_save_new(self):
-        from src.database.repositories.ownership import TopicOwnerRepository
+        from src.stores.postgres.repositories.ownership import TopicOwnerRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = TopicOwnerRepository(self.maker)
@@ -303,7 +303,7 @@ class TestTopicOwnerRepository:
         self.session.add.assert_called_once()
 
     async def test_delete_not_found(self):
-        from src.database.repositories.ownership import TopicOwnerRepository
+        from src.stores.postgres.repositories.ownership import TopicOwnerRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = TopicOwnerRepository(self.maker)
@@ -321,7 +321,7 @@ class TestErrorReportRepository:
         self.maker, self.session = _make_session_maker()
 
     async def test_save_new(self):
-        from src.database.repositories.ownership import ErrorReportRepository
+        from src.stores.postgres.repositories.ownership import ErrorReportRepository
 
         self.session.execute.return_value = _make_scalars_result([])
         repo = ErrorReportRepository(self.maker)
@@ -336,7 +336,7 @@ class TestErrorReportRepository:
         self.session.add.assert_called_once()
 
     async def test_get_by_id(self):
-        from src.database.repositories.ownership import ErrorReportRepository
+        from src.stores.postgres.repositories.ownership import ErrorReportRepository
 
         model = MagicMock()
         model.id = "r1"
@@ -367,19 +367,19 @@ class TestErrorReportRepository:
 
 class TestKBRegistryRepository:
     def test_url_normalization(self):
-        from src.database.repositories.kb_registry import KBRegistryRepository
+        from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
 
         repo = KBRegistryRepository("postgresql://localhost/test")
         assert repo.database_url.startswith("postgresql+asyncpg://")
 
     def test_url_already_async(self):
-        from src.database.repositories.kb_registry import KBRegistryRepository
+        from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
 
         repo = KBRegistryRepository("postgresql+asyncpg://localhost/test")
         assert repo.database_url == "postgresql+asyncpg://localhost/test"
 
     def test_model_to_dict(self):
-        from src.database.repositories.kb_registry import KBRegistryRepository
+        from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
 
         model = MagicMock()
         model.id = "kb1"
@@ -404,7 +404,7 @@ class TestKBRegistryRepository:
         assert result["kb_id"] == "kb1"
 
     def test_utc_helpers(self):
-        from src.database.repositories.kb_registry import _to_naive_utc, _to_aware_utc
+        from src.stores.postgres.repositories.kb_registry import _to_naive_utc, _to_aware_utc
 
         now_aware = datetime.now(timezone.utc)
         naive = _to_naive_utc(now_aware)

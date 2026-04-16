@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.database.models import KBConfigModel, RegistryBase
+from src.stores.postgres.models import KBConfigModel, RegistryBase
 
 logger = logging.getLogger(__name__)
 

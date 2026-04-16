@@ -14,8 +14,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.models import UsageLogModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import UsageLogModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

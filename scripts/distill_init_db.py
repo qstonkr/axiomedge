@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.config import get_settings
-from src.database.session import to_async_database_url
+from src.stores.postgres.session import to_async_database_url
 from src.distill.models import DistillBase
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

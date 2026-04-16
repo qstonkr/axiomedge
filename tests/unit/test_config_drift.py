@@ -59,7 +59,7 @@ class TestEmbeddingDimensionSSOT:
     def test_vectordb_client_references_weights_embedding_dimension(self):
         """QdrantConfig default 가 weights SSOT 를 사용."""
         from src.config.weights import weights
-        from src.vectordb.client import QdrantConfig
+        from src.stores.qdrant.client import QdrantConfig
         cfg = QdrantConfig()
         assert cfg.dense_dimension == weights.embedding.dimension
 
@@ -68,7 +68,7 @@ class TestVectorNameSSOT:
     """vectordb.client.DEFAULT_*_VECTOR_NAME 이 단일 SSOT."""
 
     def test_defaults_are_bge_dense_sparse(self):
-        from src.vectordb.client import (
+        from src.stores.qdrant.client import (
             DEFAULT_DENSE_VECTOR_NAME,
             DEFAULT_SPARSE_VECTOR_NAME,
         )
@@ -76,7 +76,7 @@ class TestVectorNameSSOT:
         assert DEFAULT_SPARSE_VECTOR_NAME == "bge_sparse"
 
     def test_provider_config_uses_defaults(self):
-        from src.vectordb.client import (
+        from src.stores.qdrant.client import (
             DEFAULT_DENSE_VECTOR_NAME,
             DEFAULT_SPARSE_VECTOR_NAME,
             QdrantConfig,

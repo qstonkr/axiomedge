@@ -11,8 +11,8 @@ from typing import Any
 from sqlalchemy import case, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.models import TrustScoreModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import TrustScoreModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

@@ -124,8 +124,8 @@ async def _build_and_persist(
             stats["pages"] += len(tree["pages"])
         return stats
 
-    from src.graph.client import Neo4jClient
-    from src.graph.repository import Neo4jGraphRepository
+    from src.stores.neo4j.client import Neo4jClient
+    from src.stores.neo4j.repository import Neo4jGraphRepository
 
     client = Neo4jClient(uri=NEO4J_URI, user=NEO4J_USER, password=NEO4J_PASSWORD)
     repo = Neo4jGraphRepository(client)
@@ -149,7 +149,7 @@ async def _build_and_persist(
 
 async def _clean_tree_nodes() -> int:
     """기존 트리 노드 전체 삭제 (TreeRoot, TreeSection, TreePage + 관련 엣지)."""
-    from src.graph.client import Neo4jClient
+    from src.stores.neo4j.client import Neo4jClient
 
     client = Neo4jClient(uri=NEO4J_URI, user=NEO4J_USER, password=NEO4J_PASSWORD)
     total_deleted = 0

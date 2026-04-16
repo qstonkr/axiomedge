@@ -12,7 +12,7 @@ import time
 import uuid
 from typing import Any
 
-from ..config.weights import weights as _w
+from src.config.weights import weights as _w
 
 from .client import (
     ADMIN_STATS_CACHE_TTL_S,

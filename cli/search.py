@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 
 async def search(query: str, kb_id: str, top_k: int, with_answer: bool):
     from src.config import get_settings
-    from src.vectordb.client import QdrantConfig, QdrantClientProvider
-    from src.vectordb.collections import QdrantCollectionManager
-    from src.vectordb.search import QdrantSearchEngine
+    from src.stores.qdrant.client import QdrantConfig, QdrantClientProvider
+    from src.stores.qdrant.collections import QdrantCollectionManager
+    from src.stores.qdrant.search import QdrantSearchEngine
 
     settings = get_settings()
 

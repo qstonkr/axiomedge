@@ -41,7 +41,7 @@ def _make_scalars_result(models):
 # ===========================================================================
 class TestCategoryRepository:
     def test_get_l1_categories_empty(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         session.execute = AsyncMock(return_value=_make_scalars_result([]))
@@ -54,7 +54,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_get_l1_categories_with_results(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         cat1 = MagicMock()
@@ -76,7 +76,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_get_l1_categories_cache(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         cat1 = MagicMock()
@@ -99,7 +99,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_invalidate_cache(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         session.execute = AsyncMock(return_value=_make_scalars_result([]))
@@ -114,7 +114,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_get_l1_categories_skip_cache(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         session.execute = AsyncMock(return_value=_make_scalars_result([]))
@@ -128,7 +128,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_get_l1_categories_db_error(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
         from sqlalchemy.exc import SQLAlchemyError
 
         maker, session = _make_session_maker()
@@ -142,7 +142,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_get_all_categories(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         cat1 = MagicMock()
@@ -179,7 +179,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_get_all_categories_db_error(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
         from sqlalchemy.exc import SQLAlchemyError
 
         maker, session = _make_session_maker()
@@ -193,7 +193,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_create_category(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         orm_mock = MagicMock()
@@ -205,7 +205,7 @@ class TestCategoryRepository:
         session.commit = AsyncMock()
         session.refresh = AsyncMock()
 
-        with patch("src.database.repositories.category.KnowledgeCategoryModel", return_value=orm_mock):
+        with patch("src.stores.postgres.repositories.category.KnowledgeCategoryModel", return_value=orm_mock):
             repo = CategoryRepository(maker)
 
             async def _go():
@@ -216,13 +216,13 @@ class TestCategoryRepository:
             _run(_go())
 
     def test_create_category_db_error(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
         from sqlalchemy.exc import SQLAlchemyError
 
         maker, session = _make_session_maker()
         session.add = MagicMock(side_effect=SQLAlchemyError("err"))
 
-        with patch("src.database.repositories.category.KnowledgeCategoryModel", side_effect=SQLAlchemyError("err")):
+        with patch("src.stores.postgres.repositories.category.KnowledgeCategoryModel", side_effect=SQLAlchemyError("err")):
             repo = CategoryRepository(maker)
 
             async def _go():
@@ -232,7 +232,7 @@ class TestCategoryRepository:
             _run(_go())
 
     def test_update_category(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         session.execute = AsyncMock()
@@ -247,7 +247,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_update_category_db_error(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
         from sqlalchemy.exc import SQLAlchemyError
 
         maker, session = _make_session_maker()
@@ -261,7 +261,7 @@ class TestCategoryRepository:
         _run(_go())
 
     def test_soft_delete_category(self):
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         session.execute = AsyncMock()
@@ -276,7 +276,7 @@ class TestCategoryRepository:
 
     def test_keywords_non_list(self):
         """Test that non-list keywords returns empty list."""
-        from src.database.repositories.category import CategoryRepository
+        from src.stores.postgres.repositories.category import CategoryRepository
 
         maker, session = _make_session_maker()
         cat = MagicMock()

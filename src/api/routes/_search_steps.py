@@ -699,7 +699,7 @@ async def _step_cache_store(
     multi_cache = state.get("multi_layer_cache")
     if multi_cache:
         try:
-            from src.cache.cache_types import CacheDomain
+            from src.stores.redis.cache_types import CacheDomain
             await multi_cache.set(
                 query, response_dict, domain=CacheDomain.KB_SEARCH,
                 metadata={"kb_ids": collections},
@@ -1012,7 +1012,7 @@ async def _check_multi_layer_cache(
 ) -> HubSearchResponse | None:
     """Try multi-layer cache lookup."""
     try:
-        from src.cache.cache_types import CacheDomain
+        from src.stores.redis.cache_types import CacheDomain
         cache_entry = await multi_cache.get(
             query, domain=CacheDomain.KB_SEARCH,
             kb_ids=cache_collections, top_k=top_k,

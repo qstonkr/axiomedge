@@ -434,7 +434,7 @@ async def list_contributors(
     if db_session_factory:
         try:
             from sqlalchemy import select, func
-            from src.database.models import ContributorReputationModel
+            from src.stores.postgres.models import ContributorReputationModel
 
             async with db_session_factory() as session:
                 count_stmt = select(func.count()).select_from(ContributorReputationModel)

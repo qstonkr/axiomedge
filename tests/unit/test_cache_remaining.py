@@ -14,9 +14,9 @@ import pytest
 
 class TestSearchCache:
     async def test_get_hit(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.get.return_value = json.dumps({"results": [1, 2, 3]})
             mock_redis.from_url.return_value = redis
@@ -27,9 +27,9 @@ class TestSearchCache:
             assert result["results"] == [1, 2, 3]
 
     async def test_get_miss(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.get.return_value = None
             mock_redis.from_url.return_value = redis
@@ -39,9 +39,9 @@ class TestSearchCache:
             assert result is None
 
     async def test_get_error(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.get.side_effect = Exception("Redis down")
             mock_redis.from_url.return_value = redis
@@ -51,9 +51,9 @@ class TestSearchCache:
             assert result is None
 
     async def test_set(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -62,9 +62,9 @@ class TestSearchCache:
             redis.setex.assert_awaited_once()
 
     async def test_set_error(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.setex.side_effect = Exception("Redis error")
             mock_redis.from_url.return_value = redis
@@ -73,9 +73,9 @@ class TestSearchCache:
             await cache.set("test", ["kb1"], {"r": []})  # Should not raise
 
     async def test_clear(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
 
             async def fake_scan(*args, **kwargs):
@@ -91,9 +91,9 @@ class TestSearchCache:
             assert count == 2
 
     async def test_stats(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
 
             async def fake_scan(*args, **kwargs):
@@ -108,9 +108,9 @@ class TestSearchCache:
             assert stats["key_count"] == 1
 
     async def test_close(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -119,9 +119,9 @@ class TestSearchCache:
             redis.aclose.assert_awaited_once()
 
     def test_make_key_deterministic(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             mock_redis.from_url.return_value = AsyncMock()
             cache = SearchCache()
 
@@ -130,9 +130,9 @@ class TestSearchCache:
         assert key1 == key2  # Sorted kb_ids
 
     def test_make_key_with_top_k(self):
-        from src.cache.redis_cache import SearchCache
+        from src.stores.redis.redis_cache import SearchCache
 
-        with patch("src.cache.redis_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             mock_redis.from_url.return_value = AsyncMock()
             cache = SearchCache()
 
@@ -147,9 +147,9 @@ class TestSearchCache:
 
 class TestDedupCache:
     async def test_exists_true(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.sismember.return_value = True
             mock_redis.from_url.return_value = redis
@@ -159,9 +159,9 @@ class TestDedupCache:
             assert result is True
 
     async def test_exists_false(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.sismember.return_value = False
             mock_redis.from_url.return_value = redis
@@ -171,9 +171,9 @@ class TestDedupCache:
             assert result is False
 
     async def test_exists_error(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.sismember.side_effect = Exception("fail")
             mock_redis.from_url.return_value = redis
@@ -183,9 +183,9 @@ class TestDedupCache:
             assert result is False
 
     async def test_add(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -194,9 +194,9 @@ class TestDedupCache:
             redis.sadd.assert_awaited_once()
 
     async def test_add_batch_empty(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -205,9 +205,9 @@ class TestDedupCache:
             redis.sadd.assert_not_awaited()
 
     async def test_add_batch(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -216,9 +216,9 @@ class TestDedupCache:
             redis.sadd.assert_awaited_once()
 
     async def test_clear(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -227,9 +227,9 @@ class TestDedupCache:
             redis.delete.assert_awaited_once()
 
     async def test_count(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             redis.scard.return_value = 42
             mock_redis.from_url.return_value = redis
@@ -239,9 +239,9 @@ class TestDedupCache:
             assert result == 42
 
     async def test_close(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
             mock_redis.from_url.return_value = redis
 
@@ -250,9 +250,9 @@ class TestDedupCache:
             redis.aclose.assert_awaited_once()
 
     async def test_stats(self):
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.dedup_cache import DedupCache
 
-        with patch("src.cache.dedup_cache.aioredis") as mock_redis:
+        with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
 
             async def fake_scan(*args, **kwargs):
@@ -268,7 +268,7 @@ class TestDedupCache:
 
 
 def test_content_hash():
-    from src.cache.dedup_cache import content_hash
+    from src.stores.redis.dedup_cache import content_hash
     h1 = content_hash("hello world")
     h2 = content_hash("Hello World")  # Different case -> same after normalization
     assert h1 == h2
@@ -281,46 +281,46 @@ def test_content_hash():
 
 class TestCacheKeyBuilder:
     def test_normalize_query(self):
-        from src.cache.cache_key_builder import normalize_query
+        from src.stores.redis.cache_key_builder import normalize_query
         assert normalize_query("  Hello   World  ") == "hello world"
         assert normalize_query("") == ""
 
     def test_build_cache_key_basic(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key = build_cache_key("test query")
         assert key.startswith("knowledge:")
         assert ":" in key
 
     def test_build_cache_key_with_kb_ids(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key = build_cache_key("test", kb_ids=["kb1", "kb2"])
         assert key.count(":") == 2
 
     def test_build_cache_key_sorted_kb_ids(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key1 = build_cache_key("test", kb_ids=["kb1", "kb2"])
         key2 = build_cache_key("test", kb_ids=["kb2", "kb1"])
         assert key1 == key2
 
     def test_build_cache_key_with_top_k(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key1 = build_cache_key("test", top_k=5)
         key2 = build_cache_key("test", top_k=10)
         assert key1 != key2
 
     def test_build_cache_key_custom_prefix(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key = build_cache_key("test", prefix="custom")
         assert key.startswith("custom:")
 
     def test_build_cache_key_deterministic(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key1 = build_cache_key("same query", kb_ids=["kb1"])
         key2 = build_cache_key("same query", kb_ids=["kb1"])
         assert key1 == key2
 
     def test_build_cache_key_case_insensitive(self):
-        from src.cache.cache_key_builder import build_cache_key
+        from src.stores.redis.cache_key_builder import build_cache_key
         key1 = build_cache_key("Test Query")
         key2 = build_cache_key("test query")
         assert key1 == key2

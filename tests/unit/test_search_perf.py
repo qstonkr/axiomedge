@@ -88,7 +88,7 @@ class TestMultiHopParallel:
     @pytest.mark.asyncio
     async def test_queries_run_concurrently(self):
         """All entity queries should be awaited concurrently, not serially."""
-        from src.graph.multi_hop_searcher import MultiHopSearcher
+        from src.stores.neo4j.multi_hop_searcher import MultiHopSearcher
 
         call_order: list[str] = []
         call_sleeps: list[float] = []
@@ -139,7 +139,7 @@ class TestMultiHopParallel:
 
     @pytest.mark.asyncio
     async def test_single_failure_does_not_block_others(self):
-        from src.graph.multi_hop_searcher import MultiHopSearcher
+        from src.stores.neo4j.multi_hop_searcher import MultiHopSearcher
 
         call_count = [0]
 

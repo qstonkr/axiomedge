@@ -10,17 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.cache.cache_types import (
+from src.stores.redis.cache_types import (
     CacheDomain,
     CacheEntry,
     CacheMetrics,
     ICacheLayer,
     _utc_now,
 )
-from src.cache.l1_memory_cache import L1InMemoryCache
-from src.cache.l2_semantic_cache import L2SemanticCache, _cosine_similarity
-from src.cache.multi_layer_cache import MultiLayerCache
-from src.cache.idempotency_cache import IdempotencyCache, request_hash
+from src.stores.redis.l1_memory_cache import L1InMemoryCache
+from src.stores.redis.l2_semantic_cache import L2SemanticCache, _cosine_similarity
+from src.stores.redis.multi_layer_cache import MultiLayerCache
+from src.stores.redis.idempotency_cache import IdempotencyCache, request_hash
 
 
 # ===========================================================================

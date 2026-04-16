@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
-from src.database.repositories.kb_registry import (
+from src.stores.postgres.repositories.kb_registry import (
     KBRegistryRepository,
     _utc_now,
     _to_naive_utc,
@@ -189,7 +189,7 @@ class TestGetKbByName:
 class TestCreateKb:
     def test_success(self):
         repo, session = _make_repo_with_session()
-        with patch("src.database.repositories.kb_registry.KBConfigModel") as MockModel:
+        with patch("src.stores.postgres.repositories.kb_registry.KBConfigModel") as MockModel:
             MockModel.return_value = MagicMock()
             result = _run(repo.create_kb({"id": "kb2", "name": "New KB"}))
             assert result["name"] == "New KB"

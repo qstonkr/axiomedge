@@ -13,8 +13,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import DocumentLifecycleModel, LifecycleTransitionModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import DocumentLifecycleModel, LifecycleTransitionModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

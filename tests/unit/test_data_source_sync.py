@@ -284,7 +284,7 @@ class TestDataSourceRepoCompleteSync:
     @pytest.mark.asyncio
     async def test_complete_sync_updates_fields(self):
         """Verify complete_sync calls update with correct fields."""
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
 
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)

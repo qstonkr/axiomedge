@@ -32,7 +32,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.config import get_settings
-from src.database.session import to_async_database_url
+from src.stores.postgres.session import to_async_database_url
 from src.distill.data_gen.llm_helper import LLMHelper
 from src.distill.data_gen.question_augmenter import QuestionAugmenter
 from src.distill.repository import DistillRepository

@@ -11,8 +11,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.models import KnowledgeFeedbackModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import KnowledgeFeedbackModel
+from src.stores.postgres.repositories.base import BaseRepository
 from src.domain.models import FeedbackType
 
 logger = logging.getLogger(__name__)

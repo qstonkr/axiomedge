@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.repositories.base import BaseRepository
 
 
 class TestBaseRepository:

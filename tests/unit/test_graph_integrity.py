@@ -14,7 +14,7 @@ def _run(coro):
     finally:
         loop.close()
 
-from src.graph.integrity import (
+from src.stores.neo4j.integrity import (
     GraphIntegrityChecker,
     IntegrityIssue,
     IntegrityReport,

@@ -14,12 +14,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.models import (
+from src.stores.postgres.models import (
     DocumentErrorReportModel,
     DocumentOwnerModel,
     TopicOwnerModel,
 )
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

@@ -14,8 +14,8 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from src.database.models import GlossaryTermModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import GlossaryTermModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ class GlossaryRepository(BaseRepository):
         if bind:
             pg_url = str(bind.url).replace("postgresql+asyncpg://", "postgresql://")
         else:
-            from src.database.init_db import DEFAULT_DATABASE_URL
+            from src.stores.postgres.init_db import DEFAULT_DATABASE_URL
             db_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
             pg_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
 

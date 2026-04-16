@@ -13,8 +13,8 @@ from uuid import UUID
 
 from sqlalchemy import delete, select, update
 
-from src.database.models import KBSearchGroupModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import KBSearchGroupModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

@@ -45,9 +45,9 @@ async def _init_services():
     """Initialize required services."""
     from src.config import get_settings
     from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
-    from src.vectordb.client import QdrantConfig, QdrantClientProvider
-    from src.vectordb.collections import QdrantCollectionManager
-    from src.vectordb.store import QdrantStoreOperations
+    from src.stores.qdrant.client import QdrantConfig, QdrantClientProvider
+    from src.stores.qdrant.collections import QdrantCollectionManager
+    from src.stores.qdrant.store import QdrantStoreOperations
 
     settings = get_settings()
 
@@ -69,8 +69,8 @@ async def _init_services():
     graph_repo = None
     if settings.neo4j.enabled:
         try:
-            from src.graph.client import Neo4jClient
-            from src.graph.repository import Neo4jGraphRepository
+            from src.stores.neo4j.client import Neo4jClient
+            from src.stores.neo4j.repository import Neo4jGraphRepository
 
             neo4j = Neo4jClient(uri=settings.neo4j.uri)
             await neo4j.connect()

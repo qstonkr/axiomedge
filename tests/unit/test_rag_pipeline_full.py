@@ -15,7 +15,7 @@ from src.search.rag_pipeline import (
     RAGRequest,
     RAGResponse,
 )
-from src.vectordb.client import QdrantSearchResult
+from src.stores.qdrant.client import QdrantSearchResult
 
 
 # ---------------------------------------------------------------------------

@@ -91,7 +91,7 @@ class TestQualityRoutes:
 # ===========================================================================
 class TestGlossaryRepository:
     def test_list_by_kb_basic(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
 
@@ -131,7 +131,7 @@ class TestGlossaryRepository:
         _run(_go())
 
     def test_count_by_kb(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -146,7 +146,7 @@ class TestGlossaryRepository:
         _run(_go())
 
     def test_get_by_id(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -161,7 +161,7 @@ class TestGlossaryRepository:
         _run(_go())
 
     def test_delete(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
         existing = MagicMock()
@@ -179,7 +179,7 @@ class TestGlossaryRepository:
         _run(_go())
 
     def test_delete_not_found(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -194,7 +194,7 @@ class TestGlossaryRepository:
         _run(_go())
 
     def test_search(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
         result_mock = MagicMock()
@@ -211,7 +211,7 @@ class TestGlossaryRepository:
         _run(_go())
 
     def test_bulk_delete(self):
-        from src.database.repositories.glossary import GlossaryRepository
+        from src.stores.postgres.repositories.glossary import GlossaryRepository
 
         maker, session = _make_session_maker()
         exec_result = MagicMock()

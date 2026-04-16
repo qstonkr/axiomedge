@@ -69,7 +69,7 @@ async def get_domain_stats():
         return {"domains": {}}
     try:
         from sqlalchemy import func, select
-        from src.database.models import GlossaryTermModel
+        from src.stores.postgres.models import GlossaryTermModel
         async with await repo._get_session() as session:
             stmt = (
                 select(GlossaryTermModel.domain_name, func.count())
@@ -98,7 +98,7 @@ async def get_source_stats():
         return {"sources": {}}
     try:
         from sqlalchemy import func, select
-        from src.database.models import GlossaryTermModel
+        from src.stores.postgres.models import GlossaryTermModel
         async with await repo._get_session() as session:
             stmt = (
                 select(GlossaryTermModel.kb_id, func.count())

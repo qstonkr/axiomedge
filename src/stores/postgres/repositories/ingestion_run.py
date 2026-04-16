@@ -13,8 +13,8 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.database.models import IngestionRunModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import IngestionRunModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

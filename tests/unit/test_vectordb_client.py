@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.vectordb.client import (
+from src.stores.qdrant.client import (
     DEFAULT_DENSE_VECTOR_NAME,
     DEFAULT_SPARSE_VECTOR_NAME,
     DEFAULT_DENSE_WEIGHT,

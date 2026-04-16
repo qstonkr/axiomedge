@@ -12,8 +12,8 @@ import os
 
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from src.database.models import KnowledgeBase, RegistryBase
-from src.database.session import to_async_database_url
+from src.stores.postgres.models import KnowledgeBase, RegistryBase
+from src.stores.postgres.session import to_async_database_url
 from src.distill.models import DistillBase
 
 # Import auth models so they register with KnowledgeBase.metadata

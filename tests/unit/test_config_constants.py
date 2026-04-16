@@ -19,5 +19,5 @@ class TestConfigConstants:
         assert "knowledge" in DEFAULT_DATABASE_URL
 
     def test_init_db_uses_same_url(self) -> None:
-        from src.database.init_db import DEFAULT_DATABASE_URL as init_url
+        from src.stores.postgres.init_db import DEFAULT_DATABASE_URL as init_url
         assert init_url == DEFAULT_DATABASE_URL

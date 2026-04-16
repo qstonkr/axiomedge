@@ -11,7 +11,7 @@ Features:
     - Shared label sets for runtime validation
 
 Usage:
-    from src.graph.node_registry import (
+    from src.stores.neo4j.node_registry import (
         NODE_TYPE_BY_KEY,
         RELATION_TYPE_BY_KEY,
         build_graph_constraints,

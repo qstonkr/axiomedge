@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
-from src.database.models import KnowledgeBase
+from src.stores.postgres.models import KnowledgeBase
 
 _FK_AUTH_USER_ID = "auth_users.id"
 

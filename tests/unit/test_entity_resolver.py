@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.graph.entity_resolver import (
+from src.stores.neo4j.entity_resolver import (
     NORMALIZATION_RULES,
     _basic_normalize,
 )

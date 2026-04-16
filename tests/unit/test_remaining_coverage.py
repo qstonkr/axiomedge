@@ -15,7 +15,7 @@ import pytest
 # GraphIntegrityChecker
 # ===========================================================================
 
-from src.graph.integrity import (
+from src.stores.neo4j.integrity import (
     GraphIntegrityChecker,
     IntegrityIssue,
     IntegrityReport,

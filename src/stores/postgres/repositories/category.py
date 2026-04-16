@@ -13,8 +13,8 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from src.database.models import KnowledgeCategoryModel
-from src.database.repositories.base import BaseRepository
+from src.stores.postgres.models import KnowledgeCategoryModel
+from src.stores.postgres.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 

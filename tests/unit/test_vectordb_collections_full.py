@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.vectordb.client import QdrantClientProvider, QdrantConfig
-from src.vectordb.collections import QdrantCollectionManager
+from src.stores.qdrant.client import QdrantClientProvider, QdrantConfig
+from src.stores.qdrant.collections import QdrantCollectionManager
 
 
 # ---------------------------------------------------------------------------

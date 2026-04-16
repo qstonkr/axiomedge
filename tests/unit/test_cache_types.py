@@ -1,6 +1,6 @@
 """Unit tests for cache types — DOMAIN_THRESHOLDS, CacheEntry."""
 
-from src.cache.cache_types import (
+from src.stores.redis.cache_types import (
     CacheDomain,
     CacheEntry,
     DOMAIN_THRESHOLDS,

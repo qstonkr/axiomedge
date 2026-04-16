@@ -48,8 +48,8 @@ async def run_extraction(kb_id: str):
         return
 
     # Import glossary repo for dedup + save
-    from src.database.repositories.glossary import GlossaryRepository
-    from src.database.init_db import DEFAULT_DATABASE_URL
+    from src.stores.postgres.repositories.glossary import GlossaryRepository
+    from src.stores.postgres.init_db import DEFAULT_DATABASE_URL
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
     from src.pipeline.term_extractor import TermExtractor
 

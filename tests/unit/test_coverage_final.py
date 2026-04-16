@@ -68,27 +68,27 @@ def _mock_scalar(session, value):
 
 class TestDataSourceRepository:
     def test_safe_json_loads_empty(self):
-        from src.database.repositories.data_source import _safe_json_loads
+        from src.stores.postgres.repositories.data_source import _safe_json_loads
         assert _safe_json_loads(None) == {}
         assert _safe_json_loads("") == {}
         assert _safe_json_loads(None, []) == []
 
     def test_safe_json_loads_valid(self):
-        from src.database.repositories.data_source import _safe_json_loads
+        from src.stores.postgres.repositories.data_source import _safe_json_loads
         assert _safe_json_loads('{"a": 1}') == {"a": 1}
 
     def test_safe_json_loads_invalid(self):
-        from src.database.repositories.data_source import _safe_json_loads
+        from src.stores.postgres.repositories.data_source import _safe_json_loads
         assert _safe_json_loads("not-json") == {}
         assert _safe_json_loads("not-json", {"default": True}) == {"default": True}
 
     def test_utc_now(self):
-        from src.database.repositories.data_source import _utc_now
+        from src.stores.postgres.repositories.data_source import _utc_now
         now = _utc_now()
         assert now.tzinfo is not None
 
     def test_register(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         data = {
             "id": "ds-1", "name": "test", "source_type": "file", "kb_id": "kb-1",
@@ -97,24 +97,24 @@ class TestDataSourceRepository:
             "last_sync_result": {"status": "ok"},
             "metadata": {"tag": "v1"},
         }
-        with patch("src.database.repositories.data_source.DataSourceModel"):
+        with patch("src.stores.postgres.repositories.data_source.DataSourceModel"):
             result = _run(repo.register(data))
         assert result == data
         session.add.assert_called_once()
         session.commit.assert_awaited_once()
 
     def test_register_rollback_on_error(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(DataSourceRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
-        with patch("src.database.repositories.data_source.DataSourceModel"):
+        with patch("src.stores.postgres.repositories.data_source.DataSourceModel"):
             with pytest.raises(SQLAlchemyError):
                 _run(repo.register({"id": "ds-1"}))
         session.rollback.assert_awaited_once()
 
     def test_get_found(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         model = MagicMock()
         model.id = "ds-1"
@@ -136,42 +136,42 @@ class TestDataSourceRepository:
         assert result["id"] == "ds-1"
 
     def test_get_not_found(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalar_one_or_none(session, None)
         result = _run(repo.get("nonexistent"))
         assert result is None
 
     def test_get_by_name(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalar_one_or_none(session, None)
         result = _run(repo.get_by_name("test"))
         assert result is None
 
     def test_list_with_filters(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.list(source_type="file", status="active"))
         assert result == []
 
     def test_list_no_filters(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.list())
         assert result == []
 
     def test_update_status(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _run(repo.update_status("ds-1", "error", "something broke"))
         session.execute.assert_awaited_once()
         session.commit.assert_awaited_once()
 
     def test_update_status_rollback(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(DataSourceRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
@@ -180,7 +180,7 @@ class TestDataSourceRepository:
         session.rollback.assert_awaited_once()
 
     def test_delete_found(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         result_mock = MagicMock()
         result_mock.rowcount = 1
@@ -188,7 +188,7 @@ class TestDataSourceRepository:
         assert _run(repo.delete("ds-1")) is True
 
     def test_delete_not_found(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         result_mock = MagicMock()
         result_mock.rowcount = 0
@@ -196,7 +196,7 @@ class TestDataSourceRepository:
         assert _run(repo.delete("ds-1")) is False
 
     def test_to_dict(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         model = MagicMock()
         model.id = "ds-1"
         model.name = "test"
@@ -244,7 +244,7 @@ class TestFeedbackRepository:
         return m
 
     def test_save_new(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalar_one_or_none(session, None)  # no existing
         _run(repo.save({"id": "fb-1", "entry_id": "e-1"}))
@@ -252,7 +252,7 @@ class TestFeedbackRepository:
         session.commit.assert_awaited()
 
     def test_save_update_existing(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         existing = self._make_model()
         _mock_scalar_one_or_none(session, existing)
@@ -260,7 +260,7 @@ class TestFeedbackRepository:
         session.commit.assert_awaited()
 
     def test_save_rollback(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalar_one_or_none(session, None)
@@ -270,7 +270,7 @@ class TestFeedbackRepository:
         session.rollback.assert_awaited_once()
 
     def test_get_by_id_found(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -278,41 +278,41 @@ class TestFeedbackRepository:
         assert result["id"] == "fb-1"
 
     def test_get_by_id_not_found(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get_by_id("nonexistent")) is None
 
     def test_get_by_entry(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalars_all(session, [self._make_model()])
         result = _run(repo.get_by_entry("e-1", "kb-1"))
         assert len(result) == 1
 
     def test_get_by_user(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_by_user("u-1"))
         assert result == []
 
     def test_get_pending_reviews_with_kb(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_pending_reviews(kb_id="kb-1"))
         assert result == []
 
     def test_get_pending_reviews_no_kb(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_pending_reviews())
         assert result == []
 
     def test_get_votes_for_entry(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         # Need two execute calls - upvotes then downvotes
         r1 = MagicMock()
@@ -325,28 +325,28 @@ class TestFeedbackRepository:
         assert down == 2
 
     def test_list_all_with_filters(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.list_all(status="pending", feedback_type="upvote"))
         assert result == []
 
     def test_count_with_filters(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalar(session, 10)
         result = _run(repo.count(status="pending", feedback_type="upvote"))
         assert result == 10
 
     def test_count_none(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalar(session, None)
         result = _run(repo.count())
         assert result == 0
 
     def test_delete_found(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -355,7 +355,7 @@ class TestFeedbackRepository:
         session.delete.assert_awaited_once()
 
     def test_delete_not_found(self):
-        from src.database.repositories.feedback import FeedbackRepository
+        from src.stores.postgres.repositories.feedback import FeedbackRepository
         repo, session = _make_repo(FeedbackRepository)
         _mock_scalar_one_or_none(session, None)
         result = _run(repo.delete("nonexistent"))
@@ -368,29 +368,29 @@ class TestFeedbackRepository:
 
 class TestIngestionRunRepository:
     def test_create(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         data = {
             "id": "run-1", "kb_id": "kb-1",
             "errors": ["err1", "err2"],
             "metadata": {"key": "val"},
         }
-        with patch("src.database.repositories.ingestion_run.IngestionRunModel"):
+        with patch("src.stores.postgres.repositories.ingestion_run.IngestionRunModel"):
             _run(repo.create(data))
         session.add.assert_called_once()
         session.commit.assert_awaited_once()
 
     def test_create_rollback(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(IngestionRunRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
-        with patch("src.database.repositories.ingestion_run.IngestionRunModel"):
+        with patch("src.stores.postgres.repositories.ingestion_run.IngestionRunModel"):
             with pytest.raises(SQLAlchemyError):
                 _run(repo.create({"id": "run-1"}))
 
     def test_complete(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         data = {
             "status": "completed",
@@ -402,14 +402,14 @@ class TestIngestionRunRepository:
         session.commit.assert_awaited_once()
 
     def test_complete_with_completed_at(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         now = datetime.now(timezone.utc)
         _run(repo.complete("run-1", {"status": "done", "completed_at": now}))
         session.commit.assert_awaited_once()
 
     def test_complete_rollback(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(IngestionRunRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
@@ -438,7 +438,7 @@ class TestIngestionRunRepository:
         return m
 
     def test_get_by_id_found(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -447,48 +447,48 @@ class TestIngestionRunRepository:
         assert result["errors"] == ["err1"]
 
     def test_get_by_id_not_found(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get_by_id("nonexistent")) is None
 
     def test_get_by_id_error(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(IngestionRunRepository)
         session.execute = AsyncMock(side_effect=SQLAlchemyError("fail"))
         assert _run(repo.get_by_id("run-1")) is None
 
     def test_list_by_kb(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         _mock_scalars_all(session, [self._make_model()])
         result = _run(repo.list_by_kb("kb-1"))
         assert len(result) == 1
 
     def test_list_by_kb_error(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(IngestionRunRepository)
         session.execute = AsyncMock(side_effect=SQLAlchemyError("fail"))
         assert _run(repo.list_by_kb("kb-1")) == []
 
     def test_list_recent(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         repo, session = _make_repo(IngestionRunRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.list_recent())
         assert result == []
 
     def test_list_recent_error(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(IngestionRunRepository)
         session.execute = AsyncMock(side_effect=SQLAlchemyError("fail"))
         assert _run(repo.list_recent()) == []
 
     def test_to_dict_bad_json(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         model = self._make_model()
         model.errors = "not-json"
         model.run_metadata = "not-json"
@@ -497,7 +497,7 @@ class TestIngestionRunRepository:
         assert d["metadata"] == {}
 
     def test_to_dict_none_fields(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         model = self._make_model()
         model.status = None
         model.documents_fetched = None
@@ -534,7 +534,7 @@ class TestDocumentLifecycleRepository:
         return m
 
     def test_save_new(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         _mock_scalar_one_or_none(session, None)
         _run(repo.save({"id": "lc-1", "document_id": "doc-1", "kb_id": "kb-1"}))
@@ -542,7 +542,7 @@ class TestDocumentLifecycleRepository:
         session.commit.assert_awaited()
 
     def test_save_update_existing(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         existing = self._make_model()
         _mock_scalar_one_or_none(session, existing)
@@ -550,7 +550,7 @@ class TestDocumentLifecycleRepository:
         session.commit.assert_awaited()
 
     def test_save_with_transitions(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         existing = self._make_model()
         # First execute returns existing model, second returns count
@@ -560,7 +560,7 @@ class TestDocumentLifecycleRepository:
         count_result.scalar_one.return_value = 0
         session.execute = AsyncMock(side_effect=[result1, count_result])
         transitions = [{"from_status": "draft", "to_status": "active", "transitioned_by": "u-1"}]
-        with patch("src.database.repositories.lifecycle.LifecycleTransitionModel"):
+        with patch("src.stores.postgres.repositories.lifecycle.LifecycleTransitionModel"):
             _run(repo.save({
                 "document_id": "doc-1", "kb_id": "kb-1",
                 "transitions": transitions,
@@ -568,7 +568,7 @@ class TestDocumentLifecycleRepository:
         session.commit.assert_awaited()
 
     def test_save_rollback(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(DocumentLifecycleRepository)
         _mock_scalar_one_or_none(session, None)
@@ -577,7 +577,7 @@ class TestDocumentLifecycleRepository:
             _run(repo.save({"id": "lc-1", "document_id": "doc-1", "kb_id": "kb-1"}))
 
     def test_get_by_document_found(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         model = self._make_model()
         # First execute for the model, second for transitions
@@ -591,13 +591,13 @@ class TestDocumentLifecycleRepository:
         assert result["transitions"] == []
 
     def test_get_by_document_not_found(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get_by_document("doc-1", "kb-1")) is None
 
     def test_list_by_kb(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         # First call returns models, subsequent calls return transitions for each
         r1 = MagicMock()
@@ -609,7 +609,7 @@ class TestDocumentLifecycleRepository:
         assert len(result) == 1
 
     def test_list_by_status(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         repo, session = _make_repo(DocumentLifecycleRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.list_by_status("kb-1", "active"))
@@ -634,16 +634,16 @@ class TestSearchGroupRepository:
         return m
 
     def test_create(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         model = self._make_model()
         session.refresh = AsyncMock()
-        with patch("src.database.repositories.search_group.KBSearchGroupModel", return_value=model):
+        with patch("src.stores.postgres.repositories.search_group.KBSearchGroupModel", return_value=model):
             result = _run(repo.create("test-group", ["kb-1"]))
         assert result["name"] == "test-group"
 
     def test_get_found(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -651,19 +651,19 @@ class TestSearchGroupRepository:
         assert result["name"] == "test-group"
 
     def test_get_not_found(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get(str(uuid.uuid4()))) is None
 
     def test_get_by_name(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get_by_name("test")) is None
 
     def test_get_default(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         model = self._make_model()
         model.is_default = True
@@ -672,14 +672,14 @@ class TestSearchGroupRepository:
         assert result["is_default"] is True
 
     def test_list_all(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         _mock_scalars_all(session, [self._make_model()])
         result = _run(repo.list_all())
         assert len(result) == 1
 
     def test_update_with_default(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         model = self._make_model()
         # First execute clears other defaults, second does the update
@@ -691,7 +691,7 @@ class TestSearchGroupRepository:
         assert result is not None
 
     def test_update_not_found(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         r1 = MagicMock()
         r1.scalar_one_or_none.return_value = None
@@ -700,7 +700,7 @@ class TestSearchGroupRepository:
         assert result is None
 
     def test_delete_found(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         result_mock = MagicMock()
         result_mock.rowcount = 1
@@ -708,7 +708,7 @@ class TestSearchGroupRepository:
         assert _run(repo.delete(_TEST_UUID)) is True
 
     def test_delete_not_found(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         result_mock = MagicMock()
         result_mock.rowcount = 0
@@ -716,7 +716,7 @@ class TestSearchGroupRepository:
         assert _run(repo.delete(_TEST_UUID)) is False
 
     def test_resolve_kb_ids_by_id(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -724,14 +724,14 @@ class TestSearchGroupRepository:
         assert result == ["kb-1", "kb-2"]
 
     def test_resolve_kb_ids_by_name(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         _mock_scalar_one_or_none(session, None)
         result = _run(repo.resolve_kb_ids(group_name="test"))
         assert result == []
 
     def test_resolve_kb_ids_default(self):
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         repo, session = _make_repo(SearchGroupRepository)
         _mock_scalar_one_or_none(session, None)
         result = _run(repo.resolve_kb_ids())
@@ -768,7 +768,7 @@ class TestProvenanceRepository:
         return m
 
     def test_save(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         data = {
             "knowledge_id": "k-1", "kb_id": "kb-1",
@@ -780,7 +780,7 @@ class TestProvenanceRepository:
         session.commit.assert_awaited_once()
 
     def test_save_with_id(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         data = {
             "id": "prov-existing",
@@ -791,7 +791,7 @@ class TestProvenanceRepository:
         session.commit.assert_awaited_once()
 
     def test_save_rollback(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(ProvenanceRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
@@ -799,7 +799,7 @@ class TestProvenanceRepository:
             _run(repo.save({"knowledge_id": "k-1", "kb_id": "kb-1"}))
 
     def test_upsert_new(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         _mock_scalar_one_or_none(session, None)
         result = _run(repo.upsert({
@@ -811,7 +811,7 @@ class TestProvenanceRepository:
         session.add.assert_called_once()
 
     def test_upsert_existing(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         existing = self._make_model()
         existing.content_hash = "old-hash"
@@ -825,7 +825,7 @@ class TestProvenanceRepository:
         assert result == "old-hash"
 
     def test_upsert_rollback(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(ProvenanceRepository)
         _mock_scalar_one_or_none(session, None)
@@ -834,7 +834,7 @@ class TestProvenanceRepository:
             _run(repo.upsert({"knowledge_id": "k-1", "kb_id": "kb-1"}))
 
     def test_get_by_knowledge_id(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -844,27 +844,27 @@ class TestProvenanceRepository:
         assert result["contributors"] == ["a", "b"]
 
     def test_get_by_knowledge_and_kb(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get_by_knowledge_and_kb("k-1", "kb-1")) is None
 
     def test_get_by_source(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         _mock_scalars_all(session, [self._make_model()])
         result = _run(repo.get_by_source("file", "s-1"))
         assert len(result) == 1
 
     def test_get_by_run_id(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         repo, session = _make_repo(ProvenanceRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_by_run_id("run-1"))
         assert result == []
 
     def test_to_dict_bad_json(self):
-        from src.database.repositories.traceability import ProvenanceRepository
+        from src.stores.postgres.repositories.traceability import ProvenanceRepository
         model = self._make_model()
         model.extraction_metadata = "not-json"
         model.contributors = "not-json"
@@ -906,7 +906,7 @@ class TestTrustScoreRepository:
         return m
 
     def test_save_new(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalar_one_or_none(session, None)
         _run(repo.save({"entry_id": "e-1", "kb_id": "kb-1", "kts_score": 0.8}))
@@ -914,7 +914,7 @@ class TestTrustScoreRepository:
         session.commit.assert_awaited()
 
     def test_save_update(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         existing = self._make_model()
         _mock_scalar_one_or_none(session, existing)
@@ -922,7 +922,7 @@ class TestTrustScoreRepository:
         session.commit.assert_awaited()
 
     def test_save_rollback(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalar_one_or_none(session, None)
@@ -931,7 +931,7 @@ class TestTrustScoreRepository:
             _run(repo.save({"entry_id": "e-1", "kb_id": "kb-1"}))
 
     def test_get_by_entry_found(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
@@ -939,68 +939,68 @@ class TestTrustScoreRepository:
         assert result["kts_score"] == 0.85
 
     def test_get_by_entry_not_found(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.get_by_entry("e-1", "kb-1")) is None
 
     def test_get_by_kb(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalars_all(session, [self._make_model()])
         result = _run(repo.get_by_kb("kb-1", sort="top"))
         assert len(result) == 1
 
     def test_get_by_kb_recent(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_by_kb("kb-1", sort="recent"))
         assert result == []
 
     def test_get_by_kb_trending(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_by_kb("kb-1", sort="trending"))
         assert result == []
 
     def test_get_stale_entries(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_stale_entries("kb-1"))
         assert result == []
 
     def test_get_needs_review_with_kb(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_needs_review(kb_id="kb-1"))
         assert result == []
 
     def test_get_needs_review_no_kb(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalars_all(session, [])
         result = _run(repo.get_needs_review())
         assert result == []
 
     def test_delete_found(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         model = self._make_model()
         _mock_scalar_one_or_none(session, model)
         assert _run(repo.delete("e-1", "kb-1")) is True
 
     def test_delete_not_found(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         repo, session = _make_repo(TrustScoreRepository)
         _mock_scalar_one_or_none(session, None)
         assert _run(repo.delete("e-1", "kb-1")) is False
 
     def test_sort_expression(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         # Just ensure no exceptions
         TrustScoreRepository._sort_expression("top")
         TrustScoreRepository._sort_expression("recent")
@@ -1025,24 +1025,24 @@ class TestUsageLogRepository:
         return m
 
     def test_log_search(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         repo, session = _make_repo(UsageLogRepository)
-        with patch("src.database.repositories.usage_log.UsageLogModel"):
+        with patch("src.stores.postgres.repositories.usage_log.UsageLogModel"):
             _run(repo.log_search("k-1", "kb-1", user_id="u-1", context={"q": "test"}))
         session.add.assert_called_once()
         session.commit.assert_awaited()
 
     def test_log_search_error(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         from sqlalchemy.exc import SQLAlchemyError
         repo, session = _make_repo(UsageLogRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
-        with patch("src.database.repositories.usage_log.UsageLogModel"):
+        with patch("src.stores.postgres.repositories.usage_log.UsageLogModel"):
             _run(repo.log_search("k-1", "kb-1"))  # should not raise
         session.rollback.assert_awaited()
 
     def test_list_recent(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         repo, session = _make_repo(UsageLogRepository)
         model = self._make_model()
         # execute is called twice: count then rows
@@ -1056,7 +1056,7 @@ class TestUsageLogRepository:
         assert len(result["searches"]) == 1
 
     def test_get_analytics(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         repo, session = _make_repo(UsageLogRepository)
         # 5 execute calls: total, unique_users, top_queries, top_kbs, sample_contexts
         r_total = MagicMock()
@@ -1085,7 +1085,7 @@ class TestUsageLogRepository:
         assert result["avg_response_time_ms"] == 75.0   # (50+100)/2
 
     def test_get_analytics_zero_searches(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         repo, session = _make_repo(UsageLogRepository)
         r_total = MagicMock()
         r_total.scalar.return_value = 0
@@ -1100,21 +1100,21 @@ class TestUsageLogRepository:
         assert result["avg_results_per_query"] == 0.0
 
     def test_get_by_user(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         repo, session = _make_repo(UsageLogRepository)
         _mock_scalars_all(session, [self._make_model()])
         result = _run(repo.get_by_user("u-1"))
         assert len(result) == 1
 
     def test_to_dict_bad_context(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         model = self._make_model()
         model.context = "not-json"
         d = UsageLogRepository._to_dict(model)
         assert d["context"] == {}
 
     def test_to_dict_none_context(self):
-        from src.database.repositories.usage_log import UsageLogRepository
+        from src.stores.postgres.repositories.usage_log import UsageLogRepository
         model = self._make_model()
         model.context = None
         d = UsageLogRepository._to_dict(model)
@@ -1791,7 +1791,7 @@ class TestRoleService:
 
 class TestL2SemanticCache:
     def test_cosine_similarity(self):
-        from src.cache.l2_semantic_cache import _cosine_similarity
+        from src.stores.redis.l2_semantic_cache import _cosine_similarity
         assert _cosine_similarity([1, 0, 0], [1, 0, 0]) == pytest.approx(1.0)
         assert _cosine_similarity([1, 0, 0], [0, 1, 0]) == pytest.approx(0.0)
         assert _cosine_similarity([], []) == 0.0
@@ -1799,8 +1799,8 @@ class TestL2SemanticCache:
         assert _cosine_similarity([0, 0, 0], [1, 0, 0]) == 0.0  # zero norm
 
     def test_set_with_embedding_provider(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
-        from src.cache.cache_types import CacheEntry
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.cache_types import CacheEntry
         redis_mock = AsyncMock()
         provider = AsyncMock()
         provider.embed = AsyncMock(return_value=[0.1, 0.2, 0.3])
@@ -1814,8 +1814,8 @@ class TestL2SemanticCache:
         redis_mock.setex.assert_awaited_once()
 
     def test_set_without_provider(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
-        from src.cache.cache_types import CacheEntry
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.cache_types import CacheEntry
         redis_mock = AsyncMock()
         cache = L2SemanticCache.__new__(L2SemanticCache)
         cache._redis = redis_mock
@@ -1827,8 +1827,8 @@ class TestL2SemanticCache:
         redis_mock.setex.assert_awaited_once()
 
     def test_set_embed_failure(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
-        from src.cache.cache_types import CacheEntry
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.cache_types import CacheEntry
         redis_mock = AsyncMock()
         provider = AsyncMock()
         provider.embed = AsyncMock(side_effect=Exception("embed fail"))
@@ -1842,8 +1842,8 @@ class TestL2SemanticCache:
         redis_mock.setex.assert_awaited_once()
 
     def test_set_redis_error(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
-        from src.cache.cache_types import CacheEntry
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.cache_types import CacheEntry
         redis_mock = AsyncMock()
         redis_mock.setex = AsyncMock(side_effect=Exception("redis fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
@@ -1855,7 +1855,7 @@ class TestL2SemanticCache:
         _run(cache.set(entry))  # should not raise
 
     def test_delete_success(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         redis_mock.delete = AsyncMock(return_value=1)
         cache = L2SemanticCache.__new__(L2SemanticCache)
@@ -1864,7 +1864,7 @@ class TestL2SemanticCache:
         assert _run(cache.delete("k1")) is True
 
     def test_delete_not_found(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         redis_mock.delete = AsyncMock(return_value=0)
         cache = L2SemanticCache.__new__(L2SemanticCache)
@@ -1873,7 +1873,7 @@ class TestL2SemanticCache:
         assert _run(cache.delete("k1")) is False
 
     def test_delete_error(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         redis_mock.delete = AsyncMock(side_effect=Exception("fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
@@ -1882,7 +1882,7 @@ class TestL2SemanticCache:
         assert _run(cache.delete("k1")) is False
 
     def test_semantic_search_with_matches(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({
             "query": "hello",
@@ -1902,7 +1902,7 @@ class TestL2SemanticCache:
         assert result.similarity == pytest.approx(1.0)
 
     def test_semantic_search_no_match(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({
             "query": "hello",
@@ -1921,7 +1921,7 @@ class TestL2SemanticCache:
         assert result is None
 
     def test_semantic_search_kb_isolation(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({
             "query": "hello",
@@ -1940,7 +1940,7 @@ class TestL2SemanticCache:
         assert result is None  # different KB
 
     def test_semantic_search_version_check(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({
             "query": "hello",
@@ -1959,7 +1959,7 @@ class TestL2SemanticCache:
         assert result is None  # version mismatch
 
     def test_semantic_search_no_embedding_in_stored(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({
             "query": "hello",
@@ -1977,7 +1977,7 @@ class TestL2SemanticCache:
         assert result is None
 
     def test_semantic_search_error(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         redis_mock.scan = AsyncMock(side_effect=Exception("redis error"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
@@ -1988,7 +1988,7 @@ class TestL2SemanticCache:
         assert result is None
 
     def test_invalidate_by_metadata_value(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({"metadata": {"kb_id": "kb-1"}})
         redis_mock.scan = AsyncMock(return_value=(0, ["test:k1"]))
@@ -2001,7 +2001,7 @@ class TestL2SemanticCache:
         assert count == 1
 
     def test_invalidate_by_metadata_list_value(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         stored = json.dumps({"metadata": {"kb_ids": ["kb-1", "kb-2"]}})
         redis_mock.scan = AsyncMock(return_value=(0, ["test:k1"]))
@@ -2014,7 +2014,7 @@ class TestL2SemanticCache:
         assert count == 1
 
     def test_invalidate_by_metadata_error(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
         redis_mock.scan = AsyncMock(side_effect=Exception("fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
