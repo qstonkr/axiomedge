@@ -1,6 +1,22 @@
-"""Knowledge Local - Unified Configuration.
+"""Knowledge Local — Infrastructure Settings (SSOT).
 
-All settings centralized here. Override via .env or environment variables.
+이 파일은 **인프라 설정** 만 담당: DB 호스트/포트, Qdrant URL, Ollama URL,
+Redis, 인증 설정, 파이프라인 worker 수 등. 모든 값은 환경 변수로 override 가능.
+
+### Config 3파일 경계 (이 파일이 한 쪽 끝)
+
+| 파일 | 역할 | 예시 | Override |
+|---|---|---|---|
+| ``src/config.py`` (이 파일) | **인프라** — 서비스 주소, 포트, timeout, 연결 풀 | ``DATABASE_URL``, ``QDRANT_URL``, ``OLLAMA_BASE_URL`` | env var |
+| ``src/config_weights.py`` | **하이퍼파라미터** — 검색 가중치, threshold, chunk 크기, 캐시 TTL | ``RerankerWeights.model_weight``, ``ChunkingConfig.max_chunk_chars`` | 코드 또는 hot-reload |
+| ``src/distill/config.py`` | **Distill 프로필** — LoRA rank, lr, batch size, QA style, 배포 설정 | ``DistillProfile.lora.r``, ``TrainingConfig.epochs`` | YAML / DB |
+
+**새 설정 추가 시** 이 3파일 중 어디에 넣어야 하는지:
+- "서버 어디에 접속?" → ``src/config.py``
+- "검색 결과 가중치 몇?" → ``src/config_weights.py``
+- "학습 파라미터 몇?" → ``src/distill/config.py``
+
+이 경계를 지키지 않으면 SSOT 드리프트 발생 (2026-04-16 audit PR4/PR5 참고).
 """
 
 from __future__ import annotations
