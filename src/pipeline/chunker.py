@@ -92,7 +92,7 @@ class Chunker:
                 logger.info("kss not available, using regex sentence splitting")
             self._initialized = True
 
-    _KSS_MAX_CHARS = 2000  # Max chars per KSS call to prevent pecab hang
+    _KSS_MAX_CHARS = weights.chunking.kss_max_chars
     _kss_executor = None  # Shared executor for KSS timeout
 
     def split_sentences(self, text: str) -> list[str]:

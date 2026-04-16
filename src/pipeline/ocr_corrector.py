@@ -328,12 +328,15 @@ async def correct_ocr_text(text: str, ollama_client) -> str:
 async def correct_ocr_chunks(
     ocr_text: str,
     ollama_client,
-    _chunk_size: int = 2000,
+    _chunk_size: int = 0,
 ) -> str:
     """Correct OCR text in chunks to handle long texts.
 
     Splits by [Image N OCR] tags, corrects each chunk, rejoins.
     """
+    if not _chunk_size:
+        from src.config_weights import weights
+        _chunk_size = weights.chunking.ocr_correction_chunk_size
     if not ocr_text or not needs_correction(ocr_text):
         return ocr_text
 

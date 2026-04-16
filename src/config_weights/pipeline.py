@@ -28,6 +28,8 @@ class ChunkingConfig:
     overlap_sentences: int = 1
     max_chunks_per_document: int = 500
     graphrag_max_document_length: int = 15000
+    kss_max_chars: int = 2000  # KSS 호출당 최대 문자수 (pecab hang 방지)
+    ocr_correction_chunk_size: int = 2000  # OCR 교정 chunk 크기
 
 
 @dataclass(frozen=True)
