@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -130,12 +131,15 @@ async def identifier_search(
         import httpx
 
         async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as client:
-            for ident in _identifiers[:3]:  # Max 3 identifiers
-                for coll in collections:
-                    new = await _scroll_identifier_chunks(
-                        client, ident, coll, qdrant_url, _existing_ids,
-                    )
-                    all_chunks.extend(new)
+            tasks = [
+                _scroll_identifier_chunks(client, ident, coll, qdrant_url, _existing_ids)
+                for ident in _identifiers[:3]
+                for coll in collections
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for r in results:
+                if isinstance(r, list):
+                    all_chunks.extend(r)
         _id_count = sum(1 for c in all_chunks if c.get("_identifier_match"))
         if _id_count:
             logger.info(

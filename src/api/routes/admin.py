@@ -11,6 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query
 
 from src.api.app import _get_state
+from src.config import get_settings
 from src.config_weights import weights
 
 logger = logging.getLogger(__name__)
@@ -625,7 +626,7 @@ def _fetch_ai_classify_candidates(
 
     from neo4j import GraphDatabase
 
-    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    uri = get_settings().neo4j.uri
     user = os.environ.get("NEO4J_USER", "neo4j")
     password = os.environ.get("NEO4J_PASSWORD", "")
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
@@ -679,7 +680,7 @@ def _apply_ai_classifications(
 
     from neo4j import GraphDatabase
 
-    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    uri = get_settings().neo4j.uri
     user = os.environ.get("NEO4J_USER", "neo4j")
     password = os.environ.get("NEO4J_PASSWORD", "")
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
