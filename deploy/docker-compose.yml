@@ -9,7 +9,7 @@ services:
       POSTGRES_DB: knowledge_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./deploy/config/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U knowledge -d knowledge_db"]
@@ -24,7 +24,7 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
-      - ./config/qdrant/config.yaml:/qdrant/config/production.yaml
+      - ./deploy/config/qdrant/config.yaml:/qdran./deploy/config/production.yaml
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
       interval: 10s
@@ -41,7 +41,7 @@ services:
       NEO4J_PLUGINS: '["apoc"]'
     volumes:
       - neo4j_data:/data
-      - ./config/neo4j/neo4j.conf:/conf/neo4j.conf
+      - ./deploy/config/neo4j/neo4j.conf:/conf/neo4j.conf
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell 'RETURN 1' || exit 1"]
       interval: 10s
@@ -109,7 +109,7 @@ services:
 
   paddleocr:
     build:
-      context: ./docker/paddleocr
+      context: ./deploy/docker/paddleocr
       dockerfile: Dockerfile
     platform: linux/amd64
     restart: unless-stopped

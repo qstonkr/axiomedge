@@ -1738,30 +1738,30 @@ class TestCrawlSpaceFunction:
 
 class TestCliCrawl:
     def test_load_crawl_state_no_file(self, tmp_path):
-        from cli.crawl import _load_crawl_state
+        from src.cli.crawl import _load_crawl_state
         assert _load_crawl_state(tmp_path) == {}
 
     def test_save_and_load_crawl_state(self, tmp_path):
-        from cli.crawl import _save_crawl_state, _load_crawl_state
+        from src.cli.crawl import _save_crawl_state, _load_crawl_state
         state = {"file.txt": "abc123"}
         _save_crawl_state(tmp_path, state)
         loaded = _load_crawl_state(tmp_path)
         assert loaded == state
 
     def test_read_text_content_txt(self, tmp_path):
-        from cli.crawl import _read_text_content
+        from src.cli.crawl import _read_text_content
         f = tmp_path / "test.txt"
         f.write_text("hello", encoding="utf-8")
         assert _read_text_content(f) == "hello"
 
     def test_read_text_content_non_text(self, tmp_path):
-        from cli.crawl import _read_text_content
+        from src.cli.crawl import _read_text_content
         f = tmp_path / "test.pdf"
         f.write_bytes(b"binary")
         assert _read_text_content(f) == ""
 
     def test_build_doc(self, tmp_path):
-        from cli.crawl import _build_doc
+        from src.cli.crawl import _build_doc
         f = tmp_path / "test.txt"
         f.write_text("content", encoding="utf-8")
         doc = _build_doc(f, tmp_path, "hash123")
@@ -1769,7 +1769,7 @@ class TestCliCrawl:
         assert doc["content_hash"] == "hash123"
 
     def test_crawl_directory(self, tmp_path):
-        from cli.crawl import crawl_directory
+        from src.cli.crawl import crawl_directory
         source = tmp_path / "source"
         source.mkdir()
         (source / "test.txt").write_text("hello")
@@ -1778,7 +1778,7 @@ class TestCliCrawl:
         assert (output / "crawl_results.jsonl").exists()
 
     def test_crawl_directory_incremental(self, tmp_path):
-        from cli.crawl import crawl_directory
+        from src.cli.crawl import crawl_directory
         source = tmp_path / "source"
         source.mkdir()
         (source / "test.txt").write_text("hello")
@@ -1788,14 +1788,14 @@ class TestCliCrawl:
         crawl_directory(str(source), str(output))
 
     def test_crawl_directory_missing_source(self, tmp_path):
-        from cli.crawl import crawl_directory
+        from src.cli.crawl import crawl_directory
         crawl_directory(str(tmp_path / "nonexistent"), str(tmp_path / "out"))
 
 
 class TestCliIngest:
     @pytest.mark.asyncio
     async def test_should_skip_file_force(self, tmp_path):
-        from cli.ingest import _should_skip_file
+        from src.cli.ingest import _should_skip_file
         f = tmp_path / "test.txt"
         f.write_text("hello")
         result = await _should_skip_file(str(f), force=True, ingested_hashes={"abc"})
@@ -1804,7 +1804,7 @@ class TestCliIngest:
     @pytest.mark.asyncio
     async def test_should_skip_file_existing(self, tmp_path):
         import hashlib
-        from cli.ingest import _should_skip_file
+        from src.cli.ingest import _should_skip_file
         f = tmp_path / "test.txt"
         f.write_text("hello")
         h = hashlib.sha256(b"hello").hexdigest()[:32]
@@ -1813,7 +1813,7 @@ class TestCliIngest:
 
     @pytest.mark.asyncio
     async def test_should_skip_file_new(self, tmp_path):
-        from cli.ingest import _should_skip_file
+        from src.cli.ingest import _should_skip_file
         f = tmp_path / "test.txt"
         f.write_text("hello")
         result = await _should_skip_file(str(f), force=False, ingested_hashes={"other"})
@@ -1821,7 +1821,7 @@ class TestCliIngest:
 
     @pytest.mark.asyncio
     async def test_should_skip_empty_hashes(self, tmp_path):
-        from cli.ingest import _should_skip_file
+        from src.cli.ingest import _should_skip_file
         f = tmp_path / "test.txt"
         f.write_text("hello")
         result = await _should_skip_file(str(f), force=False, ingested_hashes=set())

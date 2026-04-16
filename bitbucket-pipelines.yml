@@ -21,7 +21,7 @@ definitions:
         script:
           - pip install uv
           - uv sync --frozen
-          - uvx ruff check src/ scripts/ cli/ dashboard/
+          - uvx ruff check src/ scripts/
 
     - step: &test
         name: Test
@@ -51,7 +51,7 @@ definitions:
           - >
             uv run pytest tests/unit/
             --ignore=tests/unit/test_jobs.py
-            --cov=src --cov=cli --cov-report=xml:coverage.xml
+            --cov=src --cov-report=xml:coverage.xml
             -q --tb=no
           # Fix coverage paths for SonarQube
           - >

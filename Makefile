@@ -17,13 +17,13 @@ setup-distill-toolchain:
 
 # === Infrastructure ===
 start:
-	docker compose up -d
+	docker compose -f deploy/docker-compose.yml up -d
 	@echo "Qdrant: http://localhost:6333"
 	@echo "Neo4j:  http://localhost:7474"
 	@echo "Ollama: http://localhost:11434"
 
 stop:
-	docker compose down
+	docker compose -f deploy/docker-compose.yml down
 
 # === Services ===
 api: tei-refresh
@@ -46,17 +46,17 @@ mcp-sse:
 
 # === CLI ===
 crawl:
-	uv run python -m cli.crawl $(ARGS)
+	uv run python -m src.cli.crawl $(ARGS)
 
 ingest: tei-refresh
-	uv run python -m cli.ingest $(ARGS)
+	uv run python -m src.cli.ingest $(ARGS)
 
 search:
-	uv run python -m cli.search $(ARGS)
+	uv run python -m src.cli.search $(ARGS)
 
 # === Docker Build ===
 docker-build:
-	docker build --target api -t knowledge-local:latest .
+	docker build -f deploy/Dockerfile --target api -t knowledge-local:latest .
 
 # === K8s (k3s + local-path) ===
 k8s-install-k3s:

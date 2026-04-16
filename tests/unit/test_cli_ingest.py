@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.ingest import OnnxSparseEmbedder, _should_skip_file
+from src.cli.ingest import OnnxSparseEmbedder, _should_skip_file
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class TestShouldSkipFile:
 class TestGetIngestedHashes:
     @pytest.mark.asyncio
     async def test_returns_hashes_from_qdrant(self) -> None:
-        from cli.ingest import _get_ingested_hashes
+        from src.cli.ingest import _get_ingested_hashes
 
         mock_responses = [
             # Collection check
@@ -133,7 +133,7 @@ class TestGetIngestedHashes:
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_missing_collection(self) -> None:
-        from cli.ingest import _get_ingested_hashes
+        from src.cli.ingest import _get_ingested_hashes
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=MagicMock(status_code=404))
@@ -147,7 +147,7 @@ class TestGetIngestedHashes:
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_exception(self) -> None:
-        from cli.ingest import _get_ingested_hashes
+        from src.cli.ingest import _get_ingested_hashes
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(side_effect=Exception("connection refused"))

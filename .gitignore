@@ -54,3 +54,4 @@ htmlcov/
 .legalize-kr-failures.jsonl
 .legalize-kr-dedup-skipped.txt
 backup_result/
+coverage.xml
