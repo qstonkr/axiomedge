@@ -374,7 +374,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] Ruff custom rule — bare except 방지 (`BLE001` 활성화, 기존 564건 noqa pragma)
 - [x] `config_weights.py` 733줄 → 7 서브모듈 패키지 분할 완료 (facade 유지)
 - [ ] Kanana 라이선스 재확인 → `commercial_use=True` 승격
-- [ ] EXAONE convert 패치 upstream 기여 (llama.cpp GitHub)
+- [x] ~~EXAONE convert 패치 upstream 기여~~ — 제외 (내부 패치로 충분, upstream 기여 불필요)
 - [x] 코드 주석 강화 — `composite_reranker.py` RRF 가중치 근거
 - [x] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
 - [x] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
