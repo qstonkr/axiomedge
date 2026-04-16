@@ -271,7 +271,7 @@ class TieredResponseGenerator:
                 citations=citations,
                 confidence=self._calculate_confidence(citations, context),
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Factual response generation failed: %s", e)
             return TieredResponse(
                 content="응답 생성 중 오류가 발생했습니다.",
@@ -308,7 +308,7 @@ class TieredResponseGenerator:
                 confidence=self._calculate_confidence(citations, context),
                 disclaimer=self.INFERENCE_DISCLAIMER if has_inference else None,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Analytical response generation failed: %s", e)
             return TieredResponse(
                 content="분석 응답 생성 중 오류가 발생했습니다.",
@@ -349,7 +349,7 @@ class TieredResponseGenerator:
                     "구체적인 상황을 알려주시면 더 맞춤 조언이 가능합니다.",
                 ],
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Advisory response generation failed: %s", e)
             return TieredResponse(
                 content="조언 응답 생성 중 오류가 발생했습니다.",

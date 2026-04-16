@@ -63,8 +63,11 @@ class ConfluenceFullClient:
         max_concurrent: int = 1,
         kb_id: str = "",
     ):
-        self.base_url = base_url or os.getenv(
-            "CONFLUENCE_BASE_URL", "https://wiki.gsretail.com"
+        from src.config import get_settings
+        self.base_url = (
+            base_url
+            or os.getenv("CONFLUENCE_BASE_URL")
+            or get_settings().confluence.base_url
         )
         _pat = pat or os.getenv("CONFLUENCE_PAT", "")
         self.headers = {
@@ -193,7 +196,7 @@ class ConfluenceFullClient:
             try:
                 with open(self.checkpoint_file, "r", encoding="utf-8") as f:
                     checkpoint_data = json.load(f)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 checkpoint_data = None
 
         if checkpoint_data is None:
@@ -238,7 +241,7 @@ class ConfluenceFullClient:
             )
 
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to load checkpoint: %s", e)
             return False
 
@@ -294,7 +297,7 @@ class ConfluenceFullClient:
                     f.truncate()
 
             logger.warning("Repaired incomplete trailing line in incremental file.")
-        except Exception as repair_error:
+        except Exception as repair_error:  # noqa: BLE001
             logger.warning("Incremental file repair failed: %s", repair_error)
 
     def save_incremental(self, source_key: str) -> None:
@@ -357,7 +360,7 @@ class ConfluenceFullClient:
                         loaded += 1
                     else:
                         skipped_empty += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error loading incremental file: %s", e)
 
         if loaded > 0 or skipped_empty > 0:
@@ -481,7 +484,7 @@ class ConfluenceFullClient:
                 "email": data.get("email"),
                 "profile_picture": data.get("profilePicture", {}).get("path"),
             }
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
     async def get_comments(self, page_id: str) -> list[ExtractedComment]:
@@ -525,7 +528,7 @@ class ConfluenceFullClient:
                     )
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Could not fetch comments of %s: %s", page_id, e)
 
         return comments
@@ -548,7 +551,7 @@ class ConfluenceFullClient:
                     )
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Could not fetch labels of %s: %s", page_id, e)
 
         return labels
@@ -572,19 +575,19 @@ class ConfluenceFullClient:
         code_extractor = CodeBlockExtractor()
         try:
             code_extractor.feed(body_html)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         email_extractor = EmailExtractor()
         try:
             email_extractor.feed(body_html)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         macro_extractor = MacroExtractor()
         try:
             macro_extractor.feed(body_html)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         content_ir = generate_structured_ir(
@@ -725,7 +728,7 @@ class ConfluenceFullClient:
             link_extractor = LinkExtractor(base_url=self.base_url)
             try:
                 link_extractor.feed(body_html)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
             await self._enrich_mentions_with_email(elements["mentions"])
@@ -775,7 +778,7 @@ class ConfluenceFullClient:
             body = e.response.text[:200]
             logger.error("Page %s HTTP %d: %s", page_id, status, body)
             return None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(
                 "Page %s ERROR (%s): %s", page_id, type(e).__name__, e
             )
@@ -789,7 +792,7 @@ class ConfluenceFullClient:
         try:
             response = await self._http_get_with_retry(url, params=params)
             return response.json().get("results", [])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 "Could not fetch attachments of %s: %s", page_id, e
             )
@@ -945,7 +948,7 @@ class ConfluenceFullClient:
             )
             self._apply_parse_result(result, parse_result)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             result.parse_error = str(e)
 
         self._record_attachment_stats(result)
@@ -987,7 +990,7 @@ class ConfluenceFullClient:
                     params = {}
                 else:
                     url = None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 "Could not fetch children of %s: %s", page_id, e
             )
@@ -1002,7 +1005,7 @@ class ConfluenceFullClient:
             resp = await self._http_get_with_retry(url, params=params)
             data = resp.json()
             return data.get("results", []), data.get("totalSize", 0)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("CQL search error (start=%s): %s", params.get("start"), e)
             return None
 
@@ -1068,7 +1071,7 @@ class ConfluenceFullClient:
                     download_attachments, max_attachments_per_page,
                     progress, task_id, source_key,
                 )
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
     async def crawl_recursive(

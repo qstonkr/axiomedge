@@ -82,6 +82,6 @@ def get_trace_id() -> str:
             value = headers.get(header_name)
             if value:
                 return value
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     return uuid.uuid4().hex[:16]

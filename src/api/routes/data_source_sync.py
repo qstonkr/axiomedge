@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 
+from src.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -175,7 +177,7 @@ async def _wait_for_health(url: str, max_wait: int = 180) -> bool:
                 if resp.status_code == 200:
                     logger.info("PaddleOCR healthy: %s", url)
                     return True
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
             await asyncio.sleep(10)
     return False
@@ -255,7 +257,7 @@ async def _run_crawl_pipeline(
     from src.connectors.confluence import CrawlerConfig, crawl_space, save_results
 
     crawler_config = CrawlerConfig(
-        base_url=os.getenv("CONFLUENCE_BASE_URL", "https://wiki.gsretail.com"),
+        base_url=get_settings().confluence.base_url,
         pat=pat,
         output_dir=crawl_output_dir,
         attachments_dir=crawl_output_dir / "attachments",
@@ -375,7 +377,7 @@ async def _run_ingestion(
                 if r.chunks_stored > 0:
                     total_chunks += r.chunks_stored
                     docs_ingested += 1
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 errors.append(f"{doc.title}: {e}")
 
     await asyncio.gather(*[_ingest_one(doc) for doc in documents])
@@ -416,7 +418,7 @@ async def _ensure_kb_and_update_counts(
             })
             logger.info("Auto-created KB '%s' in registry", kb_id)
         await kb_registry.update_counts(kb_id, docs_ingested, total_chunks)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB registry update failed: %s", e)
 
 
@@ -447,7 +449,7 @@ async def _update_sync_status(
                 "errors": errors[:10],
                 "completed_at": datetime.now(UTC),
             })
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to complete ingestion run record: %s", e)
 
 
@@ -461,7 +463,7 @@ async def _report_sync_failure(
             await ds_repo.complete_sync(
                 source_id, "error", error_message=str(exc)[:500],
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
     if run_repo:
         try:
@@ -470,7 +472,7 @@ async def _report_sync_failure(
                 "errors": [str(exc)[:500]],
                 "completed_at": datetime.now(UTC),
             })
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
 
@@ -539,7 +541,7 @@ async def _run_confluence_source_sync(
                     "status": "running",
                     "started_at": datetime.now(UTC),
                 })
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to create ingestion run record: %s", e)
 
         safe_name = re.sub(r"[^\w]", "_", source_name)
@@ -579,13 +581,13 @@ async def _run_confluence_source_sync(
             docs_ingested, len(documents), total_chunks, errors,
         )
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         await _report_sync_failure(ds_repo, run_repo, source_id, run_id, exc)
     finally:
         if ocr_started:
             try:
                 await _stop_ocr_instance()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to stop PaddleOCR instance: %s", e)
 
 
@@ -619,7 +621,7 @@ async def _run_git_source_sync(source: dict[str, Any], state: Any) -> None:
                     "source_type": "git", "source_name": source_name,
                     "status": "running", "started_at": datetime.now(UTC),
                 })
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to create ingestion run record: %s", e)
 
         from src.connectors.git import GitConnector
@@ -657,7 +659,7 @@ async def _run_git_source_sync(source: dict[str, Any], state: Any) -> None:
                         "documents_fetched": 0, "chunks_stored": 0,
                         "errors": [], "completed_at": datetime.now(UTC),
                     })
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning("Failed to complete ingestion run record: %s", e)
             return
 
@@ -706,8 +708,8 @@ async def _run_git_source_sync(source: dict[str, Any], state: Any) -> None:
                     "errors": errors[:10],
                     "completed_at": datetime.now(UTC),
                 })
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to complete ingestion run record: %s", e)
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         await _report_sync_failure(ds_repo, run_repo, source_id, run_id, exc)

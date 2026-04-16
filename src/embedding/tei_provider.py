@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import httpx
@@ -37,8 +36,9 @@ class TEIEmbeddingProvider:
     _DENSE_DIM: int = _w.embedding.dimension
 
     def __init__(self, base_url: str | None = None, timeout: float = 300.0):
+        from src.config import get_settings
         self._base_url = (
-            base_url or os.getenv("BGE_TEI_URL", "http://localhost:8080")
+            base_url or get_settings().tei.embedding_url
         ).rstrip("/")
         self._timeout = timeout
         self._client: httpx.Client | None = None
@@ -60,7 +60,7 @@ class TEIEmbeddingProvider:
         try:
             resp = self._get_client().get(f"{self._base_url}/health")
             return resp.status_code == 200
-        except Exception:
+        except Exception:  # noqa: BLE001
             return False
 
     # TEI server constraint: max_batch_tokens=16384, max_client_batch_size=32.

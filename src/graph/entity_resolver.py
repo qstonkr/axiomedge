@@ -227,7 +227,7 @@ class EntityResolver:
             if result:
                 return result
             return await self._try_variant_glossary_match(name, kb_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary matching failed: %s", e)
             return None
 
@@ -258,7 +258,7 @@ class EntityResolver:
                         )
             return None
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Embedding matching failed: %s", e)
             return None
 

@@ -28,7 +28,9 @@ from src.api.state import AppState
 
 load_dotenv()
 
-_DEFAULT_REDIS_URL = "redis://localhost:6379"
+def _default_redis_url() -> str:
+    from src.config import get_settings
+    return get_settings().redis.url
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +123,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
     try:
         from src.distill.repository import DistillRepository
         state["distill_repo"] = DistillRepository(session_factory)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Distill repo init skipped: %s", e)
 
 
@@ -156,7 +158,7 @@ async def _init_database(state: AppState, settings) -> None:
             if l1_cats:
                 from src.pipeline.ingestion import load_l1_categories_from_db
                 load_l1_categories_from_db(l1_cats)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("L1 category cache load failed (using defaults): %s", e)
 
     # Term extractor for ingestion
@@ -167,7 +169,7 @@ async def _init_database(state: AppState, settings) -> None:
             embedder=state.get("embedder"),
         )
         logger.info("TermExtractor initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("TermExtractor init failed: %s", e)
 
     # Trust Score Service
@@ -178,7 +180,7 @@ async def _init_database(state: AppState, settings) -> None:
             feedback_repo=state.get("feedback_repo"),
         )
         logger.info("TrustScoreService initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("TrustScoreService init failed: %s", e)
 
     # Lifecycle State Machine
@@ -188,7 +190,7 @@ async def _init_database(state: AppState, settings) -> None:
             lifecycle_repo=state.get("lifecycle_repo"),
         )
         logger.info("LifecycleStateMachine initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("LifecycleStateMachine init failed: %s", e)
 
     # Freshness Predictor
@@ -196,7 +198,7 @@ async def _init_database(state: AppState, settings) -> None:
         from src.search.freshness_predictor import FreshnessPredictor
         state["freshness_predictor"] = FreshnessPredictor()
         logger.info("FreshnessPredictor initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("FreshnessPredictor init failed: %s", e)
 
     logger.info("PostgreSQL database initialized: %s", db_url.split("@")[-1] if "@" in db_url else db_url)
@@ -208,14 +210,14 @@ async def _init_cache(state: AppState) -> None:
 
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
-        redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+        redis_url = _default_redis_url()
         from src.cache.redis_cache import SearchCache
         from src.cache.dedup_cache import DedupCache
 
         state["search_cache"] = SearchCache(redis_url=redis_url)
         state["dedup_cache"] = DedupCache(redis_url=redis_url)
         logger.info("Redis cache initialized: %s", redis_url)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Redis cache init failed (search/dedup cache disabled): %s", e)
 
     # Multi-Layer Cache (L1 memory + L2 Redis semantic)
@@ -234,7 +236,7 @@ async def _init_cache(state: AppState) -> None:
 
         l2 = None
         if cache_cfg.enable_semantic_cache:
-            _cache_redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+            _cache_redis_url = _default_redis_url()
             l2 = L2SemanticCache(
                 redis_url=_cache_redis_url,
                 embedding_provider=None,  # Set after embedder init below
@@ -255,10 +257,10 @@ async def _init_cache(state: AppState) -> None:
         try:
             import redis.asyncio as _aioredis
             _idemp_redis = _aioredis.from_url(
-                os.getenv("REDIS_URL", _DEFAULT_REDIS_URL),
+                _default_redis_url(),
                 decode_responses=True,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to create idempotency Redis client: %s", e)
         state["idempotency_cache"] = IdempotencyCache(
             redis_client=_idemp_redis,
@@ -270,7 +272,7 @@ async def _init_cache(state: AppState) -> None:
             cache_cfg.l1_max_entries,
             cache_cfg.enable_semantic_cache,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("MultiLayerCache init failed: %s", e)
 
 
@@ -299,7 +301,7 @@ async def _init_dedup(state: AppState) -> None:
                     base_url=_s.ollama.base_url,
                     model=_s.ollama.model,
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to create stage4 LLM client for dedup: %s", e)
 
         dedup_pipeline = DedupPipeline(
@@ -316,9 +318,9 @@ async def _init_dedup(state: AppState) -> None:
         redis_client = None
         try:
             import redis.asyncio as aioredis
-            _redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+            _redis_url = _default_redis_url()
             redis_client = aioredis.from_url(_redis_url, decode_responses=True)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to create dedup Redis client: %s", e)
         state["dedup_result_tracker"] = DedupResultTracker(redis_client=redis_client)
         state["redis_dedup_index"] = RedisDedupIndex(redis_client=redis_client)
@@ -330,7 +332,7 @@ async def _init_dedup(state: AppState) -> None:
             dedup_cfg.stage3_skip_threshold,
             dedup_cfg.enable_stage4,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("DedupPipeline init failed (using simple dedup cache): %s", e)
 
 
@@ -353,7 +355,7 @@ async def _init_vectordb(state: AppState, settings) -> None:
         state["qdrant_search"] = QdrantSearchEngine(provider, cm)
         state["qdrant_store"] = QdrantStoreOperations(provider, cm)
         logger.info("Qdrant initialized: %s", settings.qdrant.url)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Qdrant init failed: %s", e)
 
 
@@ -391,7 +393,7 @@ async def _init_graph(state: AppState, settings) -> None:
                 index_result.get("indexes_created", 0),
                 index_result.get("fulltext_indexes_created", 0),
             )
-        except Exception as _idx_err:
+        except Exception as _idx_err:  # noqa: BLE001
             logger.warning("Graph index creation failed (non-fatal): %s", _idx_err)
 
         # Initialize graph integrity checker and multi-hop searcher
@@ -408,11 +410,11 @@ async def _init_graph(state: AppState, settings) -> None:
                 graph_repository=state["graph_repo"],
             )
             logger.info("Graph integrity checker and multi-hop searcher initialized")
-        except Exception as _graph_err:
+        except Exception as _graph_err:  # noqa: BLE001
             logger.warning("Graph advanced services init failed: %s", _graph_err)
 
         logger.info("Neo4j initialized: %s", settings.neo4j.uri)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Neo4j init failed: %s", e)
 
 
@@ -425,12 +427,13 @@ def _try_tei_embedding(_settings):
     try:
         from src.embedding.tei_provider import TEIEmbeddingProvider
 
-        tei_url = os.getenv("BGE_TEI_URL", "http://localhost:8080")
+        from src.config import get_settings as _gs
+        tei_url = _gs().tei.embedding_url
         tei_embedder = TEIEmbeddingProvider(base_url=tei_url)
         if tei_embedder.is_ready():
             logger.info("TEI embedding initialized (cloud): %s", tei_url)
             return tei_embedder
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("TEI embedding not available: %s", e)
     return None
 
@@ -447,7 +450,7 @@ def _try_ollama_embedding(settings):
         if ollama_embedder.is_ready():
             logger.info("Ollama embedding initialized (Metal GPU): %s", settings.ollama.embedding_model)
             return ollama_embedder
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Ollama embedding not available: %s", e)
     return None
 
@@ -465,7 +468,7 @@ def _try_onnx_embedding(settings):
             logger.info("BGE-M3 ONNX embedding initialized (CPU)")
             return onnx_embedder
         logger.warning("BGE-M3 ONNX model not ready (check model path)")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("ONNX embedding init failed: %s", e)
     return None
 
@@ -509,7 +512,7 @@ async def _init_llm(state: AppState, settings) -> None:
     try:
         from src.providers.llm import create_llm_client
         state["llm"] = create_llm_client(settings=settings)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("LLM init failed: %s", e)
 
     # GraphRAG extractor
@@ -518,7 +521,7 @@ async def _init_llm(state: AppState, settings) -> None:
             from src.pipeline.graphrag_extractor import GraphRAGExtractor
             state["graphrag_extractor"] = GraphRAGExtractor()
             logger.info("GraphRAGExtractor initialized")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("GraphRAGExtractor init failed: %s", e)
 
 
@@ -531,7 +534,7 @@ async def _init_search_services(state: AppState) -> None:
 
         state["query_preprocessor"] = QueryPreprocessor()
         logger.info("QueryPreprocessor initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("QueryPreprocessor init failed: %s", e)
 
     # CompositeReranker
@@ -540,7 +543,7 @@ async def _init_search_services(state: AppState) -> None:
 
         state["composite_reranker"] = CompositeReranker()
         logger.info("CompositeReranker initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("CompositeReranker init failed: %s", e)
 
     # Cross-encoder warmup (fire-and-forget background model load)
@@ -548,7 +551,7 @@ async def _init_search_services(state: AppState) -> None:
         from src.search.cross_encoder_reranker import warmup as ce_warmup
         ce_warmup()
         logger.info("Cross-encoder warmup started")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Cross-encoder warmup failed: %s", e)
 
     # QueryClassifier (cached singleton, P1-4 perf fix)
@@ -557,7 +560,7 @@ async def _init_search_services(state: AppState) -> None:
 
         state["query_classifier"] = QueryClassifier()
         logger.info("QueryClassifier initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("QueryClassifier init failed: %s", e)
 
     # TieredResponseGenerator
@@ -569,7 +572,7 @@ async def _init_search_services(state: AppState) -> None:
                 llm_client=state["llm"],
             )
             logger.info("TieredResponseGenerator initialized")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("TieredResponseGenerator init failed: %s", e)
 
     # AnswerService (singleton - avoid per-request lazy init race)
@@ -579,7 +582,7 @@ async def _init_search_services(state: AppState) -> None:
 
             state["answer_service"] = AnswerService(llm_client=state["llm"])
             logger.info("AnswerService initialized")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("AnswerService init failed: %s", e)
 
     # CRAGRetrievalEvaluator (singleton, avoid per-request construction)
@@ -588,7 +591,7 @@ async def _init_search_services(state: AppState) -> None:
 
         state["crag_evaluator"] = CRAGRetrievalEvaluator()
         logger.info("CRAGRetrievalEvaluator initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("CRAGRetrievalEvaluator init failed: %s", e)
 
     # QueryExpansionService
@@ -596,7 +599,7 @@ async def _init_search_services(state: AppState) -> None:
         from src.search.query_expansion import QueryExpansionService
         state["query_expander"] = QueryExpansionService(glossary_repository=state.get("glossary_repo"))
         logger.info("QueryExpansionService initialized")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("QueryExpansionService init failed: %s", e)
 
     # RAG pipeline
@@ -655,11 +658,11 @@ async def _init_auth(state: AppState, settings) -> None:
         # Seed default roles & permissions
         try:
             await auth_service.seed_defaults()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Auth seed_defaults deferred: %s", e)
 
         logger.info("Auth initialized: provider=%s, enabled=%s", auth_settings.provider, auth_settings.enabled)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Auth init failed (running without auth): %s", e)
 
 
@@ -670,7 +673,7 @@ async def _init_services():
 
     try:
         await _init_database(_state, settings)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("PostgreSQL init failed (repositories will use stubs): %s", e)
 
     await _init_cache(_state)
@@ -704,7 +707,7 @@ async def _init_distill(state: AppState, settings) -> None:
                 try:
                     await distill_repo.create_profile(data)
                     logger.info("Distill profile seeded from yaml: %s", name)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning("Distill profile seed failed for %s: %s", name, e)
 
         state["distill_service"] = DistillService(
@@ -715,7 +718,7 @@ async def _init_distill(state: AppState, settings) -> None:
             qdrant_url=settings.qdrant.url,
         )
         logger.info("Distill plugin initialized: %d profiles", len(distill_config.profiles))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Distill plugin init skipped: %s", e)
 
 
@@ -727,7 +730,7 @@ async def _close_caches(state: AppState) -> None:
             try:
                 await cache.close()
                 logger.info("Closed %s", key)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug("Error closing %s: %s", key, e)
 
     multi_cache = state.get("multi_layer_cache")
@@ -736,7 +739,7 @@ async def _close_caches(state: AppState) -> None:
             if hasattr(multi_cache._l2, "close"):
                 await multi_cache._l2.close()
             logger.info("Closed multi_layer_cache L2")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Error closing multi_layer_cache L2: %s", e)
 
 
@@ -753,7 +756,7 @@ async def _close_connections(state: AppState) -> None:
         try:
             await getattr(svc, method)()
             logger.info("Closed %s", label)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Error closing %s: %s", label, e)
 
     auth_svc = state.get("auth_service")
@@ -761,7 +764,7 @@ async def _close_connections(state: AppState) -> None:
         try:
             await auth_svc.close()
             logger.info("Closed Auth service")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Error closing Auth service: %s", e)
 
 

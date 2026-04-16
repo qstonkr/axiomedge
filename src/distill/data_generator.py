@@ -34,9 +34,10 @@ class DistillDataGenerator:
         llm_client,
         embedder,
         profile: DistillProfile,
-        qdrant_url: str = "http://localhost:6333",
+        qdrant_url: str = "",
     ):
         from src.config import get_settings
+        qdrant_url = qdrant_url or get_settings().qdrant.url
         settings = get_settings().distill
 
         self._llm_helper = LLMHelper(

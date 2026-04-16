@@ -156,7 +156,7 @@ async def generate_test_qa(
     qdrant_url: str,
     kb_ids: list[str],
     count: int = 50,
-    rag_api_url: str = "http://localhost:8000",
+    rag_api_url: str = "",
     quality_filter=None,
     existing_questions: set[str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -304,7 +304,7 @@ async def generate_test_qa(
                     if len(results) >= count:
                         break
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Chunk QA generation failed: %s", e)
 
             if len(results) >= count:
@@ -349,7 +349,7 @@ async def _generate_from_templates(
                         "kb_id": ",".join(source_kbs) if source_kbs else ",".join(kb_ids[:3]),
                         "source_id": f"template_{sr.get('query_type', '')}",
                     })
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Template QA failed for '%s': %s", item["question"][:30], e)
 
     return results
@@ -379,7 +379,7 @@ async def _fetch_sample_chunks(
                         if p.get("payload", {}).get("content")
                     ]
                     logger.info("Fetched %d chunks from %s (%s)", len(chunks[kb_id]), kb_id, collection)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to fetch chunks from %s (%s): %s", kb_id, collection, e)
 
     return chunks

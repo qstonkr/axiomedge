@@ -38,11 +38,14 @@ class SearchCache:
 
     def __init__(
         self,
-        redis_url: str = "redis://localhost:6379",
+        redis_url: str = "",
         ttl: int = 3600,
         prefix: str = "knowledge:search",
     ) -> None:
-        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        from src.config import get_settings
+        self._redis = aioredis.from_url(
+            redis_url or get_settings().redis.url, decode_responses=True,
+        )
         self._ttl = ttl
         self._prefix = prefix
 
@@ -54,7 +57,7 @@ class SearchCache:
             if data:
                 logger.debug("Search cache HIT: %s", key)
                 return json.loads(data)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Search cache get error: %s", e)
         return None
 
@@ -68,7 +71,7 @@ class SearchCache:
                 json.dumps(result, ensure_ascii=False, default=str),
             )
             logger.debug("Search cache SET: %s (ttl=%ds)", key, self._ttl)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Search cache set error: %s", e)
 
     async def clear(self) -> int:
@@ -82,7 +85,7 @@ class SearchCache:
                 logger.info("Search cache cleared: %d keys", deleted)
                 return deleted
             return 0
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Search cache clear error: %s", e)
             return 0
 
@@ -93,7 +96,7 @@ class SearchCache:
             async for _ in self._redis.scan_iter(match=f"{self._prefix}:*"):
                 count += 1
             return {"prefix": self._prefix, "key_count": count, "ttl_seconds": self._ttl}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"prefix": self._prefix, "key_count": 0, "error": str(e)}
 
     async def close(self) -> None:

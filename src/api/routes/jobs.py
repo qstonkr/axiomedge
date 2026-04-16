@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 
@@ -21,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"])
 
-_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+def _get_redis_url() -> str:
+    from src.config import get_settings
+    return get_settings().redis.url
 _KEY_PREFIX = "knowledge:job:"
 _INDEX_KEY = "knowledge:jobs"
 _MAX_JOBS = 1000
@@ -33,7 +34,7 @@ _redis: aioredis.Redis | None = None
 async def _get_redis() -> aioredis.Redis:
     global _redis
     if _redis is None:
-        _redis = aioredis.from_url(_REDIS_URL, decode_responses=True)
+        _redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
     await asyncio.sleep(0)
     return _redis
 
@@ -116,7 +117,7 @@ async def get_active_job_count() -> int:
             if status == "processing":
                 count += 1
         return count
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 0
 
 

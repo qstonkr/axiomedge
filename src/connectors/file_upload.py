@@ -60,7 +60,7 @@ class FileUploadConnector:
 
         try:
             file_bytes, resolved_uri, filename = await self._load_local_bytes(entry)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             return ConnectorResult(
                 success=False,
                 source_type=self.source_type,

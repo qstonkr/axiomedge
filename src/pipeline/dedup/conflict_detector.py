@@ -175,12 +175,12 @@ class OllamaLLMClient(ILLMClient):
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str = "",
         model: str | None = None,
     ):
         import os as _os
-        from src.config import DEFAULT_LLM_MODEL
-        self._base_url = base_url.rstrip("/")
+        from src.config import DEFAULT_LLM_MODEL, get_settings
+        self._base_url = (base_url or get_settings().ollama.base_url).rstrip("/")
         self._model = model or _os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
 
     async def complete(
@@ -206,7 +206,7 @@ class OllamaLLMClient(ILLMClient):
                 response.raise_for_status()
                 data = response.json()
                 return data.get("response", "")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Ollama LLM call failed: %s", e)
             return json.dumps(
                 {"has_conflict": False, "conflicts": [], "confidence": 0.0}
@@ -378,7 +378,7 @@ Focus on information that could cause confusion or errors if both documents are 
                 "Conflict analysis timed out after %ds", self.LLM_TIMEOUT_SECONDS
             )
             result.confidence = 0.0
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Conflict analysis failed: %s", e)
             result.confidence = 0.0
 

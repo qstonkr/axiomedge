@@ -17,7 +17,11 @@ from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-KH_API_BASE = os.getenv("KH_API_BASE", "http://localhost:8000")
+def _get_api_base() -> str:
+    from src.config import get_settings
+    return os.getenv("KH_API_BASE") or get_settings().dashboard.api_url
+
+KH_API_BASE = _get_api_base()
 KH_API_KEY = os.getenv("KH_API_KEY", "")
 KH_API_TIMEOUT = float(os.getenv("KH_API_TIMEOUT", "60"))
 

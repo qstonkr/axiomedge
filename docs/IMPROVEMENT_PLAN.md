@@ -369,19 +369,21 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ### 코드 정리 (열거형)
 
-- [ ] 하드코딩 서비스 URL → `get_settings()` 일관 적용 (100+ 파일 점진 정리)
-- [ ] Confluence `https://wiki.gsretail.com` SSOT
+- [x] 하드코딩 서비스 URL → `get_settings()` 일관 적용 (src/ 29파일 완료, scripts/ 추후)
+- [x] Confluence `https://wiki.gsretail.com` SSOT
+- [x] Redis URL SSOT (`RedisSettings` 추가)
+- [x] TEI embedding/reranker URL SSOT (`TeiSettings` 추가)
 - [ ] Timeout 리터럴 (`600`, `7200`, `10`) → config
 - [ ] Chunk size 리터럴 (`_KSS_MAX_CHARS=2000`) → config_weights
 - [ ] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest 등)
 - [ ] `ProfileUpdateRequest` 도 동일
-- [ ] Ruff custom rule — bare except 방지 (`BLE001` 활성화)
-- [ ] `config_weights.py` 687줄 → PR11 이후 최종 분할
+- [x] Ruff custom rule — bare except 방지 (`BLE001` 활성화, 기존 564건 noqa pragma)
+- [x] `config_weights.py` 733줄 → 7 서브모듈 패키지 분할 완료 (facade 유지)
 - [ ] Kanana 라이선스 재확인 → `commercial_use=True` 승격
 - [ ] EXAONE convert 패치 upstream 기여 (llama.cpp GitHub)
-- [ ] 코드 주석 강화 — `composite_reranker.py` RRF 가중치 근거
-- [ ] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
-- [ ] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
+- [x] 코드 주석 강화 — `composite_reranker.py` RRF 가중치 근거
+- [x] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
+- [x] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
 - [ ] Feedback type enum 화 vs plugin
 - [ ] Search pipeline 단계 protocol 화 (hub_search 13단계 분리)
 - [ ] Ingestion pipeline 단계 protocol 화 (ingest 14단계 분리)
@@ -394,9 +396,9 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 - [ ] `src/pipeline/ingestion.py` (3500+줄)
-- [ ] `src/search/composite_reranker.py`
+- [x] `src/search/composite_reranker.py` (24 tests — entity/keyword/graph/source/position/edge)
 - [ ] `src/search/similarity/matcher.py` (900줄)
-- [ ] `src/pipeline/graphrag/extractor.py`
+- [x] `src/pipeline/graphrag/extractor.py` (32 tests — corruption/invalid/reclassify/validate)
 - [ ] `src/connectors/confluence/attachment_parser.py` (1876줄)
 - [ ] `src/distill/service.py` 나머지 메서드
 - [ ] `src/distill/trainer.py`

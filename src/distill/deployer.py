@@ -122,7 +122,7 @@ class DistillDeployer:
             try:
                 resp = s3.get_object(Bucket=self.bucket, Key=manifest_key)
                 existing_manifest = json.loads(resp["Body"].read())
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
             manifest = {

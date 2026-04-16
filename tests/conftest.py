@@ -14,6 +14,19 @@ from httpx import ASGITransport, AsyncClient
 
 
 # ---------------------------------------------------------------------------
+# Settings cache reset — ensures monkeypatched env vars take effect
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _reset_settings_cache():
+    """Clear get_settings() LRU cache so env var changes take effect per test."""
+    from src.config import reset_settings
+    reset_settings()
+    yield
+    reset_settings()
+
+
+# ---------------------------------------------------------------------------
 # Mock embedder
 # ---------------------------------------------------------------------------
 

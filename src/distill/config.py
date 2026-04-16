@@ -195,7 +195,7 @@ def load_config(path: Path | None = None) -> DistillConfig:
         config = DistillConfig(**data)
         logger.info("Loaded distill config: %d profiles", len(config.profiles))
         return config
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Failed to load distill.yaml: %s", e)
         return DistillConfig()
 

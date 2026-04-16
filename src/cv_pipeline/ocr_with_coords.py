@@ -98,7 +98,7 @@ class OCRWithCoords:
                 box = self._parse_legacy_line(line)
                 if box is not None:
                     boxes.append(box)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Legacy OCR parsing failed: %s", exc)
         return boxes
 

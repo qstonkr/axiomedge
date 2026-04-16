@@ -86,7 +86,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     ip_address=request.client.host if request.client else None,
                     user_agent=request.headers.get("user-agent", "")[:500],
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Activity logging failed: %s", e)
 
     _ACTIVITY_RULES: list[tuple[str, str, str, str]] = [

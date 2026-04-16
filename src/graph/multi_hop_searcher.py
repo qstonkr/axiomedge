@@ -206,7 +206,7 @@ class MultiHopSearcher:
                     )
                     for url in urls
                 ]
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("find_related via repository failed: %s", e)
                 return []
 
@@ -225,7 +225,7 @@ class MultiHopSearcher:
                     self.SEARCH_RELATED_CYPHER,
                     {"doc_id": name, "max_hops": max_hops, "limit": max_results},
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Search related for entity '%s' failed: %s", name, e)
                 return []
 
@@ -315,7 +315,7 @@ class MultiHopSearcher:
                 for record in results
             ]
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to find experts for topic '%s': %s", topic, e)
             return []
 
@@ -374,7 +374,7 @@ class MultiHopSearcher:
                 for record in results
             ]
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to search related nodes for doc %s: %s", doc_id, e)
             return []
 
@@ -428,7 +428,7 @@ class MultiHopSearcher:
                 relationships=record.get("relationships", []),
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to get knowledge path: %s", e)
             return None
 
@@ -469,6 +469,6 @@ class MultiHopSearcher:
                 for r in results
             ]
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to find similar documents for %s: %s", doc_id, e)
             return []

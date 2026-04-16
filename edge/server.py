@@ -136,7 +136,7 @@ def load_model():
         _startup_time = time.monotonic() - t0
         logger.info("Model loaded in %.1fs: %s (n_ctx=%d, threads=%d)",
                      _startup_time, model_path.name, N_CTX, N_THREADS)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Failed to load model: %s", e)
 
 
@@ -190,7 +190,7 @@ async def ask(request: AskRequest, _: None = Depends(verify_api_key)):
         answer = output["choices"][0]["message"]["content"].strip()
         latency_ms = int((time.monotonic() - t0) * 1000)
         success = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Inference failed: %s", e)
         answer = ""
         latency_ms = int((time.monotonic() - t0) * 1000)
@@ -325,7 +325,7 @@ async def reload_model():
     try:
         from llama_cpp import Llama
         _llm = Llama(model_path=str(model_path), n_ctx=N_CTX, n_threads=N_THREADS, verbose=False)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Reload failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Model reload failed: {e}")
     try:
@@ -333,7 +333,7 @@ async def reload_model():
             messages=[{"role": "user", "content": "테스트"}], max_tokens=5,
             stop=["<end_of_turn>", "<start_of_turn>"],
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Health check after reload failed: %s", e)
         _llm = None
         raise HTTPException(status_code=500, detail=f"Post-reload health check failed: {e}")

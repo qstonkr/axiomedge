@@ -47,7 +47,7 @@ async def rag_query(body: dict[str, Any]):
             kb_id = kb_ids[0] if kb_ids else kb_id_single
             result = await rag.process(RAGRequest(query=query, kb_id=kb_id))
             return result.to_dict()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("RAG query failed: %s", e)
 
     return {
@@ -102,7 +102,7 @@ async def _correct_ocr_if_needed(parse_result) -> None:
             parse_result.ocr_text = await correct_ocr_chunks(
                 parse_result.ocr_text, llm,
             )
-    except Exception as _corr_err:
+    except Exception as _corr_err:  # noqa: BLE001
         logger.warning("OCR LLM correction skipped: %s", _corr_err)
 
 
@@ -180,7 +180,7 @@ async def _stage1_parse_to_jsonl(
                 parsed_count += 1
                 logger.info("Stage 1: parsed %s -> %d chars (%s)", fname, len(text), content_hash)
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 errors.append(f"{fname}: {e}")
                 metrics_inc("errors")
 
@@ -225,7 +225,7 @@ async def _stage2_ingest_from_jsonl(
             )
             total_docs += 1
             total_chunks += ingest_result.chunks_stored
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             errors.append(f"{record.filename}: {e}")
             metrics_inc("errors")
 
@@ -250,14 +250,14 @@ async def _update_kb_and_invalidate_cache(effective_kb_id: str, total_docs: int,
             await _multi_cache.invalidate_by_kb(effective_kb_id)
             logger.info("Multi-layer cache invalidated for kb=%s", effective_kb_id)
             return
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass  # Fall through to search_cache clear
 
     if _search_cache:
         try:
             await _search_cache.clear()
             logger.info("Search cache cleared after ingest for kb=%s", effective_kb_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to clear search cache after ingest: %s", e)
 
 
@@ -295,7 +295,7 @@ async def _process_files(
     if total_docs > 0:
         try:
             await _update_kb_and_invalidate_cache(effective_kb_id, total_docs, total_chunks)
-        except Exception as _count_err:
+        except Exception as _count_err:  # noqa: BLE001
             logger.warning("KB count update failed: %s", _count_err)
 
     if await is_cancelled(job_id):
@@ -325,20 +325,20 @@ async def _ensure_qdrant_collection(state, kb_id: str) -> None:
         return
     try:
         await collections.ensure_collection(kb_id)
-    except Exception as _coll_err:
+    except Exception as _coll_err:  # noqa: BLE001
         logger.warning("ensure_collection via SDK failed: %s, trying REST", _coll_err)
         await _create_collection_via_rest(collections, kb_id)
 
 
 async def _create_collection_via_rest(collections, kb_id: str) -> None:
     """Create Qdrant collection via REST API as SDK fallback."""
-    import os
     import httpx as _httpx
     from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
     from src.config_weights import weights as _cw
 
     _embed_dim = _cw.embedding.dimension
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    from src.config import get_settings as _gs
+    qdrant_url = _gs().qdrant.url
     coll_name = collections.get_collection_name(kb_id)
     async with _httpx.AsyncClient() as _client:
         resp = await _client.put(
@@ -371,7 +371,7 @@ async def _auto_register_kb(
                 "tier": tier or "global",
                 "status": "active",
             })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB registry auto-create failed: %s", e)
 
 
@@ -519,9 +519,9 @@ def _attach_reingest_callbacks(task, job_id: str, kb_id: str, state) -> None:
                     kb_registry = state.get("kb_registry")
                     if kb_registry:
                         await kb_registry.update_counts(kb_id, total_docs, total_chunks)
-                except Exception as _e:
+                except Exception as _e:  # noqa: BLE001
                     logger.warning("KB count update failed: %s", _e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             await update_job(job_id, status="failed", errors=[str(e)])
 
     def _safe_finalize_callback(t: asyncio.Task) -> None:

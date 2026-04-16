@@ -58,7 +58,7 @@ def _render_dict_csv_import(
                 key=f"{key_prefix}_import_btn", type="primary",
             ):
                 _execute_csv_import(csv_files, csv_enc, term_type_value, term_type_label)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             st.error(f"파일 읽기 실패: {e}")
 
 

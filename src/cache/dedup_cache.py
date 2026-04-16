@@ -42,10 +42,13 @@ class DedupCache:
 
     def __init__(
         self,
-        redis_url: str = "redis://localhost:6379",
+        redis_url: str = "",
         prefix: str = "knowledge:dedup",
     ) -> None:
-        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        from src.config import get_settings
+        self._redis = aioredis.from_url(
+            redis_url or get_settings().redis.url, decode_responses=True,
+        )
         self._prefix = prefix
 
     async def exists(self, kb_id: str, content_hash: str) -> bool:
@@ -53,7 +56,7 @@ class DedupCache:
         key = f"{self._prefix}:{kb_id}"
         try:
             return bool(await self._redis.sismember(key, content_hash))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dedup cache exists error: %s", e)
             return False
 
@@ -62,7 +65,7 @@ class DedupCache:
         key = f"{self._prefix}:{kb_id}"
         try:
             await self._redis.sadd(key, content_hash)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dedup cache add error: %s", e)
 
     async def add_batch(self, kb_id: str, hashes: list[str]) -> None:
@@ -72,7 +75,7 @@ class DedupCache:
         key = f"{self._prefix}:{kb_id}"
         try:
             await self._redis.sadd(key, *hashes)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dedup cache add_batch error: %s", e)
 
     async def clear(self, kb_id: str) -> None:
@@ -81,7 +84,7 @@ class DedupCache:
         try:
             await self._redis.delete(key)
             logger.info("Dedup cache cleared for kb_id=%s", kb_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dedup cache clear error: %s", e)
 
     async def count(self, kb_id: str) -> int:
@@ -89,7 +92,7 @@ class DedupCache:
         key = f"{self._prefix}:{kb_id}"
         try:
             return await self._redis.scard(key)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dedup cache count error: %s", e)
             return 0
 
@@ -105,5 +108,5 @@ class DedupCache:
                 kb_id = key.replace(f"{self._prefix}:", "")
                 result[kb_id] = await self._redis.scard(key)
             return {"kbs": result, "total_kbs": len(result)}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"kbs": {}, "error": str(e)}

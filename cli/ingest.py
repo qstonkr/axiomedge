@@ -75,7 +75,7 @@ async def _init_services():
             neo4j = Neo4jClient(uri=settings.neo4j.uri)
             await neo4j.connect()
             graph_repo = Neo4jGraphRepository(neo4j)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j not available: %s", e)
 
     sparse_embedder = OnnxSparseEmbedder(embedder)
@@ -86,7 +86,8 @@ async def _get_ingested_hashes(kb_id: str, _provider) -> set[str]:
     """Get content hashes of already-ingested documents from Qdrant."""
     import httpx
 
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    from src.config import get_settings
+    qdrant_url = get_settings().qdrant.url
     collection = f"kb_{kb_id.replace('-', '_')}"
     hashes: set[str] = set()
 
@@ -129,7 +130,7 @@ async def _get_ingested_hashes(kb_id: str, _provider) -> set[str]:
                 if not offset:
                     break
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Could not fetch ingested hashes: %s", e)
 
     return hashes

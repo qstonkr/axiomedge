@@ -24,7 +24,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from src.config import DEFAULT_LLM_MODEL
+from src.config import DEFAULT_LLM_MODEL, get_settings
 from src.config_weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
@@ -40,7 +40,7 @@ class OllamaConfig:
     """
 
     base_url: str = field(
-        default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        default_factory=lambda: get_settings().ollama.base_url
     )
     model: str = field(
         default_factory=lambda: os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
@@ -359,7 +359,7 @@ class OllamaClient:
                     or any(self._config.model in m for m in model_names),
                 }
             return {"status": "unhealthy", "error": f"HTTP {response.status_code}"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"status": "unhealthy", "error": str(e)}
 
     async def generate_with_context(self, query: str, context: str) -> str:
@@ -444,7 +444,7 @@ class OllamaClient:
         try:
             if getattr(client, "is_closed", False):
                 return
-        except Exception:
+        except Exception:  # noqa: BLE001
             return
         try:
             loop = asyncio.get_running_loop()
@@ -456,7 +456,7 @@ class OllamaClient:
                 loop.create_task(client.aclose())
             else:
                 asyncio.run(client.aclose())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to close httpx client during __del__: %s", e)
 
 

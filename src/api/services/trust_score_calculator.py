@@ -142,7 +142,7 @@ async def _save_trust_score(
             "last_evaluated_at": now,
         })
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -150,7 +150,7 @@ async def calculate_kb_trust_scores(
     kb_id: str,
     trust_repo: Any,
     collection_name: str,
-    qdrant_url: str = "http://localhost:6333",
+    qdrant_url: str = "",
 ) -> dict[str, Any]:
     """Calculate KTS (Knowledge Trust Score) for all documents in a KB.
 
@@ -178,7 +178,7 @@ async def calculate_kb_trust_scores(
             "scores_saved": saved,
             "errors": errors,
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Trust score calculation failed: %s", e)
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Trust score calculation failed: {e}")

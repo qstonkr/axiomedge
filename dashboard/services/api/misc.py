@@ -302,7 +302,7 @@ def upload_and_ingest_multi(
         if exc.response.status_code == 409:
             return {"error": "KB ID already exists.", "_api_failed": True, "_conflict": True}
         return {"error": str(exc), "_api_failed": True}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"error": str(exc), "_api_failed": True}
 
 

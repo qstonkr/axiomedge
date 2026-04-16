@@ -386,7 +386,7 @@ class OnnxBgeEmbeddingProvider:
                         sparse = {k: v / max_weight for k, v in sparse.items()}
 
                 results.append(sparse)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return [{} for _ in range(len(input_ids))]
 
         return results
@@ -419,7 +419,7 @@ class OnnxBgeEmbeddingProvider:
                 norms = np.clip(norms, a_min=1e-12, a_max=None)
                 normalized = vectors / norms
                 results.append(normalized.astype(np.float32).tolist())
-        except Exception:
+        except Exception:  # noqa: BLE001
             return [[] for _ in range(len(attention_mask))]
 
         return results

@@ -257,7 +257,7 @@ async def _compute_dense_scores(
                     row[j] = -1.0
             dense_scores.append(max(0.0, float(np.max(row))))
         return dense_scores
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Dense similarity computation failed: %s", e)
         return []
 

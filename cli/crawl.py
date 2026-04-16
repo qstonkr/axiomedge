@@ -33,7 +33,7 @@ def _load_crawl_state(output_dir: Path) -> dict[str, str]:
     try:
         with open(state_file, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return {}
 
 
@@ -56,7 +56,7 @@ def _read_text_content(path: Path) -> str:
     except UnicodeDecodeError:
         try:
             return path.read_text(encoding="euc-kr")
-        except Exception:
+        except Exception:  # noqa: BLE001
             return f"[Binary file: {path.name}]"
 
 

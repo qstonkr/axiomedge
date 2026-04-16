@@ -1,4 +1,29 @@
-"""Enhanced Term Similarity Matcher -- Main matcher class."""
+"""Enhanced Term Similarity Matcher -- 3-Layer cascade matching.
+
+3-Layer 전략 설계 근거:
+
+    L1  (Exact)     → 정규화 + 동의어 사전 매칭. O(1). 확실한 건 바로 결정.
+    L1.5 (Morpheme) → 한국어 복합어 분해 ("결제수단종류"→["결제","수단","종류"]).
+                      매칭 결정 없이 메타데이터만 수집 → L2/L3에 전달.
+    L2  (Multi-Ch)  → 3채널 병렬 검색 + RRF 퓨전
+                      - S_edit  (RapidFuzz WRatio, 가중치 0.25)
+                      - S_sparse (N-gram Jaccard, 가중치 0.25)
+                      - S_dense  (임베딩 코사인, 가중치 0.50)
+                      → RRF k=60 으로 순위 퓨전.
+    L3  (CE)        → Cross-encoder 정밀 판정. top-K를 sigmoid(score/3) 정규화.
+
+Decision zone (3구역):
+    AUTO_MATCH: CE ≥ 0.85 (fallback ≥ 0.90) → 자동 매칭
+    REVIEW:     CE ≥ 0.50 (fallback ≥ 0.60) → 수동 검토
+    NEW_TERM:   나머지 → 신규 용어
+
+Fallback 임계값이 더 높은 이유: CE 없이 RRF 점수만으로는 확신이 낮으므로.
+
+Graceful degradation:
+    ≤ 3,000 용어 → full pipeline (CE top-50)
+    ≤ 10,000     → reduced (CE top-10)
+    > 10,000     → CE 비활성화, RRF fallback only
+"""
 
 from __future__ import annotations
 
@@ -276,7 +301,7 @@ class EnhancedSimilarityMatcher:
             if not analyzer.is_available:
                 return []
             result = analyzer.analyze(candidate_ko)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return []
 
         # 명사 형태소 추출 (2글자 이상의 NNG/NNP)
@@ -499,7 +524,7 @@ class EnhancedSimilarityMatcher:
             raw_score = float(raw_scores[0])
             # sigmoid(s/3) 정규화
             return 1 / (1 + math.exp(-raw_score / 3))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("CrossEncoder scoring failed: %s", e)
             return None
 
@@ -539,7 +564,7 @@ class EnhancedSimilarityMatcher:
                 results.append((top_indices[i], normalized))
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:top_k]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("CrossEncoder batch rerank failed: %s", e)
             return []
 
@@ -865,7 +890,7 @@ class EnhancedSimilarityMatcher:
                 scorer=fuzz.WRatio, score_cutoff=60, limit=10,
             )
             return [self._rf_idx_map[choice_idx] for _, _, choice_idx in results]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("RapidFuzz extraction failed: %s", e)
             return []
 
@@ -950,7 +975,7 @@ class EnhancedSimilarityMatcher:
             return self._build_and_search_mini_index(
                 candidate_list, l1_unmatched_indices, l1_unmatched_texts,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Mini dense index build/search failed: %s", e)
             return None
 
@@ -963,7 +988,7 @@ class EnhancedSimilarityMatcher:
             self._dense_index = DenseTermIndex(provider)
             self._dense_index.build(self._precomputed)
             logger.info("Dense term index built: %d terms", len(self._precomputed))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dense index init failed: %s", e)
             self._dense_index = None
 

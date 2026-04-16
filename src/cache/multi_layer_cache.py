@@ -169,7 +169,7 @@ class MultiLayerCache:
         if self._embedding_provider:
             try:
                 embedding = await self._embedding_provider.embed(query)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Embedding generation for cache failed: %s", e)
 
         entry = CacheEntry(
@@ -184,14 +184,14 @@ class MultiLayerCache:
         # Write to L1
         try:
             await self._l1.set(entry)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("L1 cache write failed: %s", e)
 
         # Write to L2
         if self._l2 is not None:
             try:
                 await self._l2.set(entry)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("L2 cache write failed: %s", e)
 
         return key

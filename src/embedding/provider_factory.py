@@ -62,17 +62,18 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
             if provider.is_ready():
                 logger.info("Auto-detected TEI embedding provider: %s", tei_url)
                 return provider
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("TEI not available: %s", e)
 
     # 2. Ollama
-    ollama_url = kwargs.get("ollama_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    from src.config import get_settings
+    ollama_url = kwargs.get("ollama_url") or get_settings().ollama.base_url
     try:
         provider = _create_ollama(base_url=ollama_url, **kwargs)
         if provider.is_ready():
             logger.info("Auto-detected Ollama embedding provider: %s", ollama_url)
             return provider
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Ollama not available: %s", e)
 
     # 3. ONNX
@@ -81,7 +82,7 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
         if provider.is_ready():
             logger.info("Auto-detected ONNX embedding provider")
             return provider
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("ONNX not available: %s", e)
 
     raise RuntimeError(
@@ -95,7 +96,8 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
 def _create_tei(**kwargs) -> EmbeddingProvider:
     from src.embedding.tei_provider import TEIEmbeddingProvider
 
-    base_url = kwargs.get("base_url") or os.getenv("BGE_TEI_URL", "http://localhost:8080")
+    from src.config import get_settings as _gs
+    base_url = kwargs.get("base_url") or _gs().tei.embedding_url
     timeout = kwargs.get("timeout", 60.0)
     return TEIEmbeddingProvider(base_url=base_url, timeout=timeout)
 
@@ -103,8 +105,8 @@ def _create_tei(**kwargs) -> EmbeddingProvider:
 def _create_ollama(**kwargs) -> EmbeddingProvider:
     from src.embedding.ollama_provider import OllamaEmbeddingProvider
 
-    base_url = kwargs.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    from src.config import DEFAULT_EMBEDDING_MODEL
+    from src.config import DEFAULT_EMBEDDING_MODEL, get_settings as _gs2
+    base_url = kwargs.get("base_url") or _gs2().ollama.base_url
     model = kwargs.get("model", DEFAULT_EMBEDDING_MODEL)
     timeout = kwargs.get("timeout", 60.0)
     return OllamaEmbeddingProvider(base_url=base_url, model=model, timeout=timeout)

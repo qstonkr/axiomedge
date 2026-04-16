@@ -67,13 +67,14 @@ class DistillService:
         session_factory,
         sagemaker_client=None,
         embedder=None,
-        qdrant_url: str = "http://localhost:6333",
+        qdrant_url: str = "",
     ):
+        from src.config import get_settings
         self.config = config
         self.session_factory = session_factory
         self.llm = sagemaker_client
         self.embedder = embedder
-        self.qdrant_url = qdrant_url
+        self.qdrant_url = qdrant_url or get_settings().qdrant.url
 
     async def generate_data_for_review(self, profile_name: str) -> dict:
         """큐레이션용 QA 데이터 생성 → pending 상태로 DB 저장.
@@ -302,7 +303,7 @@ class DistillService:
                     variant["generation_batch_id"] = batch_id
                     variant["augmentation_verified"] = True
                     verified.append(variant)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning("Augmentation verify failed: %s", e)
 
         saved = await repo.save_training_data_batch(verified)
@@ -589,7 +590,7 @@ class DistillService:
             await repo.update_build(build_id, status="completed")
             logger.info("Build %s completed successfully", build_id)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Build %s failed: %s", build_id, e)
             await repo.update_build(
                 build_id, status="failed",
@@ -840,7 +841,7 @@ class DistillService:
                 return result.passed
             except ImportError:
                 logger.warning("llama_cpp not available, falling back to train_loss gate")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("GGUF evaluation failed, falling back to train_loss gate: %s", e)
 
         # Fallback: train_loss 기반 게이트
@@ -868,7 +869,7 @@ class DistillService:
             s3.download_file(profile.deploy.s3_bucket, s3_key, local_path)
             logger.info("Downloaded GGUF from S3: %s", s3_key)
             return local_path
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("GGUF download failed (eval will use train_loss fallback): %s", e)
             return None
 

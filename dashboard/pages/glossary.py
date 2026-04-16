@@ -111,7 +111,7 @@ with tab_list:
                         )
                         st.cache_data.clear()
                         st.rerun()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 st.error(f"파일 읽기 실패: {e}")
 
     st.markdown("---")

@@ -126,15 +126,14 @@ line-length = 100
 
 [tool.ruff.lint]
 # Phase C 품질 규칙.
-# BLE001 (blind-except) 은 534건 기존 위반이 있어 바로 활성화하면 CI 가 깨짐.
-# 대신 새 코드에서만 검사하도록 pre-commit hook 또는 PR 리뷰에서 수동 체크.
-# 전체 활성화는 backfill 이 충분히 진행된 후 (Phase C 후반).
+# BLE001 활성화 완료 — 기존 564건은 `# noqa: BLE001` pragma 부여.
+# 신규 코드에서 bare `except Exception:` 작성 시 ruff 가 즉시 차단.
+# pragma 를 점진적으로 제거하면서 적절한 예외 타입으로 교체하는 것이 목표.
 #
-# 현재 활성화된 추가 규칙: (없음 — ruff default 만)
 # 점진적으로 추가 예정:
-#   - BLE001: blind-except (534건 backfill 필요)
 #   - S101: assert in production code
 #   - ARG001: unused function argument
+select = ["E", "F", "W", "BLE001"]
 
 [tool.ruff.lint.per-file-ignores]
 # Streamlit pages: module-level st.set_page_config() 이 다른 import 앞에 와야 함

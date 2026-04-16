@@ -303,7 +303,7 @@ class KBRegistryRepository:
             async with await self._get_session() as session:
                 await session.execute(select(func.count()).select_from(KBConfigModel))
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001
             return False
 
     @staticmethod

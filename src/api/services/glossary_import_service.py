@@ -113,12 +113,12 @@ async def _import_single_csv(
                 if len(batch) >= BATCH_SIZE:
                     imported += await _flush_batch(repo, batch, fname, row_num, errors)
                     batch = []
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 errors.append(f"{fname} Row {row_num}: {e}")
 
         if batch:
             imported += await _flush_batch(repo, batch, fname, "final", errors)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         errors.append(f"{fname}: {e}")
 
     return {"imported": imported, "skipped": skipped, "words": words, "terms": terms, "errors": errors}
@@ -145,7 +145,7 @@ async def _flush_batch(
     """Save batch to repo, return count inserted."""
     try:
         return await repo.save_batch(batch)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         errors.append(f"{fname} batch ending row {row_ref}: {e}")
         return 0
 
