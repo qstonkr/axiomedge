@@ -406,10 +406,10 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 ## Phase D — 장기 확장성 (선택)
 
-- [ ] Vector store Protocol 추상화 (`VectorStore` interface + `providers/vectordb.py`)
-- [ ] Graph store Protocol 추상화 (`GraphStore` + `providers/graph.py`)
-- [ ] `src/api/routes/user/` vs `routes/admin/` 완전 분리 (SPA 도입 직전)
-- [ ] Plugin auto-discover for routes (`src/api/routes/*.py` 자동 include)
+- [x] VectorStore Protocol 확장 (IVectorStore CRUD + ISearchEngine, NoOp 구현)
+- [x] GraphStore Protocol 확장 (IGraphStore entity/relationship/search/stats, NoOp 구현)
+- [~] `routes/user/` vs `routes/admin/` — 이미 prefix로 분리됨. 디렉터리 분리는 SPA 도입 시
+- [x] Plugin auto-discover for routes (`src/api/route_discovery.py` — 24개 수동 등록 → 자동 스캔)
 - [ ] Ingestion pipeline 완전 plugin 화 (`IngestionStage` registry)
 - [ ] Connector plugin registry (`@ConnectorRegistry.register("notion")`)
 - [ ] Search pipeline 완전 plugin 화 (`SearchStage` registry)
