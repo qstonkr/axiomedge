@@ -2,18 +2,19 @@
 
 HuggingFace 모델을 llama.cpp GGUF 포맷으로 변환 + 양자화.
 
-툴체인 요구사항 (SSOT — 2026-04-16):
+툴체인 요구사항 (SSOT):
     convert_hf_to_gguf.py 와 llama-quantize 는 **반드시 같은 llama.cpp 커밋**
     에서 나와야 한다. 드리프트가 있으면 신규 아키텍처 (EXAONE, Kanana2 등)
     의 GGUF metadata 키 네이밍이 불일치해서 "key not found in model" 로
-    파이프라인이 깨진다.
+    파이프라인이 깨진다. 2026-04-16 EXAONE 실측 사례.
 
-    경로 해결 순서:
+    경로 해결 순서 (strict):
       1. 환경변수 ``DISTILL_CONVERT_SCRIPT`` / ``DISTILL_QUANTIZE_BIN``
-         → SSOT. 설정 필수 권장 (``make setup-distill-toolchain`` 출력 참고).
-      2. 없으면 ``$PATH`` 검색 — 그러나 Homebrew bottle 은 드리프트 가능성
-         높아 경고만 찍고 시도 (CI/신규 환경 safety net).
-      3. 경로가 전혀 없으면 Python fallback (``gguf`` 패키지 직접 사용).
+         필수. 설정 안 되면 에러 + setup 스크립트 안내.
+      2. **Opt-in** ``DISTILL_ALLOW_PATH_FALLBACK=1`` 이 설정된 경우에만
+         ``$PATH`` 탐색 (CI / ad-hoc 개발 환경용). 기본은 금지 — 드리프트 재발
+         방지.
+      3. 경로가 없으면 Python gguf 패키지 직접 사용 (fallback, 제한적).
 
     설치/업그레이드: ``make setup-distill-toolchain``
     상세: ``docs/DISTILL_TOOLCHAIN.md``
@@ -33,52 +34,91 @@ from src.distill.config import DistillProfile
 logger = logging.getLogger(__name__)
 
 
-def _resolve_convert_script() -> str | None:
-    """DISTILL_CONVERT_SCRIPT env var 또는 $PATH 에서 convert_hf_to_gguf.py 찾기.
+_SETUP_HINT = (
+    "Run `make setup-distill-toolchain` and export DISTILL_CONVERT_SCRIPT / "
+    "DISTILL_QUANTIZE_BIN. See docs/DISTILL_TOOLCHAIN.md for details."
+)
 
-    env var 가 설정돼 있으면 그것만 사용 (SSOT). 없으면 $PATH fallback 후 경고.
+
+def _path_fallback_allowed() -> bool:
+    """`$PATH` fallback 이 허용되는지 확인.
+
+    기본: 금지 (env var 없으면 에러). CI / 로컬 ad-hoc 에서 명시적으로
+    ``DISTILL_ALLOW_PATH_FALLBACK=1`` 을 설정해야만 허용.
+    """
+    flag = os.getenv("DISTILL_ALLOW_PATH_FALLBACK", "").strip().lower()
+    return flag in ("1", "true", "yes", "on")
+
+
+def _resolve_convert_script() -> str | None:
+    """``DISTILL_CONVERT_SCRIPT`` env var 에서 convert_hf_to_gguf.py 찾기.
+
+    env var 가 필수. Opt-in ``DISTILL_ALLOW_PATH_FALLBACK=1`` 이 설정된 경우에만
+    ``$PATH`` 탐색을 허용한다 — 드리프트 재발 방지 차원.
     """
     env_path = os.getenv("DISTILL_CONVERT_SCRIPT")
     if env_path:
         if Path(env_path).exists():
             return env_path
         logger.error(
-            "DISTILL_CONVERT_SCRIPT is set but not found: %s — "
-            "run `make setup-distill-toolchain`", env_path,
+            "DISTILL_CONVERT_SCRIPT is set but not found: %s — %s",
+            env_path, _SETUP_HINT,
         )
         return None
+
+    if not _path_fallback_allowed():
+        logger.error(
+            "DISTILL_CONVERT_SCRIPT is not set. %s "
+            "(Set DISTILL_ALLOW_PATH_FALLBACK=1 to allow `$PATH` lookup — "
+            "not recommended, causes version drift.)",
+            _SETUP_HINT,
+        )
+        return None
+
     which_path = shutil.which("convert_hf_to_gguf.py")
     if which_path:
         logger.warning(
-            "DISTILL_CONVERT_SCRIPT not set — falling back to $PATH (%s). "
-            "This may drift from llama-quantize version. "
-            "Run `make setup-distill-toolchain` and export DISTILL_CONVERT_SCRIPT.",
-            which_path,
+            "DISTILL_CONVERT_SCRIPT not set — falling back to $PATH (%s) "
+            "because DISTILL_ALLOW_PATH_FALLBACK is enabled. "
+            "This may drift from llama-quantize version. %s",
+            which_path, _SETUP_HINT,
         )
         return which_path
+    logger.error("convert_hf_to_gguf.py not found on $PATH either. %s", _SETUP_HINT)
     return None
 
 
 def _resolve_quantize_bin() -> str | None:
-    """DISTILL_QUANTIZE_BIN env var 또는 $PATH 에서 llama-quantize 찾기."""
+    """``DISTILL_QUANTIZE_BIN`` env var 에서 llama-quantize 찾기."""
     env_path = os.getenv("DISTILL_QUANTIZE_BIN")
     if env_path:
         if Path(env_path).exists() and os.access(env_path, os.X_OK):
             return env_path
         logger.error(
-            "DISTILL_QUANTIZE_BIN is set but not executable: %s — "
-            "run `make setup-distill-toolchain`", env_path,
+            "DISTILL_QUANTIZE_BIN is set but not executable: %s — %s",
+            env_path, _SETUP_HINT,
         )
         return None
+
+    if not _path_fallback_allowed():
+        logger.error(
+            "DISTILL_QUANTIZE_BIN is not set. %s "
+            "(Set DISTILL_ALLOW_PATH_FALLBACK=1 to allow `$PATH` lookup — "
+            "not recommended, causes version drift.)",
+            _SETUP_HINT,
+        )
+        return None
+
     which_path = shutil.which("llama-quantize")
     if which_path:
         logger.warning(
-            "DISTILL_QUANTIZE_BIN not set — falling back to $PATH (%s). "
-            "This may drift from convert_hf_to_gguf.py version. "
-            "Run `make setup-distill-toolchain` and export DISTILL_QUANTIZE_BIN.",
-            which_path,
+            "DISTILL_QUANTIZE_BIN not set — falling back to $PATH (%s) "
+            "because DISTILL_ALLOW_PATH_FALLBACK is enabled. "
+            "This may drift from convert_hf_to_gguf.py version. %s",
+            which_path, _SETUP_HINT,
         )
         return which_path
+    logger.error("llama-quantize not found on $PATH either. %s", _SETUP_HINT)
     return None
 
 

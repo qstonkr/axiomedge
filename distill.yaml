@@ -10,7 +10,9 @@ defaults:
     faithfulness: 0.55
     relevancy: 0.65
   training_backend: local
-  build_timeout_sec: 7200
+  # NOTE: build_timeout_sec 는 여기서 설정하지 않음. 인프라 설정이라
+  # src/config.py::DistillSettings (env DISTILL_BUILD_TIMEOUT_SEC) 가 SSOT.
+  # docs/DISTILL_TOOLCHAIN.md 참고.
 
 profiles:
   pbu-store:
