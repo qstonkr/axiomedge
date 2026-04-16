@@ -51,14 +51,17 @@ class L2SemanticCache(ICacheLayer):
 
     def __init__(
         self,
-        redis_url: str = "redis://localhost:6379",
+        redis_url: str = "",
         embedding_provider: Any | None = None,
         similarity_threshold: float = _w.cache.l2_similarity_threshold,
         max_entries: int = DEFAULT_MAX_ENTRIES,
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
         prefix: str = "knowledge:l2cache",
     ) -> None:
-        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        from src.config import get_settings
+        self._redis = aioredis.from_url(
+            redis_url or get_settings().redis.url, decode_responses=True,
+        )
         self._embedding_provider = embedding_provider
         self._similarity_threshold = similarity_threshold
         self._max_entries = max_entries

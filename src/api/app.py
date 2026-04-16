@@ -28,7 +28,9 @@ from src.api.state import AppState
 
 load_dotenv()
 
-_DEFAULT_REDIS_URL = "redis://localhost:6379"
+def _default_redis_url() -> str:
+    from src.config import get_settings
+    return get_settings().redis.url
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +210,7 @@ async def _init_cache(state: AppState) -> None:
 
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
-        redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+        redis_url = _default_redis_url()
         from src.cache.redis_cache import SearchCache
         from src.cache.dedup_cache import DedupCache
 
@@ -234,7 +236,7 @@ async def _init_cache(state: AppState) -> None:
 
         l2 = None
         if cache_cfg.enable_semantic_cache:
-            _cache_redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+            _cache_redis_url = _default_redis_url()
             l2 = L2SemanticCache(
                 redis_url=_cache_redis_url,
                 embedding_provider=None,  # Set after embedder init below
@@ -255,7 +257,7 @@ async def _init_cache(state: AppState) -> None:
         try:
             import redis.asyncio as _aioredis
             _idemp_redis = _aioredis.from_url(
-                os.getenv("REDIS_URL", _DEFAULT_REDIS_URL),
+                _default_redis_url(),
                 decode_responses=True,
             )
         except Exception as e:
@@ -316,7 +318,7 @@ async def _init_dedup(state: AppState) -> None:
         redis_client = None
         try:
             import redis.asyncio as aioredis
-            _redis_url = os.getenv("REDIS_URL", _DEFAULT_REDIS_URL)
+            _redis_url = _default_redis_url()
             redis_client = aioredis.from_url(_redis_url, decode_responses=True)
         except Exception as e:
             logger.warning("Failed to create dedup Redis client: %s", e)
@@ -425,7 +427,8 @@ def _try_tei_embedding(_settings):
     try:
         from src.embedding.tei_provider import TEIEmbeddingProvider
 
-        tei_url = os.getenv("BGE_TEI_URL", "http://localhost:8080")
+        from src.config import get_settings as _gs
+        tei_url = _gs().tei.embedding_url
         tei_embedder = TEIEmbeddingProvider(base_url=tei_url)
         if tei_embedder.is_ready():
             logger.info("TEI embedding initialized (cloud): %s", tei_url)

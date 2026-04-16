@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from ..config import get_settings
 from ..config_weights import weights as _w
 
 logger = logging.getLogger(__name__)
@@ -114,7 +115,7 @@ class QdrantConfig:
                 overrides[kb_id.strip()] = col_name.strip()
 
         return cls(
-            url=os.getenv("QDRANT_URL", "http://localhost:6333"),
+            url=get_settings().qdrant.url,
             api_key=os.getenv("QDRANT_API_KEY"),
             grpc_port=int(os.getenv("QDRANT_GRPC_PORT", "6334")),
             prefer_grpc=os.getenv("QDRANT_PREFER_GRPC", "true").lower() == "true",

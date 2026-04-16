@@ -33,7 +33,11 @@ _load_attempted = False  # True after first load attempt (success or fail)
 _executor = ThreadPoolExecutor(max_workers=1)
 
 # Cloud TEI reranker
-RERANKER_TEI_URL = os.getenv("RERANKER_TEI_URL", "")
+def _get_reranker_tei_url() -> str:
+    from src.config import get_settings
+    return get_settings().tei.reranker_url
+
+RERANKER_TEI_URL = _get_reranker_tei_url()
 _use_cloud_reranker = (
     os.getenv("USE_CLOUD_EMBEDDING", "true").lower() in ("true", "1", "yes")
     and bool(RERANKER_TEI_URL)

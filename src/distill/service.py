@@ -67,13 +67,14 @@ class DistillService:
         session_factory,
         sagemaker_client=None,
         embedder=None,
-        qdrant_url: str = "http://localhost:6333",
+        qdrant_url: str = "",
     ):
+        from src.config import get_settings
         self.config = config
         self.session_factory = session_factory
         self.llm = sagemaker_client
         self.embedder = embedder
-        self.qdrant_url = qdrant_url
+        self.qdrant_url = qdrant_url or get_settings().qdrant.url
 
     async def generate_data_for_review(self, profile_name: str) -> dict:
         """큐레이션용 QA 데이터 생성 → pending 상태로 DB 저장.

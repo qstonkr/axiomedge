@@ -106,7 +106,7 @@ Large files are split into helpers/sub-modules with **facade re-exports** for ba
 
 ### Key Patterns
 
-- **SSOT**: `config.py` (env vars), `config_weights.py` (thresholds/weights). Never hardcode.
+- **SSOT**: `config.py` (env vars — 15개 Settings 클래스: Database, Qdrant, Neo4j, Ollama, Embedding, Quality, Pipeline, Auth, Redis, Confluence, TEI, Api, Dashboard, Distill, TreeIndex), `config_weights.py` (thresholds/weights). 서비스 URL 추가 시 반드시 `config.py`에 Settings 클래스 추가 후 `get_settings()` 로 참조.
 - **Protocols**: `EmbeddingProvider`, `LLMClient`, `GraphRepository` — structural typing, runtime_checkable.
 - **Repository**: `BaseRepository` in `src/database/repositories/base.py` for all domain repos.
 - **AppState**: `src/api/state.py` — typed dataclass, dict-compatible. Routes access via `_get_state()`.

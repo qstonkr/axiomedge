@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 
+from src.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -255,7 +257,7 @@ async def _run_crawl_pipeline(
     from src.connectors.confluence import CrawlerConfig, crawl_space, save_results
 
     crawler_config = CrawlerConfig(
-        base_url=os.getenv("CONFLUENCE_BASE_URL", "https://wiki.gsretail.com"),
+        base_url=get_settings().confluence.base_url,
         pat=pat,
         output_dir=crawl_output_dir,
         attachments_dir=crawl_output_dir / "attachments",

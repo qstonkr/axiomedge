@@ -332,13 +332,13 @@ async def _ensure_qdrant_collection(state, kb_id: str) -> None:
 
 async def _create_collection_via_rest(collections, kb_id: str) -> None:
     """Create Qdrant collection via REST API as SDK fallback."""
-    import os
     import httpx as _httpx
     from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
     from src.config_weights import weights as _cw
 
     _embed_dim = _cw.embedding.dimension
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    from src.config import get_settings as _gs
+    qdrant_url = _gs().qdrant.url
     coll_name = collections.get_collection_name(kb_id)
     async with _httpx.AsyncClient() as _client:
         resp = await _client.put(

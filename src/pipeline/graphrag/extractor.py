@@ -300,12 +300,13 @@ class GraphRAGExtractor:
         llm_client: Any | None = None,
         neo4j_driver: Any | None = None,
     ) -> None:
-        self.ollama_base_url = ollama_base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        from src.config import DEFAULT_LLM_MODEL
+        from src.config import DEFAULT_LLM_MODEL, get_settings
+        _s = get_settings()
+        self.ollama_base_url = ollama_base_url or _s.ollama.base_url
         self.ollama_model = ollama_model or os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
-        self.neo4j_uri = neo4j_uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        self.neo4j_user = neo4j_user or os.getenv("NEO4J_USER", "neo4j")
-        self.neo4j_password = neo4j_password or os.getenv("NEO4J_PASSWORD", "")
+        self.neo4j_uri = neo4j_uri or _s.neo4j.uri
+        self.neo4j_user = neo4j_user or _s.neo4j.user
+        self.neo4j_password = neo4j_password or _s.neo4j.password
         if not self.neo4j_password:
             logger.warning("NEO4J_PASSWORD is empty — connection may fail")
 

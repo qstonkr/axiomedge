@@ -150,7 +150,7 @@ async def calculate_kb_trust_scores(
     kb_id: str,
     trust_repo: Any,
     collection_name: str,
-    qdrant_url: str = "http://localhost:6333",
+    qdrant_url: str = "",
 ) -> dict[str, Any]:
     """Calculate KTS (Knowledge Trust Score) for all documents in a KB.
 

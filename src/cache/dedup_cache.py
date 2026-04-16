@@ -42,10 +42,13 @@ class DedupCache:
 
     def __init__(
         self,
-        redis_url: str = "redis://localhost:6379",
+        redis_url: str = "",
         prefix: str = "knowledge:dedup",
     ) -> None:
-        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        from src.config import get_settings
+        self._redis = aioredis.from_url(
+            redis_url or get_settings().redis.url, decode_responses=True,
+        )
         self._prefix = prefix
 
     async def exists(self, kb_id: str, content_hash: str) -> bool:

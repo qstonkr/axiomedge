@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from typing import Any
 
 import httpx
@@ -48,9 +47,9 @@ class OllamaEmbeddingProvider:
         model: str = "",
         timeout: float = 300.0,
     ):
-        from src.config import DEFAULT_EMBEDDING_MODEL
+        from src.config import DEFAULT_EMBEDDING_MODEL, get_settings
 
-        self._base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
+        self._base_url = (base_url or get_settings().ollama.base_url).rstrip("/")
         self._model = model or DEFAULT_EMBEDDING_MODEL
         self._timeout = timeout
         self._client: httpx.Client | None = None

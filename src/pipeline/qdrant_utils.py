@@ -7,7 +7,6 @@ Created: 2026-02-11
 """
 from __future__ import annotations
 
-import os
 import uuid
 import logging
 
@@ -41,8 +40,9 @@ def truncate_content(content: str, max_length: int = MAX_PAYLOAD_CONTENT_LENGTH)
 
 
 def get_qdrant_url() -> str:
-    """Qdrant URL 환경변수 로드."""
-    return os.getenv("QDRANT_URL", "http://localhost:6333")
+    """Qdrant URL — SSOT: ``get_settings().qdrant.url``."""
+    from src.config import get_settings
+    return get_settings().qdrant.url
 
 
 def create_qdrant_client():

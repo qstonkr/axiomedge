@@ -86,7 +86,8 @@ async def _get_ingested_hashes(kb_id: str, _provider) -> set[str]:
     """Get content hashes of already-ingested documents from Qdrant."""
     import httpx
 
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    from src.config import get_settings
+    qdrant_url = get_settings().qdrant.url
     collection = f"kb_{kb_id.replace('-', '_')}"
     hashes: set[str] = set()
 

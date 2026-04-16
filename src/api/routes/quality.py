@@ -13,6 +13,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query
 
 from src.api.app import _get_state
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["Quality"])
@@ -213,7 +214,7 @@ async def calculate_trust_scores(
     state = _get_state()
     trust_repo = state.get("trust_score_repo")
     collections = state.get("qdrant_collections")
-    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    qdrant_url = state.get("qdrant_url") or get_settings().qdrant.url
 
     if not trust_repo or not collections:
         raise HTTPException(status_code=503, detail="Trust score repo or Qdrant not available")
@@ -385,7 +386,7 @@ async def get_transparency_stats():
     """Get transparency stats from Qdrant metadata + PostgreSQL."""
     state = _get_state()
     collections = state.get("qdrant_collections")
-    qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    qdrant_url = state.get("qdrant_url") or get_settings().qdrant.url
 
     try:
         counts = await _count_qdrant_transparency(collections, qdrant_url)

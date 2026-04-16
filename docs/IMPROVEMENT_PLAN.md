@@ -369,8 +369,10 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ### 코드 정리 (열거형)
 
-- [ ] 하드코딩 서비스 URL → `get_settings()` 일관 적용 (100+ 파일 점진 정리)
-- [ ] Confluence `https://wiki.gsretail.com` SSOT
+- [x] 하드코딩 서비스 URL → `get_settings()` 일관 적용 (src/ 29파일 완료, scripts/ 추후)
+- [x] Confluence `https://wiki.gsretail.com` SSOT
+- [x] Redis URL SSOT (`RedisSettings` 추가)
+- [x] TEI embedding/reranker URL SSOT (`TeiSettings` 추가)
 - [ ] Timeout 리터럴 (`600`, `7200`, `10`) → config
 - [ ] Chunk size 리터럴 (`_KSS_MAX_CHARS=2000`) → config_weights
 - [ ] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest 등)

@@ -216,7 +216,8 @@ class CrawlerConfig:
         ValueError
             If ``CONFLUENCE_PAT`` is missing or no knowledge sources are defined.
         """
-        base_url = os.getenv("CONFLUENCE_BASE_URL", "https://wiki.gsretail.com")
+        from src.config import get_settings
+        base_url = os.getenv("CONFLUENCE_BASE_URL") or get_settings().confluence.base_url
         pat = os.getenv("CONFLUENCE_PAT")
         if not pat:
             logger.warning(

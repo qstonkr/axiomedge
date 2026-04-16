@@ -155,6 +155,33 @@ class AuthSettings(BaseSettings):
     local_api_keys: str = Field(default="{}")
 
 
+class RedisSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="REDIS_")
+
+    url: str = Field(default="redis://localhost:6379")
+
+
+class ConfluenceSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="CONFLUENCE_")
+
+    base_url: str = Field(default="https://wiki.gsretail.com")
+
+
+class TeiSettings(BaseSettings):
+    """TEI (Text Embeddings Inference) 서버 설정 — BGE-M3 embedding + reranker."""
+
+    model_config = SettingsConfigDict(env_prefix="")
+
+    embedding_url: str = Field(
+        default="http://localhost:8080",
+        alias="BGE_TEI_URL",
+    )
+    reranker_url: str = Field(
+        default="",
+        alias="RERANKER_TEI_URL",
+    )
+
+
 class ApiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="API_")
 
@@ -218,6 +245,9 @@ class Settings(BaseSettings):
     quality: QualitySettings = Field(default_factory=QualitySettings)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
+    confluence: ConfluenceSettings = Field(default_factory=ConfluenceSettings)
+    tei: TeiSettings = Field(default_factory=TeiSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     distill: DistillSettings = Field(default_factory=DistillSettings)

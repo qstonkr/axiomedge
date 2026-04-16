@@ -16,7 +16,9 @@ from src.api.app import _get_state
 logger = logging.getLogger(__name__)
 
 _QDRANT_NOT_INIT = "Qdrant not initialized"
-_DEFAULT_QDRANT_URL = "http://localhost:6333"
+def _default_qdrant_url() -> str:
+    from src.config import get_settings
+    return get_settings().qdrant.url
 
 # Original KB router
 router = APIRouter(prefix="/api/v1/kb", tags=["KB Management"])
@@ -284,7 +286,7 @@ async def admin_kb_aggregation():
 
     total_kbs, total_documents = await _get_registry_counts(state.get("kb_registry"))
     total_chunks, total_kbs = await _get_qdrant_chunk_counts(collections, store, total_kbs)
-    qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
+    qdrant_url = state.get("qdrant_url", _default_qdrant_url())
     avg_quality_score = await _get_avg_quality_score(collections, store, qdrant_url)
 
     return {
@@ -479,7 +481,7 @@ async def admin_kb_documents(
     """List KB documents from Qdrant (unique doc_ids with metadata)."""
     state = _get_state()
     collections = state.get("qdrant_collections")
-    qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
+    qdrant_url = state.get("qdrant_url", _default_qdrant_url())
 
     if not collections:
         return {"documents": [], "total": 0, "page": page, "page_size": page_size, "kb_id": kb_id}
@@ -513,7 +515,7 @@ async def admin_kb_categories(kb_id: str):
 
     state = _get_state()
     collections = state.get("qdrant_collections")
-    qdrant_url = state.get("qdrant_url", _DEFAULT_QDRANT_URL)
+    qdrant_url = state.get("qdrant_url", _default_qdrant_url())
 
     if not collections:
         return {"categories": [], "total": 0, "kb_id": kb_id}

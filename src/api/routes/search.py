@@ -1164,7 +1164,8 @@ async def hub_search(request: HubSearchRequest):
     )
 
     # 4.3. Keyword fallback
-    _qdrant_url = state.get("qdrant_url", "http://localhost:6333")
+    from src.config import get_settings as _get_settings
+    _qdrant_url = state.get("qdrant_url") or _get_settings().qdrant.url
     all_chunks = await _step_keyword_fallback(display_query, all_chunks, collections, _qdrant_url)
 
     # 4.35-4.46. Search enrichment pipeline

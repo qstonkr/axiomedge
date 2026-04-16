@@ -156,7 +156,7 @@ async def generate_test_qa(
     qdrant_url: str,
     kb_ids: list[str],
     count: int = 50,
-    rag_api_url: str = "http://localhost:8000",
+    rag_api_url: str = "",
     quality_filter=None,
     existing_questions: set[str] | None = None,
 ) -> list[dict[str, Any]]:

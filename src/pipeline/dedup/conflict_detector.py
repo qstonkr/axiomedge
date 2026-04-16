@@ -175,12 +175,12 @@ class OllamaLLMClient(ILLMClient):
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str = "",
         model: str | None = None,
     ):
         import os as _os
-        from src.config import DEFAULT_LLM_MODEL
-        self._base_url = base_url.rstrip("/")
+        from src.config import DEFAULT_LLM_MODEL, get_settings
+        self._base_url = (base_url or get_settings().ollama.base_url).rstrip("/")
         self._model = model or _os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)
 
     async def complete(

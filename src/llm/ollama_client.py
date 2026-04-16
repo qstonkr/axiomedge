@@ -24,7 +24,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from src.config import DEFAULT_LLM_MODEL
+from src.config import DEFAULT_LLM_MODEL, get_settings
 from src.config_weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
@@ -40,7 +40,7 @@ class OllamaConfig:
     """
 
     base_url: str = field(
-        default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        default_factory=lambda: get_settings().ollama.base_url
     )
     model: str = field(
         default_factory=lambda: os.getenv("OLLAMA_MODEL", DEFAULT_LLM_MODEL)

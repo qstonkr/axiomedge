@@ -63,8 +63,11 @@ class ConfluenceFullClient:
         max_concurrent: int = 1,
         kb_id: str = "",
     ):
-        self.base_url = base_url or os.getenv(
-            "CONFLUENCE_BASE_URL", "https://wiki.gsretail.com"
+        from src.config import get_settings
+        self.base_url = (
+            base_url
+            or os.getenv("CONFLUENCE_BASE_URL")
+            or get_settings().confluence.base_url
         )
         _pat = pat or os.getenv("CONFLUENCE_PAT", "")
         self.headers = {
