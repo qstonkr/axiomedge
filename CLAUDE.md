@@ -224,6 +224,9 @@ AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py g-espa   # 
 | `docs/DEPLOYMENT.md` | K8s deployment guide |
 | `docs/DISTILL.md` | Distill 파이프라인, 베이스 모델 레지스트리, default 정책 |
 | `docs/DISTILL_TOOLCHAIN.md` | llama.cpp 툴체인 설치/업그레이드/패치 관리 |
+| `docs/GLOSSARY.md` | 도메인 용어 정의 (PBU/HBU, KB, search group, distill, GraphRAG) |
+| `docs/SECURITY.md` | 인증, prompt injection 방어, 데이터 격리, 답변 안전성 |
+| `docs/DATA_MODEL.md` | DB 스키마 요약 (PostgreSQL/Qdrant/Neo4j/Redis) |
 | `docs/TESTING.md` | Test policy, coverage floor, pragma 허용 기준, backfill 목록 |
 | `docs/CONFIGURATION.md` | All env vars + tuning parameters |
 | `docs/TROUBLESHOOTING.md` | Common issues + solutions |
