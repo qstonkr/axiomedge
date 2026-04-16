@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from ..config.weights import weights as _w
+from src.config.weights import weights as _w
 
 from .arrow_detector import ArrowDetector
 from .graph_normalizer import GraphNormalizer

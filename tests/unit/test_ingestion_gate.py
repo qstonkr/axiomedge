@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from src.core.models import RawDocument
-from src.pipeline.ingestion_gate import (
+from src.pipelines.ingestion_gate import (
     GateAction,
     GateVerdict,
     IngestionGate,

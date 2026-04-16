@@ -9,7 +9,7 @@ import os
 import re as _re_mod
 from typing import Any
 
-from ...config.weights import weights as _w
+from src.config.weights import weights as _w
 from .models import ExtractionResult, GraphNode, GraphRelationship
 from .prompts import (
     ALLOWED_NODES,

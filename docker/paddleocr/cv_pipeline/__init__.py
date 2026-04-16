@@ -5,7 +5,7 @@ text to a local LLM (Ollama) for graph normalization since text-only
 models cannot process images directly.
 
 Usage:
-    from src.cv_pipeline import CVPipeline
+    from src.pipelines.cv import CVPipeline
 
     pipeline = CVPipeline()
     result = await pipeline.analyze(image_bytes)

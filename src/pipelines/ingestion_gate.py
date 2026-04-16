@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from ..config.weights import weights
+from src.config.weights import weights
 from src.core.models import RawDocument
 
 logger = logging.getLogger(__name__)

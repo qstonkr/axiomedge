@@ -125,17 +125,17 @@ class TestEnhancedMatcherInit:
 # ===========================================================================
 class TestDedupResultTracker:
     def test_init_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         assert tracker.enabled is False
 
     def test_init_enabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=MagicMock())
         assert tracker.enabled is True
 
     def test_track_result_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
 
         async def _go():
@@ -144,7 +144,7 @@ class TestDedupResultTracker:
         _run(_go())
 
     def test_track_result_enabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         redis = AsyncMock()
         redis.xadd = AsyncMock()
         tracker = DedupResultTracker(redis_client=redis)
@@ -166,7 +166,7 @@ class TestDedupResultTracker:
         _run(_go())
 
     def test_track_result_error(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         redis = AsyncMock()
         redis.xadd = AsyncMock(side_effect=RuntimeError("redis err"))
         tracker = DedupResultTracker(redis_client=redis)
@@ -178,7 +178,7 @@ class TestDedupResultTracker:
         _run(_go())
 
     def test_enum_val(self):
-        from src.pipeline.dedup.result_tracker import _enum_val
+        from src.pipelines.dedup.result_tracker import _enum_val
         from enum import Enum
 
         class Status(Enum):

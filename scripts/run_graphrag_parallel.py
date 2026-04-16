@@ -104,7 +104,7 @@ def run_graphrag_parallel(kb_id: str):
         logger.warning(f"[{kb_id}] No chunks found")
         return
 
-    from src.pipeline.graphrag_extractor import GraphRAGExtractor
+    from src.pipelines.graphrag_extractor import GraphRAGExtractor
 
     extractor = GraphRAGExtractor()
     neo4j_lock = threading.Lock()

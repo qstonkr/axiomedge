@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from src.pipeline.document_parser import ParseResult
-from src.pipeline.jsonl_checkpoint import (
+from src.pipelines.document_parser import ParseResult
+from src.pipelines.jsonl_checkpoint import (
     JSONL_VERSION,
     JsonlCheckpointReader,
     JsonlCheckpointWriter,

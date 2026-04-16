@@ -161,7 +161,7 @@ class TestGraphIntegrityChecker:
 # RedisDedupIndex
 # ===========================================================================
 
-from src.pipeline.dedup.redis_index import RedisDedupIndex
+from src.pipelines.dedup.redis_index import RedisDedupIndex
 
 
 class TestRedisDedupIndex:

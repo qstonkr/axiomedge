@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from src.pipeline.dedup.bloom_filter import BloomFilter, ScalableBloomFilter
+from src.pipelines.dedup.bloom_filter import BloomFilter, ScalableBloomFilter
 
 
 class TestBloomFilter:

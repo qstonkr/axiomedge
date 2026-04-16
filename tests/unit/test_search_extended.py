@@ -15,7 +15,7 @@ from src.search.term_similarity_matcher import (
     _tokenize,
     _PrecomputedStd,
 )
-from src.pipeline.neo4j_loader import (
+from src.pipelines.neo4j_loader import (
     Neo4jConfig,
     Neo4jKnowledgeLoader,
     SAFE_IDENTIFIER_PATTERN,

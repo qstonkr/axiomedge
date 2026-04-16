@@ -15,7 +15,7 @@ import pytest
 # DedupPipeline data classes & flow
 # ===========================================================================
 
-from src.pipeline.dedup.dedup_pipeline import (
+from src.pipelines.dedup.dedup_pipeline import (
     Document,
     DedupResult,
     DedupStatus,

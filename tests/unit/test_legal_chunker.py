@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.pipeline.chunker import Chunker, ChunkStrategy
+from src.pipelines.chunker import Chunker, ChunkStrategy
 
 
 _SAMPLE_LAW = """# 119구조ㆍ구급에 관한 법률

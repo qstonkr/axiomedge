@@ -152,7 +152,7 @@ async def _ingest_single_file(
 ) -> int:
     """Parse and ingest a single file. Returns chunks_stored or 0 on skip."""
     from src.core.models import RawDocument
-    from src.pipeline.document_parser import parse_file_enhanced
+    from src.pipelines.document_parser import parse_file_enhanced
 
     result = parse_file_enhanced(fpath)
     text = result.full_text if hasattr(result, 'full_text') else str(result)
@@ -171,7 +171,7 @@ async def _ingest_single_file(
 async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.ingestion import IngestionPipeline
 
     pipeline = IngestionPipeline(
         embedder=embedder, sparse_embedder=sparse_embedder,
@@ -214,8 +214,8 @@ async def ingest_file(file_path: str, kb_id: str):
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.core.models import RawDocument
-    from src.pipeline.document_parser import parse_file_enhanced
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.document_parser import parse_file_enhanced
+    from src.pipelines.ingestion import IngestionPipeline
 
     pipeline = IngestionPipeline(
         embedder=embedder, sparse_embedder=sparse_embedder,
@@ -246,7 +246,7 @@ async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False):
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.connectors.crawl_result import CrawlResultConnector
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.ingestion import IngestionPipeline
 
     connector = CrawlResultConnector(default_output_dir=crawl_dir)
     result = await connector.fetch({"entry_point": crawl_dir}, force=force)

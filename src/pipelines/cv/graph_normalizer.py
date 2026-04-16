@@ -19,7 +19,7 @@ import logging
 import os
 import re
 
-from ..config.weights import weights as _w
+from src.config.weights import weights as _w
 
 from .models import CVResult, SignalQuality
 

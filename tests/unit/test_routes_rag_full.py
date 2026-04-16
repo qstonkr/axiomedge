@@ -207,7 +207,7 @@ class TestFileUploadIngest:
             with patch("src.api.app._get_state", return_value=state):
                 with patch("src.api.routes.rag.create_job", new_callable=AsyncMock, return_value="job123"):
                     with patch("src.api.routes.rag._process_files", new_callable=AsyncMock):
-                        with patch("src.pipeline.ingestion.IngestionPipeline"):
+                        with patch("src.pipelines.ingestion.IngestionPipeline"):
                             with patch("src.api.routes.ingest._OnnxSparseEmbedder"):
                                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                                     resp = await client.post(
@@ -255,9 +255,9 @@ class TestReingestFromJsonl:
         async def _test():
             state = _mock_state(qdrant_store=store, embedder=embedder)
             with patch("src.api.app._get_state", return_value=state):
-                with patch("src.pipeline.jsonl_checkpoint.get_jsonl_path", return_value="/tmp/knowledge-local/test.jsonl"):
-                    with patch("src.pipeline.jsonl_checkpoint.JsonlCheckpointReader", return_value=mock_reader):
-                        with patch("src.pipeline.ingestion.IngestionPipeline"):
+                with patch("src.pipelines.jsonl_checkpoint.get_jsonl_path", return_value="/tmp/knowledge-local/test.jsonl"):
+                    with patch("src.pipelines.jsonl_checkpoint.JsonlCheckpointReader", return_value=mock_reader):
+                        with patch("src.pipelines.ingestion.IngestionPipeline"):
                             with patch("src.api.routes.ingest._OnnxSparseEmbedder"):
                                 with patch("src.api.routes.rag.create_job", new_callable=AsyncMock, return_value="j1"):
                                     with patch("src.api.routes.rag._stage2_ingest_from_jsonl", new_callable=AsyncMock):
@@ -286,8 +286,8 @@ class TestReingestFromJsonl:
         async def _test():
             state = _mock_state(qdrant_store=store, embedder=embedder)
             with patch("src.api.app._get_state", return_value=state):
-                with patch("src.pipeline.jsonl_checkpoint.get_jsonl_path", return_value="/tmp/knowledge-local/test.jsonl"):
-                    with patch("src.pipeline.jsonl_checkpoint.JsonlCheckpointReader", return_value=mock_reader):
+                with patch("src.pipelines.jsonl_checkpoint.get_jsonl_path", return_value="/tmp/knowledge-local/test.jsonl"):
+                    with patch("src.pipelines.jsonl_checkpoint.JsonlCheckpointReader", return_value=mock_reader):
                         with patch("os.path.realpath", side_effect=lambda p: p):
                             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                                 resp = await client.post(

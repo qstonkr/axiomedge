@@ -47,7 +47,7 @@ def run_graphrag(kb_id: str):
         logger.warning(f"No chunks found for {kb_id}")
         return
 
-    from src.pipeline.graphrag_extractor import GraphRAGExtractor
+    from src.pipelines.graphrag_extractor import GraphRAGExtractor
     extractor = GraphRAGExtractor()
 
     stats = {"total": len(chunks), "success": 0, "failed": 0, "nodes": 0, "rels": 0}

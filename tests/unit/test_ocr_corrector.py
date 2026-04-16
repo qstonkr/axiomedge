@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.pipeline.ocr_corrector import (
+from src.pipelines.ocr_corrector import (
     noise_score,
     needs_correction,
     _correct_with_domain_dict,

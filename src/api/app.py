@@ -156,14 +156,14 @@ async def _init_database(state: AppState, settings) -> None:
         if cat_repo:
             l1_cats = await cat_repo.get_l1_categories()
             if l1_cats:
-                from src.pipeline.ingestion import load_l1_categories_from_db
+                from src.pipelines.ingestion import load_l1_categories_from_db
                 load_l1_categories_from_db(l1_cats)
     except Exception as e:  # noqa: BLE001
         logger.warning("L1 category cache load failed (using defaults): %s", e)
 
     # Term extractor for ingestion
     try:
-        from src.pipeline.term_extractor import TermExtractor
+        from src.pipelines.term_extractor import TermExtractor
         state["term_extractor"] = TermExtractor(
             glossary_repo=state.get("glossary_repo"),
             embedder=state.get("embedder"),
@@ -280,9 +280,9 @@ async def _init_dedup(state: AppState) -> None:
     """Initialize 4-stage dedup pipeline."""
     await asyncio.sleep(0)
     try:
-        from src.pipeline.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
-        from src.pipeline.dedup.bloom_filter import BloomFilter
-        from src.pipeline.dedup.conflict_detector import OllamaLLMClient
+        from src.pipelines.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
+        from src.pipelines.dedup.bloom_filter import BloomFilter
+        from src.pipelines.dedup.conflict_detector import OllamaLLMClient
         from src.config.weights import weights as _w
 
         dedup_cfg = _w.dedup
@@ -518,7 +518,7 @@ async def _init_llm(state: AppState, settings) -> None:
     # GraphRAG extractor
     if state.get("llm") and state.get("neo4j"):
         try:
-            from src.pipeline.graphrag_extractor import GraphRAGExtractor
+            from src.pipelines.graphrag_extractor import GraphRAGExtractor
             state["graphrag_extractor"] = GraphRAGExtractor()
             logger.info("GraphRAGExtractor initialized")
         except Exception as e:  # noqa: BLE001

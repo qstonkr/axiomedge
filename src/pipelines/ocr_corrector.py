@@ -9,7 +9,7 @@ produce valid Korean syllables (e.g., "얼업활설화" → "영업활성화").
 Adapted from oreo-ecosystem ocr_noise_detector.py + fix_ocr_chunks.py.
 
 Usage:
-    from src.pipeline.ocr_corrector import needs_correction, correct_ocr_text
+    from src.pipelines.ocr_corrector import needs_correction, correct_ocr_text
 
     if needs_correction(text):
         corrected = await correct_ocr_text(text, ollama_client)

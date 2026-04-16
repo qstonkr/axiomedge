@@ -8,14 +8,14 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import numpy as np
 import pytest
 
-from src.cv_pipeline.models import (
+from src.pipelines.cv.models import (
     CVResult,
     DetectedShape,
     OCRBox,
     RawEdge,
     SignalQuality,
 )
-from src.cv_pipeline.visual_content_analyzer import VisualAnalysisResult
+from src.pipelines.cv.visual_content_analyzer import VisualAnalysisResult
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ class TestVisualAnalysisResult:
 
 class TestImagePreprocessor:
     def test_normalize_rgb(self):
-        from src.cv_pipeline.preprocessor import ImagePreprocessor
+        from src.pipelines.cv.preprocessor import ImagePreprocessor
         from PIL import Image
 
         img = Image.new("RGB", (100, 100), color="red")
@@ -155,7 +155,7 @@ class TestImagePreprocessor:
         assert pil_img.mode == "RGB"
 
     def test_normalize_rgba(self):
-        from src.cv_pipeline.preprocessor import ImagePreprocessor
+        from src.pipelines.cv.preprocessor import ImagePreprocessor
         from PIL import Image
 
         img = Image.new("RGBA", (100, 100), color=(255, 0, 0, 128))
@@ -169,7 +169,7 @@ class TestImagePreprocessor:
         assert pil_img.mode == "RGB"
 
     def test_normalize_large_resize(self):
-        from src.cv_pipeline.preprocessor import ImagePreprocessor
+        from src.pipelines.cv.preprocessor import ImagePreprocessor
         from PIL import Image
 
         img = Image.new("RGB", (4000, 3000), color="blue")
@@ -188,7 +188,7 @@ class TestImagePreprocessor:
 
 class TestShapeDetector:
     def test_classify_shape_rectangle(self):
-        from src.cv_pipeline.shape_detector import ShapeDetector
+        from src.pipelines.cv.shape_detector import ShapeDetector
         detector = ShapeDetector()
 
         # Create a rectangular contour
@@ -197,7 +197,7 @@ class TestShapeDetector:
         assert shape_type in ("rectangle", "diamond", "polygon")
 
     def test_classify_shape_triangle(self):
-        from src.cv_pipeline.shape_detector import ShapeDetector
+        from src.pipelines.cv.shape_detector import ShapeDetector
         detector = ShapeDetector()
 
         contour = np.array([[[50, 10]], [[10, 90]], [[90, 90]]], dtype=np.int32)
@@ -205,7 +205,7 @@ class TestShapeDetector:
         assert shape_type in ("triangle", "polygon", "rectangle")
 
     def test_build_text_mask(self):
-        from src.cv_pipeline.shape_detector import ShapeDetector
+        from src.pipelines.cv.shape_detector import ShapeDetector
         detector = ShapeDetector()
 
         boxes = [
@@ -216,7 +216,7 @@ class TestShapeDetector:
         assert mask.dtype == np.uint8
 
     def test_detect_empty_image(self):
-        from src.cv_pipeline.shape_detector import ShapeDetector
+        from src.pipelines.cv.shape_detector import ShapeDetector
         detector = ShapeDetector()
 
         # Black image — no edges to detect
@@ -231,7 +231,7 @@ class TestShapeDetector:
 
 class TestArrowDetector:
     def test_detect_no_lines(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         detector = ArrowDetector()
 
         image = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -239,13 +239,13 @@ class TestArrowDetector:
         assert edges == []
 
     def test_merge_segments_empty(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         detector = ArrowDetector()
         result = detector._merge_segments([])
         assert result == []
 
     def test_merge_segments_single(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         detector = ArrowDetector()
 
         segs = [((0.0, 0.0), (100.0, 0.0))]
@@ -253,7 +253,7 @@ class TestArrowDetector:
         assert len(result) == 1
 
     def test_merge_segments_close(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         detector = ArrowDetector()
 
         segs = [
@@ -264,12 +264,12 @@ class TestArrowDetector:
         assert len(result) == 1  # merged
 
     def test_point_distance(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         d = ArrowDetector._point_distance((0, 0), (3, 4))
         assert abs(d - 5.0) < 0.01
 
     def test_find_nearest_shape_none(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         detector = ArrowDetector()
         result = detector._find_nearest_shape((500.0, 500.0), [])
         assert result is None
@@ -281,20 +281,20 @@ class TestArrowDetector:
 
 class TestCVPipeline:
     def test_empty_result(self):
-        from src.cv_pipeline.pipeline import _empty_graph_result
+        from src.pipelines.cv.pipeline import _empty_graph_result
         r = _empty_graph_result()
         assert r["image_type"] == "unknown"
         assert r["entities"] == []
 
     def test_assess_signal_quality_empty(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         result = CVResult()
         quality = p._assess_signal_quality(result)
         assert quality == SignalQuality.EMPTY
 
     def test_assess_signal_quality_ocr_only(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         result = CVResult(
             ocr_boxes=[OCRBox(f"text{i}", [[0, 0]], 0.9, (i * 10, 0)) for i in range(10)],
@@ -305,26 +305,26 @@ class TestCVPipeline:
         assert quality in (SignalQuality.OCR_ONLY, SignalQuality.OCR_PRIMARY)
 
     def test_estimate_confidence(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         result = CVResult(ocr_boxes=[OCRBox(f"t{i}", [[0, 0]], 0.9, (0, 0)) for i in range(15)])
         conf = p._estimate_confidence(SignalQuality.FULL, result)
         assert 0.8 <= conf <= 0.95
 
     def test_estimate_confidence_empty(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         conf = p._estimate_confidence(SignalQuality.EMPTY, CVResult())
         assert conf == 0.1
 
     def test_ocr_only_structure_no_boxes(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         result = p._ocr_only_structure(CVResult())
         assert result["image_type"] == "unknown"
 
     def test_ocr_only_structure_with_arrows(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         boxes = [
@@ -336,7 +336,7 @@ class TestCVPipeline:
         assert len(result["process_steps"]) > 0
 
     def test_fallback_structure_ocr_primary(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         boxes = [OCRBox("text", [[0, 0]], 0.9, (50, 50))]
@@ -345,7 +345,7 @@ class TestCVPipeline:
         assert "image_type" in result
 
     def test_fallback_structure_full(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         contour = np.array([[[10, 10]], [[110, 10]], [[110, 60]], [[10, 60]]], dtype=np.int32)
@@ -362,12 +362,12 @@ class TestCVPipeline:
         assert "entities" in result
 
     def test_is_shapes_noisy_empty(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         assert p._is_shapes_noisy(CVResult()) is False
 
     def test_is_shapes_noisy_spillage(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         contour = np.array([[[0, 0]], [[50, 0]], [[50, 50]], [[0, 50]]], dtype=np.int32)
@@ -381,12 +381,12 @@ class TestCVPipeline:
         assert p._is_shapes_noisy(cv) is True
 
     def test_is_edges_noisy_false(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
         assert p._is_edges_noisy(CVResult()) is False
 
     def test_is_edges_noisy_unmapped(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         edges = [
@@ -398,7 +398,7 @@ class TestCVPipeline:
         assert p._is_edges_noisy(cv) is True
 
     def test_detect_vertical_steps_too_few_boxes(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         cv = CVResult(
@@ -410,7 +410,7 @@ class TestCVPipeline:
         assert steps == []
 
     def test_detect_vertical_steps_valid(self):
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
         p = CVPipeline()
 
         boxes = []

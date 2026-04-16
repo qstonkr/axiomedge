@@ -16,13 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.models import RawDocument, IngestionResult
-from src.pipeline.ingestion_contracts import (
+from src.pipelines.ingestion_contracts import (
     NoOpEmbedder,
     NoOpSparseEmbedder,
     NoOpVectorStore,
     NoOpGraphStore,
 )
-from src.pipeline.ingestion_helpers import (
+from src.pipelines.ingestion_helpers import (
     _DOC_TYPE_KEYWORDS,
     _L1_CATEGORIES_DEFAULT,
     classify_document_type,
@@ -33,14 +33,14 @@ from src.pipeline.ingestion_helpers import (
     load_l1_categories_from_db,
     _get_l1_categories_sync,
 )
-from src.pipeline.ingestion_text import (
+from src.pipelines.ingestion_text import (
     extract_document_summary,
     clean_text_for_embedding,
     clean_passage,
     shorten_title,
     build_document_context_prefix,
 )
-from src.pipeline.quality_processor import QualityTier, QualityMetrics
+from src.pipelines.quality_processor import QualityTier, QualityMetrics
 
 
 # =========================================================================
@@ -369,7 +369,7 @@ class TestBuildDocumentContextPrefix:
 
 class TestIngestionPipelineInit:
     def test_default_init(self):
-        from src.pipeline.ingestion import IngestionPipeline
+        from src.pipelines.ingestion import IngestionPipeline
         pipeline = IngestionPipeline()
         assert isinstance(pipeline.embedder, NoOpEmbedder)
         assert isinstance(pipeline.sparse_embedder, NoOpSparseEmbedder)
@@ -380,13 +380,13 @@ class TestIngestionPipelineInit:
         assert pipeline.enable_graphrag is False
 
     def test_custom_embedder(self):
-        from src.pipeline.ingestion import IngestionPipeline
+        from src.pipelines.ingestion import IngestionPipeline
         mock_embedder = MagicMock()
         pipeline = IngestionPipeline(embedder=mock_embedder)
         assert pipeline.embedder is mock_embedder
 
     def test_quality_filter_disabled(self):
-        from src.pipeline.ingestion import IngestionPipeline
+        from src.pipelines.ingestion import IngestionPipeline
         pipeline = IngestionPipeline(enable_quality_filter=False)
         assert pipeline.enable_quality_filter is False
 

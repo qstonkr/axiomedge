@@ -44,23 +44,23 @@ from .quality_processor import (
     _determine_quality_tier,
 )
 # Re-export from extracted modules for backward compatibility
-from src.pipeline.ingestion_contracts import (  # noqa: F401, E402
+from src.pipelines.ingestion_contracts import (  # noqa: F401, E402
     IEmbedder, ISparseEmbedder, IVectorStore, IGraphStore,
     NoOpEmbedder, NoOpSparseEmbedder, NoOpVectorStore, NoOpGraphStore,
 )
-from src.pipeline.ingestion_helpers import (  # noqa: F401, E402
+from src.pipelines.ingestion_helpers import (  # noqa: F401, E402
     extract_owner, load_l1_categories_from_db, classify_l1_category,
     calculate_quality_score, classify_document_type,
     extract_cross_references as _extract_cross_references,
     _BINARY_EXTENSIONS,
 )
-from src.pipeline.ingestion_text import (  # noqa: E402
+from src.pipelines.ingestion_text import (  # noqa: E402
     extract_document_summary as _extract_document_summary,
     clean_text_for_embedding as _clean_text_for_embedding,
     clean_passage as _clean_passage,
     build_document_context_prefix as _build_document_context_prefix,
 )
-from src.pipeline.ocr_corrector import clean_chunk_text as _clean_chunk_text
+from src.pipelines.ocr_corrector import clean_chunk_text as _clean_chunk_text
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +213,7 @@ class IngestionPipeline:
 
         if self.dedup_pipeline is not None:
             try:
-                from src.pipeline.dedup import Document as DedupDoc, DedupStatus
+                from src.pipelines.dedup import Document as DedupDoc, DedupStatus
                 dedup_doc = DedupDoc(
                     doc_id=raw.doc_id, title=raw.title, content=raw.content,
                     url=raw.source_uri, updated_at=raw.updated_at,

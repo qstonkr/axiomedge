@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.pipeline.document_parser import parse_file, parse_bytes, ParseResult
+from src.pipelines.document_parser import parse_file, parse_bytes, ParseResult
 
 
 class TestDocumentParser:
@@ -79,7 +79,7 @@ class TestDocumentParser:
 
     def test_ppt_without_libreoffice_enhanced(self) -> None:
         """Enhanced parser should return error message for .ppt without LibreOffice."""
-        from src.pipeline.document_parser import parse_bytes_enhanced
+        from src.pipelines.document_parser import parse_bytes_enhanced
 
         with patch("shutil.which", return_value=None):
             result = parse_bytes_enhanced(b"fake ppt data", "presentation.ppt")
@@ -88,7 +88,7 @@ class TestDocumentParser:
 
     def test_parse_file_too_large(self, tmp_path: Path) -> None:
         """Files exceeding MAX_FILE_SIZE should raise ValueError."""
-        from src.pipeline.document_parser import MAX_FILE_SIZE
+        from src.pipelines.document_parser import MAX_FILE_SIZE
 
         large_file = tmp_path / "huge.txt"
         # Create a file slightly over max

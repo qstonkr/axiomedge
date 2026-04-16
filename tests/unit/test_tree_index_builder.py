@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.pipeline.tree_index_builder import (
+from src.pipelines.tree_index_builder import (
     parse_heading_path,
     build_tree_from_chunks,
     _path_hash,

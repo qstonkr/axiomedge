@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.pipeline.term_extractor import TermExtractor, ExtractedTerm
+from src.pipelines.term_extractor import TermExtractor, ExtractedTerm
 
 
 # ---------------------------------------------------------------------------

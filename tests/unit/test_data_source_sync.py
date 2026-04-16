@@ -143,7 +143,7 @@ class TestRunDataSourceSync:
             patch("src.connectors.confluence.crawl_space", return_value=fake_crawl_result),
             patch("src.connectors.confluence.save_results"),
             patch("src.connectors.crawl_result.CrawlResultConnector") as MockConnector,
-            patch("src.pipeline.ingestion.IngestionPipeline") as MockPipeline,
+            patch("src.pipelines.ingestion.IngestionPipeline") as MockPipeline,
         ):
             connector_instance = AsyncMock()
             connector_instance.fetch.return_value = fake_connector_result
@@ -639,7 +639,7 @@ class TestRunIngestion:
             "graphrag_extractor": None,
         }
 
-        with patch("src.pipeline.ingestion.IngestionPipeline") as MockPipeline:
+        with patch("src.pipelines.ingestion.IngestionPipeline") as MockPipeline:
             pipeline_instance = AsyncMock()
             pipeline_instance.ingest.return_value = ingest_result
             MockPipeline.return_value = pipeline_instance
@@ -671,7 +671,7 @@ class TestRunIngestion:
             "graphrag_extractor": None,
         }
 
-        with patch("src.pipeline.ingestion.IngestionPipeline") as MockPipeline:
+        with patch("src.pipelines.ingestion.IngestionPipeline") as MockPipeline:
             pipeline_instance = AsyncMock()
             pipeline_instance.ingest.side_effect = RuntimeError("parse error")
             MockPipeline.return_value = pipeline_instance

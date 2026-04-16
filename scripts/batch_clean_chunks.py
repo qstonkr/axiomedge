@@ -13,7 +13,7 @@ import sys
 import logging
 import httpx
 
-from src.pipeline.ocr_corrector import clean_chunk_text
+from src.pipelines.ocr_corrector import clean_chunk_text
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

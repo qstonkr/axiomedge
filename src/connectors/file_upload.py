@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.models import ConnectorResult, RawDocument
-from ..pipeline.document_parser import parse_file
+from src.pipelines.document_parser import parse_file
 
 
 class FileUploadConnector:

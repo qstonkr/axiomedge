@@ -249,12 +249,12 @@ async def init_pipeline(tei_timeout: float):
     state["embedder"] = embedder
 
     # Rule-based legal extractor — cheap, reuses the Neo4j driver.
-    from src.pipeline.legal_graph import LegalGraphExtractor
+    from src.pipelines.legal_graph import LegalGraphExtractor
 
     legal_graph_extractor = LegalGraphExtractor()
 
     # Term extractor uses the embedder for similarity.
-    from src.pipeline.term_extractor import TermExtractor
+    from src.pipelines.term_extractor import TermExtractor
 
     term_extractor = TermExtractor(embedder=embedder)
 
@@ -275,7 +275,7 @@ async def init_pipeline(tei_timeout: float):
     if collections is not None:
         await collections.ensure_collection(KB_ID)
 
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.ingestion import IngestionPipeline
 
     pipeline = IngestionPipeline(
         embedder=embedder,

@@ -32,7 +32,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.pipeline.term_patterns import (
+from src.pipelines.term_patterns import (
     CAMEL_CASE_PATTERN,
     ACRONYM_PATTERN,
     HYPHENATED_PATTERN,

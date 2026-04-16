@@ -410,7 +410,7 @@ class TestSearchRouteHub:
 # ===========================================================================
 class TestDedupResultTrackerAdditional:
     def test_track_conflict(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         redis = AsyncMock()
         redis.xadd = AsyncMock()
         redis.hset = AsyncMock()
@@ -440,7 +440,7 @@ class TestDedupResultTrackerAdditional:
         _run(_go())
 
     def test_track_conflict_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
 
         async def _go():
@@ -450,7 +450,7 @@ class TestDedupResultTrackerAdditional:
         _run(_go())
 
     def test_get_stats_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
 
         async def _go():
@@ -461,7 +461,7 @@ class TestDedupResultTrackerAdditional:
         _run(_go())
 
     def test_get_stats_enabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         redis = AsyncMock()
         redis.xlen = AsyncMock(return_value=100)
 

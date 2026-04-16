@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import pytest
 
 from src.search.pipeline.protocol import SearchContext, SearchPipeline, SearchStage
-from src.pipeline.stages.protocol import (
+from src.pipelines.stages.protocol import (
     IngestionStageContext,
     IngestionPipelineRunner,
     IngestionStage,

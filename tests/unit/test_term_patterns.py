@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.pipeline.term_patterns import (
+from src.pipelines.term_patterns import (
     CAMEL_CASE_PATTERN,
     ACRONYM_PATTERN,
     HYPHENATED_PATTERN,

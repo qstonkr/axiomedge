@@ -122,7 +122,7 @@ class TestFileUploadIngest:
         with patch("src.api.app._get_state", return_value=state), \
              patch("src.api.routes.rag.create_job", new_callable=AsyncMock, return_value="job-123"), \
              patch("src.api.routes.rag.asyncio") as mock_asyncio, \
-             patch("src.pipeline.ingestion.IngestionPipeline", autospec=True), \
+             patch("src.pipelines.ingestion.IngestionPipeline", autospec=True), \
              patch("src.api.routes.ingest._OnnxSparseEmbedder"):
             # Mock asyncio.create_task to not actually start bg task
             mock_task = MagicMock()
@@ -194,9 +194,9 @@ class TestStage1Parse:
     def test_cancelled_early(self):
         async def _go():
             with patch("src.api.routes.rag.is_cancelled", new_callable=AsyncMock, return_value=True), \
-                 patch("src.pipeline.jsonl_checkpoint.get_jsonl_path", return_value="/tmp/test.jsonl"), \
-                 patch("src.pipeline.jsonl_checkpoint.get_already_parsed_ids", return_value=set()), \
-                 patch("src.pipeline.jsonl_checkpoint.JsonlCheckpointWriter") as mock_writer:
+                 patch("src.pipelines.jsonl_checkpoint.get_jsonl_path", return_value="/tmp/test.jsonl"), \
+                 patch("src.pipelines.jsonl_checkpoint.get_already_parsed_ids", return_value=set()), \
+                 patch("src.pipelines.jsonl_checkpoint.JsonlCheckpointWriter") as mock_writer:
                 mock_ctx = MagicMock()
                 mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
                 mock_ctx.__exit__ = MagicMock(return_value=False)
@@ -218,7 +218,7 @@ class TestStage2Ingest:
     def test_cancelled_early(self):
         async def _go():
             with patch("src.api.routes.rag.is_cancelled", new_callable=AsyncMock, return_value=True), \
-                 patch("src.pipeline.jsonl_checkpoint.JsonlCheckpointReader") as mock_reader:
+                 patch("src.pipelines.jsonl_checkpoint.JsonlCheckpointReader") as mock_reader:
                 mock_reader_inst = MagicMock()
                 mock_reader_inst.__iter__ = MagicMock(return_value=iter([]))
                 mock_reader.return_value = mock_reader_inst
@@ -247,7 +247,7 @@ class TestStage2Ingest:
             pipeline.ingest = AsyncMock(return_value=ingest_result)
 
             with patch("src.api.routes.rag.is_cancelled", new_callable=AsyncMock, return_value=False), \
-                 patch("src.pipeline.jsonl_checkpoint.JsonlCheckpointReader") as mock_reader, \
+                 patch("src.pipelines.jsonl_checkpoint.JsonlCheckpointReader") as mock_reader, \
                  patch("src.api.routes.rag.update_job", new_callable=AsyncMock), \
                  patch("src.core.models.RawDocument") as mock_raw:
                 mock_reader_inst = MagicMock()

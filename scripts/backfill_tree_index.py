@@ -112,7 +112,7 @@ async def _build_and_persist(
     dry_run: bool = False,
 ) -> dict[str, int]:
     """문서별 트리를 구축하고 Neo4j에 저장."""
-    from src.pipeline.tree_index_builder import build_tree_from_chunks, persist_tree_to_neo4j
+    from src.pipelines.tree_index_builder import build_tree_from_chunks, persist_tree_to_neo4j
 
     stats = {"documents": 0, "sections": 0, "pages": 0, "errors": 0}
 

@@ -53,7 +53,7 @@ def update_point_payload(collection: str, point_id: str, payload: dict):
 
 def _compute_doc_metadata(payload: dict) -> dict:
     """Compute owner, L1 category, and quality score for a document."""
-    from src.pipeline.ingestion import (
+    from src.pipelines.ingestion import (
         extract_owner, classify_l1_category, calculate_quality_score,
         _calculate_metrics, _determine_quality_tier,
     )

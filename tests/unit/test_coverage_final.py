@@ -2163,23 +2163,23 @@ class TestSearchGroupRoutes:
 
 class TestArrowDetector:
     def test_point_distance(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         d = ArrowDetector._point_distance((0.0, 0.0), (3.0, 4.0))
         assert d == pytest.approx(5.0)
 
     def test_merge_segments_empty(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         assert det._merge_segments([]) == []
 
     def test_merge_segments_single(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         result = det._merge_segments([((0.0, 0.0), (100.0, 0.0))])
         assert len(result) == 1
 
     def test_merge_segments_nearby(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         segs = [
             ((0.0, 0.0), (50.0, 0.0)),
@@ -2189,7 +2189,7 @@ class TestArrowDetector:
         assert len(result) == 1  # merged
 
     def test_merge_segments_far_apart(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         segs = [
             ((0.0, 0.0), (50.0, 0.0)),
@@ -2200,7 +2200,7 @@ class TestArrowDetector:
 
     def test_detect_no_lines(self):
         import numpy as np
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         # White image, no edges
         img = np.ones((100, 100, 3), dtype=np.uint8) * 255
@@ -2209,7 +2209,7 @@ class TestArrowDetector:
 
     def test_detect_arrowhead_small_roi(self):
         import numpy as np
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         img = np.ones((10, 10, 3), dtype=np.uint8) * 255
         # Endpoint at edge, ROI too small
@@ -2218,7 +2218,7 @@ class TestArrowDetector:
         assert isinstance(result, bool)
 
     def test_find_nearest_shape_none(self):
-        from src.cv_pipeline.arrow_detector import ArrowDetector
+        from src.pipelines.cv.arrow_detector import ArrowDetector
         det = ArrowDetector()
         result = det._find_nearest_shape((50.0, 50.0), [])
         assert result is None
@@ -2230,7 +2230,7 @@ class TestArrowDetector:
 
 class TestOCRWithCoords:
     def test_extract_no_paddleocr(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         with patch.dict("sys.modules", {"paddleocr": None}):
             with patch("builtins.__import__", side_effect=ImportError("no paddleocr")):
@@ -2238,7 +2238,7 @@ class TestOCRWithCoords:
                 assert result == []
 
     def test_extract_legacy_format(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         # Test the _extract_legacy method directly
         legacy_result = [[
@@ -2257,13 +2257,13 @@ class TestOCRWithCoords:
         assert boxes[0].confidence == pytest.approx(0.95)
 
     def test_extract_legacy_empty(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         assert ocr._extract_legacy([]) == []
         assert ocr._extract_legacy([None]) == []
 
     def test_extract_legacy_bad_format(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         # Bad format lines
         legacy_result = [[
@@ -2276,7 +2276,7 @@ class TestOCRWithCoords:
         assert boxes == []
 
     def test_extract_legacy_exception(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         # Cause an exception in parsing
         boxes = ocr._extract_legacy([Exception("bad")])

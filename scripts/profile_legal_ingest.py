@@ -19,7 +19,7 @@ from pathlib import Path
 from src.connectors.git.connector import _law_file_kind  # noqa: F401
 from src.connectors.git.frontmatter import parse_frontmatter, promote_legal_metadata
 from src.core.models import RawDocument
-from src.pipeline.chunker import Chunker
+from src.pipelines.chunker import Chunker
 
 
 _REPO = Path.home() / ".knowledge-local/git_repos/9297b14b-c2ed-4e60-97d3-6a6588445de3"
@@ -115,7 +115,7 @@ async def main() -> None:
     print(f"  sparse vecs: {len(sparse.get('lexical_weights', []))}")
 
     # Step 3: Neo4j legal graph extraction + save
-    from src.pipeline.legal_graph import LegalGraphExtractor
+    from src.pipelines.legal_graph import LegalGraphExtractor
 
     legal_extractor = LegalGraphExtractor()
     sw.mark("5_legal_extractor_init")
@@ -136,7 +136,7 @@ async def main() -> None:
 
     # Step 4: term extraction
     try:
-        from src.pipeline.term_extractor import TermExtractor
+        from src.pipelines.term_extractor import TermExtractor
 
         term_extractor = TermExtractor(embedder=embedder)
         sw.mark("8_term_extractor_init")

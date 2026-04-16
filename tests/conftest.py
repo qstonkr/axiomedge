@@ -5,11 +5,18 @@ pytest-asyncio auto mode is configured in pyproject.toml.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+
+# Dashboard tests need dashboard dir on sys.path for `from services.xxx` imports
+_dashboard_dir = str(Path(__file__).resolve().parents[1] / "src" / "apps" / "dashboard")
+if _dashboard_dir not in sys.path:
+    sys.path.insert(0, _dashboard_dir)
 from httpx import ASGITransport, AsyncClient
 
 

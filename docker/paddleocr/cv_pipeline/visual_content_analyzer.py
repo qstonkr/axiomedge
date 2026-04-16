@@ -81,7 +81,7 @@ class VisualContentAnalyzer:
         Raises:
             Exception: If CV pipeline fails (no silent fallback).
         """
-        from src.cv_pipeline.pipeline import CVPipeline
+        from src.pipelines.cv.pipeline import CVPipeline
 
         # CVPipeline instance reuse (double-checked locking)
         if self._cv_pipeline is None:

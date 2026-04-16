@@ -117,8 +117,8 @@ async def ingest_directory(request: IngestRequest):
 
     try:
         from src.core.models import RawDocument
-        from src.pipeline.document_parser import parse_file_enhanced
-        from src.pipeline.ingestion import IngestionPipeline
+        from src.pipelines.document_parser import parse_file_enhanced
+        from src.pipelines.ingestion import IngestionPipeline
 
         sparse_embedder = _OnnxSparseEmbedder(embedder)
         pipeline = IngestionPipeline(
@@ -210,8 +210,8 @@ async def upload_file(
 
     try:
         from src.core.models import RawDocument
-        from src.pipeline.document_parser import parse_file_enhanced
-        from src.pipeline.ingestion import IngestionPipeline
+        from src.pipelines.document_parser import parse_file_enhanced
+        from src.pipelines.ingestion import IngestionPipeline
 
         sparse_embedder = _OnnxSparseEmbedder(embedder)
         pipeline = IngestionPipeline(

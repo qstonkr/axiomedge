@@ -796,7 +796,7 @@ async def _step_tree_expand(
         expanded_ids = [s.chunk_id for s in siblings] + [s.chunk_id for s in section_hits]
         if expanded_ids:
             expanded_scores = {s.chunk_id: s.score for s in (*siblings, *section_hits)}
-            from src.pipeline.qdrant_utils import str_to_uuid
+            from src.pipelines.qdrant_utils import str_to_uuid
             from src.api.routes.search_helpers import retrieve_chunks_by_ids
             point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
             loaded = await retrieve_chunks_by_ids(

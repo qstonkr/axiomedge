@@ -335,7 +335,7 @@ class TestConstants:
     def _import_constants(self):
         import sys
         from pathlib import Path
-        dashboard_dir = str(Path(__file__).parent.parent.parent / "dashboard")
+        dashboard_dir = str(Path(__file__).parent.parent.parent / "src" / "apps" / "dashboard")
         if dashboard_dir not in sys.path:
             sys.path.insert(0, dashboard_dir)
         from components.constants import (

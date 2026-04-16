@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from src.pipeline.quality_processor import (
+from src.pipelines.quality_processor import (
     QualityTier,
     QualityMetrics,
     ProcessedDocument,

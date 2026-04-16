@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.pipeline.dedup.result_tracker import (
+from src.pipelines.dedup.result_tracker import (
     DEDUP_CONFLICT_HASH_PREFIX,
     DEDUP_CONFLICT_TTL_DAYS,
     DEDUP_CONFLICTS_MAXLEN,

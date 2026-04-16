@@ -114,8 +114,8 @@ class TestIngestDirectory:
         mock_ingest_result.chunks_stored = 3
 
         with patch.object(ingest_mod, "_get_state", return_value=state), \
-             patch("src.pipeline.document_parser.parse_file_enhanced", return_value=mock_parse_result), \
-             patch("src.pipeline.ingestion.IngestionPipeline") as mock_pipeline_cls:
+             patch("src.pipelines.document_parser.parse_file_enhanced", return_value=mock_parse_result), \
+             patch("src.pipelines.ingestion.IngestionPipeline") as mock_pipeline_cls:
             mock_pipeline = AsyncMock()
             mock_pipeline.ingest = AsyncMock(return_value=mock_ingest_result)
             mock_pipeline_cls.return_value = mock_pipeline
@@ -147,8 +147,8 @@ class TestIngestDirectory:
         state = _mock_state(qdrant_store=store, embedder=embedder, qdrant_collections=collections)
 
         with patch.object(ingest_mod, "_get_state", return_value=state), \
-             patch("src.pipeline.document_parser.parse_file_enhanced", side_effect=RuntimeError("parse fail")), \
-             patch("src.pipeline.ingestion.IngestionPipeline") as mock_pipeline_cls:
+             patch("src.pipelines.document_parser.parse_file_enhanced", side_effect=RuntimeError("parse fail")), \
+             patch("src.pipelines.ingestion.IngestionPipeline") as mock_pipeline_cls:
             mock_pipeline_cls.return_value = AsyncMock()
 
             app = _make_app()
@@ -202,8 +202,8 @@ class TestUploadFile:
         mock_ingest_result.chunks_stored = 2
 
         with patch.object(ingest_mod, "_get_state", return_value=state), \
-             patch("src.pipeline.document_parser.parse_file_enhanced", return_value=mock_parse_result), \
-             patch("src.pipeline.ingestion.IngestionPipeline") as mock_pipeline_cls:
+             patch("src.pipelines.document_parser.parse_file_enhanced", return_value=mock_parse_result), \
+             patch("src.pipelines.ingestion.IngestionPipeline") as mock_pipeline_cls:
             mock_pipeline = AsyncMock()
             mock_pipeline.ingest = AsyncMock(return_value=mock_ingest_result)
             mock_pipeline_cls.return_value = mock_pipeline
@@ -236,8 +236,8 @@ class TestUploadFile:
         mock_parse_result.full_text = ""
 
         with patch.object(ingest_mod, "_get_state", return_value=state), \
-             patch("src.pipeline.document_parser.parse_file_enhanced", return_value=mock_parse_result), \
-             patch("src.pipeline.ingestion.IngestionPipeline") as mock_pipeline_cls:
+             patch("src.pipelines.document_parser.parse_file_enhanced", return_value=mock_parse_result), \
+             patch("src.pipelines.ingestion.IngestionPipeline") as mock_pipeline_cls:
             mock_pipeline_cls.return_value = AsyncMock()
 
             app = _make_app()

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.cv_pipeline.models import CVResult, DetectedShape, OCRBox, RawEdge, SignalQuality
-from src.cv_pipeline.graph_normalizer import GraphNormalizer
+from src.pipelines.cv.models import CVResult, DetectedShape, OCRBox, RawEdge, SignalQuality
+from src.pipelines.cv.graph_normalizer import GraphNormalizer
 
 
 # ===========================================================================
@@ -206,15 +206,15 @@ class TestGraphNormalizerNormalize:
 # ===========================================================================
 class TestOCRWithCoords:
     def test_extract_no_paddleocr(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         with patch.dict("sys.modules", {"paddleocr": None}):
-            with patch("src.cv_pipeline.ocr_with_coords.OCRWithCoords.extract", side_effect=ImportError):
+            with patch("src.pipelines.cv.ocr_with_coords.OCRWithCoords.extract", side_effect=ImportError):
                 # Just test that the class can be instantiated
                 assert ocr is not None
 
     def test_extract_legacy_format(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         # Legacy format: [[[box, (text, score)], ...]]
         legacy_result = [[
@@ -228,14 +228,14 @@ class TestOCRWithCoords:
         assert boxes[1].text == "world"
 
     def test_extract_legacy_empty(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         assert ocr._extract_legacy([]) == []
         assert ocr._extract_legacy([None]) == []
         assert ocr._extract_legacy([[None]]) == []
 
     def test_extract_legacy_malformed(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         # Malformed entries should be skipped
         legacy_result = [[
@@ -248,7 +248,7 @@ class TestOCRWithCoords:
         assert boxes[0].text == "text"
 
     def test_extract_legacy_empty_text(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         legacy_result = [[
             [[[10, 10], [50, 10], [50, 30], [10, 30]], ("", 0.9)],
@@ -257,7 +257,7 @@ class TestOCRWithCoords:
         assert len(boxes) == 0
 
     def test_extract_legacy_short_polygon(self):
-        from src.cv_pipeline.ocr_with_coords import OCRWithCoords
+        from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         legacy_result = [[
             [[[10, 10]], ("text", 0.9)],  # too few polygon points

@@ -6,7 +6,7 @@ The actual Protocol definitions live in ``src/pipeline/ingestion_contracts.py``
     from src.core.providers.protocols import IVectorStore, IGraphStore, ISearchEngine
 """
 
-from src.pipeline.ingestion_contracts import (  # noqa: F401
+from src.pipelines.ingestion_contracts import (  # noqa: F401
     IEmbedder,
     IGraphStore,
     ISearchEngine,
