@@ -402,8 +402,8 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 - [ ] `src/distill/service.py` 나머지 메서드 (orchestration, 별도 세션)
 - [x] `src/distill/trainer.py` (5 tests — init, prepare_dataset, TrainOutput)
 - [x] `src/distill/evaluator.py` (15 tests — judge, similarity, evaluate pass/fail/empty)
-- [ ] `src/api/routes/auth.py` (repository 직접 쿼리)
-- [ ] `src/api/routes/quality.py` (golden set 로직)
+- [x] `src/api/routes/auth.py` (4 tests — refresh_token 503/401/revoke/success)
+- [x] `src/api/routes/quality.py` (5 tests — transparency tally logic)
 
 각 파일 별도 PR. 목표: 전체 line coverage **80% → 85%** 달성.
 
