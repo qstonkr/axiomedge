@@ -229,21 +229,17 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ---
 
-### PR5. Config 드리프트 정리 ⏳
+### PR5. Config 드리프트 정리 🔨
 
-- **Severity**: 🟠 Major (중요하지만 Blocker 는 아님. Phase A 에 포함해 기반 확립)
-- **축**: SSOT + Hardcoding
-- **Why**: embedding dimension (1024) 가 `config.py`, `config_weights.py`, `vectordb/client.py` 3곳. vector name (`bge_dense`/`bge_sparse`) 가 `config.py` 와 `vectordb/client.py` 2곳. LLM 모델명이 `config.py`, k8s, helm 4곳. 변경 시 드리프트 위험.
+- **Severity**: 🟠 Major
+- **축**: SSOT
 - **Files**:
-  - [ ] `src/config_weights.py::EmbeddingConfig` 를 SSOT 로, `src/config.py::QdrantSettings.dense_dimension` 제거 → import
-  - [ ] `src/vectordb/client.py::DEFAULT_DENSE_VECTOR_NAME` / `SPARSE_VECTOR_NAME` 을 SSOT 로, `config.py` NOTE 로만 관리되던 것 제거 → import
-  - [ ] LLM 모델명 (`exaone3.5:7.8b`) — `src/config.py::DEFAULT_LLM_MODEL` 을 SSOT 로, k8s/helm manifest 는 templated env var 로 (`{{ .Values.llm.model }}`)
-  - [ ] `src/config.py::QdrantSettings.batch_size` vs `src/config_weights.py::PipelineConfig.batch_size` (`50` vs `32`) 통합
-- **Effort**: 3~4h
-- **Test plan**:
-  - Unit: import chain 정상 동작
-  - Integration: embedding provider 가 동일 dim 으로 초기화
-  - Lint check: 하드코딩된 `1024`, `bge_dense`, `exaone3.5:7.8b` 가 config 파일 외부에 없는지 grep
+  - [x] `src/config.py::QdrantSettings` — `dense_dimension`, `dense_vector_name`, `sparse_vector_name` 3개 dead fields 제거. NOTE 로 SSOT 위치 명시 (`config_weights.embedding.dimension`, `vectordb.client.DEFAULT_*_VECTOR_NAME`)
+  - [x] `src/config_weights.py::EmbeddingConfig` — dimension/batch_size 의미 주석 추가 (pipeline batch 와 혼동 방지)
+  - [x] 신규 `tests/unit/test_config_drift.py` (8 cases — dead field 제거, SSOT 참조 검증)
+- **Deferred to Phase C**:
+  - LLM 모델명 K8s/Helm templating (infra PR 영역)
+  - `PipelineSettings.batch_size` 개명 (깊은 리팩터)
 
 ---
 

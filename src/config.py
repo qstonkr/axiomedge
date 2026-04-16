@@ -44,11 +44,12 @@ class QdrantSettings(BaseSettings):
     url: str = Field(default="http://localhost:6333")
     collection_name: str = Field(default="knowledge")
     entity_collection_name: str = Field(default="knowledge_entities")
-    # NOTE: Keep in sync with config_weights.EmbeddingConfig.dimension (BGE-M3 fixed)
-    dense_dimension: int = Field(default=1024)
-    # NOTE: Keep in sync with vectordb.client.DEFAULT_DENSE/SPARSE_VECTOR_NAME
-    dense_vector_name: str = Field(default="bge_dense")
-    sparse_vector_name: str = Field(default="bge_sparse")
+    # NOTE: Vector dimension / vector names 는 이 settings 에 없음. SSOT:
+    #   - dimension         → src.config_weights.weights.embedding.dimension
+    #   - dense_vector_name → src.vectordb.client.DEFAULT_DENSE_VECTOR_NAME
+    #   - sparse_vector_name → src.vectordb.client.DEFAULT_SPARSE_VECTOR_NAME
+    # Runtime override 가 필요하면 QDRANT_DENSE_DIMENSION / QDRANT_*_VECTOR_NAME
+    # env var 를 읽는 QdrantProviderConfig.from_env (src/vectordb/client.py) 사용.
     timeout: int = Field(default=30)
     search_timeout_ms: int = Field(default=5000)
 

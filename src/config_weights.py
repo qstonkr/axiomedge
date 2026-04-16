@@ -322,12 +322,18 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
-    """Embedding provider parameters."""
+    """Embedding provider parameters.
+
+    NOTE: ``batch_size`` here is the **encode batch size** (how many texts
+    the embedder processes in one forward pass). 이는 인제스트 파이프라인의
+    chunk-level batch (``PipelineSettings.batch_size``, 기본 50) 와 다른
+    concept 이다. 같은 이름이지만 의미가 겹치지 않으므로 혼동 주의.
+    """
 
     cache_size: int = 512
     onnx_max_length: int = 512
-    dimension: int = 1024
-    batch_size: int = 32
+    dimension: int = 1024  # BGE-M3 fixed — SSOT, vectordb/client.py 가 참조
+    batch_size: int = 32  # Embedder forward-pass batch (not pipeline batch)
     ollama_timeout: float = 60.0
 
 
