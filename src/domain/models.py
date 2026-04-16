@@ -27,6 +27,26 @@ class KBTier(str, Enum):
     TEAM = "team"
 
 
+class FeedbackType(str, Enum):
+    """Feedback type for knowledge quality tracking."""
+
+    UPVOTE = "upvote"
+    DOWNVOTE = "downvote"
+    GENERAL = "general"
+    CORRECTION = "correction"
+    SUGGESTION = "suggestion"
+    REPORT = "report"
+
+
+class FeedbackStatus(str, Enum):
+    """Feedback review status."""
+
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    RESOLVED = "resolved"
+    REJECTED = "rejected"
+
+
 # ---------------------------------------------------------------------------
 # RawDocument
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.database.models import KnowledgeFeedbackModel
 from src.database.repositories.base import BaseRepository
+from src.domain.models import FeedbackType
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ class FeedbackRepository(BaseRepository):
                 .where(
                     KnowledgeFeedbackModel.entry_id == entry_id,
                     KnowledgeFeedbackModel.kb_id == kb_id,
-                    KnowledgeFeedbackModel.feedback_type == "upvote",
+                    KnowledgeFeedbackModel.feedback_type == FeedbackType.UPVOTE,
                 )
             )
             upvotes = (await session.execute(upvote_stmt)).scalar() or 0
@@ -104,7 +105,7 @@ class FeedbackRepository(BaseRepository):
                 .where(
                     KnowledgeFeedbackModel.entry_id == entry_id,
                     KnowledgeFeedbackModel.kb_id == kb_id,
-                    KnowledgeFeedbackModel.feedback_type == "downvote",
+                    KnowledgeFeedbackModel.feedback_type == FeedbackType.DOWNVOTE,
                 )
             )
             downvotes = (await session.execute(downvote_stmt)).scalar() or 0
