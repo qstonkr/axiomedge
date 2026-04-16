@@ -76,153 +76,88 @@ class DistillService:
         self.qdrant_url = qdrant_url
 
     async def generate_data_for_review(self, profile_name: str) -> dict:
-        """큐레이션용 QA 데이터 생성 → pending 상태로 DB 저장."""
+        """큐레이션용 QA 데이터 생성 → pending 상태로 DB 저장.
+
+        **PR10 리팩터**: 기존 150줄 인라인 코드가 ``DataGenPipeline`` 으로
+        분리됨. 각 단계는 ``src/distill/pipeline/data_gen_stages.py`` 의
+        독립 stage 클래스. 이 메서드는 pipeline 을 조립 + 실행 + 저장만 담당.
+
+        Stage 순서: QA 생성 → 범용성 → (legacy aug) → ID 부여 → reformat → augment
+        """
         from src.database.repositories.search_group import SearchGroupRepository
+        from src.distill.config import dict_to_profile
         from src.distill.data_gen.generality_filter import GeneralityFilter
         from src.distill.data_generator import DistillDataGenerator
+        from src.distill.pipeline.data_gen_stages import (
+            AugmentStage,
+            GeneralityStage,
+            IDAssignStage,
+            LegacyAugmentStage,
+            QAGenerationStage,
+            ReformatStage,
+        )
+        from src.distill.pipeline.stages import DataGenPipeline, make_context
 
         repo = DistillRepository(self.session_factory)
-        # DB에서 프로필 조회 (YAML 아닌 DB 기준 — 대시보드 수정 반영)
         profile_dict = await repo.get_profile(profile_name)
         if not profile_dict:
             raise ValueError(f"Profile not found: {profile_name}")
 
         search_group = profile_dict.get("search_group", "")
-        from src.distill.config import dict_to_profile
         profile = dict_to_profile(profile_dict)
 
-        batch_id = str(uuid.uuid4())
         generator = DistillDataGenerator(
             self.llm, self.embedder, profile, self.qdrant_url,
         )
         generality = GeneralityFilter(generator.llm_helper)
 
-        # KB IDs 확보 (DB 프로필의 search_group 사용)
         group_repo = SearchGroupRepository(self.session_factory)
         kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
         if not kb_ids:
             raise ValueError(f"Search group '{search_group}' has no KBs")
 
-        # QA 생성
-        log_qa = await generator.generate_from_usage_logs(
-            self.session_factory, kb_ids, search_group,
-        )
-        chunk_qa: list[dict] = []
-        if len(log_qa) < self.config.defaults.min_training_samples:
-            chunk_qa = await generator.generate_from_chunks(
-                kb_ids, max_chunks_per_kb=50,
-            )
-
-        all_qa = await generator.merge_and_deduplicate(log_qa, chunk_qa)
-
-        # 범용성 점수 부여
-        all_qa = await generality.batch_score(all_qa)
-
-        # Legacy augmentation 경로 — augmentation_count 가 0 이거나 신규
-        # question_augmenter 가 켜져 있으면 스킵 (중복 augmentation 방지).
-        legacy_aug_enabled = (
-            profile.data_quality.augmentation_count > 0
-            and profile.data_quality.question_augmenter_count == 0
-        )
-        if legacy_aug_enabled:
-            all_qa = await generator.augment_questions(all_qa)
-            all_qa = await generator.dataset_builder.verify_augmented_questions(
-                all_qa, generator.quality_filter,
-            )
-
-        # 모든 행에 id 할당 — Phase 1.5 reformatter 가 augmented_from 으로
-        # 원본 id 를 참조하므로 reformat 호출 전에 반드시 부여돼야 함.
-        for qa in all_qa:
-            qa.setdefault("id", str(uuid.uuid4()))
-            qa["profile_name"] = profile_name
-            qa["status"] = "pending"
-            qa["generation_batch_id"] = batch_id
-
-        # ── Phase 1.5: Answer reformatter ──
-        # 원본 답변을 1B 친화 2문단 포맷으로 재작성. 원본 행은 그대로 두고
-        # source_type="reformatted" 새 행을 추가한다 (학습 export 시
-        # _prefer_reformatted 가 원본을 대체).
-        reformatted_rows: list[dict] = []
-        if profile.data_quality.reformat_enabled:
-            from src.distill.data_gen.reformatter import (
-                AnswerReformatter,
-                build_reformatted_row,
-            )
-            reformatter = AnswerReformatter(
+        # Pipeline 조립
+        dq = profile.data_quality
+        ctx = make_context(profile_name, profile, kb_ids, search_group)
+        pipeline = (
+            DataGenPipeline(ctx)
+            .add(QAGenerationStage(
+                generator, self.session_factory, self.config.defaults.min_training_samples,
+            ))
+            .add(GeneralityStage(generality))
+            .add(LegacyAugmentStage(generator))
+            .add(IDAssignStage())
+            .add(ReformatStage(generator.llm_helper, concurrency=dq.question_augmenter_concurrency))
+            .add(AugmentStage(
                 generator.llm_helper,
-                concurrency=profile.data_quality.question_augmenter_concurrency,
-            )
-            summary, results = await reformatter.reformat_batch(all_qa)
-            id_to_qa = {qa["id"]: qa for qa in all_qa}
-            for r in results:
-                if r.success and r.reformatted_answer:
-                    parent = id_to_qa.get(r.source_id)
-                    if parent is None:
-                        continue
-                    reformatted_rows.append(
-                        build_reformatted_row(
-                            parent, r.reformatted_answer, profile_name, batch_id,
-                        ),
-                    )
-            logger.info(
-                "Reformatter: %d/%d success (avg_len=%.0f, failures=%s)",
-                summary.success, summary.total, summary.avg_answer_len,
-                summary.failure_reasons,
-            )
+                n_variations=dq.question_augmenter_count,
+                concurrency=dq.question_augmenter_concurrency,
+                verify=dq.question_augmenter_verify,
+            ))
+        )
 
-        # ── Phase 1.5: Question augmenter ──
-        # reformatted 행을 parent 로 잡아 N 개 paraphrase 생성. reformat 이
-        # 비활성화돼 있으면 원본 all_qa 를 직접 paraphrase.
-        augmented_rows: list[dict] = []
-        if profile.data_quality.question_augmenter_count > 0:
-            from src.distill.data_gen.question_augmenter import (
-                QuestionAugmenter,
-                build_augmented_row,
-            )
-            parents = reformatted_rows if reformatted_rows else all_qa
-            augmenter = QuestionAugmenter(
-                generator.llm_helper,
-                n_variations=profile.data_quality.question_augmenter_count,
-                concurrency=profile.data_quality.question_augmenter_concurrency,
-                verify=profile.data_quality.question_augmenter_verify,
-            )
-            aug_summary, aug_results = await augmenter.augment_batch(parents)
-            id_to_parent = {p["id"]: p for p in parents}
-            for r in aug_results:
-                parent = id_to_parent.get(r.source_id)
-                if parent is None:
-                    continue
-                for new_q in r.variations:
-                    augmented_rows.append(
-                        build_augmented_row(parent, new_q, profile_name, batch_id),
-                    )
-            logger.info(
-                "Augmenter: %d/%d parents success (%d variations, "
-                "verified=%d, rejected=%d, failures=%s)",
-                aug_summary.success, aug_summary.total,
-                aug_summary.total_variations_generated,
-                aug_summary.total_variations_verified,
-                aug_summary.total_variations_rejected,
-                aug_summary.failure_reasons,
-            )
+        # 실행
+        result_ctx = await pipeline.run()
 
-        # 최종 저장 — 원본 + reformatted + augmented 모두 같은 batch 로
-        rows_to_save = all_qa + reformatted_rows + augmented_rows
+        # DB 저장
+        rows_to_save = result_ctx.rows + result_ctx.reformatted_rows + result_ctx.augmented_rows
         saved = await repo.save_training_data_batch(rows_to_save)
         logger.info(
             "Generated %d QA pairs for review (batch=%s, profile=%s, "
             "original=%d, reformatted=%d, augmented=%d)",
-            saved, batch_id, profile_name,
-            len(all_qa), len(reformatted_rows), len(augmented_rows),
+            saved, result_ctx.batch_id, profile_name,
+            len(result_ctx.rows), len(result_ctx.reformatted_rows),
+            len(result_ctx.augmented_rows),
         )
 
         return {
-            "batch_id": batch_id,
+            "batch_id": result_ctx.batch_id,
             "total": saved,
-            "usage_log": len(log_qa),
-            "chunk_qa": len(chunk_qa),
-            "reformatted": len(reformatted_rows),
-            "augmented": len(augmented_rows),
+            "usage_log": result_ctx.stage_logs.get("qa_generation", {}).get("usage_log", 0),
+            "chunk_qa": result_ctx.stage_logs.get("qa_generation", {}).get("chunk_qa", 0),
+            "reformatted": len(result_ctx.reformatted_rows),
+            "augmented": len(result_ctx.augmented_rows),
+            "stage_logs": result_ctx.stage_logs,
         }
 
     async def generate_test_data(self, profile_name: str, count: int = 50) -> dict:
