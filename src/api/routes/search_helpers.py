@@ -4,9 +4,36 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# ── KB registry active_kb_ids cache ──
+# hub_search 매 요청마다 `kb_registry.list_all()` 을 호출해서 active KB 를
+# 필터링하면 search hot path 에 DB round-trip 이 한 번 더 발생. KB 활성/비활성
+# 상태는 초 단위로 변하지 않으므로 짧은 TTL 메모리 캐시로 대부분 hit.
+_KB_REGISTRY_CACHE_TTL_S = 60.0
+_kb_registry_cache: dict[str, tuple[float, set[str]]] = {}
+
+
+async def get_active_kb_ids(kb_registry) -> set[str]:
+    """Return currently-active KB id set with TTL cache.
+
+    Cache key 는 registry 인스턴스 id — app lifespan 동안 여러 registry 가
+    생성될 일은 없지만 방어적으로 인스턴스 구분.
+    """
+    cache_key = str(id(kb_registry))
+    now = time.monotonic()
+    cached = _kb_registry_cache.get(cache_key)
+    if cached and now - cached[0] < _KB_REGISTRY_CACHE_TTL_S:
+        return cached[1]
+
+    accessible_kbs = await kb_registry.list_all()
+    active = {kb["kb_id"] for kb in accessible_kbs if kb.get("status") == "active"}
+    _kb_registry_cache[cache_key] = (now, active)
+    return active
 
 
 # ── 4.35  Identifier search ─────────────────────────────────────────────────

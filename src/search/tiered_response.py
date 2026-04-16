@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from src.config_weights import weights
+from src.llm.prompt_safety import safe_user_input
 from .query_classifier import QueryType
 from .citation_formatter import CitationFormatter
 
@@ -384,7 +385,17 @@ class TieredResponseGenerator:
         return "\n".join(lines) + "\n"
 
     def _format_context(self, context: RAGContext) -> str:
-        """Format context with metadata."""
+        """Format context with metadata.
+
+        **Prompt injection 방어**:
+        - 각 chunk 는 ``<chunk>`` 태그로 delimit + instruction 키워드 중화
+        - metadata (작성자/이메일/팀) 도 사용자 문서에서 올 수 있으므로 중화
+        - 인덱스/source name 은 시스템이 부여하므로 그대로 두지만 Markdown 특수
+          문자는 그대로 — LLM 이 citation 으로 인식하므로 필요
+
+        악성 문서가 chunk 내용에 ``</answer>`` 같은 태그나 ``이전 지시 무시`` 같은
+        instruction 을 심어도 LLM 이 regeneration 규칙을 우회하지 못하도록 한다.
+        """
         formatted = []
         sources = context.chunk_sources if context.chunk_sources else ()
         for i, chunk in enumerate(context.retrieved_chunks, 1):
@@ -395,16 +406,17 @@ class TieredResponseGenerator:
             meta_parts: list[str] = []
             creator = metadata.get("creator_name")
             if creator:
-                meta_parts.append(f"작성자: {creator}")
+                meta_parts.append(f"작성자: {safe_user_input('meta', creator, max_len=100)}")
             creator_email = metadata.get("creator_email")
             if creator_email:
-                meta_parts.append(f"이메일: {creator_email}")
+                meta_parts.append(f"이메일: {safe_user_input('meta', creator_email, max_len=100)}")
             creator_team = metadata.get("creator_team")
             if creator_team:
-                meta_parts.append(f"팀: {creator_team}")
+                meta_parts.append(f"팀: {safe_user_input('meta', creator_team, max_len=100)}")
 
             meta_line = f" ({', '.join(meta_parts)})" if meta_parts else ""
-            formatted.append(f"[{i}] {source_info}{meta_line}:\n{chunk}\n")
+            chunk_block = safe_user_input("chunk", chunk, max_len=4000)
+            formatted.append(f"[{i}] {source_info}{meta_line}:\n{chunk_block}\n")
         return "\n".join(formatted)
 
     def _normalize_sources(self, context: RAGContext) -> list[dict]:

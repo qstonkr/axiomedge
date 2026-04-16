@@ -9,9 +9,8 @@ build repo (version history, rollback), quantizer (SHA256), service
 from __future__ import annotations
 
 import hashlib
-import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -73,13 +72,27 @@ class TestGeneralityFilter:
         assert result[1]["generality_score"] <= 0.5
 
     def test_parse_score_valid(self):
+        """Strict parser — 첫 줄이 단일 float 일 때만 파싱."""
         from src.distill.data_gen.generality_filter import GeneralityFilter
         assert GeneralityFilter._parse_score("0.85") == 0.85
-        assert GeneralityFilter._parse_score("점수: 0.7") == 0.7
+        assert GeneralityFilter._parse_score("  0.7  ") == 0.7
+        assert GeneralityFilter._parse_score("1") == 1.0
+        assert GeneralityFilter._parse_score("0") == 0.0
 
-    def test_parse_score_invalid(self):
+    def test_parse_score_invalid_fallback_to_half(self):
+        """Strict parser reject 시 0.5 중립 fallback.
+
+        보안상 이렇게 해야 함 — 공격자가 답변에 '점수: 1' 같은 prefix 를 심어
+        점수 조작하는 것을 막는다. LLM 이 규정 형식 어기면 보수적으로 중립.
+        """
         from src.distill.data_gen.generality_filter import GeneralityFilter
         assert GeneralityFilter._parse_score("좋습니다") == 0.5
+        # Strict: prefix 거부
+        assert GeneralityFilter._parse_score("점수: 0.7") == 0.5
+        # Strict: suffix 거부
+        assert GeneralityFilter._parse_score("0.85 매우 좋음") == 0.5
+        # Strict: 범위 초과 거부
+        assert GeneralityFilter._parse_score("1.5") == 0.5
 
     @pytest.mark.asyncio
     async def test_score_with_llm(self):

@@ -12,6 +12,7 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -212,35 +213,45 @@ class MultiHopSearcher:
         if self.neo4j is None:
             return []
 
-        # Fallback: search each entity name as a document ID
-        all_related: list[RelatedNode] = []
-        seen_ids: set[str] = set()
-        for name in entity_names[:5]:  # Limit to avoid expensive queries
+        # Fallback: search each entity name as a document ID.
+        # 이전엔 직렬 loop — 5개 이름에 대해 neo4j.execute_query 를 순차 호출했고
+        # 각 호출이 수백 ms → 전체 1~2초. asyncio.gather 로 한 번에 5개 병렬화
+        # 해서 wall-clock latency 를 max(single_call) 로 축소.
+        names = entity_names[:5]  # Limit to avoid expensive queries
+
+        async def _query_for_name(name: str) -> list[dict[str, Any]]:
             try:
-                results = await self.neo4j.execute_query(
+                return await self.neo4j.execute_query(
                     self.SEARCH_RELATED_CYPHER,
                     {"doc_id": name, "max_hops": max_hops, "limit": max_results},
                 )
-                for record in results:
-                    node_id = record.get("id", "")
-                    if node_id in seen_ids:
-                        continue
-                    seen_ids.add(node_id)
-                    distance = record.get("distance", 1)
-                    relevance = 1.0 / (1 + (distance - 1) * 0.3)
-                    all_related.append(
-                        RelatedNode(
-                            id=node_id,
-                            name=record.get("name", ""),
-                            type=record.get("type", "Unknown"),
-                            distance=distance,
-                            relation_types=record.get("relation_types", []),
-                            properties=record.get("properties", {}),
-                            relevance_score=relevance,
-                        )
-                    )
             except Exception as e:
                 logger.warning("Search related for entity '%s' failed: %s", name, e)
+                return []
+
+        per_name_results = await asyncio.gather(*(_query_for_name(n) for n in names))
+
+        all_related: list[RelatedNode] = []
+        seen_ids: set[str] = set()
+        for results in per_name_results:
+            for record in results:
+                node_id = record.get("id", "")
+                if node_id in seen_ids:
+                    continue
+                seen_ids.add(node_id)
+                distance = record.get("distance", 1)
+                relevance = 1.0 / (1 + (distance - 1) * 0.3)
+                all_related.append(
+                    RelatedNode(
+                        id=node_id,
+                        name=record.get("name", ""),
+                        type=record.get("type", "Unknown"),
+                        distance=distance,
+                        relation_types=record.get("relation_types", []),
+                        properties=record.get("properties", {}),
+                        relevance_score=relevance,
+                    )
+                )
 
         all_related.sort(key=lambda n: n.distance)
         return all_related[:max_results]

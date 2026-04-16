@@ -215,11 +215,16 @@ AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py g-espa   # 
 
 | Doc | Content |
 |-----|---------|
+| `docs/IMPROVEMENT_PLAN.md` | **Living improvement plan** — 진행 중 품질 개선 작업 (PR 단위 체크리스트, Phase A~D) |
 | `docs/ARCHITECTURE.md` | System diagrams, pipeline flows, data flow |
 | `docs/API.md` | 138 endpoints with examples |
 | `docs/DEPLOYMENT.md` | K8s deployment guide |
+| `docs/DISTILL.md` | Distill 파이프라인, 베이스 모델 레지스트리, default 정책 |
+| `docs/DISTILL_TOOLCHAIN.md` | llama.cpp 툴체인 설치/업그레이드/패치 관리 |
 | `docs/CONFIGURATION.md` | All env vars + tuning parameters |
 | `docs/TROUBLESHOOTING.md` | Common issues + solutions |
 | `docs/CONFLUENCE_CRAWLER.md` | Confluence crawler pipeline, PaddleOCR EC2, data source trigger |
 | `CONTRIBUTING.md` | Dev setup, code style, PR process |
 | `CHANGELOG.md` | Version history |
+
+**진행 중인 품질 개선 작업이 있으면 `docs/IMPROVEMENT_PLAN.md` 를 먼저 확인**하세요. 이 문서는 리뷰에서 발견된 findings + PR 단위 실행 계획을 체크박스로 추적합니다.

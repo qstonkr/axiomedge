@@ -1099,7 +1099,14 @@ def _build_provision_config(
             local_ip = s.getsockname()[0]
             s.close()
             api_url = f"http://{local_ip}:8000"
-        except Exception:
+        except Exception as e:
+            # Local IP 해결 실패 → localhost fallback. edge server 는 실제
+            # 네트워크 IP 가 필요하므로 이 fallback 이 발동되면 provision
+            # command 가 로컬 테스트만 가능. 운영팀이 인지할 수 있도록 warning.
+            logger.warning(
+                "Failed to resolve local IP for provision URL, "
+                "falling back to http://localhost:8000: %s", e,
+            )
             api_url = "http://localhost:8000"
 
     # S3 직접 접근이 아닌 API를 통해 manifest 제공 (S3 퍼블릭 차단 대응)
@@ -1264,7 +1271,13 @@ async def set_app_version(profile_name: str, request: AppVersionRequest):
         try:
             obj = s3.get_object(Bucket=bucket, Key=manifest_key)
             manifest = _json.loads(obj["Body"].read().decode())
-        except Exception:
+        except Exception as e:
+            # 기존 manifest 가 없거나 접근 실패하면 새로 시작. 하지만 기존
+            # 값이 있는데 조용히 날리면 버전 히스토리 손실이므로 로그 남김.
+            logger.warning(
+                "Failed to fetch existing manifest s3://%s/%s — starting fresh: %s",
+                bucket, manifest_key, e,
+            )
             manifest = {}
         manifest["app_version"] = request.version
         s3.put_object(
