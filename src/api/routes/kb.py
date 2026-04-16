@@ -63,7 +63,7 @@ async def _enrich_kb_counts(kbs: list[dict], store) -> None:
         kb_id = kb.get("kb_id") or kb.get("id", "")
         try:
             kb["chunk_count"] = await store.count(kb_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 "Failed to count chunks for KB %s: %s — falling back to 0",
                 kb_id, e,
@@ -85,7 +85,7 @@ async def _list_kbs_from_registry(
             kbs = await kb_registry.list_all()
         await _enrich_kb_counts(kbs, store)
         return {"kbs": kbs}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB registry query failed, falling back to Qdrant: %s", e)
         return None
 
@@ -102,7 +102,7 @@ async def _list_kbs_from_qdrant(collections, store) -> dict:
             if store:
                 try:
                     count = await store.count(kb_id)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug("Count failed for %s: %s", kb_id, e)
             kbs.append({
                 "kb_id": kb_id, "name": kb_id, "description": "",
@@ -110,7 +110,7 @@ async def _list_kbs_from_qdrant(collections, store) -> dict:
                 "status": "active", "settings": {},
             })
         return {"kbs": kbs}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"kbs": [], "error": str(e)}
 
 
@@ -147,7 +147,7 @@ async def create_kb(request: KBCreateRequest):
     try:
         await collections.ensure_collection(request.kb_id)
         return {"success": True, "kb_id": request.kb_id, "message": f"KB '{request.name}' created"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -171,7 +171,7 @@ async def delete_kb(kb_id: str):
         collection_name = collections.get_collection_name(kb_id) if collections else kb_id
         await client.delete_collection(collection_name)
         return {"success": True, "kb_id": kb_id, "message": f"KB '{kb_id}' deleted"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -206,7 +206,7 @@ async def admin_create_kb(body: dict[str, Any]):
     try:
         await collections.ensure_collection(kb_id)
         return {"success": True, "kb_id": kb_id, "message": f"KB '{kb_id}' created"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -220,7 +220,7 @@ async def _get_registry_counts(kb_registry: Any) -> tuple[int, int]:
     try:
         kbs = await kb_registry.list_all()
         return len(kbs), sum(kb.get("document_count", 0) for kb in kbs)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Failed to get KB registry stats: %s", e)
         return 0, 0
 
@@ -240,10 +240,10 @@ async def _get_qdrant_chunk_counts(
             kb_id = raw_name[len(prefix):] if raw_name.startswith(prefix) else raw_name
             try:
                 total_chunks += await store.count(kb_id)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.debug("Chunk count failed for %s: %s", kb_id, e)
         return total_chunks, total_kbs
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Failed to get Qdrant collection names: %s", e)
         return 0, fallback_total_kbs
 
@@ -272,7 +272,7 @@ async def _get_avg_quality_score(
                             quality_sum += qs
                             quality_count += 1
         return round(quality_sum / quality_count, 1) if quality_count > 0 else 0.0
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Failed to calculate avg quality score: %s", e)
         return 0.0
 
@@ -311,7 +311,7 @@ async def clear_search_cache():
     if search_cache:
         try:
             deleted = await search_cache.clear()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Search cache clear failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Cache clear error: {e}")
     return {"success": True, "message": "Search cache cleared", "deleted": deleted}
@@ -337,7 +337,7 @@ async def admin_get_kb(kb_id: str):
             kb = await kb_registry.get_kb(kb_id)
             if kb:
                 return kb
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("KB registry get failed: %s", e)
 
     store = state.get("qdrant_store")
@@ -345,7 +345,7 @@ async def admin_get_kb(kb_id: str):
     if store:
         try:
             chunk_count = await store.count(kb_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Chunk count failed for %s: %s", kb_id, e)
 
     return {
@@ -388,7 +388,7 @@ async def admin_delete_kb(kb_id: str):
         collection_name = collections.get_collection_name(kb_id) if collections else kb_id
         await client.delete_collection(collection_name)
         return {"success": True, "kb_id": kb_id, "message": f"KB '{kb_id}' deleted"}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -404,7 +404,7 @@ async def admin_kb_stats(kb_id: str):
     if store:
         try:
             chunk_count = await store.count(kb_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Chunk count failed for KB stats %s: %s", kb_id, e)
 
     return {
@@ -499,7 +499,7 @@ async def admin_kb_documents(
             "page_size": page_size,
             "kb_id": kb_id,
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB documents fetch failed: %s", e)
         return {"documents": [], "total": 0, "page": page, "page_size": page_size, "kb_id": kb_id}
 
@@ -549,7 +549,7 @@ async def admin_kb_categories(kb_id: str):
             for name, count in cat_counter.most_common()
         ]
         return {"categories": categories, "total": len(categories), "kb_id": kb_id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB categories fetch failed: %s", e)
         return {"categories": [], "total": 0, "kb_id": kb_id}
 
@@ -567,7 +567,7 @@ async def admin_kb_trust_scores(kb_id: str):
     try:
         items = await repo.get_by_kb(kb_id, limit=500, offset=0)
         return {"items": items, "total": len(items), "kb_id": kb_id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Trust scores fetch failed: %s", e)
         return {"items": [], "total": 0, "kb_id": kb_id}
 
@@ -594,7 +594,7 @@ async def admin_kb_trust_score_distribution(kb_id: str):
             total_score += item.get("kts_score", 0)
         avg = total_score / len(items) if items else 0
         return {"distribution": dist, "avg_score": round(avg, 3), "total": len(items), "kb_id": kb_id}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Trust score distribution failed: %s", e)
         return {"distribution": {}, "avg_score": 0, "kb_id": kb_id}
 

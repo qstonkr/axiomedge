@@ -114,7 +114,7 @@ class Chunker:
                     return self._split_sentences_chunked(text, kss)
                 sentences = kss.split_sentences(text)
                 return [s.strip() for s in sentences if s.strip()]
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("KSS sentence split failed, using fallback: %s", e)
 
         return self._regex_split_sentences(text)
@@ -129,7 +129,7 @@ class Chunker:
             future = self._kss_executor.submit(kss.split_sentences, sub)
             sentences = future.result(timeout=10)
             return [s.strip() for s in sentences if s.strip()]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):
                 logger.warning("KSS timeout on %d chars, using regex fallback", len(sub))
             return self._regex_split_sentences(sub)

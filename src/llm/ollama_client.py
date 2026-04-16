@@ -359,7 +359,7 @@ class OllamaClient:
                     or any(self._config.model in m for m in model_names),
                 }
             return {"status": "unhealthy", "error": f"HTTP {response.status_code}"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"status": "unhealthy", "error": str(e)}
 
     async def generate_with_context(self, query: str, context: str) -> str:
@@ -444,7 +444,7 @@ class OllamaClient:
         try:
             if getattr(client, "is_closed", False):
                 return
-        except Exception:
+        except Exception:  # noqa: BLE001
             return
         try:
             loop = asyncio.get_running_loop()
@@ -456,7 +456,7 @@ class OllamaClient:
                 loop.create_task(client.aclose())
             else:
                 asyncio.run(client.aclose())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to close httpx client during __del__: %s", e)
 
 

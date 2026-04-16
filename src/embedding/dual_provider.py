@@ -188,6 +188,6 @@ class DualEmbeddingProvider:
                 return_colbert,
             )
             return result
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Dual embedding encode failed: %s", e)
             return None

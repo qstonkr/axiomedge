@@ -94,7 +94,7 @@ async def get_current_user(request: Request) -> AuthUser:
             if auth_service:
                 try:
                     await auth_service.sync_user_from_idp(user)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug("User sync failed (non-blocking): %s", e)
 
         return user
@@ -269,7 +269,7 @@ async def _fetch_kb_info(state: Any, kb_id: str) -> dict:
         return {}
     try:
         return await kb_registry.get_kb(kb_id) or {}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Failed to fetch KB info for ABAC check: %s", e)
         return {}
 

@@ -154,7 +154,7 @@ async def refresh_token(request: Request, response: Response):
         try:
             body = await request.json()
             refresh_token_raw = body.get("refresh_token", "")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to parse refresh token from request body: %s", e)
 
     if not refresh_token_raw:
@@ -206,7 +206,7 @@ async def logout(request: Request, response: Response):
         try:
             claims = jwt_service.decode_refresh_token(refresh_token_raw)
             await token_store.revoke_family(claims["family_id"])
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass  # Token may already be expired/invalid
 
     is_secure = _is_cookie_secure()

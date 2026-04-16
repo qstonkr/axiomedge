@@ -253,7 +253,7 @@ def _check_ig02_freshness(document: RawDocument) -> CheckResult:
             details={"days_since_update": days, "max_age_days": max_age},
             duration_ms=(time.perf_counter() - start) * 1000,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return CheckResult(
             check_id="IG-02",
             check_name=_FRESHNESS_CHECK,
@@ -493,7 +493,7 @@ def _check_ig11_language_detection(document: RawDocument) -> CheckResult:
             lang = "en"
         else:
             lang = "unknown"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         lang_err = str(e)
 
     if lang is None:

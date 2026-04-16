@@ -52,7 +52,7 @@ def _get_user_id() -> str:
         user = get_authenticated_user()
         if user and hasattr(user, "user_id") and user.user_id:
             return user.user_id
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     return ""
 

@@ -126,7 +126,7 @@ def _check_output_exists(s3_bucket: str, s3_prefix: str, build_id: str) -> dict 
         return json.loads(obj["Body"].read().decode())
     except s3.exceptions.NoSuchKey:
         return None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("S3 check failed for %s: %s", result_key, e)
         return None
 
@@ -223,11 +223,11 @@ async def run_gpu_training(
 
         return result
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("GPU training error: %s", e)
         # 에러 시에도 EC2 중지 시도
         try:
             await _stop_instance(instance_id)
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
         return {"status": "error", "error": str(e)}

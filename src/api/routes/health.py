@@ -30,7 +30,7 @@ async def _check_services(state) -> dict[str, bool]:
             checks["qdrant"] = True
         else:
             checks["qdrant"] = False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check qdrant failed: %s", e)
         checks["qdrant"] = False
 
@@ -38,7 +38,7 @@ async def _check_services(state) -> dict[str, bool]:
     try:
         neo4j = state.get("neo4j")
         checks["neo4j"] = await neo4j.health_check() if neo4j else False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check neo4j failed: %s", e)
         checks["neo4j"] = False
 
@@ -46,7 +46,7 @@ async def _check_services(state) -> dict[str, bool]:
     try:
         embedder = state.get("embedder")
         checks["embedding"] = embedder.is_ready() if embedder else False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check embedding failed: %s", e)
         checks["embedding"] = False
 
@@ -60,7 +60,7 @@ async def _check_services(state) -> dict[str, bool]:
             checks["llm"] = resp.status_code == 200
         else:
             checks["llm"] = False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check llm failed: %s", e)
         checks["llm"] = False
 
@@ -72,7 +72,7 @@ async def _check_services(state) -> dict[str, bool]:
             checks["redis"] = True
         else:
             checks["redis"] = False
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check redis failed: %s", e)
         checks["redis"] = False
 
@@ -80,7 +80,7 @@ async def _check_services(state) -> dict[str, bool]:
     try:
         db = state.get("db_session_factory")
         checks["database"] = db is not None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check database failed: %s", e)
         checks["database"] = False
 
@@ -93,7 +93,7 @@ async def _check_services(state) -> dict[str, bool]:
         async with httpx.AsyncClient() as http_client:
             resp = await http_client.get(ocr_url, timeout=3)
         checks["paddleocr"] = resp.status_code == 200
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Health check paddleocr failed: %s", e)
         checks["paddleocr"] = False
 

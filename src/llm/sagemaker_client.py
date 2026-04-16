@@ -238,7 +238,7 @@ class SageMakerLLMClient:
                 "endpoint": self._config.endpoint_name,
                 "endpoint_status": status,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"status": "unhealthy", "backend": "sagemaker", "error": str(e)}
 
     def _format_context(self, context: list[dict]) -> str:

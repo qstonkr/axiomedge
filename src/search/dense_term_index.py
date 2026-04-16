@@ -81,7 +81,7 @@ class DenseTermIndex:
                 else:
                     # 빈 벡터로 패딩
                     all_vecs.extend([[0.0] * _w.embedding.dimension for _ in batch])
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Dense embedding batch %d failed: %s", i, e)
                 all_vecs.extend([[0.0] * _w.embedding.dimension for _ in batch])
 
@@ -123,7 +123,7 @@ class DenseTermIndex:
             output = self._provider.encode(
                 [query_text], return_dense=True, return_sparse=False, return_colbert_vecs=False
             )
-        except Exception:
+        except Exception:  # noqa: BLE001
             return []
 
         vecs = output.get("dense_vecs", [])
@@ -173,7 +173,7 @@ class DenseTermIndex:
                     batch, return_dense=True, return_sparse=False, return_colbert_vecs=False
                 )
                 all_vecs.extend(output.get("dense_vecs", []))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 all_vecs.extend([[0.0] * _w.embedding.dimension for _ in batch])
 
         q_matrix = np.array(all_vecs, dtype=np.float32)

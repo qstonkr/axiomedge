@@ -71,7 +71,7 @@ def check_and_update() -> bool:
         resp = httpx.get(MANIFEST_URL, timeout=30)
         resp.raise_for_status()
         remote = resp.json()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Failed to fetch manifest: %s", e)
         return False
 
@@ -97,7 +97,7 @@ def check_and_update() -> bool:
                 for chunk in r.iter_bytes(chunk_size=8192):
                     f.write(chunk)
         logger.info("Download complete: %.1f MB", gguf_path.stat().st_size / 1e6)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Download failed: %s", e)
         shutil.rmtree(STAGING_DIR, ignore_errors=True)
         return False
@@ -142,7 +142,7 @@ def check_and_update() -> bool:
             e,
         )
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # 서버는 떠있는데 reload 자체가 실패한 경우 — 새 모델이 로드 불가 상태일 수 있음.
         # rollback 디렉토리에 유효 모델이 있을 때만 복원 시도.
         logger.error("Reload failed: %s", e)
@@ -166,10 +166,10 @@ def _rollback() -> None:
         headers = {"X-API-Key": EDGE_API_KEY} if EDGE_API_KEY else {}
         try:
             httpx.post(f"{EDGE_SERVER_URL}/reload", headers=headers, timeout=60)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Rollback reload ping failed (server may be down): %s", e)
         logger.info("Rolled back to previous model")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Rollback failed: %s", e)
 
 
@@ -199,7 +199,7 @@ def upload_logs() -> int:
         logger.info("Uploaded %d entries", line_count)
         upload_file.unlink()
         return line_count
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Upload failed: %s", e)
         try:
             with open(upload_file, encoding="utf-8") as src, \
@@ -221,7 +221,7 @@ def push_heartbeat() -> None:
     try:
         resp = httpx.get(f"{EDGE_SERVER_URL}/heartbeat", timeout=5)
         data = resp.json()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Failed to collect heartbeat: %s", e)
         return
 
@@ -234,7 +234,7 @@ def push_heartbeat() -> None:
         )
         resp.raise_for_status()
         result = resp.json()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Heartbeat push failed: %s", e)
         return
 
@@ -264,7 +264,7 @@ def _remote_app_version() -> str:
         resp = httpx.get(MANIFEST_URL, timeout=30)
         resp.raise_for_status()
         return resp.json().get("app_version", "")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Failed to fetch manifest for app version: %s", e)
         return ""
 
@@ -300,7 +300,7 @@ def _health_check(retries: int = 10, delay: float = 1.0) -> bool:
             resp = httpx.get(f"{EDGE_SERVER_URL}/health", timeout=3)
             if resp.status_code == 200:
                 return True
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
         time.sleep(delay)
     return False
@@ -337,7 +337,7 @@ def update_source_files() -> bool:
                     for chunk in r.iter_bytes(chunk_size=8192):
                         f.write(chunk)
             staged.append((target, new_path))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Source download failed: %s", e)
         for _, new_path in staged:
             new_path.unlink(missing_ok=True)
@@ -366,7 +366,7 @@ def update_source_files() -> bool:
     # 3. 엣지 서버 재시작
     try:
         _restart_edge_server()
-    except Exception:
+    except Exception:  # noqa: BLE001
         _restore_backups(backups)
         return False
 
@@ -376,7 +376,7 @@ def update_source_files() -> bool:
         _restore_backups(backups)
         try:
             _restart_edge_server()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Rollback restart failed: %s", e)
         return False
 

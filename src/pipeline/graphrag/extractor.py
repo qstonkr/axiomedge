@@ -390,7 +390,7 @@ class GraphRAGExtractor:
                 document=doc_text,
                 prompt_template=prompt,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"LLM 호출 실패: {e}")
             return ExtractionResult(
                 source_document=source_title,
@@ -509,7 +509,7 @@ class GraphRAGExtractor:
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON 파싱 실패: {e}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"파싱 오류: {e}")
 
         return result
@@ -577,7 +577,7 @@ class GraphRAGExtractor:
                         created += 1
                     else:
                         updated += 1
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
         return created, updated
 
@@ -621,7 +621,7 @@ class GraphRAGExtractor:
                     stats["relationships_updated"] += rel_stats.get("updated", 0)
                     stats["relationships_archived"] += rel_stats.get("archived", 0)
                     stats["relationships_skipped"] += rel_stats.get("skipped", 0)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"관계 생성 실패 ({rel.source}->{rel.target}): {e}")
 
         logger.info(f"Neo4j 저장 완료: {stats}")
@@ -941,7 +941,7 @@ class GraphRAGExtractor:
         """Neo4j에서 최근 저장된 엔티티 조회."""
         try:
             driver = self._get_neo4j_driver()
-        except Exception:
+        except Exception:  # noqa: BLE001
             return []
 
         try:
@@ -956,7 +956,7 @@ class GraphRAGExtractor:
             with driver.session() as session:
                 result = session.run(query, limit=limit)
                 return [dict(record) for record in result]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"최근 엔티티 조회 실패: {e}")
             return []
 
@@ -1023,7 +1023,7 @@ class GraphRAGBatchProcessor:
 
                 stats["success"] += 1
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"문서 처리 실패: {e}")
                 stats["failed"] += 1
 

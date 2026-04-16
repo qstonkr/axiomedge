@@ -76,7 +76,7 @@ def import_glossary_csv(file_bytes: bytes, filename: str, encoding: str = "utf-8
             resp.raise_for_status()
             logger.info("import_glossary_csv -> %s (%.0fms)", resp.status_code, duration_ms)
             return resp.json()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error("import_glossary_csv failed: %s", exc)
         return {"error": str(exc), "_api_failed": True}
 

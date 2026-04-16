@@ -49,7 +49,7 @@ class QAGenerator:
                 try:
                     qa_pairs = await self._generate_qa_from_chunk(content, kb_id)
                     all_qa.extend(qa_pairs)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.warning("  Chunk %d failed: %s", i, e)
 
                 if (i + 1) % 50 == 0:

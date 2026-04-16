@@ -117,7 +117,7 @@ async def get_active_job_count() -> int:
             if status == "processing":
                 count += 1
         return count
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 0
 
 

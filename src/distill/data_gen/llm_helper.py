@@ -37,7 +37,7 @@ class LLMHelper:
             except asyncio.TimeoutError:
                 logger.warning("LLM call timed out after %ds", self._timeout)
                 return ""
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("LLM call failed: %s", e)
             return ""
 
@@ -67,7 +67,7 @@ class LLMHelper:
                     )
                     resp.raise_for_status()
                     data = resp.json().get("result", {})
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Qdrant scroll failed for %s: %s", kb_id, e)
                 break
 
@@ -98,7 +98,7 @@ class LLMHelper:
                 parsed = json.loads(repaired)
                 if isinstance(parsed, list):
                     return parsed
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         try:
@@ -108,7 +108,7 @@ class LLMHelper:
                 if line.startswith("{") and line.endswith("}"):
                     results.append(json.loads(line))
             return results
-        except Exception:
+        except Exception:  # noqa: BLE001
             pass
 
         return []

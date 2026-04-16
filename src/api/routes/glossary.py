@@ -51,7 +51,7 @@ async def list_glossary_terms(
             )
             total = await repo.count_by_kb(kb_id=kb_id, status=status, scope=scope, term_type=term_type)
             return {"terms": terms, "total": total, "page": page, "page_size": page_size}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo query failed: %s", e)
     return {"terms": [], "total": 0, "page": page, "page_size": page_size}
 
@@ -81,7 +81,7 @@ async def get_domain_stats():
             result = await session.execute(stmt)
             domains = {row[0]: row[1] for row in result.all()}
             return {"domains": domains, "total_domains": len(domains)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Domain stats failed: %s", e)
         return {"domains": {}, "error": str(e)}
 
@@ -108,7 +108,7 @@ async def get_source_stats():
             result = await session.execute(stmt)
             sources = {row[0]: row[1] for row in result.all()}
             return {"sources": sources, "total_sources": len(sources)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Source stats failed: %s", e)
         return {"sources": {}, "error": str(e)}
 
@@ -123,7 +123,7 @@ async def get_similarity_distribution():
     state = _get_state()
     try:
         return await compute_similarity_distribution(state, _EXACT_MATCH_THRESHOLD)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Glossary similarity-distribution failed: %s", e)
         return {"distribution": [], "total_pairs": 0, "mean_similarity": 0.0, "sample_size": 0, "error": str(e)}
 
@@ -148,7 +148,7 @@ async def list_discovered_synonyms_early(
             )
             discovered = [t for t in terms if t.get("source") == "auto_discovered"]
             return {"synonyms": discovered, "total": len(discovered), "page": page}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Discovered synonyms query failed: %s", e)
     return {"synonyms": [], "total": 0, "page": page}
 
@@ -169,7 +169,7 @@ async def get_glossary_term(term_id: str):
             term = await repo.get_by_id(term_id)
             if term:
                 return term
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo get failed: %s", e)
     raise HTTPException(status_code=404, detail=_TERM_NOT_FOUND)
 
@@ -192,7 +192,7 @@ async def create_glossary_term(body: dict[str, Any]):
             term_data.setdefault("id", term_id)
             await repo.save(term_data)
             return {"success": True, "term_id": term_id, "message": "Term created"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to create term: {e}")
     return {"success": True, "term_id": term_id, "message": "Term created (stub - no DB)"}
@@ -224,7 +224,7 @@ async def update_glossary_term(term_id: str, body: dict[str, Any]):
             return {"success": True, "term_id": term_id, "message": "Term updated"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo update failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to update term: {e}")
     return {"success": True, "term_id": term_id, "message": "Term updated (stub - no DB)"}
@@ -262,7 +262,7 @@ async def approve_glossary_term(term_id: str, body: dict[str, Any]):
             return {"success": True, "term_id": term_id, "status": "approved"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo approve failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to approve term: {e}")
     return {"success": True, "term_id": term_id, "status": "approved"}
@@ -297,7 +297,7 @@ async def reject_glossary_term(term_id: str, body: dict[str, Any]):
             return {"success": True, "term_id": term_id, "status": "rejected"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo reject failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to reject term: {e}")
     return {"success": True, "term_id": term_id, "status": "rejected"}
@@ -324,7 +324,7 @@ async def delete_glossary_term(term_id: str):
             return {"success": deleted, "term_id": term_id}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo delete failed: %s", e)
     return {"success": True, "term_id": term_id}
 
@@ -358,7 +358,7 @@ async def promote_glossary_term_to_global(term_id: str):
             return {"success": True, "term_id": term_id, "scope": "global"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo promote failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to promote term: {e}")
     return {"success": True, "term_id": term_id, "scope": "global"}
@@ -405,7 +405,7 @@ async def import_glossary_csv(
     if search_cache:
         try:
             await search_cache.clear()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to clear search cache after glossary import: %s", e)
 
     return result
@@ -433,7 +433,7 @@ async def delete_glossary_by_type(
                 deleted = await repo.bulk_delete(term_ids)
                 return {"success": True, "deleted": deleted, "term_type": term_type}
             return {"success": True, "deleted": 0, "term_type": term_type}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo delete-by-type failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to delete by type: {e}")
     return {"success": True, "deleted": 0, "term_type": term_type}
@@ -476,7 +476,7 @@ async def add_synonym_to_standard(body: dict[str, Any]):
             return {"success": True, "message": "Synonym added"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo add-synonym failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to add synonym: {e}")
     return {"success": True, "message": "Synonym added (stub - no DB)"}
@@ -510,7 +510,7 @@ async def list_synonyms(term_id: str):
             }
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo list-synonyms failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to list synonyms: {e}")
     raise _NO_DB
@@ -550,7 +550,7 @@ async def remove_synonym(term_id: str, synonym: str):
             return {"success": True, "message": f"Synonym '{synonym}' removed", "remaining_synonyms": synonyms}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary repo remove-synonym failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to remove synonym: {e}")
     raise _NO_DB
@@ -591,7 +591,7 @@ async def approve_discovered_synonyms(body: dict[str, Any]):
             ok = await _approve_single_synonym(repo, syn_id, errors)
             if ok:
                 approved_count += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             errors.append(f"{syn_id}: {e}")
 
     return {"success": approved_count > 0, "approved": approved_count, "errors": errors}
@@ -633,7 +633,7 @@ async def reject_discovered_synonyms(body: dict[str, Any]):
                 "status": "rejected",
             })
             rejected_count += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             errors.append(f"{syn_id}: {e}")
 
     return {"success": rejected_count > 0, "rejected": rejected_count, "errors": errors}
@@ -673,7 +673,7 @@ async def check_pending_similarity(
                             "matched_status": m["status"],
                         })
             return {"pairs": pairs, "total": total, "page": page, "page_size": page_size, "threshold": threshold}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary similarity-check failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Similarity check failed: {e}")
     return {"pairs": [], "total": 0, "page": page, "page_size": page_size, "threshold": threshold}
@@ -700,7 +700,7 @@ async def cleanup_pending_by_similarity(
                 removed = await repo.bulk_delete(term_ids_to_remove)
                 return {"success": True, "removed": removed}
             return {"success": True, "removed": 0}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Glossary similarity-cleanup failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Similarity cleanup failed: {e}")
     return {"success": True, "removed": 0}

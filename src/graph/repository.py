@@ -294,7 +294,7 @@ class Neo4jGraphRepository:
         try:
             records = await self._client.execute_query(cypher, params)
             return {r["source_uri"] for r in records if r.get("source_uri")}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(
                 "Neo4j find_related_chunks failed (entities=%s): %s",
                 entity_names[:3],
@@ -352,7 +352,7 @@ class Neo4jGraphRepository:
                 graphrag_cypher,
                 {"lucene_query": lucene_query, "max_facts": max_facts},
             ))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("GraphRAG entity search failed: %s", e)
 
         # Search wiki entities (Entity nodes)
@@ -380,7 +380,7 @@ class Neo4jGraphRepository:
                     "rel_whitelist": self._FACT_RELATION_WHITELIST,
                 },
             ))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Wiki entity search failed: %s", e)
 
         return results[:max_facts]
@@ -411,7 +411,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"keyword_nfc": keyword_nfc, "keyword_nfd": keyword_nfd, "max_facts": max_facts},
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("CONTAINS search failed: %s", e)
             return []
 
@@ -453,7 +453,7 @@ class Neo4jGraphRepository:
             results.extend(await self._client.execute_query(
                 cypher_docs, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Owner search path 1 (document_owner) failed: %s", e)
 
         # Path 2: GraphRAG entity connection
@@ -476,7 +476,7 @@ class Neo4jGraphRepository:
             results.extend(await self._client.execute_query(
                 cypher_entity, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Owner search path 2 (entity_expert) failed: %s", e)
 
         # Path 3: Person directly connected to matching entity (GraphRAG)
@@ -495,7 +495,7 @@ class Neo4jGraphRepository:
             results.extend(await self._client.execute_query(
                 cypher_direct, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Owner search path 3 (direct_connection) failed: %s", e)
 
         # Deduplicate by person name, merge counts
@@ -540,7 +540,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"doc_id": doc_id, "limit": limit}
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j search_related_nodes failed: %s", e)
             return []
 
@@ -565,7 +565,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"entity_name": entity_name}
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j get_entity_neighbors failed: %s", e)
             return []
 
@@ -587,7 +587,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"from_id": source_id, "to_id": target_id}
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j get_knowledge_path failed: %s", e)
             return []
 
@@ -608,7 +608,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"doc1_id": doc_ids[0], "doc2_id": doc_ids[1]}
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j find_common_entities failed: %s", e)
             return []
 
@@ -634,7 +634,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"doc_id": doc_id, "limit": limit}
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j find_similar_documents failed: %s", e)
             return []
 
@@ -677,7 +677,7 @@ class Neo4jGraphRepository:
             return await self._client.execute_query(
                 cypher, {"keyword": keyword, "max_steps": max_steps}
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j query_process_chain failed: %s", e)
             return []
 
@@ -715,7 +715,7 @@ class Neo4jGraphRepository:
                 cypher, {"keyword": keyword}
             )
             return results[0] if results else {}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j find_step_context failed: %s", e)
             return {}
 
@@ -751,7 +751,7 @@ class Neo4jGraphRepository:
                 source = r.pop("source_chunk_id", "")
                 grouped.setdefault(source, []).append(r)
             return grouped
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j find_tree_siblings_batch failed: %s", e)
             return {}
 
@@ -783,7 +783,7 @@ class Neo4jGraphRepository:
             params["kb_id"] = kb_id
         try:
             return await self._client.execute_query(cypher, params)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Neo4j search_section_titles failed: %s", e)
             return []
 
@@ -800,7 +800,7 @@ class Neo4jGraphRepository:
         try:
             results = await self._client.execute_query(cypher, {"chunk_ids": chunk_ids})
             return {r["chunk_id"]: r["section_path"] for r in results}
-        except Exception:
+        except Exception:  # noqa: BLE001
             return {}
 
     # -- Stats / Health ---------------------------------------------------
@@ -813,7 +813,7 @@ class Neo4jGraphRepository:
                 "RETURN count(n) AS count"
             )
             return results[0]["count"] if results else 0
-        except Exception:
+        except Exception:  # noqa: BLE001
             return 0
 
     async def get_document_count(self) -> int:
@@ -823,7 +823,7 @@ class Neo4jGraphRepository:
                 "MATCH (d:Document) RETURN count(d) AS count"
             )
             return results[0]["count"] if results else 0
-        except Exception:
+        except Exception:  # noqa: BLE001
             return 0
 
     async def get_stats(self) -> dict[str, Any]:
@@ -841,7 +841,7 @@ class Neo4jGraphRepository:
                 "node_types": {r["label"]: r["count"] for r in node_results},
                 "edge_types": {r["type"]: r["count"] for r in edge_results},
             }
-        except Exception:
+        except Exception:  # noqa: BLE001
             return {"node_types": {}, "edge_types": {}}
 
     async def health_check(self) -> bool:

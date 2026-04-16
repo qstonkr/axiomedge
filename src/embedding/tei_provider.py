@@ -60,7 +60,7 @@ class TEIEmbeddingProvider:
         try:
             resp = self._get_client().get(f"{self._base_url}/health")
             return resp.status_code == 200
-        except Exception:
+        except Exception:  # noqa: BLE001
             return False
 
     # TEI server constraint: max_batch_tokens=16384, max_client_batch_size=32.

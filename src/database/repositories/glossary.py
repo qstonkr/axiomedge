@@ -324,7 +324,7 @@ class GlossaryRepository(BaseRepository):
                 return value
             try:
                 return json.loads(value)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return []
 
         return {

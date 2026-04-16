@@ -199,7 +199,7 @@ def _resolve_relative_time(query: str, llm_client=None) -> tuple[str, list[Query
                     original=query, corrected=resolved, reason="시점 해석 (LLM)",
                 ))
                 return resolved, corrections
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("LLM time resolution failed: %s", e)
 
     return result, corrections

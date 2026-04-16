@@ -301,7 +301,7 @@ class EnhancedSimilarityMatcher:
             if not analyzer.is_available:
                 return []
             result = analyzer.analyze(candidate_ko)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return []
 
         # 명사 형태소 추출 (2글자 이상의 NNG/NNP)
@@ -524,7 +524,7 @@ class EnhancedSimilarityMatcher:
             raw_score = float(raw_scores[0])
             # sigmoid(s/3) 정규화
             return 1 / (1 + math.exp(-raw_score / 3))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("CrossEncoder scoring failed: %s", e)
             return None
 
@@ -564,7 +564,7 @@ class EnhancedSimilarityMatcher:
                 results.append((top_indices[i], normalized))
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:top_k]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("CrossEncoder batch rerank failed: %s", e)
             return []
 
@@ -890,7 +890,7 @@ class EnhancedSimilarityMatcher:
                 scorer=fuzz.WRatio, score_cutoff=60, limit=10,
             )
             return [self._rf_idx_map[choice_idx] for _, _, choice_idx in results]
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("RapidFuzz extraction failed: %s", e)
             return []
 
@@ -975,7 +975,7 @@ class EnhancedSimilarityMatcher:
             return self._build_and_search_mini_index(
                 candidate_list, l1_unmatched_indices, l1_unmatched_texts,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Mini dense index build/search failed: %s", e)
             return None
 
@@ -988,7 +988,7 @@ class EnhancedSimilarityMatcher:
             self._dense_index = DenseTermIndex(provider)
             self._dense_index.build(self._precomputed)
             logger.info("Dense term index built: %d terms", len(self._precomputed))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Dense index init failed: %s", e)
             self._dense_index = None
 

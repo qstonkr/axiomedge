@@ -102,7 +102,7 @@ async def seed_base_models(repo: DistillRepository) -> dict[str, int]:
                 inserted += 1
             else:
                 skipped += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to seed base model %s: %s", row["hf_id"], e)
     logger.info(
         "Seed base models: %d inserted, %d already present (preserved admin edits)",

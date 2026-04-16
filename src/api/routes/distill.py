@@ -395,7 +395,7 @@ async def deploy_build(build_id: str):
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         await repo.update_build(build_id, status="completed",
                                 error_message=f"Deploy failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -429,7 +429,7 @@ async def rollback_build(build_id: str):
         await deployer.create_and_upload_manifest(
             build["s3_uri"], build["version"], build,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Rollback failed: {e}")
 
     # rollback_from 기록
@@ -474,7 +474,7 @@ async def collect_edge_logs(profile_name: str | None = None):
             collector = EdgeLogCollector(dp)
             count = await collector.collect(repo, profile["name"])
             total += count
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Log collection failed for %s: %s", profile["name"], e)
 
     return {"collected": total}
@@ -558,7 +558,7 @@ async def trigger_retrain(request: RetrainRequest):
                     )
                     resp.raise_for_status()
                     answer = resp.json().get("answer", "")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Teacher answer generation failed for '%s': %s", question[:30], e)
                 answer = ""
         else:
@@ -667,7 +667,7 @@ async def delete_build(build_id: str):
                 dp = dict_to_profile(profile)
                 deployer = DistillDeployer(dp)
                 await deployer.delete_s3_object(s3_uri)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("S3 cleanup failed for build %s: %s", build_id, e)
 
     deleted = await repo.delete_build(build_id)
@@ -707,7 +707,7 @@ async def get_app_info(profile_name: str):
             }
 
         return await asyncio.to_thread(_fetch)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return {"app_version": "", "app_downloads": {}, "error": str(e)}
 
 
@@ -804,7 +804,7 @@ def _build_provision_config(
             local_ip = s.getsockname()[0]
             s.close()
             api_url = f"http://{local_ip}:8000"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # Local IP 해결 실패 → localhost fallback. edge server 는 실제
             # 네트워크 IP 가 필요하므로 이 fallback 이 발동되면 provision
             # command 가 로컬 테스트만 가능. 운영팀이 인지할 수 있도록 warning.
@@ -923,7 +923,7 @@ async def get_manifest(profile_name: str):
         s3 = _s3_client()
         obj = s3.get_object(Bucket=bucket, Key=manifest_key)
         manifest = _json.loads(obj["Body"].read().decode())
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=404, detail=f"Manifest not found: {e}")
 
     s3_uri = manifest.get("s3_uri", "")
@@ -935,7 +935,7 @@ async def get_manifest(profile_name: str):
                 Params={"Bucket": model_bucket, "Key": model_key},
                 ExpiresIn=86400,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to refresh presigned URL for %s: %s", s3_uri, e)
 
     return manifest
@@ -976,7 +976,7 @@ async def set_app_version(profile_name: str, request: AppVersionRequest):
         try:
             obj = s3.get_object(Bucket=bucket, Key=manifest_key)
             manifest = _json.loads(obj["Body"].read().decode())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # 기존 manifest 가 없거나 접근 실패하면 새로 시작. 하지만 기존
             # 값이 있는데 조용히 날리면 버전 히스토리 손실이므로 로그 남김.
             logger.warning(
@@ -995,7 +995,7 @@ async def set_app_version(profile_name: str, request: AppVersionRequest):
 
     try:
         updated = await asyncio.to_thread(_update)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Failed to update app version: {e}")
 
     return {

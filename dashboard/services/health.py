@@ -50,7 +50,7 @@ def _check_api() -> bool:
         ) as client:
             resp = client.get("/api/v1/admin/kb", params={"page_size": "1"})
             return resp.status_code < 500
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.debug("Health check: API unreachable at %s", cfg.DASHBOARD_API_URL)
         return False
 
@@ -72,7 +72,7 @@ def _check_neo4j() -> bool:
     except ImportError:
         logger.debug("Health check: neo4j package not installed")
         return False
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.debug("Health check: Neo4j unreachable at %s", cfg.NEO4J_URI)
         return False
 
@@ -86,6 +86,6 @@ def _check_qdrant() -> bool:
         with httpx.Client(timeout=HEALTH_CHECK_TIMEOUT) as client:
             resp = client.get(f"{qdrant_url}/healthz")
             return resp.status_code < 500
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.debug("Health check: Qdrant unreachable at %s", qdrant_url)
         return False

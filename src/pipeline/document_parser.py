@@ -203,7 +203,7 @@ def _convert_ppt_to_pptx(data: bytes, filename: str) -> bytes | None:
             "LibreOffice conversion timed out (30s) for %s", filename
         )
         return None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("LibreOffice conversion error for %s: %s", filename, e)
         return None
 
@@ -303,7 +303,7 @@ def _extract_pdf_page_heading(page) -> str:
         if best_size < 13:
             return ""
         return best_text[:100]
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ""
 
 
@@ -369,7 +369,7 @@ def _check_font_broken_cmap(doc, xref: int, _re) -> bool:
         if font_size is None:
             return False
         return font_size > 10_000 and total_mappings < 20
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -542,7 +542,7 @@ def _extract_slide_title(slide) -> str:
             if shape.placeholder_format.idx in (0, 13, 15):
                 if shape.text.strip():
                     return shape.text.strip()[:100]
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
     return ""
 
@@ -586,7 +586,7 @@ def _extract_pptx_modified_date(prs) -> str:
     try:
         modified = prs.core_properties.modified
         return modified.isoformat() if modified else ""
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ""
 
 
@@ -710,7 +710,7 @@ def _resize_image(raw: bytes, scale: float = 0.75) -> bytes | None:
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -722,7 +722,7 @@ def _ocr_request(client, endpoint: str, payload: bytes) -> dict | None:
         resp = client.post(endpoint, json={"image": b64_image}, timeout=60.0)
         resp.raise_for_status()
         return resp.json()
-    except Exception:
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -733,7 +733,7 @@ def _prepare_image_bytes(img_bytes: bytes, index: int) -> bytes | None:
 
     try:
         _img = Image.open(io.BytesIO(img_bytes))
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.debug("Skipping image %d: cannot decode", index)
         return None
     if _img.width < _MIN_W or _img.height < _MIN_H:
@@ -854,7 +854,7 @@ def _process_single_image_ocr(
         if vision_enabled:
             _extract_vision_analysis(result, index, ocr_texts, visual_analyses)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("PaddleOCR API failed for image %d: %s", index, e)
 
 

@@ -50,7 +50,7 @@ async def get_pipeline_status():
                 "queued": len([r for r in active if r.get("status") == "pending"]),
                 "last_run": last_run,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Pipeline status query failed: %s", e)
     return {"status": "idle", "active_runs": 0, "queued": 0, "last_run": None}
 
@@ -72,7 +72,7 @@ async def get_pipeline_metrics():
 
     try:
         runs = await repo.list_recent(limit=1000)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Pipeline metrics query failed: %s", e)
         return empty
 
@@ -109,7 +109,7 @@ async def get_pipeline_run_detail(run_id: str):
             run = await repo.get_by_id(run_id)
             if run:
                 return run
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Pipeline run detail query failed: %s", e)
     return {
         "run_id": run_id, "status": "unknown", "started_at": None,
@@ -136,7 +136,7 @@ async def get_latest_experiment_run(kb_id: str):
                     "status": latest.get("status", "none"),
                     "created_at": latest.get("created_at"),
                 }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Latest experiment run query failed: %s", e)
     return {"kb_id": kb_id, "run_id": None, "status": "none", "created_at": None}
 
@@ -259,7 +259,7 @@ async def list_ingestion_runs(
             if status:
                 runs = [r for r in runs if r.get("status") == status]
             return {"runs": runs, "total": len(runs), "page": page, "page_size": page_size}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Ingestion run repo query failed: %s", e)
     return {"runs": [], "total": 0, "page": page, "page_size": page_size}
 
@@ -277,7 +277,7 @@ async def get_ingestion_run(run_id: str):
             run = await repo.get_by_id(run_id)
             if run:
                 return run
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Ingestion run repo get failed: %s", e)
     return {
         "run_id": run_id,
@@ -340,7 +340,7 @@ async def get_ingestion_stats(
                 "total_documents": total_docs,
                 "total_chunks": total_chunks,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Ingestion stats query failed: %s", e)
     return {"total_runs": 0, "successful": 0, "failed": 0, "total_documents": 0, "total_chunks": 0}
 
@@ -366,7 +366,7 @@ async def list_l1_categories():
         try:
             categories = await repo.get_l1_categories()
             return {"categories": categories, "total": len(categories)}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Category repo query failed: %s", e)
     return {"categories": [], "total": 0}
 
@@ -431,7 +431,7 @@ async def get_l1_stats():
             "etc_ratio": etc_ratio,
             "kb_breakdown": kb_breakdown,
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("L1 stats aggregation failed: %s", e)
         return {"l1_counts": {}, "total_docs": 0, "etc_count": 0, "etc_ratio": 0.0,
                 "kb_breakdown": []}

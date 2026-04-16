@@ -377,7 +377,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [ ] Chunk size 리터럴 (`_KSS_MAX_CHARS=2000`) → config_weights
 - [ ] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest 등)
 - [ ] `ProfileUpdateRequest` 도 동일
-- [ ] Ruff custom rule — bare except 방지 (`BLE001` 활성화)
+- [x] Ruff custom rule — bare except 방지 (`BLE001` 활성화, 기존 564건 noqa pragma)
 - [ ] `config_weights.py` 687줄 → PR11 이후 최종 분할
 - [ ] Kanana 라이선스 재확인 → `commercial_use=True` 승격
 - [ ] EXAONE convert 패치 upstream 기여 (llama.cpp GitHub)

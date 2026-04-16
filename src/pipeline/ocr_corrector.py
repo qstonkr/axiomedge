@@ -320,7 +320,7 @@ async def correct_ocr_text(text: str, ollama_client) -> str:
         )
         return corrected
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("OCR LLM correction failed: %s", e)
         return text
 

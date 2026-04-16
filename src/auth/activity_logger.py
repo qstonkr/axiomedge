@@ -46,7 +46,7 @@ class ActivityLogger:
                     user_agent=user_agent,
                 ))
                 await session.commit()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Activity log failed: %s", e)
 
     async def get_user_activities(

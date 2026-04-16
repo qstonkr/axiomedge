@@ -42,7 +42,7 @@ async def list_feedback(
             items = await repo.list_all(status=status, feedback_type=feedback_type, limit=page_size, offset=offset)
             total = await repo.count(status=status)
             return {"feedback": items, "total": total, "page": page, "page_size": page_size}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Feedback repo query failed: %s", e)
     return {"feedback": [], "total": 0, "page": page, "page_size": page_size}
 
@@ -74,7 +74,7 @@ async def create_feedback(body: dict[str, Any]):
             }
             await repo.save(feedback_data)
             return {"success": True, "feedback_id": feedback_id, "message": "Feedback recorded"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Feedback repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to create feedback: {e}")
     return {"success": True, "feedback_id": feedback_id, "message": "Feedback recorded (stub - no DB)"}
@@ -105,7 +105,7 @@ async def update_feedback(feedback_id: str, body: dict[str, Any]):
             return {"success": True, "feedback_id": feedback_id, "message": "Feedback updated"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Feedback repo update failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to update feedback: {e}")
     return {"success": True, "feedback_id": feedback_id, "message": "Feedback updated (stub - no DB)"}
@@ -129,7 +129,7 @@ async def get_feedback_stats():
             neutral = max(0, total - positive - negative)
             by_type = {"upvote": positive, "downvote": negative, "other": neutral}
             return {"total": total, "pending": pending, "positive": positive, "negative": negative, "neutral": neutral, "by_type": by_type}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Feedback stats query failed: %s", e)
     return {"total": 0, "positive": 0, "negative": 0, "neutral": 0, "by_type": {}}
 
@@ -149,7 +149,7 @@ async def get_feedback_workflow_stats():
             resolved = await repo.count(status="resolved")
             rejected = await repo.count(status="rejected")
             return {"pending": pending, "in_review": in_review, "resolved": resolved, "rejected": rejected}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Feedback workflow stats failed: %s", e)
     return {"pending": 0, "in_review": 0, "resolved": 0, "rejected": 0}
 
@@ -181,7 +181,7 @@ async def list_error_reports(
             offset = (page - 1) * page_size
             paged = reports[offset:offset + page_size]
             return {"reports": paged, "total": total, "page": page, "page_size": page_size}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report repo query failed: %s", e)
     return {"reports": [], "total": 0, "page": page, "page_size": page_size}
 
@@ -209,7 +209,7 @@ async def get_error_report_statistics(
                 st = r.get("status", "unknown")
                 by_status[st] = by_status.get(st, 0) + 1
             return {"total": len(reports), "by_type": by_type, "by_status": by_status, "trend": []}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report statistics failed: %s", e)
     return {"total": 0, "by_type": {}, "by_status": {}, "trend": []}
 
@@ -230,7 +230,7 @@ async def get_error_report(report_id: str):
             report = await repo.get_by_id(report_id)
             if report:
                 return report
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report repo get failed: %s", e)
     raise HTTPException(status_code=404, detail=_ERR_REPORT_NOT_FOUND)
 
@@ -261,7 +261,7 @@ async def create_error_report(body: dict[str, Any]):
             }
             await repo.save(report_data)
             return {"success": True, "report_id": report_id, "message": "Error reported"}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to create error report: {e}")
     return {"success": True, "report_id": report_id, "message": "Error reported (stub - no DB)"}
@@ -297,7 +297,7 @@ async def resolve_error_report(report_id: str, body: dict[str, Any]):
             return {"success": True, "report_id": report_id, "status": "resolved"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report resolve failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to resolve report: {e}")
     return {"success": True, "report_id": report_id, "status": "resolved"}
@@ -327,7 +327,7 @@ async def reject_error_report(report_id: str, body: dict[str, Any]):
             return {"success": True, "report_id": report_id, "status": "rejected"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report reject failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to reject report: {e}")
     return {"success": True, "report_id": report_id, "status": "rejected"}
@@ -361,7 +361,7 @@ async def escalate_error_report(report_id: str, body: dict[str, Any]):
             return {"success": True, "report_id": report_id, "status": "escalated"}
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Error report escalate failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to escalate report: {e}")
     return {"success": True, "report_id": report_id, "status": "escalated"}

@@ -61,7 +61,7 @@ class RedisDedupIndex:
             return False
         try:
             return bool(await self._redis.sismember(self._key(kb_id), content_hash))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.contains_failed: %s", e)
             return False
 
@@ -77,7 +77,7 @@ class RedisDedupIndex:
                 if ttl == -1:  # no TTL set
                     await self._redis.expire(key, DEDUP_HASH_TTL_DAYS * 86400)
             return bool(added)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.add_failed: %s", e)
             return False
 
@@ -92,7 +92,7 @@ class RedisDedupIndex:
             if ttl == -1:
                 await self._redis.expire(key, DEDUP_HASH_TTL_DAYS * 86400)
             return int(added)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.add_batch_failed: %s", e)
             return 0
 
@@ -103,7 +103,7 @@ class RedisDedupIndex:
         try:
             await self._redis.delete(self._key(kb_id))
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.clear_failed: %s", e)
             return False
 
@@ -113,7 +113,7 @@ class RedisDedupIndex:
             return 0
         try:
             return int(await self._redis.scard(self._key(kb_id)))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.size_failed: %s", e)
             return 0
 
@@ -130,7 +130,7 @@ class RedisDedupIndex:
             return False
         try:
             return bool(await self._redis.sismember(self._doc_key(kb_id), doc_content_hash))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.contains_doc_failed: %s", e)
             return False
 
@@ -146,7 +146,7 @@ class RedisDedupIndex:
                 if ttl == -1:
                     await self._redis.expire(key, DEDUP_HASH_TTL_DAYS * 86400)
             return bool(added)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.add_doc_failed: %s", e)
             return False
 
@@ -161,7 +161,7 @@ class RedisDedupIndex:
             if ttl == -1:
                 await self._redis.expire(key, DEDUP_HASH_TTL_DAYS * 86400)
             return int(added)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.add_doc_batch_failed: %s", e)
             return 0
 
@@ -172,6 +172,6 @@ class RedisDedupIndex:
         try:
             await self._redis.delete(self._doc_key(kb_id))
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("redis_dedup_index.clear_docs_failed: %s", e)
             return False

@@ -52,7 +52,7 @@ def _extract_query_keywords(query: str) -> list[str]:
             if tok.tag in _NOUN_TAGS and len(tok.form) >= 2:
                 keywords.append(tok.form)
         return keywords if keywords else [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
-    except Exception:
+    except Exception:  # noqa: BLE001
         return [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
 
 
@@ -153,7 +153,7 @@ def _try_deserialize_cache(
     cached["search_time_ms"] = round((time.time() - start) * 1000, 1)
     try:
         return HubSearchResponse(**cached)
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.warning("%s cache deserialization failed, proceeding", cache_layer or "Legacy")
         return None
 
@@ -175,7 +175,7 @@ async def _check_multi_layer_cache(
         cached = cache_entry.response
         if isinstance(cached, dict) and _is_valid_cache(cached, expected_version):
             return _try_deserialize_cache(cached, start, "multi_layer")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("MultiLayerCache lookup failed: %s", e)
     return None
 
@@ -189,7 +189,7 @@ async def _check_legacy_cache(
         cached = await search_cache.get(query, cache_collections, top_k)
         if cached and isinstance(cached, dict) and _is_valid_cache(cached, expected_version):
             return _try_deserialize_cache(cached, start, "")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Search cache lookup failed: %s", e)
     return None
 
@@ -236,7 +236,7 @@ async def _resolve_collections_from_qdrant(state: dict[str, Any]) -> list[str]:
             if not n.startswith("kb_test")
         ]
         return collections if collections else ["knowledge"]
-    except Exception:
+    except Exception:  # noqa: BLE001
         return ["knowledge"]
 
 
@@ -252,7 +252,7 @@ async def _filter_by_kb_registry(
         active_kb_ids = await get_active_kb_ids(kb_registry)
         filtered = [c for c in collections if c in active_kb_ids]
         return filtered if filtered else collections
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB registry filter failed, using unfiltered collections: %s", e)
         return collections
 
@@ -321,7 +321,7 @@ async def _step_expand_query(
             expanded_q = getattr(expansion_result, "expanded_query", None)
             if expanded_q and expanded_q != corrected_query:
                 search_query = expanded_q
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Query expansion failed: %s", e)
 
     return search_query, display_query, expanded_terms
@@ -353,7 +353,7 @@ def _step_classify_query(
             elif qtype in ("procedure", "troubleshoot"):
                 _dense_w = weights.hybrid_search.procedure_dense_weight
                 _sparse_w = weights.hybrid_search.procedure_sparse_weight
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Query type weight adjustment failed: %s", e)
 
     if _re_dq.search(r"20\d{2}년\s*\d{1,2}월|20\d{2}[_\-]\d{2}|\d{1,2}월\s*\d주차", display_query):
@@ -498,7 +498,7 @@ async def _step_keyword_fallback(
                     ]},
                 },
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Keyword fallback scroll failed (coll=%s): %s", coll, e)
             return []
         if resp.status_code != 200:
@@ -532,7 +532,7 @@ async def _step_keyword_fallback(
             "Keyword fallback: injected %d chunks across %d collections for '%s'",
             sum(len(c) for c in per_collection_chunks), len(collections), kw_primary,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Keyword fallback search failed: %s", e)
 
     return all_chunks
@@ -698,7 +698,7 @@ async def _try_tiered_generation(
         else:
             confidence = "낮음"
         return tiered_result.content, tiered_result.query_type.value, confidence
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("TieredResponseGenerator failed, falling back to AnswerService: %s", e)
         return None
 
@@ -776,7 +776,7 @@ async def _step_follow_ups(
         result = await llm.generate(prompt, temperature=0.3, max_tokens=200)
         if result:
             return [q.strip().lstrip("- ·•123.") for q in result.strip().split("\n") if q.strip()][:3]
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.debug("Follow-up generation skipped: %s", e)
     return []
 
@@ -845,14 +845,14 @@ async def _step_cache_store(
                 metadata={"kb_ids": collections},
                 kb_ids=collections, top_k=effective_top_k,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to write multi-layer cache: %s", e)
 
     search_cache = state.get("search_cache")
     if search_cache:
         try:
             await search_cache.set(query, collections, response_dict, effective_top_k)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to write search cache: %s", e)
 
 
@@ -948,7 +948,7 @@ async def _step_tree_expand(
             "Tree expansion: siblings=%d, section_hits=%d",
             len(siblings), len(section_hits),
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Tree context expansion failed: %s", e)
 
     return all_chunks
@@ -1048,7 +1048,7 @@ async def _step_crag_evaluate(
             crag_evaluation.confidence_level.value,
         )
         return crag_evaluation
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("CRAG evaluation failed: %s", e)
         return None
 
@@ -1102,7 +1102,7 @@ async def _step_log_usage(
             user_id="local-user", usage_type="hub_search",
             context=context,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # usage log 실패는 hub_search 전체를 막지 않음 (best-effort) —
         # 하지만 조용히 삼키지 말고 로그를 남겨 상위 인시던트 디버깅 가능하게 함.
         logger.warning("Failed to log hub_search usage: %s", e, exc_info=True)
@@ -1180,7 +1180,7 @@ async def hub_search(request: HubSearchRequest):
             query=search_query, chunks=all_chunks,
             top_k=effective_top_k * weights.search.rerank_pool_multiplier,
         )
-    except Exception as ce_err:
+    except Exception as ce_err:  # noqa: BLE001
         logger.warning("Cross-encoder reranking skipped: %s", ce_err)
 
     # 5. Composite reranking + week-match guarantee
@@ -1269,6 +1269,6 @@ async def list_searchable_kbs():
             kb_id = n[3:].replace("_", "-") if n.startswith("kb_") else n
             kbs.append({"kb_id": kb_id, "name": kb_id, "collection": n})
         return {"kbs": kbs}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("KB list failed: %s", e)
         return {"kbs": []}

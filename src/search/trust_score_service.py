@@ -339,7 +339,7 @@ class TrustScoreService:
                 )
                 score_data["upvotes"] = upvotes
                 score_data["downvotes"] = downvotes
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to aggregate votes: %s", exc)
 
         old_kts = score_data.get("kts_score", 0.0)
@@ -374,7 +374,7 @@ class TrustScoreService:
                     content_updated_at=content_updated_at,
                 )
                 count += 1
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "batch_recompute failed for entry %s: %s",
                     entry.get("entry_id"),

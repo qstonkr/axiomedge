@@ -36,7 +36,7 @@ async def get_document_provenance(doc_id: str):
             prov = await repo.get_by_knowledge_id(doc_id)
             if prov:
                 return prov
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Provenance repo get failed: %s", e)
     return {
         "doc_id": doc_id,
@@ -67,7 +67,7 @@ async def get_document_lineage(doc_id: str):
                     "parent": prov.get("source_url"),
                     "children": [{"knowledge_id": s["knowledge_id"]} for s in siblings[:10]],
                 }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Lineage query failed: %s", e)
     return {"doc_id": doc_id, "lineage": [], "parent": None, "children": []}
 
@@ -100,7 +100,7 @@ async def get_document_versions(
                     "versions": transitions,
                     "current_version": lifecycle.get("status"),
                 }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Document versions query failed: %s", e)
     return {"doc_id": doc_id, "versions": [], "current_version": None}
 
@@ -122,7 +122,7 @@ async def get_dedup_stats():
         try:
             metrics = pipeline.get_metrics()
             pipeline_metrics = metrics.to_dict()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to get pipeline metrics: %s", e)
 
     # Redis-persisted stats
@@ -130,7 +130,7 @@ async def get_dedup_stats():
     if tracker is not None:
         try:
             tracker_stats = await tracker.get_stats()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to get tracker stats: %s", e)
 
     return {
@@ -159,7 +159,7 @@ async def get_dedup_conflicts(
     if tracker is not None:
         try:
             return await tracker.get_conflicts(page=page, page_size=page_size)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to get dedup conflicts: %s", e)
     return {
         "conflicts": [],
@@ -195,7 +195,7 @@ async def resolve_dedup_conflict(body: dict[str, Any]):
         raise HTTPException(status_code=404, detail=f"Conflict {conflict_id} not found")
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Failed to resolve dedup conflict: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -390,7 +390,7 @@ async def get_transparency_stats():
 
     try:
         counts = await _count_qdrant_transparency(collections, qdrant_url)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Transparency Qdrant stats failed: %s", e)
         counts = {"total": 0, "owner": 0, "category": 0, "source": 0}
 
@@ -470,7 +470,7 @@ async def list_contributors(
                     "page": page,
                     "page_size": page_size,
                 }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Contributors query failed: %s", e)
 
     return {
@@ -506,7 +506,7 @@ async def get_verification_pending(
                 "page": page,
                 "page_size": page_size,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Verification pending query failed: %s", e)
 
     # Fallback: query trust_score_repo directly
@@ -523,7 +523,7 @@ async def get_verification_pending(
                 "page": page,
                 "page_size": page_size,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Trust score repo needs_review failed: %s", e)
 
     return {
@@ -553,7 +553,7 @@ async def submit_verification_vote(doc_id: str, body: dict[str, Any]):
                 "new_kts_score": updated.get("kts_score"),
                 "confidence_tier": updated.get("confidence_tier"),
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Trust score vote update failed: %s", e)
 
     # Fallback: record in feedback repo
@@ -577,7 +577,7 @@ async def submit_verification_vote(doc_id: str, body: dict[str, Any]):
                 "vote_type": vote_type,
                 "message": "Vote recorded in feedback",
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Feedback save failed: %s", e)
 
     return {"success": True, "doc_id": doc_id, "message": "Vote recorded"}
@@ -618,7 +618,7 @@ async def rollback_document_version(doc_id: str, body: dict[str, Any]):
                 )
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Document rollback failed: %s", e)
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -644,7 +644,7 @@ async def approve_document_version(doc_id: str, body: dict[str, Any]):
             "status": result.get("status"),
             "message": "Approved and published",
         }
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("Document approve failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -670,10 +670,10 @@ async def get_vectorstore_stats():
                     count = await store.count(name)
                     total_points += count
                     collection_stats.append({"name": name, "points": count})
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.debug("Failed to count points for collection %s: %s", name, e)
                     collection_stats.append({"name": name, "points": 0})
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("Failed to get Qdrant collection stats: %s", e)
 
     return {
@@ -709,13 +709,13 @@ async def get_cache_stats():
     if search_cache:
         try:
             search_stats = await search_cache.stats()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("search_cache.stats() failed: %s", e)
 
     if dedup_cache:
         try:
             dedup_stats = await dedup_cache.stats()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug("dedup_cache.stats() failed: %s", e)
 
     # Combine
