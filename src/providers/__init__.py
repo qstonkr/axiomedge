@@ -14,8 +14,7 @@ provider 추가 시 3~5 파일 수정이 필요했다. Registry 패턴으로 1~2
     ├── llm.py        — LLM registry + factory
     ├── auth.py       — Auth registry + factory
 
-기존 `src/embedding/provider_factory.py` 는 이미 factory 역할을 하고 있어
-중복 생성 금지. 필요 시 Phase C 에서 이 디렉터리로 이동.
+    ├── embedding.py  — Embedding registry + factory (Phase C 이동 완료)
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ from src.providers.auth import (
     create_auth_provider,
     register_auth_provider,
 )
+from src.providers.embedding import create_embedding_provider
 from src.providers.llm import (
     LLM_PROVIDER_REGISTRY,
     create_llm_client,
@@ -35,6 +35,7 @@ __all__ = [
     "AUTH_PROVIDER_REGISTRY",
     "LLM_PROVIDER_REGISTRY",
     "create_auth_provider",
+    "create_embedding_provider",
     "create_llm_client",
     "register_auth_provider",
     "register_llm_provider",
