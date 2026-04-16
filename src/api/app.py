@@ -498,25 +498,17 @@ async def _init_embedding(state: AppState, settings) -> None:
 
 
 async def _init_llm(state: AppState, settings) -> None:
-    """Initialize LLM client (Ollama or SageMaker) + GraphRAG extractor."""
+    """Initialize LLM client via provider registry + GraphRAG extractor.
+
+    선택 우선순위는 `src/providers/llm.py::_resolve_provider_name`:
+      1. `LLM_PROVIDER` env var ("ollama" / "sagemaker" / ...)
+      2. 레거시 `USE_SAGEMAKER_LLM=true` → "sagemaker" 로 매핑
+      3. 기본값 "ollama"
+    """
     await asyncio.sleep(0)
     try:
-        use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
-        if use_sagemaker:
-            from src.llm.sagemaker_client import SageMakerConfig, SageMakerLLMClient
-            llm = SageMakerLLMClient(config=SageMakerConfig())
-            state["llm"] = llm
-            logger.info("SageMaker LLM initialized: %s", SageMakerConfig().endpoint_name)
-        else:
-            from src.llm.ollama_client import OllamaClient, OllamaConfig
-            llm_config = OllamaConfig(
-                base_url=settings.ollama.base_url,
-                model=settings.ollama.model,
-                context_length=settings.ollama.context_length,
-            )
-            llm = OllamaClient(config=llm_config)
-            state["llm"] = llm
-            logger.info("Ollama LLM initialized: %s (%s)", settings.ollama.base_url, settings.ollama.model)
+        from src.providers.llm import create_llm_client
+        state["llm"] = create_llm_client(settings=settings)
     except Exception as e:
         logger.warning("LLM init failed: %s", e)
 
@@ -625,55 +617,24 @@ async def _init_search_services(state: AppState) -> None:
 
 
 async def _init_auth(state: AppState, settings) -> None:
-    """Initialize auth provider + RBAC/ABAC engines."""
+    """Initialize auth provider via registry + RBAC/ABAC engines.
+
+    Provider 선택 + 초기화 로직은 `src/providers/auth.py` 의 registry 로
+    단일화됨. 이전에는 여기 `_init_auth` 와 `src/auth/providers.py` 양쪽에
+    if-elif 체인이 중복돼 있었으나, registry 패턴으로 통합.
+    """
     try:
-        import json as _json
-        from src.auth.providers import create_auth_provider
+        from src.auth.abac import DEFAULT_ABAC_POLICIES, ABACEngine
         from src.auth.rbac import RBACEngine
-        from src.auth.abac import ABACEngine, DEFAULT_ABAC_POLICIES
         from src.auth.service import AuthService
+        from src.providers.auth import create_auth_provider
 
         auth_settings = settings.auth
-        provider_kwargs: dict = {}
-        if auth_settings.provider == "keycloak":
-            provider_kwargs = {
-                "server_url": auth_settings.keycloak_url,
-                "realm": auth_settings.keycloak_realm,
-                "client_id": auth_settings.keycloak_client_id,
-                "client_secret": auth_settings.keycloak_client_secret,
-            }
-        elif auth_settings.provider == "azure_ad":
-            provider_kwargs = {
-                "tenant_id": auth_settings.azure_ad_tenant_id,
-                "client_id": auth_settings.azure_ad_client_id,
-            }
-        elif auth_settings.provider == "internal":
-            from src.auth.jwt_service import JWTService
-            from src.auth.token_store import TokenStore
 
-            if not auth_settings.jwt_secret:
-                raise ValueError(
-                    "AUTH_JWT_SECRET is required when AUTH_PROVIDER=internal. "
-                    "Generate one with: openssl rand -hex 32"
-                )
-
-            jwt_svc = JWTService(
-                secret_key=auth_settings.jwt_secret,
-                algorithm=auth_settings.jwt_algorithm,
-                access_token_expire_minutes=auth_settings.jwt_access_expire_minutes,
-                refresh_token_expire_hours=auth_settings.jwt_refresh_expire_hours,
-                issuer=auth_settings.jwt_issuer,
-            )
-            state["jwt_service"] = jwt_svc
-            provider_kwargs = {"jwt_service": jwt_svc}
-        else:
-            try:
-                api_keys = _json.loads(auth_settings.local_api_keys)
-            except Exception:
-                api_keys = {}
-            provider_kwargs = {"api_keys": api_keys}
-
-        state["auth_provider"] = create_auth_provider(auth_settings.provider, **provider_kwargs)
+        # Registry-based provider creation — internal 은 jwt_service 를 state 에 저장.
+        state["auth_provider"] = create_auth_provider(
+            auth_settings.provider, settings, state,
+        )
         state["rbac_engine"] = RBACEngine()
         state["abac_engine"] = ABACEngine(policies=DEFAULT_ABAC_POLICIES)
 
@@ -688,6 +649,7 @@ async def _init_auth(state: AppState, settings) -> None:
 
         # Token store for internal auth (uses auth_service's DB)
         if auth_settings.provider == "internal":
+            from src.auth.token_store import TokenStore
             state["token_store"] = TokenStore(auth_service._session_factory)
 
         # Seed default roles & permissions
