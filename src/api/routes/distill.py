@@ -14,7 +14,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi import Header
 from pydantic import BaseModel, Field, field_validator
 
-from src.api.app import _get_state
+# NOTE: `from src.api.app import _get_state` 는 deferred (함수 내부) import.
+# Module-level 로 두면 `from src.api.routes.distill import router` 가 app.py
+# 를 강제 로드해서 test 환경에서 circular import 가 발생한다. 런타임 route
+# 호출 시에는 이미 app.py 가 로드돼 있으므로 지연 import 성능 영향 없음.
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/distill", tags=["Distill"])
@@ -70,37 +73,6 @@ class BuildTriggerRequest(BaseModel):
         return v
 
 
-class GenerateDataRequest(BaseModel):
-    profile_name: str
-
-
-class GenerateTestDataRequest(BaseModel):
-    profile_name: str
-    count: int = 50
-
-
-class TrainingDataUpdateItem(BaseModel):
-    id: str
-    status: str | None = None
-    question: str | None = None
-    answer: str | None = None
-    review_comment: str | None = None
-
-
-class TrainingDataEditReviewRequest(BaseModel):
-    updates: list[TrainingDataUpdateItem]
-
-
-class AugmentRequest(BaseModel):
-    profile_name: str
-    max_variants: int = 3
-
-
-class GenerateTermQARequest(BaseModel):
-    profile_name: str
-    top_n: int = 100  # 상위 빈도 용어 수
-
-
 class ServerUpdateRequest(BaseModel):
     update_type: str = "both"  # model | app | both
 
@@ -110,19 +82,6 @@ class BulkServerUpdateRequest(BaseModel):
     update_type: str = "both"
 
 
-class TrainingDataAddRequest(BaseModel):
-    profile_name: str
-    question: str
-    answer: str
-    source_type: str = "manual"
-    kb_id: str | None = None
-
-
-class TrainingDataReviewRequest(BaseModel):
-    ids: list[str]
-    status: str  # approved | rejected
-
-
 class RetrainRequest(BaseModel):
     profile_name: str
     edge_log_ids: list[str]
@@ -130,9 +89,27 @@ class RetrainRequest(BaseModel):
     corrected_answers: dict[str, str] | None = None
 
 
+# NOTE: Training data 관련 request model 은 PR9 에서 `distill_training_data.py`
+# 로 이동됨 (GenerateDataRequest, GenerateTestDataRequest, AugmentRequest,
+# GenerateTermQARequest, TrainingDataUpdateItem/EditReviewRequest,
+# TrainingDataAddRequest, TrainingDataReviewRequest).
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _get_state():
+    """Deferred import wrapper for src.api.app._get_state.
+
+    Module-level import of `src.api.app` creates a circular dependency when
+    test code imports `from src.api.routes.distill import router` directly
+    (distill.py → app.py → include_router(distill) → partially initialized).
+    Calling the app helper only when the route handler runs breaks the cycle.
+    """
+    from src.api.app import _get_state as _inner
+    return _inner()
+
 
 def _get_distill_repo():
     repo = _get_state().get("distill_repo")
@@ -470,120 +447,7 @@ async def rollback_build(build_id: str):
 # Training Data
 # ---------------------------------------------------------------------------
 
-@router.get("/training-data")
-async def list_training_data(
-    profile_name: str,
-    status: str | None = None,
-    source_type: str | None = None,
-    batch_id: str | None = None,
-    sort_by: str = "created_at",
-    sort_order: str = "desc",
-    limit: int = 50,
-    offset: int = 0,
-):
-    """학습 데이터 목록."""
-    repo = _get_distill_repo()
-    return await repo.list_training_data(
-        profile_name=profile_name, status=status,
-        source_type=source_type, batch_id=batch_id,
-        sort_by=sort_by, sort_order=sort_order,
-        limit=limit, offset=offset,
-    )
-
-
-@router.post("/training-data", status_code=201)
-async def add_training_data(request: TrainingDataAddRequest):
-    """수동 QA 추가."""
-    repo = _get_distill_repo()
-    count = await repo.save_training_data([request.model_dump()])
-    return {"added": count}
-
-
-@router.put("/training-data/review")
-async def review_training_data(request: TrainingDataReviewRequest):
-    """학습 데이터 승인/거부."""
-    if request.status not in ("approved", "rejected"):
-        raise HTTPException(status_code=400, detail="Status must be 'approved' or 'rejected'")
-    repo = _get_distill_repo()
-    updated = await repo.update_training_data_status(request.ids, request.status)
-    return {"updated": updated}
-
-
-@router.post("/training-data/smart-approve")
-async def smart_approve(profile_name: str, source_type: str | None = None):
-    """품질 체크 후 일괄 승인 (불량은 자동 거부, 마크다운은 cleanup 후 승인).
-
-    1. 답변 불가 패턴 → 자동 거부
-    2. 너무 짧은 답변 (< 20자) → 자동 거부
-    3. 마크다운 잔존 → cleanup 후 승인
-    4. 나머지 → 승인
-    """
-    repo = _get_distill_repo()
-    result = await repo.list_training_data(
-        profile_name=profile_name, source_type=source_type,
-        status="pending", limit=10000,
-    )
-    items = result.get("items", [])
-    if not items:
-        return {"approved": 0, "rejected": 0, "cleaned": 0, "total": 0}
-
-    bad_patterns = [
-        "제공된 문서들에", "제공된 문서에서", "주어진 문서들에서",
-        "명시되어 있지 않", "포함되어 있지 않",
-        "직접적인 정보가", "직접적인 정보는",
-        "명확한 정보가", "구체적인 정보가 부족",
-    ]
-
-    from src.distill.data_gen.quality_filter import cleanup_answer_text
-
-    approve_ids = []
-    reject_ids = []
-    cleanup_updates = []
-
-    for it in items:
-        answer = it.get("answer", "")
-        item_id = it["id"]
-
-        # 답변 불가 → 거부
-        prefix = answer[:200]
-        if sum(1 for p in bad_patterns if p in prefix) >= 2:
-            reject_ids.append(item_id)
-            continue
-
-        # 너무 짧음 → 거부
-        if len(answer.strip()) < 20:
-            reject_ids.append(item_id)
-            continue
-
-        # 마크다운 cleanup (공통 함수)
-        cleaned = cleanup_answer_text(answer)
-        if cleaned != answer:
-            cleanup_updates.append({"id": item_id, "answer": cleaned})
-
-        approve_ids.append(item_id)
-
-    # 실행
-    if reject_ids:
-        await repo.update_training_data_status(reject_ids, "rejected")
-    if cleanup_updates:
-        await repo.bulk_update_training_data(cleanup_updates)
-    if approve_ids:
-        await repo.update_training_data_status(approve_ids, "approved")
-
-    return {
-        "approved": len(approve_ids),
-        "rejected": len(reject_ids),
-        "cleaned": len(cleanup_updates),
-        "total": len(items),
-    }
-
-
-@router.get("/training-data/stats")
-async def training_data_stats(profile_name: str):
-    """프로필별 학습 데이터 통계."""
-    repo = _get_distill_repo()
-    return await repo.get_training_data_stats(profile_name)
-
+# NOTE: training-data/* endpoints 는 PR9 에서 `distill_training_data.py` 로 분리.
 
 # ---------------------------------------------------------------------------
 # Edge Logs
@@ -722,64 +586,8 @@ async def trigger_retrain(request: RetrainRequest):
 # Data Curation (큐레이션)
 # ---------------------------------------------------------------------------
 
-@router.post("/training-data/generate")
-async def generate_training_data(request: GenerateDataRequest):
-    """큐레이션용 QA 데이터 생성 (백그라운드)."""
-    distill_service = _get_state().get("distill_service")
-    if not distill_service:
-        raise HTTPException(status_code=503, detail="Distill service not initialized")
-
-    async def _run():
-        try:
-            return await distill_service.generate_data_for_review(request.profile_name)
-        except Exception as e:
-            logger.error("Data generation failed: %s", e)
-
-    task = asyncio.create_task(_run())
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-    return {"status": "generating", "profile_name": request.profile_name}
-
-
-@router.post("/training-data/generate-test")
-async def generate_test_data(request: GenerateTestDataRequest):
-    """테스트 시드 데이터 생성 (백그라운드)."""
-    distill_service = _get_state().get("distill_service")
-    if not distill_service:
-        raise HTTPException(status_code=503, detail="Distill service not initialized")
-
-    async def _run():
-        try:
-            return await distill_service.generate_test_data(
-                request.profile_name, count=request.count,
-            )
-        except Exception as e:
-            logger.error("Test data generation failed: %s", e)
-
-    task = asyncio.create_task(_run())
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-    return {"status": "generating", "profile_name": request.profile_name, "count": request.count}
-
-
-@router.get("/training-data/batches/{batch_id}")
-async def get_batch_stats(batch_id: str):
-    """배치 생성 현황/통계."""
-    repo = _get_distill_repo()
-    return await repo.get_batch_stats(batch_id)
-
-
-@router.put("/training-data/review-edit")
-async def review_edit_training_data(request: TrainingDataEditReviewRequest):
-    """승인/거부 + 텍스트 편집."""
-    repo = _get_distill_repo()
-    updated = await repo.bulk_update_training_data(
-        [u.model_dump(exclude_none=True) for u in request.updates]
-    )
-    return {"updated": updated}
-
+# NOTE: training-data generate/generate-test/batches/review-edit endpoints 는
+# PR9 에서 `distill_training_data.py` 로 분리.
 
 # ---------------------------------------------------------------------------
 # Model Reset (베이스 모델 리셋)
@@ -832,111 +640,8 @@ async def reset_to_base_model(profile_name: str):
     }
 
 
-# ---------------------------------------------------------------------------
-# Augmentation (질문 변형)
-# ---------------------------------------------------------------------------
-
-@router.post("/training-data/augment")
-async def augment_training_data(request: AugmentRequest):
-    """승인된 QA를 질문 변형으로 증강 (백그라운드)."""
-    distill_service = _get_state().get("distill_service")
-    if not distill_service:
-        raise HTTPException(status_code=503, detail="Distill service not initialized")
-
-    async def _run():
-        try:
-            return await distill_service.augment_approved_data(
-                request.profile_name, max_variants=request.max_variants,
-            )
-        except Exception as e:
-            logger.error("Augmentation failed: %s", e)
-
-    task = asyncio.create_task(_run())
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-    return {"status": "augmenting", "profile_name": request.profile_name}
-
-
-# ---------------------------------------------------------------------------
-# Term QA (용어 학습 데이터)
-# ---------------------------------------------------------------------------
-
-@router.post("/training-data/generate-term-qa")
-async def generate_term_qa(request: GenerateTermQARequest):
-    """PBU 핵심 용어 → QA 학습 데이터 생성 (백그라운드)."""
-    distill_service = _get_state().get("distill_service")
-    if not distill_service:
-        raise HTTPException(status_code=503, detail="Distill service not initialized")
-
-    async def _run():
-        try:
-            return await distill_service.generate_term_qa(
-                request.profile_name, top_n=request.top_n,
-            )
-        except Exception as e:
-            logger.error("Term QA generation failed: %s", e)
-
-    task = asyncio.create_task(_run())
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-    return {"status": "generating_terms", "profile_name": request.profile_name, "top_n": request.top_n}
-
-
-# ---------------------------------------------------------------------------
-# Answer Cleanup (답변 정리)
-# ---------------------------------------------------------------------------
-
-@router.post("/training-data/cleanup-answers")
-async def cleanup_answers(profile_name: str, source_type: str | None = None):
-    """기존 학습 데이터 답변에서 마크다운/추론/출처 참조 일괄 제거."""
-    repo = _get_distill_repo()
-    result = await repo.list_training_data(
-        profile_name=profile_name, source_type=source_type, limit=10000,
-    )
-    items = result.get("items", [])
-    if not items:
-        return {"cleaned": 0}
-
-    from src.distill.data_gen.quality_filter import cleanup_answer_text
-
-    updates = []
-    for it in items:
-        answer = it.get("answer", "")
-        cleaned = cleanup_answer_text(answer)
-
-        if cleaned != answer:
-            updates.append({"id": it["id"], "answer": cleaned})
-
-    if updates:
-        await repo.bulk_update_training_data(updates)
-
-    return {"cleaned": len(updates), "total": len(items)}
-
-
-# ---------------------------------------------------------------------------
-# Data Reset (초기화)
-# ---------------------------------------------------------------------------
-
-@router.delete("/training-data/by-source")
-async def delete_by_source_type(profile_name: str, source_type: str):
-    """특정 source_type 데이터 일괄 삭제."""
-    allowed = {"test_seed", "term_qa", "chunk_qa", "usage_log_aug",
-               "chunk_qa_aug", "test_seed_aug", "manual"}
-    if source_type not in allowed:
-        raise HTTPException(status_code=400, detail=f"Invalid source_type: {source_type}")
-    repo = _get_distill_repo()
-    deleted = await repo.delete_training_data_by_source(profile_name, source_type)
-    return {"deleted": deleted}
-
-
-@router.delete("/training-data/batch/{batch_id}")
-async def delete_batch_data(batch_id: str):
-    """특정 배치의 데이터 일괄 삭제."""
-    repo = _get_distill_repo()
-    deleted = await repo.delete_training_data_by_batch(batch_id)
-    return {"deleted": deleted}
+# NOTE: training-data augment/generate-term-qa/cleanup-answers/by-source/batch
+# endpoints 는 PR9 에서 `distill_training_data.py` 로 분리.
 
 
 @router.delete("/builds/{build_id}")
