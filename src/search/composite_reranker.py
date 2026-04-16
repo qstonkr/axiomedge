@@ -1,14 +1,30 @@
-"""WeKnora-inspired composite reranking helper.
+"""Composite reranking — weighted score fusion + MMR diversification.
 
-Purpose:
-    Apply weighted score fusion between model relevance, original rank score,
-    source-type priors, and optional MMR diversification.
+Scoring formula (7 additive signals, clamped to [0,1]):
+
+    composite = model_weight × model_score     # cross-encoder relevance (주 신호)
+              + base_weight  × base_score      # Qdrant 원점수 (dense+sparse RRF)
+              + source_weight × source_prior   # 출처 유형별 사전확률 (FAQ 우선)
+              + position_weight × pos_decay    # 순위 감쇠 (1 - idx/total)
+              + graph_bonus                    # Neo4j hop 거리 기반 보너스
+              + keyword_bonus                  # 쿼리 토큰 포함률 × 0.1
+              + entity_bonus                   # 매장·인명 일치 시 +0.12
+
+가중치 근거:
+    - model 0.6 / base 0.3 / source 0.1 — cross-encoder 가 가장 정확하므로 60%,
+      Qdrant RRF 는 recall 용이므로 30%, 출처 사전확률은 보조 신호로 10%.
+    - FAQ boost (기본 1.2×) — FAQ 는 검증된 답변이므로 source_prior 에 가산.
+    - entity_bonus 0.12 — "○○점" 매장명/인명 일치 시 고정 보너스.
+      0.5 이상이면 relevance 를 압도하므로 0.12 가 실험적 적정치.
+
+MMR (Maximal Marginal Relevance):
+    mmr = λ × relevance − (1−λ) × max_sim(선택된 결과와의 Jaccard)
+    λ = config_weights.reranker.mmr_lambda (기본 0.5)
+    → 중복 주제 결과를 분산시켜 다양성 확보.
 
 Usage:
     reranker = CompositeReranker()
     ranked_chunks = reranker.rerank(query, chunks, top_k=10)
-
-Extracted from oreo-ecosystem composite_reranker.py.
 """
 
 from __future__ import annotations

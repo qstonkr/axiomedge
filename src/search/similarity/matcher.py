@@ -1,4 +1,29 @@
-"""Enhanced Term Similarity Matcher -- Main matcher class."""
+"""Enhanced Term Similarity Matcher -- 3-Layer cascade matching.
+
+3-Layer 전략 설계 근거:
+
+    L1  (Exact)     → 정규화 + 동의어 사전 매칭. O(1). 확실한 건 바로 결정.
+    L1.5 (Morpheme) → 한국어 복합어 분해 ("결제수단종류"→["결제","수단","종류"]).
+                      매칭 결정 없이 메타데이터만 수집 → L2/L3에 전달.
+    L2  (Multi-Ch)  → 3채널 병렬 검색 + RRF 퓨전
+                      - S_edit  (RapidFuzz WRatio, 가중치 0.25)
+                      - S_sparse (N-gram Jaccard, 가중치 0.25)
+                      - S_dense  (임베딩 코사인, 가중치 0.50)
+                      → RRF k=60 으로 순위 퓨전.
+    L3  (CE)        → Cross-encoder 정밀 판정. top-K를 sigmoid(score/3) 정규화.
+
+Decision zone (3구역):
+    AUTO_MATCH: CE ≥ 0.85 (fallback ≥ 0.90) → 자동 매칭
+    REVIEW:     CE ≥ 0.50 (fallback ≥ 0.60) → 수동 검토
+    NEW_TERM:   나머지 → 신규 용어
+
+Fallback 임계값이 더 높은 이유: CE 없이 RRF 점수만으로는 확신이 낮으므로.
+
+Graceful degradation:
+    ≤ 3,000 용어 → full pipeline (CE top-50)
+    ≤ 10,000     → reduced (CE top-10)
+    > 10,000     → CE 비활성화, RRF fallback only
+"""
 
 from __future__ import annotations
 

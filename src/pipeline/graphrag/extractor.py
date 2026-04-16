@@ -26,8 +26,20 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Entity Validation Constants
 # =============================================================================
+# LLM 추출 결과를 필터링하는 규칙들. 필터링 없이 저장하면 그래프에
+# "unknown", "담당자", OCR 깨짐 등 노이즈 노드가 대량 생성되어
+# graph expansion 검색 품질이 급락한다.
+#
+# 필터링 파이프라인:
+#   1. _is_corrupted_entity() — 플레이스홀더·OCR 깨짐 제거
+#   2. _is_invalid_person()   — 회사/지역/역할을 Person 으로 잘못 분류한 것 차단
+#   3. _reclassify_person()   — Person→Store/Location/System/Team 재분류
+#   4. _validate_entity()     — Store 내 플랫폼→System, 상품 노이즈 제거
+#   5. _parse_nodes()         — ALLOWED_NODES 화이트리스트 + orphan 제거
+# =============================================================================
 
 # Placeholder / sentinel names that LLMs generate for unknown entities
+# LLM이 정보를 모를 때 출력하는 센티널 값. 실체 없는 노드를 제거.
 _PLACEHOLDER_VALUES = frozenset({
     '명시되지 않음', '미상', 'unknown', 'unnamed', '이름없음',
     '알 수 없음', 'none', 'n/a', '-', '?', '기타',
@@ -35,7 +47,8 @@ _PLACEHOLDER_VALUES = frozenset({
     '문서 작성자', '담당자', '해당 없음',
 })
 
-# Non-person entities that LLMs sometimes tag as Person
+# LLM이 Person 으로 잘못 분류하는 비인명 엔티티.
+# 회사명, 지명, 추상 개념이 Person 으로 추출되면 graph 쿼리 오염.
 _NON_PERSON_BLOCKLIST = frozenset({
     '피그마', '구글', '깃허브', '아마존', '마이크로소프트', '네이버', '카카오',
     '신월동', '강남', '서울', '부산', '제주', '논산', '수지',
@@ -67,9 +80,9 @@ _PLATFORM_NAMES = frozenset({
     '네이버쇼핑', '카카오커머스', 'SSG닷컴',
 })
 
-# OCR corruption: lone jamo range
+# OCR 깨짐 탐지: 낱자모(ㄱ~ㅎ)가 포함되면 스캔 문서 노이즈.
 _LONE_JAMO_RE = _re_mod.compile(r'[\u3131-\u3163]')
-# OCR corruption: 3+ repeated syllables (e.g., 가가가)
+# OCR 깨짐 탐지: 동일 글자 3회 이상 반복 (예: "가가가") → 인식 오류.
 _REPEATED_SYLLABLE_RE = _re_mod.compile(r'(.)\1{2,}')
 # Person name: digits or underscores
 _DIGIT_UNDERSCORE_RE = _re_mod.compile(r'[\d_]')

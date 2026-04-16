@@ -381,9 +381,9 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [ ] `config_weights.py` 687줄 → PR11 이후 최종 분할
 - [ ] Kanana 라이선스 재확인 → `commercial_use=True` 승격
 - [ ] EXAONE convert 패치 upstream 기여 (llama.cpp GitHub)
-- [ ] 코드 주석 강화 — `composite_reranker.py` RRF 가중치 근거
-- [ ] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
-- [ ] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
+- [x] 코드 주석 강화 — `composite_reranker.py` RRF 가중치 근거
+- [x] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
+- [x] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
 - [ ] Feedback type enum 화 vs plugin
 - [ ] Search pipeline 단계 protocol 화 (hub_search 13단계 분리)
 - [ ] Ingestion pipeline 단계 protocol 화 (ingest 14단계 분리)
