@@ -295,8 +295,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **Deferred**:
   - `src/embedding/provider_factory.py` → `src/providers/embedding.py` 이동 (facade 유지로 deferred 가능, PR 작게 유지)
   - OCR / VectorDB / Graph provider registry (Phase D 장기 과제)
-  - [ ] `src/api/app.py` — `create_llm_client()`, `create_auth_provider()` 로 단순화
-  - [ ] `src/auth/providers.py::create_auth_provider` if-elif 제거
+  - [x] `src/api/app.py` — `_init_auth` registry 패턴으로 단순화 완료 (PR8)
+  - [x] `src/auth/providers.py::create_auth_provider` — registry 패턴으로 if-elif 제거 완료 (PR8)
 - **Effort**: 6~8h
 
 ### PR9. `routes/distill.py` 분할 🔀 (partial)
@@ -321,12 +321,9 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **Files (완료)**:
   - [x] 신규 `src/distill/pipeline/__init__.py`
   - [x] 신규 `src/distill/pipeline/stages.py` — DataGenStage Protocol + DataGenContext + DataGenPipeline + make_context
-  - [ ] 신규 `src/distill/pipeline/stages/qa_generation.py`
-  - [ ] 신규 `src/distill/pipeline/stages/generality.py`
-  - [ ] 신규 `src/distill/pipeline/stages/reformat.py` — AnswerReformatter 어댑터
-  - [ ] 신규 `src/distill/pipeline/stages/augment.py` — QuestionAugmenter 어댑터
-  - [ ] 신규 `src/distill/pipeline/builder.py` — `DataGenPipeline().add_stage(...)`
-  - [ ] `src/distill/service.py::generate_data_for_review` — pipeline 조립만 하는 얇은 코드로
+  - [x] `src/distill/pipeline/data_gen_stages.py` — 6 stage 구현 완료 (QA/Generality/LegacyAugment/IDAssign/Reformat/Augment)
+  - [x] `DataGenPipeline().add()` builder 패턴 + `make_context()` factory
+  - [x] `src/distill/service.py::generate_data_for_review` — pipeline 조립만 하는 얇은 코드로 전환 완료
 - **Effort**: 8~12h
 - **Test plan**: 기존 통합 테스트 pass + 단계별 unit 테스트 신규
 
@@ -384,8 +381,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] 코드 주석 강화 — `graphrag/extractor.py` 필터링 규칙 why
 - [x] 코드 주석 강화 — `similarity/matcher.py` 3-layer 전략
 - [x] Feedback type enum 화 (FeedbackType + FeedbackStatus in domain/models.py)
-- [ ] Search pipeline 단계 protocol 화 (hub_search 13단계 분리)
-- [ ] Ingestion pipeline 단계 protocol 화 (ingest 14단계 분리)
+- [~] Search pipeline — hub_search 이미 `_step_*` 13단계 분리 완료. Protocol 클래스 전환은 Phase D.
+- [~] Ingestion pipeline — ingest 이미 stage 함수 분리 완료. Protocol 클래스 전환은 Phase D.
 - [x] AttachmentParser module-level 함수 26개 → `_attachment_helpers.py` 분리 (1879→1419줄)
 - [x] `_init_search_services()` → `SearchServicesFactory` 추출 (src/api/search_services_factory.py)
 - [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
