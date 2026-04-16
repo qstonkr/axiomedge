@@ -127,12 +127,21 @@ class EvalThreshold(BaseModel):
 
 
 class DistillDefaults(BaseModel):
+    """프로필 defaults — 빌드 품질/데이터 관련 설정만.
+
+    인프라 설정 (``build_timeout_sec``, ``llm_timeout_sec``, ``work_dir`` 등)
+    은 ``src/config.py::DistillSettings`` (env ``DISTILL_*``) 가 SSOT.
+    여기서는 중복 선언 금지 — 드리프트 원인.
+    """
+
     teacher_model: str = "exaone-sagemaker"
     quantize: str = "q4_k_m"
-    min_training_samples: int = 5000
+    # 파일럿 환경 최소값 (distill.yaml 과 일치). 과거 5000 기본값은 대규모
+    # 학습 셋 가정이라 실제 프로필이 매번 yaml 에서 200 으로 override 하던
+    # 드리프트의 원인이었음. 기본값을 실제 사용값으로 맞춤.
+    min_training_samples: int = 200
     eval_threshold: EvalThreshold = Field(default_factory=EvalThreshold)
     training_backend: str = "local"  # local | sagemaker
-    build_timeout_sec: int = 7200
 
 
 class DistillProfile(BaseModel):

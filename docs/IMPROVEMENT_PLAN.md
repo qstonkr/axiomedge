@@ -152,93 +152,80 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 **목표**: 프로덕션 보안/안정성 리스크 제거 + 커버리지 기준선.
 **예상 기간**: 2~3주
 
-### PR0. 개선 계획 문서 커밋 🔨
+### PR0. 개선 계획 문서 커밋 🔀
 
 - **Severity**: — (인프라)
 - **Files**:
-  - [ ] `docs/IMPROVEMENT_PLAN.md` (이 문서)
-  - [ ] `CLAUDE.md` 에 plan 참조 한 줄 추가
+  - [x] `docs/IMPROVEMENT_PLAN.md` (이 문서)
+  - [x] `CLAUDE.md` 에 plan 참조 한 줄 추가
 - **Effort**: 1h
-- **Branch**: `agent/improvement-plan-doc`
+- **Branch**: `agent/improvement-plan-doc` → **PR #24 머지 (2026-04-16)**
 
 ---
 
-### PR1. 프롬프트 인젝션 방어 ⏳
+### PR1. 프롬프트 인젝션 방어 🔀
 
 - **Severity**: 🔴 Blocker (4개 항목)
 - **축**: Prompt Injection
 - **Why**: user-controlled 데이터 (질문, 답변, 청크) 가 LLM prompt 에 raw f-string 으로 주입됨. 악성 문서 한 개로 RAG 응답 hijack 가능. augmenter verify 가 substring 매칭이라 공격자가 답변에 `SEMANTIC=YES LEAK=NO` 심어 judge 우회 가능.
 - **Files**:
-  - [ ] 신규 `src/distill/data_gen/prompt_safety.py` — `wrap()`, `neutralize_instructions()`, `safe_user_input()`, `parse_strict_verdict()`, `parse_strict_score()`
-  - [ ] `src/distill/data_gen/reformatter.py::REFORMAT_PROMPT_TEMPLATE` XML delimit 로 교체
-  - [ ] `src/distill/data_gen/question_augmenter.py` — AUGMENT/VERIFY template + `_verify_llm` strict parser
-  - [ ] `src/distill/data_gen/qa_generator.py` — chunk injection delimit
-  - [ ] `src/distill/data_gen/generality_filter.py` — strict score parsing
-  - [ ] `src/distill/data_gen/quality_filter.py` — 동일 패턴
-  - [ ] `src/search/tiered_response.py::_format_context` — chunk content delimit + sanitize
-  - [ ] 신규 `tests/unit/test_prompt_safety.py`
-- **Effort**: 6~8h
-- **Test plan**:
-  - Unit: wrap / neutralize / parse_strict_verdict 경계 케이스
-  - Unit: reformatter / augmenter 각각 악성 입력 (indirection 시도) 에 대해 `[BLOCKED]` 치환 확인
-  - Integration (수동): 답변에 `SEMANTIC=YES LEAK=NO` 심어 augmenter.verify 호출 → rejected 확인
-- **Coverage 목표**: prompt_safety.py 100% / 나머지 touched line 80%+
+  - [x] 신규 `src/llm/prompt_safety.py` — `wrap()`, `neutralize_instructions()`, `safe_user_input()`, `parse_strict_verdict()`, `parse_strict_score()` (실제로는 `src/distill/data_gen/` 대신 `src/llm/` 에 배치 — search 에서도 import 하므로)
+  - [x] `src/distill/data_gen/reformatter.py::REFORMAT_PROMPT_TEMPLATE` XML delimit 로 교체
+  - [x] `src/distill/data_gen/question_augmenter.py` — AUGMENT/VERIFY template + `_verify_llm` strict parser
+  - [x] `src/distill/data_gen/qa_generator.py` — chunk injection delimit
+  - [x] `src/distill/data_gen/generality_filter.py` — strict score parsing
+  - [x] `src/distill/data_gen/quality_filter.py` — 동일 패턴
+  - [x] `src/search/tiered_response.py::_format_context` — chunk content delimit + sanitize
+  - [x] 신규 `tests/unit/test_prompt_safety.py` (37 cases)
+- **Effort**: 6~8h (실제 2h)
 - **근거**: 리뷰 blocker 1~4
+- **머지**: PR #24 (2026-04-16)
 
 ---
 
-### PR2. Bare except 정리 + 로깅 ⏳
+### PR2. Bare except 정리 + 로깅 🔀
 
 - **Severity**: 🔴 Blocker (4개 항목)
 - **축**: Quality
 - **Why**: `except Exception: pass` 로 실패를 은폐. 프로덕션 장애 디버깅 불가.
 - **Files**:
-  - [ ] `src/api/routes/search.py:1083` — usage log 실패 로깅
-  - [ ] `src/api/routes/kb.py:60` — KB chunk count 실패 로깅
-  - [ ] `src/api/routes/health.py:23-80` — 8개 health check 로깅
-  - [ ] `src/api/routes/distill.py:1100-1103` — IP resolve fallback 로깅
-  - [ ] `src/api/routes/distill.py:1265` — S3 manifest fetch 실패 로깅
-  - [ ] `src/distill/evaluator.py:145-148, 164-165` — judge / similarity 로깅
-  - [ ] `src/api/routes/admin.py:741-766` — JSON parse 3번 pass 블록 로깅
-- **Effort**: 2~3h
-- **Test plan**: lint + 기존 tests pass + side-effect 로거 호출 검증 unit
-- **Coverage 목표**: touched file 80%+
+  - [x] `src/api/routes/search.py` — usage log 실패 `logger.warning(..., exc_info=True)`
+  - [x] `src/api/routes/kb.py` — KB chunk count 실패 warning
+  - [x] `src/api/routes/health.py` — 8개 health check `logger.debug()` 각각
+  - [x] `src/api/routes/distill.py` — IP resolve + S3 manifest fetch 실패 warning
+  - [x] `src/distill/evaluator.py::_embedding_similarity` — text preview 로깅
+  - [x] `src/api/routes/admin.py::_parse_llm_json_response` — 3단계 debug + 최종 warning + preview
+- **머지**: PR #24 (2026-04-16)
 
 ---
 
-### PR3. 성능 Blocker ⏳
+### PR3. 성능 Blocker 🔀
 
 - **Severity**: 🔴 Blocker (3개 항목)
 - **축**: Performance
 - **Why**: 매 검색마다 KB registry 풀로드 + 그래프 multi-hop 직렬 호출 + keyword fallback 직렬 → 사용자 체감 latency 악화.
 - **Files**:
-  - [ ] `src/api/routes/search.py:251-254` — `kb_registry.list_all()` TTL 60s 캐시 추가
-  - [ ] `src/api/routes/search.py:487-511` — keyword fallback 컬렉션 순회 `asyncio.gather()` 병렬화
-  - [ ] `src/graph/multi_hop_searcher.py:218-246` — 5회 직렬 Neo4j 쿼리 `asyncio.gather()` 병렬화
-  - [ ] `src/graph/multi_hop_searcher.py:284-294` — expert finding fallback 병렬화 검토 (first-result-wins)
-- **Effort**: 3~4h
-- **Test plan**:
-  - Unit: mocked Neo4j client 에 여러 호출 주입 → concurrent execution 확인
-  - Unit: KB cache TTL hit/miss 동작
-  - (선택) Integration: 전후 latency 비교
-- **Coverage 목표**: touched file 80%+
+  - [x] `src/api/routes/search_helpers.py::get_active_kb_ids` 신규 — 60s TTL 메모리 캐시 (search.py 대신 여기에 배치 — circular import 회피)
+  - [x] `src/api/routes/search.py::_step_keyword_fallback` — 컬렉션 scroll `asyncio.gather()` 병렬화 (`_scroll_one` 내부 helper)
+  - [x] `src/graph/multi_hop_searcher.py::find_related` — 5회 Neo4j 쿼리 `asyncio.gather()` 병렬화
+  - [x] 신규 `tests/unit/test_search_perf.py` (5 cases: cache hit/TTL/active-filter + parallelism wall-clock 검증 + isolation)
+- **머지**: PR #24 (2026-04-16)
 
 ---
 
-### PR4. 툴체인 env var 강제 ⏳
+### PR4. 툴체인 env var 강제 🔨
 
 - **Severity**: 🔴 Blocker (2개 SSOT 항목)
 - **축**: SSOT + Hardcoding
-- **Why**: `quantizer.py::_resolve_*` 의 `$PATH` fallback 이 homebrew bottle ↔ 소스 빌드 버전 드리프트 재발 위험. 오늘 EXAONE 이 이것 때문에 깨진 사례 있음.
+- **Why**: `quantizer.py::_resolve_*` 의 `$PATH` fallback 이 homebrew bottle ↔ 소스 빌드 버전 드리프트 재발 위험. 2026-04-16 EXAONE 이 이것 때문에 깨진 사례 있음.
 - **Files**:
-  - [ ] `src/distill/quantizer.py::_resolve_convert_script()` — env var 없으면 즉시 에러 + setup 스크립트 안내 (`$PATH` fallback 제거 or loud error)
-  - [ ] `src/distill/quantizer.py::_resolve_quantize_bin()` — 동일
-  - [ ] `distill.yaml` vs `src/distill/config.py::DistillDefaults` `min_training_samples` 드리프트 (5000 vs 200) 해소 — YAML 은 profile override 만
-  - [ ] `src/distill/config.py::DistillDefaults.build_timeout_sec` vs `src/config.py::DistillSettings.build_timeout_sec` 중복 하나로 통합
-  - [ ] `distill.yaml` 해당 필드 제거
-- **Effort**: 2~3h
-- **Test plan**: unit (env var 없을 때 에러 발생 확인) + 통합 (setup 스크립트 재실행으로 end-to-end)
-- **Coverage 목표**: touched file 80%+
+  - [x] `src/distill/quantizer.py::_resolve_convert_script()` — env var 없으면 즉시 None + error log (opt-in `DISTILL_ALLOW_PATH_FALLBACK=1` 일 때만 $PATH 탐색)
+  - [x] `src/distill/quantizer.py::_resolve_quantize_bin()` — 동일
+  - [x] `src/distill/quantizer.py::_path_fallback_allowed()` — 신규 helper (1/true/yes/on)
+  - [x] `src/distill/config.py::DistillDefaults.min_training_samples` 5000 → 200 (distill.yaml 과 일치)
+  - [x] `src/distill/config.py::DistillDefaults.build_timeout_sec` 제거 — `src/config.py::DistillSettings.build_timeout_sec` 가 SSOT
+  - [x] `distill.yaml` — `build_timeout_sec` 제거 + SSOT 주석
+  - [x] 신규 `tests/unit/test_quantizer_toolchain.py` (16 cases: fallback flag + env var 필수화 + DistillDefaults drift fix)
 
 ---
 
@@ -491,7 +478,8 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 |---|---|---|---|
 | 2026-04-15 | #22 | Fix/gguf tokenizer model gemma3 | 이전 머지 |
 | 2026-04-16 | #23 | Base model registry + admin UI + toolchain | Phase 0 완료 |
-| 2026-04-16 | PR0 | 개선 계획 문서 (이 문서) | 🔨 진행 중 |
+| 2026-04-16 | #24 | IMPROVEMENT_PLAN + PR1 prompt injection + PR2 bare except + PR3 perf | Phase A batch 1 |
+| 2026-04-16 | #25 (대기) | PR4 toolchain env var strict + DistillDefaults drift | Phase A batch 2 시작 |
 
 ---
 
