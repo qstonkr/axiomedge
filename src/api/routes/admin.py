@@ -735,15 +735,21 @@ def _apply_single_classification(
 
 
 def _parse_llm_json_response(text: str) -> list[dict[str, Any]]:
-    """Extract JSON array from LLM response text."""
-    # Try direct parse first
+    """Extract JSON array from LLM response text.
+
+    3단계 fallback: direct parse → markdown code block → regex array extract.
+    모든 단계 실패 시 빈 리스트를 반환하지만, 실패 이유는 debug 로그로 남겨
+    LLM 출력 포맷 변화/편차를 추적 가능하게 함.
+    """
     text = text.strip()
+
+    # Try direct parse first
     try:
         result = json.loads(text)
         if isinstance(result, list):
             return result
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e:
+        logger.debug("LLM JSON parse (direct) failed: %s", e)
 
     # Try extracting from markdown code block
     match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
@@ -752,8 +758,8 @@ def _parse_llm_json_response(text: str) -> list[dict[str, Any]]:
             result = json.loads(match.group(1).strip())
             if isinstance(result, list):
                 return result
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug("LLM JSON parse (markdown block) failed: %s", e)
 
     # Try finding array in text
     match = re.search(r"\[.*\]", text, re.DOTALL)
@@ -762,9 +768,13 @@ def _parse_llm_json_response(text: str) -> list[dict[str, Any]]:
             result = json.loads(match.group(0))
             if isinstance(result, list):
                 return result
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            logger.debug("LLM JSON parse (regex array) failed: %s", e)
 
+    logger.warning(
+        "Failed to parse LLM JSON response after 3 attempts (preview: %r)",
+        text[:200],
+    )
     return []
 
 

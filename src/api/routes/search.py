@@ -1080,8 +1080,10 @@ async def _step_log_usage(
             user_id="local-user", usage_type="hub_search",
             context=context,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        # usage log 실패는 hub_search 전체를 막지 않음 (best-effort) —
+        # 하지만 조용히 삼키지 말고 로그를 남겨 상위 인시던트 디버깅 가능하게 함.
+        logger.warning("Failed to log hub_search usage: %s", e, exc_info=True)
 
 
 # ---------------------------------------------------------------------------

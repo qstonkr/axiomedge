@@ -50,14 +50,22 @@ class KBInfo(BaseModel):
 # ---------------------------------------------------------------------------
 
 async def _enrich_kb_counts(kbs: list[dict], store) -> None:
-    """Enrich KB list with Qdrant chunk counts and doc_count."""
+    """Enrich KB list with Qdrant chunk counts and doc_count.
+
+    Qdrant count 실패는 KB list 응답 전체를 막지 않지만, 조용히 0 으로
+    fallback 하면 UI 가 잘못된 정보를 표시. 로그를 남겨 인시던트 디버깅 가능.
+    """
     if not store:
         return
     for kb in kbs:
         kb_id = kb.get("kb_id") or kb.get("id", "")
         try:
             kb["chunk_count"] = await store.count(kb_id)
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Failed to count chunks for KB %s: %s — falling back to 0",
+                kb_id, e,
+            )
             kb.setdefault("chunk_count", 0)
         kb["doc_count"] = kb.get("document_count", 0)
 

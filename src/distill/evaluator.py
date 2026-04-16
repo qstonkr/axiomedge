@@ -148,7 +148,11 @@ class DistillEvaluator:
         return {"faithfulness": 0.5, "relevancy": 0.5}
 
     def _embedding_similarity(self, text1: str, text2: str) -> float:
-        """임베딩 cosine similarity."""
+        """임베딩 cosine similarity.
+
+        Embedder 실패 시 0.0 반환 + warning. 평가 점수에 영향을 주므로
+        silent 로 묻지 않고 호출자가 로그로 추적 가능해야 한다.
+        """
         if not text1 or not text2:
             return 0.0
         try:
@@ -161,5 +165,9 @@ class DistillEvaluator:
                 return 0.0
             v1, v2 = np.array(vecs[0]), np.array(vecs[1])
             return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8))
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Embedding similarity failed for texts (%s / %s): %s",
+                text1[:30], text2[:30], e,
+            )
             return 0.0
