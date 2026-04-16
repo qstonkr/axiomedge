@@ -47,10 +47,12 @@ class TestQdrantSettings:
         s = QdrantSettings()
         assert s.url == "http://localhost:6333"
         assert s.collection_name == "knowledge"
-        assert s.dense_dimension == 1024
-        assert s.dense_vector_name == "bge_dense"
-        assert s.sparse_vector_name == "bge_sparse"
+        assert s.entity_collection_name == "knowledge_entities"
         assert s.timeout == 30
+        # NOTE: dense_dimension / dense_vector_name / sparse_vector_name 는 PR5
+        # 에서 dead fields 로 제거. SSOT 는 config_weights.weights.embedding.dimension
+        # 과 vectordb.client.DEFAULT_{DENSE,SPARSE}_VECTOR_NAME. 해당 검증은
+        # tests/unit/test_config_drift.py 로 이동.
 
 
 class TestNeo4jSettings:

@@ -247,30 +247,32 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 - **Severity**: — (인프라)
 - **축**: Quality (테스트)
-- **Why**: 사용자 요청 — 모든 향후 PR 이 커버리지 80% 를 지키려면 먼저 현재 상태를 측정하고 CI 로 강제해야 함.
+- **Why**: 모든 향후 PR 이 커버리지 80% 를 지키려면 현재 상태 측정 + CI 강제 필요.
+- **베이스라인**: **77.0%** (5,631 pass tests, 28,833 statements)
 - **Files**:
-  - [ ] `pyproject.toml::[tool.pytest.ini_options]` — `addopts = "--cov=src --cov-report=term-missing --cov-report=html --cov-fail-under=<현재치>"` 추가
-  - [ ] `scripts/coverage_gate.py` — `git diff --name-only main...HEAD` 로 touched file 만 80% 강제
-  - [ ] 신규 `docs/TESTING.md` — 테스트 가이드, mock 패턴, fixtures, `pragma: no cover` 허용 기준, 베이스라인 숫자, backfill 대상
-  - [ ] `Makefile` — `make test-unit` 이 cov 리포트 같이 출력
-  - [ ] Bitbucket Pipelines 또는 `.github/workflows/*.yml` CI 설정 (현재 CI 구조 확인 후 결정)
-- **Effort**: 4~5h (베이스라인 측정 + 문서 작성 포함)
-- **Test plan**: `make test-unit` 실행해 cov 리포트 생성 확인. CI 시뮬레이션 로컬 실행.
+  - [x] `pyproject.toml::[tool.coverage.*]` — source=["src"], omit, exclude_lines (fail_under 는 Makefile/CI 에 명시)
+  - [x] 신규 `scripts/coverage_gate.py` — touched file 80% floor + missing file detection
+  - [x] 신규 `docs/TESTING.md` — 정책/실행/작성 가이드/pragma 기준/backfill 목록
+  - [x] `Makefile` — `test-unit` coverage 통합 (`--cov-fail-under=75`), `test-unit-fast` 분리, `test-coverage-gate` target 신규
+  - [x] `.gitignore` — `.coverage*`, `htmlcov/`, `coverage.json`
+  - [x] 신규 `tests/unit/test_coverage_gate.py` (15 cases — filter/loader/main flow)
+- **Follow-up (Phase B 내)**:
+  - Bitbucket Pipelines CI 에 `make test-unit && make test-coverage-gate` 추가 (CI 파일 위치 확인 후)
+- **Known issue** (별도 처리):
+  - `test_data_source_sync::TestRunIngestion` 2개, `test_document_parser_extended::TestParsePptx` 1개 — 기존부터 fail (main 머지 이전부터). Phase C 에서 fix.
+  - `test_summary_tree_builder` 7개 — flaky, seed 고정 필요. Phase C 에서 fix.
 
 ---
 
-### PR7. 문서 블로커 3개 ⏳
+### PR7. 문서 블로커 3개 🔨
 
 - **Severity**: 🔴 Blocker (6개 중 3개)
 - **축**: Documentation
-- **Why**: 신규 팀원이 repo clone 후 첫 search 까지 30분 안에 도달하려면 QUICKSTART 필수. RAG 엔지니어가 검색 튜닝하려면 RAG_PIPELINE 필수. Ingestion 문제 디버깅엔 INGESTION_PIPELINE 필수.
 - **Files**:
-  - [ ] `docs/QUICKSTART.md` — 사전 요구사항, setup → start → first ingest → first search, 문제 해결
-  - [ ] `docs/RAG_PIPELINE.md` — 9단계 입출력 스키마, 튜닝 포인트, 캐시 정책, 가중치 근거
-  - [ ] `docs/INGESTION_PIPELINE.md` — 2-stage pipeline, JSONL checkpoint, incremental, 크래시 복구, 병렬 worker 튜닝
-  - [ ] `CLAUDE.md` 의 "Documentation" 테이블에 3개 추가
-- **Effort**: 6~8h
-- **Test plan**: 다른 팀원이 각 문서대로 실행 후 피드백
+  - [x] 신규 `docs/QUICKSTART.md` — 10 단계 (요구사항 → clone → start → Ollama pull → api → dashboard → ingest → search → test → stop) + 자주 막히는 곳 + 다음 단계
+  - [x] 신규 `docs/RAG_PIPELINE.md` — 9단계 파이프라인 흐름 + 단계별 상세 + 가중치 SSOT + 캐시 계층 + 응답 스키마 + fallback + 관찰성
+  - [x] 신규 `docs/INGESTION_PIPELINE.md` — Stage 1/2, JSONL checkpoint, incremental, crash recovery, 병렬 튜닝, 품질 게이트
+  - [x] `CLAUDE.md::Documentation` 테이블에 QUICKSTART + RAG_PIPELINE + INGESTION_PIPELINE + TESTING 추가 + "신규 개발자 QUICKSTART 부터" 가이드
 
 ---
 
@@ -475,7 +477,8 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 | 2026-04-15 | #22 | Fix/gguf tokenizer model gemma3 | 이전 머지 |
 | 2026-04-16 | #23 | Base model registry + admin UI + toolchain | Phase 0 완료 |
 | 2026-04-16 | #24 | IMPROVEMENT_PLAN + PR1 prompt injection + PR2 bare except + PR3 perf | Phase A batch 1 |
-| 2026-04-16 | #25 (대기) | PR4 toolchain env var strict + DistillDefaults drift | Phase A batch 2 시작 |
+| 2026-04-16 | #25 | PR4 toolchain env var strict + PR5 config drift | Phase A batch 2 |
+| 2026-04-16 | #26 (대기) | PR6 coverage baseline + PR7 blocker docs | Phase A batch 3 — **Phase A 완료** |
 
 ---
 

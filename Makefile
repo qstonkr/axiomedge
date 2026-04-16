@@ -1,4 +1,4 @@
-.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-integration test-e2e tei-refresh
+.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-unit-fast test-integration test-e2e test-coverage-gate tei-refresh
 
 # === Setup ===
 setup:
@@ -86,9 +86,31 @@ k8s-logs:
 test:
 	uv run pytest tests/ -v --no-cov
 
+# Unit tests + coverage 측정 (PR 준비용). 전체 coverage 전역 floor 는
+# pyproject.toml::[tool.coverage.report]::fail_under 에서 enforce.
+# Touched-file 80% floor 는 `make test-coverage-gate` 로 확인.
+# 상세: docs/TESTING.md
 test-unit:
+	uv run pytest tests/unit/ \
+		--ignore=tests/unit/test_jobs.py \
+		$(shell ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') \
+		--cov=src \
+		--cov-report=term-missing \
+		--cov-report=html:htmlcov \
+		--cov-report=json:coverage.json \
+		--cov-fail-under=75 \
+		-q
+	@PYTHONPATH=dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
+
+# 빠른 iteration 용 — coverage 측정 skip.
+test-unit-fast:
 	uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py $(shell ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') -q --no-cov
 	@PYTHONPATH=dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
+
+# PR 이 수정한 src/*.py 파일 각각 80% floor 검사. test-unit 이 먼저 실행돼
+# coverage.json 을 생성해야 한다.
+test-coverage-gate:
+	uv run python scripts/coverage_gate.py --base origin/main --threshold 80
 
 test-integration:
 	uv run pytest tests/integration/ -v --no-cov

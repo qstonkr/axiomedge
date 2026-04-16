@@ -87,6 +87,38 @@ markers = [
     "integration: integration tests requiring running API server",
     "e2e: end-to-end tests requiring running API server and all services",
 ]
+# Coverage is opt-in via `make test-unit` or manual `--cov` flag. We do NOT
+# enable it on every pytest call because individual test runs during
+# development would otherwise pay the collection overhead and the
+# `--cov-fail-under` gate would block WIP work. CI enforces the floor
+# separately (see scripts/coverage_gate.py and the Makefile target).
+
+[tool.coverage.run]
+# Restrict measurement to first-party application code. Dashboard is
+# excluded because it will be replaced by a separate SPA project, and
+# scripts/cli are one-off entry points per docs/IMPROVEMENT_PLAN.md.
+source = ["src"]
+branch = false
+omit = [
+    "src/api/routes/__init__.py",
+    "src/**/tests/*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+# Global floor 은 Makefile `test-unit` 과 CI 에서 `--cov-fail-under=75`
+# 로 명시적으로 적용한다. pyproject 에 박아두면 부분 test run 마다 fail
+# 하는 UX 가 나쁘므로 여기서는 강제하지 않음. 상세: docs/TESTING.md.
+show_missing = true
+skip_covered = false
+precision = 1
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",  # Protocol stubs
+]
 
 [tool.ruff]
 target-version = "py312"
