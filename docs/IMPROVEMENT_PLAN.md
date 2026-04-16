@@ -406,8 +406,8 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 ## Phase D — 장기 확장성 (선택)
 
-- [ ] Vector store Protocol 추상화 (`VectorStore` interface + `providers/vectordb.py`)
-- [ ] Graph store Protocol 추상화 (`GraphStore` + `providers/graph.py`)
+- [x] VectorStore Protocol 확장 (IVectorStore CRUD + ISearchEngine, NoOp 구현)
+- [x] GraphStore Protocol 확장 (IGraphStore entity/relationship/search/stats, NoOp 구현)
 - [ ] `src/api/routes/user/` vs `routes/admin/` 완전 분리 (SPA 도입 직전)
 - [ ] Plugin auto-discover for routes (`src/api/routes/*.py` 자동 include)
 - [ ] Ingestion pipeline 완전 plugin 화 (`IngestionStage` registry)
