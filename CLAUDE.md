@@ -34,25 +34,25 @@ uv run pytest tests/unit/test_foo.py::test_bar -v --no-cov  # single test
 
 # Deploy
 make docker-build       # Build API container
-make k8s-deploy         # kubectl apply -k k8s/
+make k8s-deploy         # kubectl apply -k deploy/k8s/
 
 # Lint
-uvx ruff check src/ dashboard/ cli/ scripts/  # must be clean (E402 exempt for Streamlit)
+uvx ruff check src/ scripts/  # must be clean (E402 exempt for Streamlit)
 ```
 
 ## Architecture
 
 ```
-CLI (cli/)  ──┐
+CLI (src/cli/)  ──┐
 Dashboard ────┼──▶ FastAPI API (:8000)
-(Streamlit)   │     ├── Routes → Helpers (thin handler + business logic split)
+(src/apps/dashboard/)   │     ├── Routes → Helpers (thin handler + business logic split)
               │     ├── Middleware (auth, CORS)
               │     └── Services (singleton, lifespan-managed)
               │           │
               │     ┌─────┴──────────────────────┐
               │     ▼                              ▼
               │  Pipeline                       Search/RAG
-              │  (src/pipeline/)                (src/search/)
+              │  (src/pipelines/)                (src/search/)
               │  parse→chunk→embed→dedup→store  classify→expand→search→rerank→generate
               │     │                              │
               └─────┴──────────────────────────────┘
@@ -68,7 +68,7 @@ Distill (src/distill/)  ──▶ Edge Model Pipeline
   service.py → 파이프라인 오케스트레이터 (데이터 큐레이션 + 빌드)
   repositories/ → profile, build, training_data, edge_log, edge_server
 
-Edge Server (edge/)  ──▶ 매장 엣지 서버
+Edge Server (src/edge/)  ──▶ 매장 엣지 서버
   server.py → llama-cpp 추론 + heartbeat
   sync.py → S3 모델 sync + heartbeat push + 앱 업데이트
   install.sh/ps1 → 크로스 플랫폼 설치 (Linux/Windows/macOS)
@@ -93,36 +93,35 @@ Large files are split into helpers/sub-modules with **facade re-exports** for ba
 | `src/api/routes/quality.py` | + `quality_helpers.py` | Quality gates + golden set (route + SQL helpers) |
 | `src/api/routes/auth.py` | + `auth_helpers.py` | Auth endpoints (route + service helpers) |
 | `src/api/routes/glossary.py` | + `glossary_helpers.py` | Glossary CRUD (route + business logic) |
-| `src/pipeline/graphrag_extractor.py` | → `graphrag/` pkg | GraphRAG (extractor, models, prompts) |
+| `src/pipelines/graphrag/` | extractor + models + prompts + _neo4j_persistence | GraphRAG entity/relation extraction + Neo4j persistence |
 | `src/search/enhanced_similarity_matcher.py` | → `similarity/` pkg | Similarity matching (matcher, strategies, utils) |
-| `dashboard/services/api_client.py` | → `api/` pkg (8 modules) | Frontend API client (core, kb, search, glossary, quality, admin, auth, misc) |
+| `src/apps/dashboard/services/api/` | 8 modules | Frontend API client (core, kb, search, glossary, quality, admin, auth, misc) |
 | `src/connectors/confluence/` | 8-module pkg | Confluence crawler (client, models, html_parsers, attachment_parser, config, output, structured_ir) |
 | `src/distill/` | service + data_gen/ + repositories/ | Edge model distillation (QA curation, LoRA SFT, GGUF, S3 deploy) |
 | `src/distill/data_gen/` | 5-module pkg | Data generation (qa_generator, quality_filter, generality_filter, dataset_builder, test_data_templates) |
 | `src/distill/repositories/` | 5-module pkg | Distill DB repos (profile, build, training_data, edge_log, edge_server) |
 | `src/distill/pipeline/` | stages.py + data_gen_stages.py | DataGenStage Protocol + 6 stage (QA/Generality/Augment/Reformat) |
 | `src/distill/build_executor.py` | standalone | Build pipeline orchestrator (generate→train→quantize→evaluate→deploy) |
-| `edge/` | server.py + sync.py + install scripts | Edge server (llama-cpp inference, heartbeat, cross-platform deploy) |
+| `src/edge/` | server.py + sync.py + provision.sh | Edge server (llama-cpp inference, heartbeat, cross-platform deploy) |
 
 **Infrastructure & Initialization:**
 
 | Module | Role |
 |--------|------|
 | `src/config/` | Settings 패키지 (16개 Settings 클래스 — DB, Qdrant, Neo4j, Ollama, Redis, Confluence, TEI, AWS 등). `from src.config import get_settings` |
-| `src/config_weights/` | 하이퍼파라미터 패키지 (7 서브모듈 — search, confidence, quality, pipeline, llm, cache, _helpers) |
-| `src/providers/` | Provider registry (llm, auth, embedding, connector) + Protocol re-exports (protocols.py) |
+| `src/config/weights/` | 하이퍼파라미터 패키지 (7 서브모듈 — search, confidence, quality, pipeline, llm, cache, _helpers) |
+| `src/core/providers/` | Provider registry (llm, auth, embedding, connector) + Protocol re-exports (protocols.py) |
 | `src/api/route_discovery.py` | Route auto-discover — routes/ 자동 스캔 + include_router |
 | `src/api/search_services_factory.py` | Search 서비스 초기화 factory (8개 서비스) |
 | `src/search/pipeline/` | SearchStage Protocol + SearchPipeline builder |
-| `src/pipeline/stages/` | IngestionStage Protocol + IngestionPipelineRunner (early-exit) |
+| `src/pipelines/stages/` | IngestionStage Protocol + IngestionPipelineRunner (early-exit) |
 
-**All existing imports continue to work** — original files are facades.
 
 ### Key Patterns
 
-- **SSOT**: `src/config/` (env vars — 16개 Settings 클래스 incl. AwsSettings), `src/config_weights/` (thresholds/weights). 서비스 URL 추가 시 반드시 `config/settings.py`에 Settings 클래스 추가 후 `get_settings()` 로 참조.
+- **SSOT**: `src/config/` (env vars — 16개 Settings 클래스 incl. AwsSettings), `src/config/weights/` (thresholds/weights). 서비스 URL 추가 시 반드시 `config/settings.py`에 Settings 클래스 추가 후 `get_settings()` 로 참조.
 - **Protocols**: `IVectorStore`, `IGraphStore`, `ISearchEngine`, `IEmbedder`, `ISparseEmbedder`, `IConnector`, `SearchStage`, `IngestionStage`, `DataGenStage` — structural typing, runtime_checkable.
-- **Repository**: `BaseRepository` in `src/database/repositories/base.py` for all domain repos.
+- **Repository**: `BaseRepository` in `src/stores/postgres/repositories/base.py` for all domain repos.
 - **AppState**: `src/api/state.py` — typed dataclass, dict-compatible. Routes access via `_get_state()`.
 - **Entity boost**: `composite_reranker.py` extracts store/person names from query, boosts matching chunks.
 - **Week search**: `search_helpers.py` matches "N월 N주차", "YYYY년 N주차", "M월 D일" patterns to document names.
@@ -158,8 +157,8 @@ Stage 1: file → parse/OCR → domain dict correction → JSONL checkpoint
 Stage 2: JSONL → chunk → passage clean → contextual prefix → embed → dedup (4-stage) → store
 ```
 
-- Incremental: `cli/crawl.py` tracks `.crawl_state.json`, `cli/ingest.py` checks Qdrant content_hash
-- Batch OCR cleaning: `scripts/batch_clean_chunks.py` (payload update, no re-embedding)
+- Incremental: `src/cli/crawl.py` tracks `.crawl_state.json`, `src/cli/ingest.py` checks Qdrant content_hash
+- Batch OCR cleaning: `scripts/backfill/batch_clean_chunks.py` (payload update, no re-embedding)
 - **Confluence crawl**: `src/connectors/confluence/` — BFS parallel crawl + `CrawlResultConnector` → `IngestionPipeline`
 - **Data source trigger**: Dashboard or API trigger → crawl → ingest → KB auto-register (see `docs/CONFLUENCE_CRAWLER.md`)
 
@@ -178,7 +177,7 @@ Multiple Claude CLI instances can work simultaneously using **git worktree isola
 
 ```bash
 # Setup aliases (one-time)
-source scripts/aliases.sh
+source scripts/ops/aliases.sh
 
 # Terminal 1: search improvement
 kl-new search "검색 품질 개선"     # creates worktree + starts Claude
@@ -198,12 +197,12 @@ kl-home                            # return to main
 
 | Domain | Files | Owner |
 |--------|-------|-------|
-| Search/RAG | `src/search/`, `src/llm/`, `src/embedding/`, `src/vectordb/` | @search-owner |
-| Pipeline | `src/pipeline/`, `src/connectors/`, `cli/` | @pipeline-owner |
+| Search/RAG | `src/search/`, `src/nlp/llm/`, `src/nlp/embedding/`, `src/stores/qdrant/` | @search-owner |
+| Pipeline | `src/pipelines/`, `src/connectors/`, `src/cli/` | @pipeline-owner |
 | Auth | `src/auth/` | @security-owner |
-| Frontend | `dashboard/` | @frontend-owner |
-| Infra | `k8s/`, `helm/`, `.github/` | @infra-owner |
-| Shared (review required) | `src/api/routes/`, `src/config*.py`, `src/database/` | multiple reviewers |
+| Frontend | `src/apps/dashboard/` | @frontend-owner |
+| Infra | `deploy/k8s/`, `deploy/helm/`, `.github/` | @infra-owner |
+| Shared (review required) | `src/api/routes/`, `src/config/`, `src/stores/postgres/` | multiple reviewers |
 
 ### Branch Convention
 
