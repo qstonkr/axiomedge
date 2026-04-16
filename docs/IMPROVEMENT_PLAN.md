@@ -397,7 +397,7 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 - [ ] `src/pipeline/ingestion.py` (3500+줄)
 - [x] `src/search/composite_reranker.py` (24 tests — entity/keyword/graph/source/position/edge)
-- [ ] `src/search/similarity/matcher.py` (900줄)
+- [x] `src/search/similarity/matcher.py` (24 tests — penalty, zone, init, L1, CE degradation)
 - [x] `src/pipeline/graphrag/extractor.py` (32 tests — corruption/invalid/reclassify/validate)
 - [ ] `src/connectors/confluence/attachment_parser.py` (1876줄)
 - [ ] `src/distill/service.py` 나머지 메서드
