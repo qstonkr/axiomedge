@@ -264,18 +264,15 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ---
 
-### PR7. 문서 블로커 3개 ⏳
+### PR7. 문서 블로커 3개 🔨
 
 - **Severity**: 🔴 Blocker (6개 중 3개)
 - **축**: Documentation
-- **Why**: 신규 팀원이 repo clone 후 첫 search 까지 30분 안에 도달하려면 QUICKSTART 필수. RAG 엔지니어가 검색 튜닝하려면 RAG_PIPELINE 필수. Ingestion 문제 디버깅엔 INGESTION_PIPELINE 필수.
 - **Files**:
-  - [ ] `docs/QUICKSTART.md` — 사전 요구사항, setup → start → first ingest → first search, 문제 해결
-  - [ ] `docs/RAG_PIPELINE.md` — 9단계 입출력 스키마, 튜닝 포인트, 캐시 정책, 가중치 근거
-  - [ ] `docs/INGESTION_PIPELINE.md` — 2-stage pipeline, JSONL checkpoint, incremental, 크래시 복구, 병렬 worker 튜닝
-  - [ ] `CLAUDE.md` 의 "Documentation" 테이블에 3개 추가
-- **Effort**: 6~8h
-- **Test plan**: 다른 팀원이 각 문서대로 실행 후 피드백
+  - [x] 신규 `docs/QUICKSTART.md` — 10 단계 (요구사항 → clone → start → Ollama pull → api → dashboard → ingest → search → test → stop) + 자주 막히는 곳 + 다음 단계
+  - [x] 신규 `docs/RAG_PIPELINE.md` — 9단계 파이프라인 흐름 + 단계별 상세 + 가중치 SSOT + 캐시 계층 + 응답 스키마 + fallback + 관찰성
+  - [x] 신규 `docs/INGESTION_PIPELINE.md` — Stage 1/2, JSONL checkpoint, incremental, crash recovery, 병렬 튜닝, 품질 게이트
+  - [x] `CLAUDE.md::Documentation` 테이블에 QUICKSTART + RAG_PIPELINE + INGESTION_PIPELINE + TESTING 추가 + "신규 개발자 QUICKSTART 부터" 가이드
 
 ---
 
@@ -480,7 +477,8 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 | 2026-04-15 | #22 | Fix/gguf tokenizer model gemma3 | 이전 머지 |
 | 2026-04-16 | #23 | Base model registry + admin UI + toolchain | Phase 0 완료 |
 | 2026-04-16 | #24 | IMPROVEMENT_PLAN + PR1 prompt injection + PR2 bare except + PR3 perf | Phase A batch 1 |
-| 2026-04-16 | #25 (대기) | PR4 toolchain env var strict + DistillDefaults drift | Phase A batch 2 시작 |
+| 2026-04-16 | #25 | PR4 toolchain env var strict + PR5 config drift | Phase A batch 2 |
+| 2026-04-16 | #26 (대기) | PR6 coverage baseline + PR7 blocker docs | Phase A batch 3 — **Phase A 완료** |
 
 ---
 
