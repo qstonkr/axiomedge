@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.enrich_metadata import (
+from scripts.backfill.enrich_metadata import (
     _extract_date_tokens,
     _is_valid_name,
     extract_date_from_docname,

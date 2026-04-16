@@ -218,7 +218,7 @@ class DistillSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DISTILL_")
 
     enabled: bool = Field(default=True, description="Distill 플러그인 활성화")
-    config_path: str = Field(default="distill.yaml", description="프로필 YAML 경로")
+    config_path: str = Field(default="deploy/distill.yaml", description="프로필 YAML 경로")
     work_dir: str = Field(default="/tmp/distill", description="빌드 작업 디렉토리")
     llm_concurrency: int = Field(default=3, ge=1, le=10, description="Teacher LLM 동시 호출 수")
     llm_timeout_sec: int = Field(default=120, ge=10, description="Teacher LLM 호출 타임아웃")

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.backfill_morphemes import (
+from scripts.backfill.backfill_morphemes import (
     _tally_points,
     _update_point_morphemes,
     extract_morphemes,
@@ -89,7 +89,7 @@ class TestUpdatePointMorphemes:
         mock_token = MagicMock(form="시스템", tag="NNG")
         mock_kiwi.tokenize.return_value = [mock_token]
 
-        with patch("scripts.backfill_morphemes.requests") as mock_requests:
+        with patch("scripts.backfill.backfill_morphemes.requests") as mock_requests:
             mock_requests.post.return_value = MagicMock(status_code=200)
             result = _update_point_morphemes("kb_test", point, mock_kiwi)
 
@@ -116,7 +116,7 @@ class TestTallyPoints:
         mock_token = MagicMock(form="시스템", tag="NNG")
         mock_kiwi.tokenize.return_value = [mock_token]
 
-        with patch("scripts.backfill_morphemes.requests") as mock_requests:
+        with patch("scripts.backfill.backfill_morphemes.requests") as mock_requests:
             mock_requests.post.return_value = MagicMock(status_code=200)
             updated, skipped = _tally_points(points, "kb_test", mock_kiwi)
 

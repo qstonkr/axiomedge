@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.run_rag_evaluation import (
+from scripts.distill.run_rag_evaluation import (
     _build_eval_result,
     _check_recall,
     _get_auth_headers,

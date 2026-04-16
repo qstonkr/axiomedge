@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.run_llm_enrichment import (
+from scripts.backfill.run_llm_enrichment import (
     _classify_l2_name,
     _generate_definition,
 )

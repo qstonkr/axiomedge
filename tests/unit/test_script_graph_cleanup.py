@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.graph_cleanup import (
+from scripts.graphrag.graph_cleanup import (
     KB_ID_NORMALIZE,
     NON_PERSON_BLOCKLIST,
     PLACEHOLDER_NAMES,

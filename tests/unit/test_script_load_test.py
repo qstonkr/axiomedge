@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.load_test import RequestResult, percentile
+from scripts.benchmark.load_test import RequestResult, percentile
 
 
 # ---------------------------------------------------------------------------

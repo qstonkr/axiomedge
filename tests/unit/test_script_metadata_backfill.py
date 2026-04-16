@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.run_metadata_backfill import (
+from scripts.backfill.run_metadata_backfill import (
     _build_point_update,
     _process_backfill_point,
 )
@@ -112,7 +112,7 @@ class TestProcessBackfillPoint:
 
         mock_metadata = {"owner": "김철수", "l1_category": "운영", "quality_score": 0.75}
 
-        with patch("scripts.run_metadata_backfill._compute_doc_metadata", return_value=mock_metadata):
+        with patch("scripts.backfill.run_metadata_backfill._compute_doc_metadata", return_value=mock_metadata):
             _process_backfill_point(
                 point, force=False, doc_cache=doc_cache, stats=stats,
                 category_counts=Counter(), owner_counts=Counter(), updates=updates,
@@ -137,7 +137,7 @@ class TestProcessBackfillPoint:
 
         mock_metadata = {"owner": "새소유자", "l1_category": "운영", "quality_score": 0.9}
 
-        with patch("scripts.run_metadata_backfill._compute_doc_metadata", return_value=mock_metadata):
+        with patch("scripts.backfill.run_metadata_backfill._compute_doc_metadata", return_value=mock_metadata):
             _process_backfill_point(
                 point, force=True, doc_cache={}, stats=stats,
                 category_counts=Counter(), owner_counts=Counter(), updates=updates,
@@ -156,7 +156,7 @@ class TestProcessBackfillPoint:
         updates = []
         doc_cache = {"d1": {"owner": "cached", "l1_category": "기타", "quality_score": 0.6}}
 
-        with patch("scripts.run_metadata_backfill._compute_doc_metadata") as mock_compute:
+        with patch("scripts.backfill.run_metadata_backfill._compute_doc_metadata") as mock_compute:
             _process_backfill_point(
                 point, force=False, doc_cache=doc_cache, stats=stats,
                 category_counts=Counter(), owner_counts=Counter(), updates=updates,

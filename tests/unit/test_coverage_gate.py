@@ -11,7 +11,7 @@ import pytest
 # scripts/ 는 sys.path 에 없으므로 직접 import
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
-import coverage_gate  # type: ignore  # noqa: E402
+from scripts.ops import coverage_gate  # type: ignore  # noqa: E402
 
 
 class TestFilterSrcPython:

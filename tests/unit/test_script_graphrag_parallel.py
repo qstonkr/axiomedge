@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.run_graphrag_parallel import process_chunk
+from scripts.graphrag.run_graphrag_parallel import process_chunk
 
 
 # ---------------------------------------------------------------------------
