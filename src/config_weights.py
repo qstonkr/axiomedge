@@ -1,11 +1,50 @@
-"""Centralized weights, thresholds, and tuning parameters.
+"""Centralized weights, thresholds, and tuning parameters (SSOT).
 
-All search-accuracy-affecting numerical values are defined here.
-Change values here instead of hunting through individual files.
+검색/인제스트/임베딩/캐시/LLM 관련 **하이퍼파라미터** 를 한 곳에 모은다.
+코드에서는 ``from src.config_weights import weights`` 한 줄만 쓰면 됨.
+
+### Config 3파일 경계 (이 파일은 가운데)
+
+| 파일 | 역할 |
+|---|---|
+| ``src/config.py`` | **인프라** — DB 주소, 포트, timeout, 연결 풀 (env var override) |
+| ``src/config_weights.py`` (이 파일) | **하이퍼파라미터** — 검색 가중치, threshold, chunk 크기, 캐시 TTL |
+| ``src/distill/config.py`` | **Distill 프로필** — LoRA, lr, epochs, QA style (YAML / DB override) |
+
+**이 파일에 있어야 하는 것**: 검색 결과 점수에 영향을 주는 수치, 문서 처리
+파이프라인의 크기/비율 파라미터, 캐시 TTL/크기, OCR/LLM 호출 설정.
+
+**이 파일에 있으면 안 되는 것**: 서비스 주소/포트 (→ ``config.py``), 학습
+epochs/lr/LoRA (→ ``distill/config.py``).
+
+### 섹션 맵 (파일 내부 탐색용)
+
+- **RerankerWeights** — composite reranker 가중치 (model/base/source/entity)
+- **HybridSearchWeights** — dense vs sparse RRF 가중치
+- **SimilarityThresholds** — 검색 유사도 임계값
+- **PreprocessorConfig** — query 전처리 파라미터
+- **ConfidenceConfig** — confidence tier 결정 기준
+- **ResponseConfig** — LLM 응답 생성 제어
+- **QualityConfig** — 문서 품질 게이트
+- **OCRConfig** — PaddleOCR 설정
+- **LLMConfig** — LLM 호출 timeout / max tokens / temperature
+- **EmbeddingConfig** — 임베더 차원 / batch (SSOT for dimension=1024)
+- **ChunkingConfig** — chunk 크기 / overlap
+- **PipelineConfig** — 인제스트 배치 크기 / Neo4j batch
+- **TimeoutConfig** — 단계별 timeout
+- **DedupConfig** — 4-stage dedup threshold
+- **SearchDefaults** — top_k 기본값
+- **TrustScoreWeights** — 신뢰도 / freshness 가중치
+- **CacheConfig** — L1/L2 캐시 TTL + 크기
+- **Weights** — 위 전체를 묶는 aggregator
 
 Usage:
     from src.config_weights import weights
     threshold = weights.reranker.model_weight
+
+향후 이 파일을 ``src/config/weights/*.py`` 서브 패키지로 분할하되,
+``from src.config_weights import weights`` import 는 facade 로 유지 예정
+(Phase C, docs/IMPROVEMENT_PLAN.md 참고).
 """
 
 from __future__ import annotations

@@ -1,9 +1,23 @@
-"""Distill 빌드 프로필 설정 관리.
+"""Distill 빌드 프로필 설정 관리 (SSOT for 학습 파라미터).
 
 distill.yaml 로드/저장/검증. DB 저장 시 시드 데이터로 사용.
 
-인프라 설정(work_dir, timeout 등)은 src/config.py의 DistillSettings(SSOT).
-이 파일은 프로필(학습 파라미터) 스키마만 담당.
+### Config 3파일 경계 (이 파일은 오른쪽 끝)
+
+| 파일 | 역할 |
+|---|---|
+| ``src/config.py`` | **인프라** — DB, Qdrant, Ollama, timeout, 연결 풀 |
+| ``src/config_weights.py`` | **하이퍼파라미터** — 검색 가중치, threshold, chunk 크기 |
+| ``src/distill/config.py`` (이 파일) | **Distill 프로필** — LoRA, training, QA style, deploy |
+
+**이 파일에 있어야 하는 것**: LoRA rank/alpha, learning_rate, epochs,
+max_seq_length, QA 응답 스타일, 베이스 모델 참조, 배포 설정 (S3 bucket 등).
+프로필 단위로 override 되는 "학습 파라미터" 전부.
+
+**이 파일에 있으면 안 되는 것**: build_timeout_sec (→ ``config.py::DistillSettings``),
+검색 가중치 (→ ``config_weights.py``), 서비스 포트 (→ ``config.py``).
+
+인프라 설정(work_dir, timeout 등)은 ``src/config.py::DistillSettings`` (SSOT).
 """
 
 from __future__ import annotations

@@ -299,31 +299,28 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [ ] `src/auth/providers.py::create_auth_provider` if-elif 제거
 - **Effort**: 6~8h
 
-### PR9. `routes/distill.py` 분할 ⏳
+### PR9. `routes/distill.py` 분할 🔀 (partial)
 
 - **Severity**: 🔴 Blocker (SRP)
 - **축**: SRP + Modularity
-- **Why**: 1360줄 / 53개 엔드포인트 / 7개 도메인 (Profile, Build, TrainingData, EdgeServer, BaseModel, EdgeLog, AppVersion) 혼재
-- **Files**:
-  - [ ] `src/api/routes/distill_profiles.py`
-  - [ ] `src/api/routes/distill_builds.py`
-  - [ ] `src/api/routes/distill_training_data.py`
-  - [ ] `src/api/routes/distill_edge_servers.py`
-  - [ ] `src/api/routes/distill_base_models.py`
-  - [ ] `src/api/routes/distill_edge_logs.py`
-  - [ ] `src/api/routes/distill.py` → facade 로 축소 (re-export only)
-  - [ ] (미래 SPA 대비) `/api/v1/admin/distill/*` URL prefix 로 통일 검토
-- **Effort**: 4~6h
-- **리스크**: 기존 엔드포인트 URL 유지 필수 (외부 consumer 영향)
+- **Files (완료)**:
+  - [x] `src/api/routes/distill_training_data.py` (379줄, 14 endpoint 이동)
+  - [x] `src/api/routes/distill.py` 1373 → 1078줄 + deferred `_get_state` import
+  - [x] Circular import 해결 + `_spawn_background` 패턴 통합
+  - [x] `tests/unit/test_distill_training_data_routes.py` (14 cases)
+- **Follow-up (Phase C)**:
+  - distill_profiles, distill_builds, distill_edge_servers, distill_base_models, distill_edge_logs 분리
+  - distill.py → thin facade
+  - SPA admin prefix 검토
+- **머지**: PR #27 (2026-04-16)
 
-### PR10. Distill data generation Pipeline Stage Protocol ⏳
+### PR10. Distill data generation Pipeline Stage Protocol 🔀
 
 - **Severity**: 🟠 Major
 - **축**: SRP + Modularity
-- **Why**: `generate_data_for_review()` 가 6 단계 한 함수 150줄. 새 단계 추가 어려움.
-- **Files**:
-  - [ ] 신규 `src/distill/pipeline/__init__.py`
-  - [ ] 신규 `src/distill/pipeline/stages.py` — `DataGenStage` Protocol + `DataGenContext`
+- **Files (완료)**:
+  - [x] 신규 `src/distill/pipeline/__init__.py`
+  - [x] 신규 `src/distill/pipeline/stages.py` — DataGenStage Protocol + DataGenContext + DataGenPipeline + make_context
   - [ ] 신규 `src/distill/pipeline/stages/qa_generation.py`
   - [ ] 신규 `src/distill/pipeline/stages/generality.py`
   - [ ] 신규 `src/distill/pipeline/stages/reformat.py` — AnswerReformatter 어댑터
