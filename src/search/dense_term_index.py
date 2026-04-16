@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 if TYPE_CHECKING:
-    from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+    from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
 logger = logging.getLogger(__name__)
 

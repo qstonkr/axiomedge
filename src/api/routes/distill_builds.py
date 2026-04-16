@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 

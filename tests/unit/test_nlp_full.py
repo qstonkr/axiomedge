@@ -13,7 +13,7 @@ import pytest
 
 class TestTermNormalizer:
     def setup_method(self):
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
         self.TN = TermNormalizer
 
     def test_normalize_empty(self):
@@ -97,7 +97,7 @@ class TestTermNormalizer:
 
 class TestLexicalScorer:
     def setup_method(self):
-        from src.nlp.lexical_scorer import LexicalScorer
+        from src.nlp.korean.lexical_scorer import LexicalScorer
         self.scorer = LexicalScorer()
 
     def test_identical_terms(self):
@@ -132,7 +132,7 @@ class TestLexicalScorer:
 
 class TestLexicalScorerInternal:
     def setup_method(self):
-        from src.nlp.lexical_scorer import LexicalScorer
+        from src.nlp.korean.lexical_scorer import LexicalScorer
         self.scorer = LexicalScorer()
 
     def test_levenshtein_identical(self):
@@ -180,7 +180,7 @@ class TestMorphemeAnalyzerFallback:
     """Test the regex fallback path (no Kiwi)."""
 
     def setup_method(self):
-        from src.nlp.morpheme_analyzer import KoreanMorphemeAnalyzer
+        from src.nlp.korean.morpheme_analyzer import KoreanMorphemeAnalyzer
         # Reset singleton
         KoreanMorphemeAnalyzer._instance = None
         KoreanMorphemeAnalyzer._kiwi = None
@@ -197,7 +197,7 @@ class TestMorphemeAnalyzerFallback:
         return __builtins__.__import__(name, *args, **kwargs)
 
     def teardown_method(self):
-        from src.nlp.morpheme_analyzer import KoreanMorphemeAnalyzer
+        from src.nlp.korean.morpheme_analyzer import KoreanMorphemeAnalyzer
         KoreanMorphemeAnalyzer._instance = None
         KoreanMorphemeAnalyzer._kiwi = None
         KoreanMorphemeAnalyzer._kiwi_available = None
@@ -235,13 +235,13 @@ class TestMorphemeAnalyzerFallback:
 
 class TestMorphemeAnalyzerConstants:
     def test_korean_particles_is_frozenset(self):
-        from src.nlp.morpheme_analyzer import KOREAN_PARTICLES
+        from src.nlp.korean.morpheme_analyzer import KOREAN_PARTICLES
         assert isinstance(KOREAN_PARTICLES, frozenset)
         assert "은" in KOREAN_PARTICLES
         assert "는" in KOREAN_PARTICLES
 
     def test_pos_tags_contains_common_tags(self):
-        from src.nlp.morpheme_analyzer import POS_TAGS
+        from src.nlp.korean.morpheme_analyzer import POS_TAGS
         assert "NNG" in POS_TAGS
         assert "NNP" in POS_TAGS
         assert "VV" in POS_TAGS
@@ -250,19 +250,19 @@ class TestMorphemeAnalyzerConstants:
 
 class TestNoOpAnalyzer:
     def test_analyze(self):
-        from src.nlp.morpheme_analyzer import NoOpKoreanMorphemeAnalyzer
+        from src.nlp.korean.morpheme_analyzer import NoOpKoreanMorphemeAnalyzer
         analyzer = NoOpKoreanMorphemeAnalyzer()
         result = analyzer.analyze("hello world")
         assert len(result.tokens) == 2
         assert result.nouns == ["hello", "world"]
 
     def test_strip_particles(self):
-        from src.nlp.morpheme_analyzer import NoOpKoreanMorphemeAnalyzer
+        from src.nlp.korean.morpheme_analyzer import NoOpKoreanMorphemeAnalyzer
         analyzer = NoOpKoreanMorphemeAnalyzer()
         assert analyzer.strip_particles("데이터를") == "데이터를"
 
     def test_extract_nouns(self):
-        from src.nlp.morpheme_analyzer import NoOpKoreanMorphemeAnalyzer
+        from src.nlp.korean.morpheme_analyzer import NoOpKoreanMorphemeAnalyzer
         analyzer = NoOpKoreanMorphemeAnalyzer()
         assert analyzer.extract_nouns("a b c") == ["a", "b", "c"]
 
@@ -273,7 +273,7 @@ class TestNoOpAnalyzer:
 
 class TestKoreanProcessor:
     def setup_method(self):
-        from src.nlp.korean_processor import KoreanProcessor
+        from src.nlp.korean.korean_processor import KoreanProcessor
         self.processor = KoreanProcessor(
             max_chunk_tokens=100,
             chunk_overlap_sentences=1,
@@ -324,11 +324,11 @@ class TestKoreanProcessor:
         assert result.text == "테스트 텍스트"
 
     def test_regex_split_sentences_static(self):
-        from src.nlp.korean_processor import KoreanProcessor
+        from src.nlp.korean.korean_processor import KoreanProcessor
         result = KoreanProcessor._regex_split_sentences("Hello. World!")
         assert len(result) >= 1
 
     def test_env_bool(self):
-        from src.nlp.korean_processor import KoreanProcessor
+        from src.nlp.korean.korean_processor import KoreanProcessor
         assert KoreanProcessor._env_bool("NONEXISTENT_VAR_123", True) is True
         assert KoreanProcessor._env_bool("NONEXISTENT_VAR_123", False) is False

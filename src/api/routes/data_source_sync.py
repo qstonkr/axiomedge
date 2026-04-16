@@ -322,7 +322,7 @@ async def _run_ingestion(
     if collections:
         await collections.ensure_collection(kb_id)
 
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.ingestion import IngestionPipeline
 
     legal_graph_extractor = state.get("legal_graph_extractor")
     if legal_graph_extractor is None:
@@ -330,7 +330,7 @@ async def _run_ingestion(
         # existing Neo4j driver via its parent class. We wire it lazily
         # so non-legal KBs aren't impacted if Neo4j is unreachable.
         try:
-            from src.pipeline.legal_graph import LegalGraphExtractor
+            from src.pipelines.legal_graph import LegalGraphExtractor
 
             legal_graph_extractor = LegalGraphExtractor()
         except Exception as e:  # noqa: BLE001

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.pipeline.summary_tree_builder import (
+from src.pipelines.summary_tree_builder import (
     _cluster_embeddings,
     build_summary_layer,
     build_summary_tree,

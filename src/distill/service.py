@@ -15,7 +15,7 @@ from pathlib import Path
 
 from src.distill.config import DistillConfig, DistillProfile
 from src.distill.repository import DistillRepository
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class DistillService:
 
         Stage 순서: QA 생성 → 범용성 → (legacy aug) → ID 부여 → reformat → augment
         """
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         from src.distill.config import dict_to_profile
         from src.distill.data_gen.generality_filter import GeneralityFilter
         from src.distill.data_generator import DistillDataGenerator
@@ -163,7 +163,7 @@ class DistillService:
 
     async def generate_test_data(self, profile_name: str, count: int = 50) -> dict:
         """테스트용 시드 데이터셋 생성 (SageMaker EXAONE Teacher)."""
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         from src.distill.data_gen.generality_filter import GeneralityFilter
         from src.distill.data_gen.test_data_templates import generate_test_qa
 
@@ -275,7 +275,7 @@ class DistillService:
         rag_url = get_settings().distill.rag_api_url
         search_group = (profile_dict or {}).get("search_group", "")
 
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         group_repo = SearchGroupRepository(self.session_factory)
         kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
 
@@ -326,7 +326,7 @@ class DistillService:
             raise ValueError(f"Profile not found: {profile_name}")
 
         search_group = profile_dict.get("search_group", "")
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         group_repo = SearchGroupRepository(self.session_factory)
         kb_ids = await group_repo.resolve_kb_ids(group_name=search_group)
 
@@ -568,7 +568,7 @@ class DistillService:
             return data_path
 
         # ── 기존 경로: 자동 생성 + auto-approve ──
-        from src.database.repositories.search_group import SearchGroupRepository
+        from src.stores.postgres.repositories.search_group import SearchGroupRepository
         from src.distill.data_generator import DistillDataGenerator
 
         generator = DistillDataGenerator(

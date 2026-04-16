@@ -1,9 +1,9 @@
 """Unit tests for EmbeddingProvider Protocol compliance."""
 
-from src.embedding.types import EmbeddingProvider
-from src.embedding.ollama_provider import OllamaEmbeddingProvider
-from src.embedding.tei_provider import TEIEmbeddingProvider
-from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+from src.nlp.embedding.types import EmbeddingProvider
+from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
+from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
+from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
 
 class TestEmbeddingProviderProtocol:
@@ -27,7 +27,7 @@ class TestEmbeddingProviderProtocol:
         assert OnnxBgeEmbeddingProvider.backend == "onnx"
 
     def test_all_have_consistent_dimension(self) -> None:
-        from src.config_weights import weights
+        from src.config.weights import weights
         expected = weights.embedding.dimension
         assert OllamaEmbeddingProvider._DENSE_DIM == expected
         assert TEIEmbeddingProvider._DENSE_DIM == expected

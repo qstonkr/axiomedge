@@ -10,12 +10,12 @@ from dataclasses import dataclass
 import pytest
 
 from src.search.pipeline.protocol import SearchContext, SearchPipeline, SearchStage
-from src.pipeline.stages.protocol import (
+from src.pipelines.stages.protocol import (
     IngestionStageContext,
     IngestionPipelineRunner,
     IngestionStage,
 )
-from src.domain.models import RawDocument, IngestionResult
+from src.core.models import RawDocument, IngestionResult
 
 
 # ==========================================================================

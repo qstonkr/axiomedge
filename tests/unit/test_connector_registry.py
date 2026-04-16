@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.providers.connector import (
+from src.core.providers.connector import (
     CONNECTOR_REGISTRY,
     IConnector,
     create_connector,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from src.pipeline.freshness_ranker import FreshnessConfig, FreshnessRanker, RankedResult
+from src.pipelines.freshness_ranker import FreshnessConfig, FreshnessRanker, RankedResult
 
 
 def _make_result(

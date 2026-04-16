@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.domain.models import RawDocument
-from src.pipeline.ingestion import IngestionPipeline, IngestionFeatureFlags
+from src.core.models import RawDocument
+from src.pipelines.ingestion import IngestionPipeline, IngestionFeatureFlags
 
 
 def _make_raw(

@@ -1,6 +1,6 @@
 """Unit tests for cache types — DOMAIN_THRESHOLDS, CacheEntry."""
 
-from src.cache.cache_types import (
+from src.stores.redis.cache_types import (
     CacheDomain,
     CacheEntry,
     DOMAIN_THRESHOLDS,
@@ -15,7 +15,7 @@ class TestDomainThresholds:
         assert CacheDomain.GENERAL in DOMAIN_THRESHOLDS
 
     def test_values_match_config_weights(self) -> None:
-        from src.config_weights import weights
+        from src.config.weights import weights
         c = weights.cache
         assert DOMAIN_THRESHOLDS[CacheDomain.POLICY] == c.threshold_policy
         assert DOMAIN_THRESHOLDS[CacheDomain.CODE] == c.threshold_code

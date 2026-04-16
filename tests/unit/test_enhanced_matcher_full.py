@@ -542,7 +542,7 @@ class TestMatchBatch:
         ))
         m.load_standard_terms([FakeTerm(term="A")])
         # Create a batch larger than reduced_ce_max_terms
-        from src.config_weights import weights as _w
+        from src.config.weights import weights as _w
         big_batch = [FakeTerm(term=f"term_{i}") for i in range(_w.similarity.reduced_ce_max_terms + 1)]
         results = await m.match_batch(big_batch)
         assert len(results) == len(big_batch)
@@ -654,7 +654,7 @@ class TestBruteForceSplit:
 
     def test_match_found(self):
         m = _make_matcher()
-        from src.nlp.term_normalizer import TermNormalizer
+        from src.nlp.korean.term_normalizer import TermNormalizer
         m._word_lookup = {
             TermNormalizer.normalize_for_comparison("테스트"): FakeTerm(term="테스트"),
             TermNormalizer.normalize_for_comparison("시스템"): FakeTerm(term="시스템"),

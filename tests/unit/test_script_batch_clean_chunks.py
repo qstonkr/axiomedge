@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.batch_clean_chunks import (
+from scripts.backfill.batch_clean_chunks import (
     _log_dry_run_sample,
     _process_chunk,
     get_collection_name,
@@ -63,7 +63,7 @@ class TestProcessChunk:
         content = "This is clean text with no issues."
         point = {"id": "p1", "payload": {"content": content, "document_name": "doc"}}
 
-        with patch("scripts.batch_clean_chunks.clean_chunk_text", return_value=content):
+        with patch("scripts.backfill.batch_clean_chunks.clean_chunk_text", return_value=content):
             was_cleaned, had_error = _process_chunk(client, "kb_test", point, dry_run=False, cleaned_count=0)
 
         assert was_cleaned is False
@@ -73,7 +73,7 @@ class TestProcessChunk:
         client = MagicMock()
         point = {"id": "p1", "payload": {"content": "dirty  text", "document_name": "doc.pdf"}}
 
-        with patch("scripts.batch_clean_chunks.clean_chunk_text", return_value="dirty text"):
+        with patch("scripts.backfill.batch_clean_chunks.clean_chunk_text", return_value="dirty text"):
             was_cleaned, had_error = _process_chunk(client, "kb_test", point, dry_run=True, cleaned_count=0)
 
         assert was_cleaned is True
@@ -89,8 +89,8 @@ class TestProcessChunk:
 
         point = {"id": "p1", "payload": {"content": "dirty  text", "document_name": "doc"}}
 
-        with patch("scripts.batch_clean_chunks.clean_chunk_text", return_value="dirty text"):
-            with patch("scripts.batch_clean_chunks.update_payload", return_value=True):
+        with patch("scripts.backfill.batch_clean_chunks.clean_chunk_text", return_value="dirty text"):
+            with patch("scripts.backfill.batch_clean_chunks.update_payload", return_value=True):
                 was_cleaned, had_error = _process_chunk(
                     client, "kb_test", point, dry_run=False, cleaned_count=0,
                 )
@@ -102,8 +102,8 @@ class TestProcessChunk:
         client = MagicMock()
         point = {"id": "p1", "payload": {"content": "dirty  text", "document_name": "doc"}}
 
-        with patch("scripts.batch_clean_chunks.clean_chunk_text", return_value="dirty text"):
-            with patch("scripts.batch_clean_chunks.update_payload", return_value=False):
+        with patch("scripts.backfill.batch_clean_chunks.clean_chunk_text", return_value="dirty text"):
+            with patch("scripts.backfill.batch_clean_chunks.update_payload", return_value=False):
                 was_cleaned, had_error = _process_chunk(
                     client, "kb_test", point, dry_run=False, cleaned_count=0,
                 )

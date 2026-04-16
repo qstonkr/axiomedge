@@ -9,13 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from src.vectordb.client import (
+from src.stores.qdrant.client import (
     QdrantClientProvider,
     QdrantConfig,
     QdrantSearchResult,
 )
-from src.vectordb.collections import QdrantCollectionManager
-from src.vectordb.search import QdrantSearchEngine
+from src.stores.qdrant.collections import QdrantCollectionManager
+from src.stores.qdrant.search import QdrantSearchEngine
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ class TestQueryCandidates:
         err.status_code = 500
         client.query_points = AsyncMock(side_effect=err)
 
-        from src.vectordb.search import QdrantServerError
+        from src.stores.qdrant.search import QdrantServerError
         with pytest.raises(QdrantServerError):
             await engine.query_candidates(
                 kb_id="test",

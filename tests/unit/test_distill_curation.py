@@ -335,7 +335,7 @@ class TestConstants:
     def _import_constants(self):
         import sys
         from pathlib import Path
-        dashboard_dir = str(Path(__file__).parent.parent.parent / "dashboard")
+        dashboard_dir = str(Path(__file__).parent.parent.parent / "src" / "apps" / "dashboard")
         if dashboard_dir not in sys.path:
             sys.path.insert(0, dashboard_dir)
         from components.constants import (
@@ -456,7 +456,7 @@ class TestInitDB:
     """src/database/init_db.py — DistillBase import."""
 
     def test_distill_base_imported(self):
-        from src.database.init_db import DistillBase
+        from src.stores.postgres.init_db import DistillBase
         assert DistillBase is not None
 
 
@@ -484,14 +484,14 @@ class TestEdgeSyncFunctions:
     """edge/sync.py — utility functions."""
 
     def test_sha256_file(self, tmp_path):
-        from edge.sync import _sha256_file
+        from src.edge.sync import _sha256_file
         f = tmp_path / "test.bin"
         f.write_bytes(b"test data")
         expected = hashlib.sha256(b"test data").hexdigest()
         assert _sha256_file(f) == expected
 
     def test_read_local_version_missing(self, tmp_path, monkeypatch):
-        from edge.sync import _read_local_version
-        from edge import sync
+        from src.edge.sync import _read_local_version
+        from src.edge import sync
         monkeypatch.setattr(sync, "CURRENT_DIR", tmp_path / "nonexistent")
         assert _read_local_version() == ""

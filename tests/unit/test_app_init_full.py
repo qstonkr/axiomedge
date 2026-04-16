@@ -94,8 +94,8 @@ class TestInitCache:
         from src.api.app import _init_cache
 
         state = AppState()
-        with patch("src.cache.redis_cache.aioredis") as mock_aioredis, \
-             patch("src.cache.dedup_cache.aioredis") as mock_aioredis2:
+        with patch("src.stores.redis.redis_cache.aioredis") as mock_aioredis, \
+             patch("src.stores.redis.dedup_cache.aioredis") as mock_aioredis2:
             mock_aioredis.from_url.return_value = MagicMock()
             mock_aioredis2.from_url.return_value = MagicMock()
             await _init_cache(state)
@@ -115,11 +115,11 @@ class TestInitVectorDB:
         settings = MagicMock()
         settings.qdrant.url = "http://localhost:6333"
 
-        with patch("src.vectordb.client.QdrantConfig") as MockConfig, \
-             patch("src.vectordb.client.QdrantClientProvider") as MockProvider, \
-             patch("src.vectordb.collections.QdrantCollectionManager") as MockCM, \
-             patch("src.vectordb.search.QdrantSearchEngine") as MockSearch, \
-             patch("src.vectordb.store.QdrantStoreOperations") as MockStore:
+        with patch("src.stores.qdrant.client.QdrantConfig") as MockConfig, \
+             patch("src.stores.qdrant.client.QdrantClientProvider") as MockProvider, \
+             patch("src.stores.qdrant.collections.QdrantCollectionManager") as MockCM, \
+             patch("src.stores.qdrant.search.QdrantSearchEngine") as MockSearch, \
+             patch("src.stores.qdrant.store.QdrantStoreOperations") as MockStore:
             provider = AsyncMock()
             MockProvider.return_value = provider
             MockConfig.from_env.return_value = MagicMock()
@@ -147,7 +147,7 @@ class TestInitGraph:
     async def test_init_graph_creates_client(self):
         """Test _init_graph with Neo4j mocked at the source module level."""
         from src.api.app import _init_graph
-        import src.graph.client as graph_client_mod
+        import src.stores.neo4j.client as graph_client_mod
 
         state = AppState()
         settings = MagicMock()
@@ -164,11 +164,11 @@ class TestInitGraph:
         original_cls = graph_client_mod.Neo4jClient
         graph_client_mod.Neo4jClient = MockNeo4jClient
         try:
-            with patch("src.graph.repository.Neo4jGraphRepository"), \
+            with patch("src.stores.neo4j.repository.Neo4jGraphRepository"), \
                  patch("src.search.graph_expander.GraphSearchExpander"), \
-                 patch("src.graph.indexer.ensure_indexes", new_callable=AsyncMock) as mock_idx, \
-                 patch("src.graph.integrity.GraphIntegrityChecker"), \
-                 patch("src.graph.multi_hop_searcher.MultiHopSearcher"):
+                 patch("src.stores.neo4j.indexer.ensure_indexes", new_callable=AsyncMock) as mock_idx, \
+                 patch("src.stores.neo4j.integrity.GraphIntegrityChecker"), \
+                 patch("src.stores.neo4j.multi_hop_searcher.MultiHopSearcher"):
                 mock_idx.return_value = {"constraints_created": 0, "indexes_created": 0, "fulltext_indexes_created": 0}
                 await _init_graph(state, settings)
         finally:
@@ -189,7 +189,7 @@ class TestInitEmbedding:
         state = AppState()
         settings = MagicMock()
 
-        with patch("src.embedding.tei_provider.TEIEmbeddingProvider") as MockTEI:
+        with patch("src.nlp.embedding.tei_provider.TEIEmbeddingProvider") as MockTEI:
             instance = MagicMock()
             instance.is_ready.return_value = True
             MockTEI.return_value = instance
@@ -206,9 +206,9 @@ class TestInitEmbedding:
         settings.ollama.embedding_model = "bge-m3"
         settings.embedding.onnx_model_path = ""
 
-        with patch("src.embedding.tei_provider.TEIEmbeddingProvider", side_effect=Exception("no tei")), \
-             patch("src.embedding.ollama_provider.OllamaEmbeddingProvider") as MockOllama, \
-             patch("src.embedding.onnx_provider.OnnxBgeEmbeddingProvider") as MockOnnx:
+        with patch("src.nlp.embedding.tei_provider.TEIEmbeddingProvider", side_effect=Exception("no tei")), \
+             patch("src.nlp.embedding.ollama_provider.OllamaEmbeddingProvider") as MockOllama, \
+             patch("src.nlp.embedding.onnx_provider.OnnxBgeEmbeddingProvider") as MockOnnx:
             MockOllama.return_value.is_ready.return_value = False
             MockOnnx.return_value.is_ready.return_value = False
             await _init_embedding(state, settings)
@@ -231,8 +231,8 @@ class TestInitLLM:
         settings.ollama.context_length = 8192
 
         with patch.dict("os.environ", {"USE_SAGEMAKER_LLM": "false"}), \
-             patch("src.llm.ollama_client.OllamaClient") as MockClient, \
-             patch("src.llm.ollama_client.OllamaConfig"):
+             patch("src.nlp.llm.ollama_client.OllamaClient") as MockClient, \
+             patch("src.nlp.llm.ollama_client.OllamaConfig"):
             MockClient.return_value = MagicMock()
             await _init_llm(state, settings)
 
@@ -245,8 +245,8 @@ class TestInitLLM:
         settings = MagicMock()
 
         with patch.dict("os.environ", {"USE_SAGEMAKER_LLM": "true"}), \
-             patch("src.llm.sagemaker_client.SageMakerLLMClient") as MockSM, \
-             patch("src.llm.sagemaker_client.SageMakerConfig"):
+             patch("src.nlp.llm.sagemaker_client.SageMakerLLMClient") as MockSM, \
+             patch("src.nlp.llm.sagemaker_client.SageMakerConfig"):
             MockSM.return_value = MagicMock()
             await _init_llm(state, settings)
 
@@ -386,7 +386,7 @@ class TestInitDatabase:
         settings = MagicMock()
         settings.database.database_url = "postgresql+asyncpg://localhost/test"
 
-        with patch("src.database.init_db.init_database", new_callable=AsyncMock) as mock_init:
+        with patch("src.stores.postgres.init_db.init_database", new_callable=AsyncMock) as mock_init:
             mock_init.side_effect = Exception("connection refused")
             with pytest.raises(Exception, match="connection refused"):
                 await _init_database(state, settings)

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.pipeline.term_patterns import (
+from src.pipelines.term_patterns import (
     CAMEL_CASE_PATTERN,
     ACRONYM_PATTERN,
     HYPHENATED_PATTERN,
@@ -29,7 +29,7 @@ from src.pipeline.term_patterns import (
     is_code_artifact,
     strip_korean_particles,
 )
-from src.pipeline.term_extractor import (
+from src.pipelines.term_extractor import (
     ExtractedTerm,
     TermExtractor,
 )

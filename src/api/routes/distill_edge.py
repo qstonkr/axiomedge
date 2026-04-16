@@ -339,7 +339,7 @@ async def download_provision_script():
     """출고 스크립트 다운로드."""
     from pathlib import Path
     from fastapi.responses import FileResponse
-    script = Path(__file__).resolve().parents[3] / "edge" / "provision.sh"
+    script = Path(__file__).resolve().parents[3] / "src" / "edge" / "provision.sh"
     if not script.exists():
         raise HTTPException(status_code=404, detail="provision.sh not found")
     return FileResponse(script, media_type="text/plain", filename="provision.sh")
@@ -353,7 +353,7 @@ async def download_edge_file(filename: str):
     allowed = {"server.py", "sync.py"}
     if filename not in allowed:
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
-    filepath = Path(__file__).resolve().parents[3] / "edge" / filename
+    filepath = Path(__file__).resolve().parents[3] / "src" / "edge" / filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     return FileResponse(filepath, media_type="text/plain", filename=filename)

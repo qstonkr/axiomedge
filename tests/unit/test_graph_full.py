@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.graph.client import (
+from src.stores.neo4j.client import (
     Neo4jClient,
     NoOpNeo4jClient,
     NoOpResult,
@@ -14,7 +14,7 @@ from src.graph.client import (
     NoOpSummary,
     NoOpTransaction,
 )
-from src.graph.entity_resolver import (
+from src.stores.neo4j.entity_resolver import (
     NORMALIZATION_RULES,
     EntityResolver,
     EntityType,
@@ -22,7 +22,7 @@ from src.graph.entity_resolver import (
     ResolvedEntity,
     _basic_normalize,
 )
-from src.graph.multi_hop_searcher import (
+from src.stores.neo4j.multi_hop_searcher import (
     Expert,
     KnowledgePath,
     MultiHopSearcher,
@@ -278,7 +278,7 @@ class TestMultiHopSearcher:
         repo.find_related_chunks.return_value = {"http://doc1", "http://doc2"}
         searcher = MultiHopSearcher(graph_repository=repo)
 
-        with patch("src.graph.lucene_utils.build_lucene_or_query", return_value="test"):
+        with patch("src.stores.neo4j.lucene_utils.build_lucene_or_query", return_value="test"):
             result = await searcher.find_related(["test"])
         assert len(result) == 2
 
@@ -342,7 +342,7 @@ class TestMultiHopSearcher:
 
 class TestGraphSchema:
     def test_schema_constants_exist(self):
-        from src.graph.schema import (
+        from src.stores.neo4j.schema import (
             NODE_TYPES,
             RELATION_TYPES,
             GRAPH_CONSTRAINTS,
@@ -358,7 +358,7 @@ class TestGraphSchema:
         assert "OWNED_BY" in CARDINALITY_RULES
 
     async def test_apply_schema(self):
-        from src.graph.schema import apply_schema
+        from src.stores.neo4j.schema import apply_schema
 
         client = AsyncMock()
         client.execute_write.return_value = {"nodes_created": 0}
@@ -370,7 +370,7 @@ class TestGraphSchema:
         assert client.execute_write.await_count > 0
 
     async def test_apply_schema_handles_already_exists(self):
-        from src.graph.schema import apply_schema
+        from src.stores.neo4j.schema import apply_schema
 
         client = AsyncMock()
         client.execute_write.side_effect = Exception("already exists")

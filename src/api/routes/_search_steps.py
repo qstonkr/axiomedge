@@ -16,9 +16,9 @@ from typing import Any
 from fastapi import HTTPException
 
 from src.api.routes.metrics import inc as metrics_inc
-from src.config_weights import weights as _w  # alias for timeout refs
-from src.config_weights import weights
-from src.domain.models import SearchChunk
+from src.config.weights import weights as _w  # alias for timeout refs
+from src.config.weights import weights
+from src.core.models import SearchChunk
 from src.search.crag_evaluator import RetrievalAction
 from src.search.transparency_formatter import SourceType, TransparencyFormatter
 from src.search.trust_score_service import SOURCE_CREDIBILITY
@@ -699,7 +699,7 @@ async def _step_cache_store(
     multi_cache = state.get("multi_layer_cache")
     if multi_cache:
         try:
-            from src.cache.cache_types import CacheDomain
+            from src.stores.redis.cache_types import CacheDomain
             await multi_cache.set(
                 query, response_dict, domain=CacheDomain.KB_SEARCH,
                 metadata={"kb_ids": collections},
@@ -796,7 +796,7 @@ async def _step_tree_expand(
         expanded_ids = [s.chunk_id for s in siblings] + [s.chunk_id for s in section_hits]
         if expanded_ids:
             expanded_scores = {s.chunk_id: s.score for s in (*siblings, *section_hits)}
-            from src.pipeline.qdrant_utils import str_to_uuid
+            from src.pipelines.qdrant_utils import str_to_uuid
             from src.api.routes.search_helpers import retrieve_chunks_by_ids
             point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
             loaded = await retrieve_chunks_by_ids(
@@ -1012,7 +1012,7 @@ async def _check_multi_layer_cache(
 ) -> HubSearchResponse | None:
     """Try multi-layer cache lookup."""
     try:
-        from src.cache.cache_types import CacheDomain
+        from src.stores.redis.cache_types import CacheDomain
         cache_entry = await multi_cache.get(
             query, domain=CacheDomain.KB_SEARCH,
             kb_ids=cache_collections, top_k=top_k,

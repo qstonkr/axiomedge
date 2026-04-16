@@ -16,7 +16,7 @@ import pytest
 # Lifecycle State Machine
 # ===========================================================================
 
-from src.domain.lifecycle import (
+from src.core.lifecycle import (
     LifecycleStateMachine,
     LifecycleStatus,
     TransitionError,
@@ -177,7 +177,7 @@ class TestLifecycleStateMachine:
 # Conflict Detector data classes
 # ===========================================================================
 
-from src.pipeline.dedup.conflict_detector import (
+from src.pipelines.dedup.conflict_detector import (
     ConflictType,
     ConflictSeverity,
     ConflictDetail,

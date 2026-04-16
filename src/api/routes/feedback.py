@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query
 
 from src.api.app import _get_state
-from src.domain.models import FeedbackType
+from src.core.models import FeedbackType
 
 logger = logging.getLogger(__name__)
 

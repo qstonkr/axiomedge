@@ -121,7 +121,7 @@ class TestRunDataSourceSync:
     @pytest.mark.asyncio
     async def test_successful_crawl_and_ingest(self, mock_state, source):
         from src.connectors.confluence.models import CrawlSpaceResult
-        from src.domain.models import RawDocument, ConnectorResult
+        from src.core.models import RawDocument, ConnectorResult
 
         fake_crawl_result = CrawlSpaceResult(pages=[], page_dicts=[])
         fake_docs = [
@@ -143,7 +143,7 @@ class TestRunDataSourceSync:
             patch("src.connectors.confluence.crawl_space", return_value=fake_crawl_result),
             patch("src.connectors.confluence.save_results"),
             patch("src.connectors.crawl_result.CrawlResultConnector") as MockConnector,
-            patch("src.pipeline.ingestion.IngestionPipeline") as MockPipeline,
+            patch("src.pipelines.ingestion.IngestionPipeline") as MockPipeline,
         ):
             connector_instance = AsyncMock()
             connector_instance.fetch.return_value = fake_connector_result
@@ -170,7 +170,7 @@ class TestRunDataSourceSync:
     @pytest.mark.asyncio
     async def test_no_documents_still_completes(self, mock_state, source):
         from src.connectors.confluence.models import CrawlSpaceResult
-        from src.domain.models import ConnectorResult
+        from src.core.models import ConnectorResult
 
         fake_crawl_result = CrawlSpaceResult(pages=[], page_dicts=[])
         empty_result = ConnectorResult(
@@ -284,7 +284,7 @@ class TestDataSourceRepoCompleteSync:
     @pytest.mark.asyncio
     async def test_complete_sync_updates_fields(self):
         """Verify complete_sync calls update with correct fields."""
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
 
         mock_session = AsyncMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -639,7 +639,7 @@ class TestRunIngestion:
             "graphrag_extractor": None,
         }
 
-        with patch("src.pipeline.ingestion.IngestionPipeline") as MockPipeline:
+        with patch("src.pipelines.ingestion.IngestionPipeline") as MockPipeline:
             pipeline_instance = AsyncMock()
             pipeline_instance.ingest.return_value = ingest_result
             MockPipeline.return_value = pipeline_instance
@@ -671,7 +671,7 @@ class TestRunIngestion:
             "graphrag_extractor": None,
         }
 
-        with patch("src.pipeline.ingestion.IngestionPipeline") as MockPipeline:
+        with patch("src.pipelines.ingestion.IngestionPipeline") as MockPipeline:
             pipeline_instance = AsyncMock()
             pipeline_instance.ingest.side_effect = RuntimeError("parse error")
             MockPipeline.return_value = pipeline_instance

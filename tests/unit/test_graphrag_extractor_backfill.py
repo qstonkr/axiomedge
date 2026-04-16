@@ -4,7 +4,7 @@ Tests _is_corrupted_entity, _is_invalid_person, _reclassify_person,
 and _validate_entity from src/pipeline/graphrag/extractor.py.
 """
 
-from src.pipeline.graphrag.extractor import (
+from src.pipelines.graphrag.extractor import (
     _is_corrupted_entity,
     _is_invalid_person,
     _reclassify_person,

@@ -16,7 +16,7 @@ import pytest
 # Chunker
 # ===========================================================================
 
-from src.pipeline.chunker import Chunker, ChunkStrategy, ChunkResult, HeadingChunk
+from src.pipelines.chunker import Chunker, ChunkStrategy, ChunkResult, HeadingChunk
 
 
 class TestChunker:
@@ -97,7 +97,7 @@ class TestHeadingChunk:
 # SemHash
 # ===========================================================================
 
-from src.pipeline.dedup.semhash import (
+from src.pipelines.dedup.semhash import (
     SemHash,
     NoOpEmbeddingProvider,
     DocumentEmbedding,
@@ -229,7 +229,7 @@ class TestSemHash:
 # OllamaClient
 # ===========================================================================
 
-from src.llm.ollama_client import OllamaClient, OllamaConfig
+from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
 
 
 class TestOllamaConfig:
@@ -307,7 +307,7 @@ class TestOllamaClient:
 # DedupResultTracker
 # ===========================================================================
 
-from src.pipeline.dedup.result_tracker import DedupResultTracker, _enum_val
+from src.pipelines.dedup.result_tracker import DedupResultTracker, _enum_val
 
 
 class TestEnumVal:

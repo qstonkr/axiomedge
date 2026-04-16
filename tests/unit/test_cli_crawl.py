@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cli.crawl import (
+from src.cli.crawl import (
     SUPPORTED_EXTENSIONS,
     _build_doc,
     _load_crawl_state,

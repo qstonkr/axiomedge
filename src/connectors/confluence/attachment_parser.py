@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 from .models import AttachmentOCRPolicy, AttachmentParseResult
 
 logger = logging.getLogger(__name__)
@@ -1148,7 +1148,7 @@ class AttachmentParser:
         """싱글톤 PaddleOCR 인스턴스 반환 (amd64 only, no fallback)."""
         if cls._ocr_instance is None:
             try:
-                from src.ocr.paddle_ocr_provider import PaddleOCRProvider
+                from src.nlp.ocr.paddle_ocr_provider import PaddleOCRProvider
                 cls._ocr_instance = PaddleOCRProvider()
                 cls._ocr_type = "paddle"
                 logger.info("[OCR] PaddleOCR singleton created")

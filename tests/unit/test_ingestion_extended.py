@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.domain.models import RawDocument
-from src.pipeline.document_parser import ParseResult
-from src.pipeline.ingestion import (
+from src.core.models import RawDocument
+from src.pipelines.document_parser import ParseResult
+from src.pipelines.ingestion import (
     IngestionPipeline,
     NoOpEmbedder,
     NoOpGraphStore,
@@ -196,7 +196,7 @@ class TestIngestFlow:
         """Pipeline with quality filter that blocks low quality."""
         p = self._make_pipeline()
         p.enable_quality_filter = True
-        from src.pipeline.quality_processor import QualityTier
+        from src.pipelines.quality_processor import QualityTier
         p.min_quality_tier = QualityTier.GOLD
         raw = _make_raw(content="tiny")
         result = _run(p.ingest(raw, collection_name="test-kb"))

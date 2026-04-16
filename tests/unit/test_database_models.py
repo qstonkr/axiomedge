@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.database.models import (
+from src.stores.postgres.models import (
     ApprovedKnowledgeEventModel,
     AuditLogModel,
     ContributorReputationModel,

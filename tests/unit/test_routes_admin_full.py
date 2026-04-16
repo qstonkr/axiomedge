@@ -466,7 +466,7 @@ class TestConfigWeights:
         assert isinstance(result, dict)
 
     def test_update_weights(self):
-        from src.config_weights import weights
+        from src.config.weights import weights
         original = weights.to_dict()
         try:
             result = _run(admin_mod.update_config_weights({"search.top_k": 10}))

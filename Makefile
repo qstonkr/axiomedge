@@ -17,13 +17,13 @@ setup-distill-toolchain:
 
 # === Infrastructure ===
 start:
-	docker compose up -d
+	docker compose -f deploy/docker-compose.yml up -d
 	@echo "Qdrant: http://localhost:6333"
 	@echo "Neo4j:  http://localhost:7474"
 	@echo "Ollama: http://localhost:11434"
 
 stop:
-	docker compose down
+	docker compose -f deploy/docker-compose.yml down
 
 # === Services ===
 api: tei-refresh
@@ -35,7 +35,7 @@ tei-refresh:
 	@uv run python scripts/refresh_tei_access.py
 
 dashboard:
-	uv run streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+	uv run streamlit run src/apps/dashboard/app.py --server.address 0.0.0.0 --server.port 8501
 
 # === MCP Server ===
 mcp:
@@ -46,17 +46,17 @@ mcp-sse:
 
 # === CLI ===
 crawl:
-	uv run python -m cli.crawl $(ARGS)
+	uv run python -m src.cli.crawl $(ARGS)
 
 ingest: tei-refresh
-	uv run python -m cli.ingest $(ARGS)
+	uv run python -m src.cli.ingest $(ARGS)
 
 search:
-	uv run python -m cli.search $(ARGS)
+	uv run python -m src.cli.search $(ARGS)
 
 # === Docker Build ===
 docker-build:
-	docker build --target api -t knowledge-local:latest .
+	docker build -f deploy/Dockerfile --target api -t knowledge-local:latest .
 
 # === K8s (k3s + local-path) ===
 k8s-install-k3s:
@@ -100,12 +100,12 @@ test-unit:
 		--cov-report=json:coverage.json \
 		--cov-fail-under=75 \
 		-q
-	@PYTHONPATH=dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
+	@PYTHONPATH=src/apps/dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
 
 # 빠른 iteration 용 — coverage 측정 skip.
 test-unit-fast:
 	uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py $(shell ls tests/unit/test_dashboard_*.py 2>/dev/null | sed 's/^/--ignore=/') -q --no-cov
-	@PYTHONPATH=dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
+	@PYTHONPATH=src/apps/dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
 
 # PR 이 수정한 src/*.py 파일 각각 80% floor 검사. test-unit 이 먼저 실행돼
 # coverage.json 을 생성해야 한다.

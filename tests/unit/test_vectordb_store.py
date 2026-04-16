@@ -11,15 +11,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.vectordb.client import (
+from src.stores.qdrant.client import (
     ADMIN_STATS_CACHE_TTL_S,
     DEFAULT_HYDRATION_EXCLUDE_FIELDS,
     QdrantClientProvider,
     QdrantConfig,
     QdrantSearchResult,
 )
-from src.vectordb.collections import QdrantCollectionManager
-from src.vectordb.store import QdrantStoreOperations
+from src.stores.qdrant.collections import QdrantCollectionManager
+from src.stores.qdrant.store import QdrantStoreOperations
 
 
 # ---------------------------------------------------------------------------

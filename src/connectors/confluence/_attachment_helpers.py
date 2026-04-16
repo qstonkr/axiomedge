@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 from .models import AttachmentOCRPolicy, AttachmentParseResult
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def _ocr_worker_fn(image_bytes: bytes) -> tuple:
     try:
         if not hasattr(_ocr_worker_fn, "_ocr"):
             try:
-                from src.ocr.paddle_ocr_provider import PaddleOCRProvider
+                from src.nlp.ocr.paddle_ocr_provider import PaddleOCRProvider
 
                 _ocr_worker_fn._ocr = PaddleOCRProvider()
             except ImportError:

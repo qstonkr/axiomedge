@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.llm.ollama_client import OllamaClient, OllamaConfig, OllamaLLMClient
-from src.llm.utils import estimate_token_count, sanitize_text
+from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig, OllamaLLMClient
+from src.nlp.llm.utils import estimate_token_count, sanitize_text
 
 
 # ---------------------------------------------------------------------------

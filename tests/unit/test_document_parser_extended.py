@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
-from src.pipeline.document_parser import (
+from src.pipelines.document_parser import (
     ParseResult,
     _extract_pdf_date,
     _parse_text,
@@ -142,38 +142,38 @@ class TestParseBytes:
         result = parse_bytes(data, "data.csv")
         assert "a,b" in result
 
-    @patch("src.pipeline.document_parser._parse_pdf")
+    @patch("src.pipelines.document_parser._parse_pdf")
     def test_pdf_dispatch(self, mock_parse):
         mock_parse.return_value = "pdf text"
         result = parse_bytes(b"pdf-data", "test.pdf")
         assert result == "pdf text"
         mock_parse.assert_called_once()
 
-    @patch("src.pipeline.document_parser._parse_docx")
+    @patch("src.pipelines.document_parser._parse_docx")
     def test_docx_dispatch(self, mock_parse):
         mock_parse.return_value = "docx text"
         result = parse_bytes(b"docx-data", "test.docx")
         assert result == "docx text"
 
-    @patch("src.pipeline.document_parser._parse_xlsx")
+    @patch("src.pipelines.document_parser._parse_xlsx")
     def test_xlsx_dispatch(self, mock_parse):
         mock_parse.return_value = "xlsx text"
         result = parse_bytes(b"xlsx-data", "test.xlsx")
         assert result == "xlsx text"
 
-    @patch("src.pipeline.document_parser._parse_pptx")
+    @patch("src.pipelines.document_parser._parse_pptx")
     def test_pptx_dispatch(self, mock_parse):
         mock_parse.return_value = "pptx text"
         result = parse_bytes(b"pptx-data", "test.pptx")
         assert result == "pptx text"
 
-    @patch("src.pipeline.document_parser._convert_ppt_to_pptx", return_value=None)
+    @patch("src.pipelines.document_parser._convert_ppt_to_pptx", return_value=None)
     def test_ppt_no_libreoffice(self, mock_convert):
         result = parse_bytes(b"ppt-data", "test.ppt")
         assert result == ""
 
-    @patch("src.pipeline.document_parser._parse_pptx", return_value="pptx text")
-    @patch("src.pipeline.document_parser._convert_ppt_to_pptx", return_value=b"converted")
+    @patch("src.pipelines.document_parser._parse_pptx", return_value="pptx text")
+    @patch("src.pipelines.document_parser._convert_ppt_to_pptx", return_value=b"converted")
     def test_ppt_with_conversion(self, mock_convert, mock_parse):
         result = parse_bytes(b"ppt-data", "test.ppt")
         assert result == "pptx text"
@@ -184,13 +184,13 @@ class TestParseBytes:
 # ---------------------------------------------------------------------------
 
 class TestParseBytesEnhanced:
-    @patch("src.pipeline.document_parser._parse_pdf_enhanced")
+    @patch("src.pipelines.document_parser._parse_pdf_enhanced")
     def test_pdf_enhanced(self, mock_parse):
         mock_parse.return_value = ParseResult(text="enhanced pdf")
         result = parse_bytes_enhanced(b"data", "test.pdf")
         assert result.text == "enhanced pdf"
 
-    @patch("src.pipeline.document_parser._parse_pptx_enhanced")
+    @patch("src.pipelines.document_parser._parse_pptx_enhanced")
     def test_pptx_enhanced(self, mock_parse):
         mock_parse.return_value = ParseResult(text="enhanced pptx")
         result = parse_bytes_enhanced(b"data", "test.pptx")
@@ -200,12 +200,12 @@ class TestParseBytesEnhanced:
         result = parse_bytes_enhanced(b"hello", "test.txt")
         assert result.text == "hello"
 
-    @patch("src.pipeline.document_parser._convert_ppt_to_pptx", return_value=None)
+    @patch("src.pipelines.document_parser._convert_ppt_to_pptx", return_value=None)
     def test_ppt_enhanced_conversion_fail(self, mock_convert):
         result = parse_bytes_enhanced(b"data", "test.ppt")
         assert "Error" in result.text
 
-    @patch("src.pipeline.document_parser._process_images_ocr", return_value=("ocr text", []))
+    @patch("src.pipelines.document_parser._process_images_ocr", return_value=("ocr text", []))
     def test_image_enhanced(self, mock_ocr):
         result = parse_bytes_enhanced(b"fake-image", "test.png")
         assert result.ocr_text == "ocr text"
@@ -228,14 +228,14 @@ class TestParseFile:
     def test_file_too_large(self, tmp_path):
         large_file = tmp_path / "big.txt"
         large_file.write_text("x" * 100)
-        with patch("src.pipeline.document_parser.MAX_FILE_SIZE", 10):
+        with patch("src.pipelines.document_parser.MAX_FILE_SIZE", 10):
             with pytest.raises(ValueError, match="File too large"):
                 parse_file(str(large_file))
 
     def test_file_enhanced_too_large(self, tmp_path):
         large_file = tmp_path / "big.txt"
         large_file.write_text("x" * 100)
-        with patch("src.pipeline.document_parser.MAX_FILE_SIZE", 10):
+        with patch("src.pipelines.document_parser.MAX_FILE_SIZE", 10):
             with pytest.raises(ValueError, match="File too large"):
                 parse_file_enhanced(str(large_file))
 
@@ -258,13 +258,13 @@ class TestParsePdf:
         mock_doc.__iter__ = MagicMock(return_value=iter([mock_page]))
 
         with patch("pymupdf.open", return_value=mock_doc):
-            from src.pipeline.document_parser import _parse_pdf
+            from src.pipelines.document_parser import _parse_pdf
             result = _parse_pdf(b"fake-pdf", "test.pdf")
             assert "Page 1" in result
 
     def test_parse_pdf_corrupt(self):
         with patch("pymupdf.open", side_effect=Exception("corrupt")):
-            from src.pipeline.document_parser import _parse_pdf
+            from src.pipelines.document_parser import _parse_pdf
             with pytest.raises(ValueError, match="PDF open failed"):
                 _parse_pdf(b"bad-pdf", "test.pdf")
 
@@ -290,7 +290,7 @@ class TestParseDocx:
         mock_doc.tables = []
 
         with patch("docx.Document", return_value=mock_doc):
-            from src.pipeline.document_parser import _parse_docx
+            from src.pipelines.document_parser import _parse_docx
             result = _parse_docx(b"fake-docx", "test.docx")
             assert "Hello paragraph" in result
             assert "## Heading Text" in result
@@ -308,13 +308,13 @@ class TestParseDocx:
         mock_doc.tables = [mock_table]
 
         with patch("docx.Document", return_value=mock_doc):
-            from src.pipeline.document_parser import _parse_docx
+            from src.pipelines.document_parser import _parse_docx
             result = _parse_docx(b"fake-docx", "test.docx")
             assert "cell value" in result
 
     def test_parse_docx_corrupt(self):
         with patch("docx.Document", side_effect=Exception("corrupt")):
-            from src.pipeline.document_parser import _parse_docx
+            from src.pipelines.document_parser import _parse_docx
             with pytest.raises(ValueError, match="DOCX open failed"):
                 _parse_docx(b"bad-docx", "test.docx")
 
@@ -337,7 +337,7 @@ class TestParseXlsx:
         mock_wb.__getitem__ = MagicMock(return_value=mock_sheet)
 
         with patch("openpyxl.load_workbook", return_value=mock_wb):
-            from src.pipeline.document_parser import _parse_xlsx
+            from src.pipelines.document_parser import _parse_xlsx
             result = _parse_xlsx(b"fake-xlsx", "test.xlsx")
             assert "Sheet1" in result
             assert "Header1" in result
@@ -368,7 +368,7 @@ class TestParsePptx:
         with patch("pptx.Presentation", return_value=mock_prs), \
              patch("pptx.enum.shapes.MSO_SHAPE_TYPE") as mock_enum:
             mock_enum.GROUP = 999  # something that won't match
-            from src.pipeline.document_parser import _parse_pptx
+            from src.pipelines.document_parser import _parse_pptx
             result = _parse_pptx(b"fake-pptx", "test.pptx")
             assert "Slide 1" in result
 
@@ -380,7 +380,7 @@ class TestParsePptx:
 class TestConvertPptToPptx:
     @patch("shutil.which", return_value=None)
     def test_no_soffice(self, mock_which):
-        from src.pipeline.document_parser import _convert_ppt_to_pptx
+        from src.pipelines.document_parser import _convert_ppt_to_pptx
         result = _convert_ppt_to_pptx(b"data", "test.ppt")
         assert result is None
 
@@ -388,6 +388,6 @@ class TestConvertPptToPptx:
     @patch("subprocess.run")
     def test_conversion_failure(self, mock_run, mock_which):
         mock_run.return_value = MagicMock(returncode=1, stderr=b"error")
-        from src.pipeline.document_parser import _convert_ppt_to_pptx
+        from src.pipelines.document_parser import _convert_ppt_to_pptx
         result = _convert_ppt_to_pptx(b"data", "test.ppt")
         assert result is None

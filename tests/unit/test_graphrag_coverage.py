@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pipeline.graphrag_extractor import (
+from src.pipelines.graphrag_extractor import (
     GraphRAGExtractor,
     GraphRAGBatchProcessor,
     GraphNode,
@@ -682,7 +682,7 @@ class TestCreateRelationship:
 
 class TestLLMClients:
     def test_sagemaker_invoke(self):
-        from src.pipeline.graphrag_extractor import _SageMakerLLMClient
+        from src.pipelines.graphrag_extractor import _SageMakerLLMClient
         client = _SageMakerLLMClient()
         mock_boto_client = MagicMock()
         mock_boto_client.invoke_endpoint.return_value = {

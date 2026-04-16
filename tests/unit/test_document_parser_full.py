@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pipeline.document_parser import (
+from src.pipelines.document_parser import (
     ParseResult,
     _extract_pdf_date,
     _table_to_markdown,
@@ -165,7 +165,7 @@ class TestParseFile:
         assert "key: val" in parse_file(str(f))
 
     def test_too_large(self, tmp_path):
-        from src.pipeline.document_parser import MAX_FILE_SIZE
+        from src.pipelines.document_parser import MAX_FILE_SIZE
         f = tmp_path / "huge.txt"
         f.write_bytes(b"x" * (MAX_FILE_SIZE + 1))
         with pytest.raises(ValueError, match="File too large"):
@@ -183,7 +183,7 @@ class TestParseFileEnhanced:
         assert result.text == ""
 
     def test_too_large(self, tmp_path):
-        from src.pipeline.document_parser import MAX_FILE_SIZE
+        from src.pipelines.document_parser import MAX_FILE_SIZE
         f = tmp_path / "huge.pdf"
         f.write_bytes(b"x" * (MAX_FILE_SIZE + 1))
         with pytest.raises(ValueError, match="File too large"):
@@ -257,7 +257,7 @@ class TestParseBytesEnhanced:
 
     def test_image_extension_routes_to_image_parser(self):
         """Image extensions should route through _parse_image -> _process_images_ocr."""
-        with patch("src.pipeline.document_parser._process_images_ocr", return_value=("ocr text", [])) as mock_ocr:
+        with patch("src.pipelines.document_parser._process_images_ocr", return_value=("ocr text", [])) as mock_ocr:
             result = parse_bytes_enhanced(b"fake image data", "photo.png")
             assert isinstance(result, ParseResult)
             mock_ocr.assert_called_once()
@@ -265,7 +265,7 @@ class TestParseBytesEnhanced:
     def test_image_extensions(self):
         """All image extensions should be handled."""
         for ext in (".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"):
-            with patch("src.pipeline.document_parser._process_images_ocr", return_value=("", [])):
+            with patch("src.pipelines.document_parser._process_images_ocr", return_value=("", [])):
                 result = parse_bytes_enhanced(b"data", f"img{ext}")
                 assert isinstance(result, ParseResult)
 
@@ -291,12 +291,12 @@ class TestParseBytesEnhanced:
 
 class TestConvertPptToPptx:
     def test_no_soffice(self):
-        from src.pipeline.document_parser import _convert_ppt_to_pptx
+        from src.pipelines.document_parser import _convert_ppt_to_pptx
         with patch("shutil.which", return_value=None):
             assert _convert_ppt_to_pptx(b"data", "test.ppt") is None
 
     def test_conversion_failure(self):
-        from src.pipeline.document_parser import _convert_ppt_to_pptx
+        from src.pipelines.document_parser import _convert_ppt_to_pptx
         with patch("shutil.which", return_value="/usr/bin/soffice"):
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock(returncode=1, stderr=b"error")
@@ -304,13 +304,13 @@ class TestConvertPptToPptx:
 
     def test_timeout(self):
         import subprocess
-        from src.pipeline.document_parser import _convert_ppt_to_pptx
+        from src.pipelines.document_parser import _convert_ppt_to_pptx
         with patch("shutil.which", return_value="/usr/bin/soffice"):
             with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="soffice", timeout=30)):
                 assert _convert_ppt_to_pptx(b"data", "test.ppt") is None
 
     def test_general_exception(self):
-        from src.pipeline.document_parser import _convert_ppt_to_pptx
+        from src.pipelines.document_parser import _convert_ppt_to_pptx
         with patch("shutil.which", return_value="/usr/bin/soffice"):
             with patch("subprocess.run", side_effect=OSError("boom")):
                 assert _convert_ppt_to_pptx(b"data", "test.ppt") is None
@@ -322,11 +322,11 @@ class TestConvertPptToPptx:
 
 class TestParseText:
     def test_utf8(self):
-        from src.pipeline.document_parser import _parse_text
+        from src.pipelines.document_parser import _parse_text
         assert _parse_text(b"hello") == "hello"
 
     def test_euc_kr(self):
-        from src.pipeline.document_parser import _parse_text
+        from src.pipelines.document_parser import _parse_text
         data = "한글".encode("euc-kr")
         result = _parse_text(data)
         assert "한글" in result

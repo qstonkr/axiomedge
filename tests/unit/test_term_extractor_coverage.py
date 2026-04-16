@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.pipeline.term_extractor import TermExtractor, ExtractedTerm
+from src.pipelines.term_extractor import TermExtractor, ExtractedTerm
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ class TestFilterGlobalTerms:
             ExtractedTerm(term="graphrag", pattern_type="camel_case", occurrences=5),
             ExtractedTerm(term="localterm", pattern_type="noun", occurrences=3),
         ]
-        with patch("src.nlp.term_normalizer.TermNormalizer") as MockNorm:
+        with patch("src.nlp.korean.term_normalizer.TermNormalizer") as MockNorm:
             instance = MockNorm.return_value
             instance.normalize_for_comparison = lambda t: t.lower()
             filtered = await ex._filter_global_terms(candidates, "test-kb")
@@ -287,7 +287,7 @@ class TestFilterGlobalTerms:
             ExtractedTerm(term="정산", pattern_type="noun", occurrences=5),
             ExtractedTerm(term="정산금", pattern_type="noun", occurrences=3),
         ]
-        with patch("src.nlp.term_normalizer.TermNormalizer") as MockNorm:
+        with patch("src.nlp.korean.term_normalizer.TermNormalizer") as MockNorm:
             instance = MockNorm.return_value
             instance.normalize_for_comparison = lambda t: t
             filtered = await ex._filter_global_terms(candidates, "kb")
@@ -523,7 +523,7 @@ class TestFilterGlobalTermsEdgeCases:
         candidates = [
             ExtractedTerm(term="original_term", pattern_type="noun", occurrences=5),
         ]
-        with patch("src.nlp.term_normalizer.TermNormalizer") as MockNorm:
+        with patch("src.nlp.korean.term_normalizer.TermNormalizer") as MockNorm:
             instance = MockNorm.return_value
             # normalize returns different form
             instance.normalize_for_comparison = lambda t: "different_form"
@@ -541,7 +541,7 @@ class TestFilterGlobalTermsEdgeCases:
         mock_repo.get_by_term = mock_get_by_term
         ex = TermExtractor(glossary_repo=mock_repo)
         candidates = [ExtractedTerm(term="test", pattern_type="noun", occurrences=5)]
-        with patch("src.nlp.term_normalizer.TermNormalizer") as MockNorm:
+        with patch("src.nlp.korean.term_normalizer.TermNormalizer") as MockNorm:
             instance = MockNorm.return_value
             instance.normalize_for_comparison = lambda t: t
             filtered = await ex._filter_global_terms(candidates, "kb")
@@ -566,7 +566,7 @@ class TestFilterGlobalTermsEdgeCases:
         candidates = [
             ExtractedTerm(term="한글용어", pattern_type="noun", occurrences=5),
         ]
-        with patch("src.nlp.term_normalizer.TermNormalizer") as MockNorm:
+        with patch("src.nlp.korean.term_normalizer.TermNormalizer") as MockNorm:
             instance = MockNorm.return_value
             instance.normalize_for_comparison = lambda t: t
             filtered = await ex._filter_global_terms(candidates, "kb")

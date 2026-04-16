@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import ClassVar
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 

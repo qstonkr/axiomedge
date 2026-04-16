@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.pipeline.document_parser import ParseResult
+from src.pipelines.document_parser import ParseResult
 
 
 # ===========================================================================
@@ -19,7 +19,7 @@ from src.pipeline.document_parser import ParseResult
 
 class TestJsonlCheckpoint:
     def test_serialize_deserialize_roundtrip(self):
-        from src.pipeline.jsonl_checkpoint import serialize_parse_result, deserialize_record
+        from src.pipelines.jsonl_checkpoint import serialize_parse_result, deserialize_record
 
         pr = ParseResult(
             text="hello world",
@@ -47,14 +47,14 @@ class TestJsonlCheckpoint:
         assert len(restored_pr.tables) == 1
 
     def test_get_jsonl_path(self):
-        from src.pipeline.jsonl_checkpoint import get_jsonl_path
+        from src.pipelines.jsonl_checkpoint import get_jsonl_path
 
         path = get_jsonl_path("my-kb")
         assert "my-kb" in str(path)
         assert path.name == "parsed_documents.jsonl"
 
     def test_get_already_parsed_ids_empty(self):
-        from src.pipeline.jsonl_checkpoint import get_already_parsed_ids
+        from src.pipelines.jsonl_checkpoint import get_already_parsed_ids
 
         with tempfile.NamedTemporaryFile(suffix=".jsonl", mode="w", delete=False) as f:
             f.write("")
@@ -64,7 +64,7 @@ class TestJsonlCheckpoint:
         assert ids == set()
 
     def test_get_already_parsed_ids_with_data(self):
-        from src.pipeline.jsonl_checkpoint import get_already_parsed_ids
+        from src.pipelines.jsonl_checkpoint import get_already_parsed_ids
 
         with tempfile.NamedTemporaryFile(suffix=".jsonl", mode="w", delete=False) as f:
             f.write(json.dumps({"doc_id": "d1"}) + "\n")
@@ -77,7 +77,7 @@ class TestJsonlCheckpoint:
         assert ids == {"d1", "d2"}
 
     def test_get_already_parsed_ids_nonexistent(self):
-        from src.pipeline.jsonl_checkpoint import get_already_parsed_ids
+        from src.pipelines.jsonl_checkpoint import get_already_parsed_ids
 
         ids = get_already_parsed_ids("/nonexistent/path.jsonl")
         assert ids == set()
@@ -85,7 +85,7 @@ class TestJsonlCheckpoint:
 
 class TestJsonlWriter:
     def test_write_and_read(self):
-        from src.pipeline.jsonl_checkpoint import (
+        from src.pipelines.jsonl_checkpoint import (
             JsonlCheckpointWriter,
             JsonlCheckpointReader,
             serialize_parse_result,
@@ -108,7 +108,7 @@ class TestJsonlWriter:
         assert restored.text == "test content"
 
     def test_reader_count(self):
-        from src.pipeline.jsonl_checkpoint import JsonlCheckpointWriter, JsonlCheckpointReader
+        from src.pipelines.jsonl_checkpoint import JsonlCheckpointWriter, JsonlCheckpointReader
 
         with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
             path = f.name
@@ -122,7 +122,7 @@ class TestJsonlWriter:
         assert reader.count() == 2
 
     def test_reader_nonexistent(self):
-        from src.pipeline.jsonl_checkpoint import JsonlCheckpointReader
+        from src.pipelines.jsonl_checkpoint import JsonlCheckpointReader
 
         reader = JsonlCheckpointReader("/nonexistent/file.jsonl")
         records = list(reader)
@@ -130,7 +130,7 @@ class TestJsonlWriter:
         assert reader.count() == 0
 
     def test_reader_skips_malformed(self):
-        from src.pipeline.jsonl_checkpoint import JsonlCheckpointReader
+        from src.pipelines.jsonl_checkpoint import JsonlCheckpointReader
 
         with tempfile.NamedTemporaryFile(suffix=".jsonl", mode="w", delete=False) as f:
             f.write("not valid json\n")
@@ -148,7 +148,7 @@ class TestJsonlWriter:
 
 class TestFreshnessRanker:
     def setup_method(self):
-        from src.pipeline.freshness_ranker import FreshnessRanker, FreshnessConfig
+        from src.pipelines.freshness_ranker import FreshnessRanker, FreshnessConfig
         self.ranker = FreshnessRanker(FreshnessConfig(
             fresh_days=90,
             stale_days=365,
@@ -198,7 +198,7 @@ class TestFreshnessRanker:
         assert ranked[0].adjusted_score > 0.8
 
     def test_filter_outdated(self):
-        from src.pipeline.freshness_ranker import RankedResult
+        from src.pipelines.freshness_ranker import RankedResult
         results = [
             RankedResult(content="a", metadata={}, original_score=0.5, adjusted_score=0.5, freshness_warning=None, days_since_update=100),
             RankedResult(content="b", metadata={}, original_score=0.5, adjusted_score=0.5, freshness_warning=None, days_since_update=1000),
@@ -208,7 +208,7 @@ class TestFreshnessRanker:
         assert len(filtered) == 2
 
     def test_format_result_with_warning(self):
-        from src.pipeline.freshness_ranker import RankedResult
+        from src.pipelines.freshness_ranker import RankedResult
         result = RankedResult(
             content="test content",
             metadata={},
@@ -222,7 +222,7 @@ class TestFreshnessRanker:
         assert "test content" in formatted
 
     def test_to_int(self):
-        from src.pipeline.freshness_ranker import FreshnessRanker
+        from src.pipelines.freshness_ranker import FreshnessRanker
         assert FreshnessRanker._to_int(10) == 10
         assert FreshnessRanker._to_int("5") == 5
         assert FreshnessRanker._to_int(None) == 0
@@ -247,7 +247,7 @@ class TestFreshnessRanker:
 
 class TestConflictDetector:
     async def test_analyze_no_conflict(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
         detector = ConflictDetector(llm_client=NoOpLLMClient())
         result = await detector.analyze("d1", "Content A", "d2", "Content B")
@@ -256,7 +256,7 @@ class TestConflictDetector:
         assert result.doc_id_2 == "d2"
 
     async def test_analyze_with_conflict(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, ILLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, ILLMClient
 
         class MockLLM(ILLMClient):
             async def complete(self, prompt, model="", temperature=0.0):
@@ -280,7 +280,7 @@ class TestConflictDetector:
         assert result.max_severity is not None
 
     async def test_analyze_timeout(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, ILLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, ILLMClient
         import asyncio
 
         class SlowLLM(ILLMClient):
@@ -294,7 +294,7 @@ class TestConflictDetector:
         assert result.confidence == 0.0
 
     async def test_analyze_batch(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
         detector = ConflictDetector(llm_client=NoOpLLMClient())
         results = await detector.analyze_batch([
@@ -304,7 +304,7 @@ class TestConflictDetector:
         assert len(results) == 2
 
     def test_quick_conflict_check_dates(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
         detector = ConflictDetector(llm_client=NoOpLLMClient())
         hints = detector.quick_conflict_check(
@@ -313,14 +313,14 @@ class TestConflictDetector:
         assert any("Date" in h for h in hints)
 
     def test_quick_conflict_check_versions(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
         detector = ConflictDetector(llm_client=NoOpLLMClient())
         hints = detector.quick_conflict_check("v1.0.0", "v2.0.0")
         assert any("Version" in h for h in hints)
 
     def test_quick_conflict_check_no_conflict(self):
-        from src.pipeline.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
+        from src.pipelines.dedup.conflict_detector import ConflictDetector, NoOpLLMClient
 
         detector = ConflictDetector(llm_client=NoOpLLMClient())
         hints = detector.quick_conflict_check("same text", "same text")
@@ -329,12 +329,12 @@ class TestConflictDetector:
 
 class TestConflictAnalysisResult:
     def test_max_severity_empty(self):
-        from src.pipeline.dedup.conflict_detector import ConflictAnalysisResult
+        from src.pipelines.dedup.conflict_detector import ConflictAnalysisResult
         result = ConflictAnalysisResult(doc_id_1="d1", doc_id_2="d2")
         assert result.max_severity is None
 
     def test_max_severity_ordered(self):
-        from src.pipeline.dedup.conflict_detector import (
+        from src.pipelines.dedup.conflict_detector import (
             ConflictAnalysisResult, ConflictDetail, ConflictType, ConflictSeverity,
         )
         result = ConflictAnalysisResult(
@@ -347,7 +347,7 @@ class TestConflictAnalysisResult:
         assert result.max_severity == ConflictSeverity.CRITICAL
 
     def test_to_dict(self):
-        from src.pipeline.dedup.conflict_detector import ConflictAnalysisResult
+        from src.pipelines.dedup.conflict_detector import ConflictAnalysisResult
         result = ConflictAnalysisResult(doc_id_1="d1", doc_id_2="d2", has_conflict=False)
         d = result.to_dict()
         assert d["doc_id_1"] == "d1"
@@ -360,17 +360,17 @@ class TestConflictAnalysisResult:
 
 class TestDedupResultTracker:
     def test_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         assert tracker.enabled is False
 
     async def test_track_result_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         await tracker.track_result(MagicMock(), "kb1")  # Should not raise
 
     async def test_track_result_enabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         redis = AsyncMock()
         tracker = DedupResultTracker(redis_client=redis)
 
@@ -388,24 +388,24 @@ class TestDedupResultTracker:
         redis.xadd.assert_awaited_once()
 
     async def test_track_conflict_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         result = await tracker.track_conflict(MagicMock(), None, "kb1")
         assert result == ""
 
     async def test_resolve_conflict_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         assert await tracker.resolve_conflict("c1", "keep_both") is False
 
     async def test_get_stats_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         stats = await tracker.get_stats()
         assert stats["total_duplicates_found"] == 0
 
     async def test_get_conflicts_disabled(self):
-        from src.pipeline.dedup.result_tracker import DedupResultTracker
+        from src.pipelines.dedup.result_tracker import DedupResultTracker
         tracker = DedupResultTracker(redis_client=None)
         result = await tracker.get_conflicts()
         assert result["conflicts"] == []
@@ -417,22 +417,22 @@ class TestDedupResultTracker:
 
 class TestRedisDedupIndex:
     def test_disabled(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert idx.enabled is False
 
     async def test_contains_disabled(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.contains("kb1", "hash") is False
 
     async def test_add_disabled(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.add("kb1", "hash") is False
 
     async def test_add_enabled(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
         redis.sadd.return_value = 1
         redis.ttl.return_value = -1
@@ -444,7 +444,7 @@ class TestRedisDedupIndex:
         redis.expire.assert_awaited_once()
 
     async def test_contains_enabled(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
         redis.sismember.return_value = True
         idx = RedisDedupIndex(redis_client=redis)
@@ -452,31 +452,31 @@ class TestRedisDedupIndex:
         assert await idx.contains("kb1", "hash") is True
 
     async def test_add_batch_empty(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.add_batch("kb1", []) == 0
 
     async def test_clear(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
         idx = RedisDedupIndex(redis_client=redis)
         result = await idx.clear("kb1")
         assert result is True
 
     async def test_size(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
         redis.scard.return_value = 42
         idx = RedisDedupIndex(redis_client=redis)
         assert await idx.size("kb1") == 42
 
     async def test_contains_doc_disabled(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         idx = RedisDedupIndex(redis_client=None)
         assert await idx.contains_doc("kb1", "hash") is False
 
     async def test_add_doc(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
         redis.sadd.return_value = 1
         redis.ttl.return_value = -1
@@ -484,7 +484,7 @@ class TestRedisDedupIndex:
         assert await idx.add_doc("kb1", "hash") is True
 
     async def test_clear_docs(self):
-        from src.pipeline.dedup.redis_index import RedisDedupIndex
+        from src.pipelines.dedup.redis_index import RedisDedupIndex
         redis = AsyncMock()
         idx = RedisDedupIndex(redis_client=redis)
         assert await idx.clear_docs("kb1") is True
@@ -496,26 +496,26 @@ class TestRedisDedupIndex:
 
 class TestNeo4jKnowledgeLoader:
     def test_sanitize_label_whitelist(self):
-        from src.pipeline.neo4j_loader import Neo4jKnowledgeLoader, Neo4jConfig, ALLOWED_NODE_TYPES
+        from src.pipelines.neo4j_loader import Neo4jKnowledgeLoader, Neo4jConfig, ALLOWED_NODE_TYPES
 
         loader = Neo4jKnowledgeLoader(Neo4jConfig())
         assert loader._sanitize_label("Person", ALLOWED_NODE_TYPES, "Entity") == "Person"
         assert loader._sanitize_label("person", ALLOWED_NODE_TYPES, "Entity") == "Person"
 
     def test_sanitize_label_not_allowed(self):
-        from src.pipeline.neo4j_loader import Neo4jKnowledgeLoader, Neo4jConfig, ALLOWED_NODE_TYPES
+        from src.pipelines.neo4j_loader import Neo4jKnowledgeLoader, Neo4jConfig, ALLOWED_NODE_TYPES
 
         loader = Neo4jKnowledgeLoader(Neo4jConfig())
         assert loader._sanitize_label("MaliciousType", ALLOWED_NODE_TYPES, "Entity") == "Entity"
 
     def test_sanitize_label_empty(self):
-        from src.pipeline.neo4j_loader import Neo4jKnowledgeLoader, Neo4jConfig, ALLOWED_NODE_TYPES
+        from src.pipelines.neo4j_loader import Neo4jKnowledgeLoader, Neo4jConfig, ALLOWED_NODE_TYPES
 
         loader = Neo4jKnowledgeLoader(Neo4jConfig())
         assert loader._sanitize_label("", ALLOWED_NODE_TYPES, "Entity") == "Entity"
 
     def test_safe_identifier_pattern(self):
-        from src.pipeline.neo4j_loader import SAFE_IDENTIFIER_PATTERN
+        from src.pipelines.neo4j_loader import SAFE_IDENTIFIER_PATTERN
         assert SAFE_IDENTIFIER_PATTERN.match("Person")
         assert SAFE_IDENTIFIER_PATTERN.match("RELATED_TO")
         assert not SAFE_IDENTIFIER_PATTERN.match("123Bad")

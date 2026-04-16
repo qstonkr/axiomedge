@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.pipeline.dedup.lshbloom import LSHBloom, MinHashSignature, MinHasher, SimilarPair
+from src.pipelines.dedup.lshbloom import LSHBloom, MinHashSignature, MinHasher, SimilarPair
 
 
 class TestMinHasher:

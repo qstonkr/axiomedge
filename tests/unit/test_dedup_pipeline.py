@@ -6,14 +6,14 @@ import asyncio
 
 import pytest
 
-from src.pipeline.dedup.bloom_filter import BloomFilter
-from src.pipeline.dedup.dedup_pipeline import (
+from src.pipelines.dedup.bloom_filter import BloomFilter
+from src.pipelines.dedup.dedup_pipeline import (
     DedupPipeline,
     DedupStatus,
     Document,
     Resolution,
 )
-from src.pipeline.dedup.lshbloom import LSHBloom
+from src.pipelines.dedup.lshbloom import LSHBloom
 
 
 def _run(coro):

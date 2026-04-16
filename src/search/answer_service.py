@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 from .query_classifier import QueryClassifier, QueryType
 from .tiered_response import TieredResponseGenerator as _TRG
 

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from src.embedding.types import (
+from src.nlp.embedding.types import (
     AsyncEmbeddingProvider,
     EmbeddingProvider,
     SyncEmbeddingEncoder,

@@ -96,7 +96,7 @@ async def _correct_ocr_if_needed(parse_result) -> None:
         return
     try:
         from src.api.app import _get_state
-        from src.pipeline.ocr_corrector import correct_ocr_chunks
+        from src.pipelines.ocr_corrector import correct_ocr_chunks
         llm = _get_state().get("llm")
         if llm:
             parse_result.ocr_text = await correct_ocr_chunks(
@@ -119,8 +119,8 @@ async def _stage1_parse_to_jsonl(
     import os
     import shutil
 
-    from src.pipeline.document_parser import parse_file_enhanced
-    from src.pipeline.jsonl_checkpoint import (
+    from src.pipelines.document_parser import parse_file_enhanced
+    from src.pipelines.jsonl_checkpoint import (
         JsonlCheckpointWriter,
         get_already_parsed_ids,
         get_jsonl_path,
@@ -200,8 +200,8 @@ async def _stage2_ingest_from_jsonl(
 
     Returns (total_docs, total_chunks, errors).
     """
-    from src.domain.models import RawDocument
-    from src.pipeline.jsonl_checkpoint import JsonlCheckpointReader
+    from src.core.models import RawDocument
+    from src.pipelines.jsonl_checkpoint import JsonlCheckpointReader
 
     reader = JsonlCheckpointReader(jsonl_path)
     total_docs = 0
@@ -333,8 +333,8 @@ async def _ensure_qdrant_collection(state, kb_id: str) -> None:
 async def _create_collection_via_rest(collections, kb_id: str) -> None:
     """Create Qdrant collection via REST API as SDK fallback."""
     import httpx as _httpx
-    from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
-    from src.config_weights import weights as _cw
+    from src.stores.qdrant.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
+    from src.config.weights import weights as _cw
 
     _embed_dim = _cw.embedding.dimension
     from src.config import get_settings as _gs
@@ -417,7 +417,7 @@ async def upload_and_ingest(
     if not upload_files:
         raise HTTPException(status_code=400, detail="No files provided")
 
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.ingestion import IngestionPipeline
 
     # Ensure Qdrant collection exists before ingestion
     await _ensure_qdrant_collection(state, effective_kb_id)
@@ -487,7 +487,7 @@ async def upload_and_ingest(
 
 def _build_reingest_pipeline(state, embedder, store):
     """Build an IngestionPipeline for re-ingestion."""
-    from src.pipeline.ingestion import IngestionPipeline
+    from src.pipelines.ingestion import IngestionPipeline
     from src.api.routes.ingest import _OnnxSparseEmbedder
 
     sparse_embedder = _OnnxSparseEmbedder(embedder)
@@ -549,7 +549,7 @@ async def reingest_from_jsonl(
     Skips parsing/OCR entirely. Useful when Stage 1 succeeded but Stage 2 failed.
     """
     from src.api.app import _get_state
-    from src.pipeline.jsonl_checkpoint import get_jsonl_path, JsonlCheckpointReader
+    from src.pipelines.jsonl_checkpoint import get_jsonl_path, JsonlCheckpointReader
 
     state = _get_state()
     store = state.get("qdrant_store")

@@ -1,7 +1,7 @@
 """Unit tests for GraphRepository Protocol compliance."""
 
-from src.graph.types import GraphRepository
-from src.graph.repository import NoOpNeo4jGraphRepository
+from src.stores.neo4j.types import GraphRepository
+from src.stores.neo4j.repository import NoOpNeo4jGraphRepository
 
 
 class TestGraphRepositoryProtocol:

@@ -38,7 +38,7 @@ def _make_model(**fields):
 # ===========================================================================
 class TestDataSourceRepository:
     def test_get(self):
-        from src.database.repositories.data_source import DataSourceRepository
+        from src.stores.postgres.repositories.data_source import DataSourceRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         result_mock.scalar_one_or_none.return_value = None
@@ -56,7 +56,7 @@ class TestDataSourceRepository:
 # ===========================================================================
 class TestIngestionRunRepository:
     def test_create(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         maker, session = _make_session_maker()
         session.add = MagicMock()
         session.commit = AsyncMock()
@@ -67,7 +67,7 @@ class TestIngestionRunRepository:
         _run(_go())
 
     def test_get_by_id(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         result_mock.scalar_one_or_none.return_value = None
@@ -80,7 +80,7 @@ class TestIngestionRunRepository:
         _run(_go())
 
     def test_list_by_kb(self):
-        from src.database.repositories.ingestion_run import IngestionRunRepository
+        from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         scalars_mock = MagicMock()
@@ -100,7 +100,7 @@ class TestIngestionRunRepository:
 # ===========================================================================
 class TestTrustScoreRepository:
     def test_save(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         result_mock.scalar_one_or_none.return_value = None
@@ -117,7 +117,7 @@ class TestTrustScoreRepository:
         _run(_go())
 
     def test_get_by_kb(self):
-        from src.database.repositories.trust_score import TrustScoreRepository
+        from src.stores.postgres.repositories.trust_score import TrustScoreRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         scalars_mock = MagicMock()
@@ -137,7 +137,7 @@ class TestTrustScoreRepository:
 # ===========================================================================
 class TestLifecycleRepository:
     def test_list_by_kb(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         scalars_mock = MagicMock()
@@ -152,7 +152,7 @@ class TestLifecycleRepository:
         _run(_go())
 
     def test_list_by_status(self):
-        from src.database.repositories.lifecycle import DocumentLifecycleRepository
+        from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
         maker, session = _make_session_maker()
         result_mock = MagicMock()
         scalars_mock = MagicMock()
@@ -172,19 +172,19 @@ class TestLifecycleRepository:
 # ===========================================================================
 class TestL2SemanticCache:
     def test_init(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         from unittest.mock import patch
-        with patch("src.cache.l2_semantic_cache.aioredis") as mock_aioredis:
+        with patch("src.stores.redis.l2_semantic_cache.aioredis") as mock_aioredis:
             mock_aioredis.from_url.return_value = MagicMock()
             cache = L2SemanticCache(redis_url="redis://localhost:6379")
             assert cache is not None
 
     def test_get_no_result(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         from unittest.mock import patch
         mock_redis = AsyncMock()
         mock_redis.keys = AsyncMock(return_value=[])
-        with patch("src.cache.l2_semantic_cache.aioredis") as mock_aioredis:
+        with patch("src.stores.redis.l2_semantic_cache.aioredis") as mock_aioredis:
             mock_aioredis.from_url.return_value = mock_redis
             cache = L2SemanticCache(redis_url="redis://localhost:6379")
 
@@ -194,12 +194,12 @@ class TestL2SemanticCache:
         _run(_go())
 
     def test_clear(self):
-        from src.cache.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
         from unittest.mock import patch
         mock_redis = AsyncMock()
         mock_redis.keys = AsyncMock(return_value=["k1", "k2"])
         mock_redis.delete = AsyncMock(return_value=2)
-        with patch("src.cache.l2_semantic_cache.aioredis") as mock_aioredis:
+        with patch("src.stores.redis.l2_semantic_cache.aioredis") as mock_aioredis:
             mock_aioredis.from_url.return_value = mock_redis
             cache = L2SemanticCache(redis_url="redis://localhost:6379")
 

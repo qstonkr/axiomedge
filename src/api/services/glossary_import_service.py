@@ -11,8 +11,8 @@ from typing import Any
 
 from fastapi import UploadFile
 
-from src.nlp.morpheme_analyzer import get_analyzer
-from src.nlp.term_normalizer import TermNormalizer
+from src.nlp.korean.morpheme_analyzer import get_analyzer
+from src.nlp.korean.term_normalizer import TermNormalizer
 
 logger = logging.getLogger(__name__)
 

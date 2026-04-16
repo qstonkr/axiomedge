@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from src.api.app import _get_state
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 # Import helpers and re-export for backward compatibility
 from src.api.routes.glossary_helpers import (  # noqa: F401 — re-exports
@@ -69,7 +69,7 @@ async def get_domain_stats():
         return {"domains": {}}
     try:
         from sqlalchemy import func, select
-        from src.database.models import GlossaryTermModel
+        from src.stores.postgres.models import GlossaryTermModel
         async with await repo._get_session() as session:
             stmt = (
                 select(GlossaryTermModel.domain_name, func.count())
@@ -98,7 +98,7 @@ async def get_source_stats():
         return {"sources": {}}
     try:
         from sqlalchemy import func, select
-        from src.database.models import GlossaryTermModel
+        from src.stores.postgres.models import GlossaryTermModel
         async with await repo._get_session() as session:
             stmt = (
                 select(GlossaryTermModel.kb_id, func.count())

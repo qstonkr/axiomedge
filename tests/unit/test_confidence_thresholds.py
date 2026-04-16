@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.config_weights import weights
+from src.config.weights import weights
 from src.search.confidence_thresholds import (
     KnowledgeConfidenceThresholds,
     clamp_unit_interval,

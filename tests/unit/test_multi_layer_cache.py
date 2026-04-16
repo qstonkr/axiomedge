@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.cache.cache_types import CacheDomain, CacheEntry, ICacheLayer
-from src.cache.l1_memory_cache import L1InMemoryCache
-from src.cache.multi_layer_cache import MultiLayerCache
+from src.stores.redis.cache_types import CacheDomain, CacheEntry, ICacheLayer
+from src.stores.redis.l1_memory_cache import L1InMemoryCache
+from src.stores.redis.multi_layer_cache import MultiLayerCache
 
 
 # ---------------------------------------------------------------------------

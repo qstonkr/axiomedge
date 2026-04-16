@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from src.distill.data_gen.llm_helper import LLMHelper
-from src.llm.prompt_safety import parse_strict_score, safe_user_input
+from src.nlp.llm.prompt_safety import parse_strict_score, safe_user_input
 
 logger = logging.getLogger(__name__)
 

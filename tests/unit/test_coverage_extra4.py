@@ -16,7 +16,7 @@ import pytest
 # KoreanMorphemeAnalyzer
 # ===========================================================================
 
-from src.nlp.morpheme_analyzer import (
+from src.nlp.korean.morpheme_analyzer import (
     KoreanMorphemeAnalyzer,
     MorphemeToken,
     AnalysisResult,
@@ -132,7 +132,7 @@ class TestGetAnalyzer:
 # ===========================================================================
 
 from src.search.composite_reranker import CompositeReranker, CompositeRerankerConfig
-from src.domain.models import SearchChunk
+from src.core.models import SearchChunk
 
 
 class TestCompositeRerankerConfig:

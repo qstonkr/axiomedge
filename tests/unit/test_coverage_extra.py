@@ -12,13 +12,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from src.domain.models import RawDocument
+from src.core.models import RawDocument
 
 # ===========================================================================
 # IngestionGate
 # ===========================================================================
 
-from src.pipeline.ingestion_gate import (
+from src.pipelines.ingestion_gate import (
     IngestionGate,
     GateAction,
     GateVerdict,
@@ -434,7 +434,7 @@ class TestEnhancedSimilarityMatcher:
 # OCR Corrector
 # ===========================================================================
 
-from src.pipeline.ocr_corrector import noise_score, needs_correction, correct_ocr_text
+from src.pipelines.ocr_corrector import noise_score, needs_correction, correct_ocr_text
 
 
 class TestNoiseScore:

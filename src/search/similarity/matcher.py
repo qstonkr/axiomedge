@@ -32,9 +32,9 @@ import logging
 import math
 from typing import Any
 
-from src.config_weights import weights as _w
-from src.nlp.term_normalizer import TermNormalizer
-from src.nlp.lexical_scorer import LexicalScorer
+from src.config.weights import weights as _w
+from src.nlp.korean.term_normalizer import TermNormalizer
+from src.nlp.korean.lexical_scorer import LexicalScorer
 
 from .strategies import EnhancedMatcherConfig, MatchDecision, _PrecomputedStd
 from .utils import AUTO_MATCH_THRESHOLD, REVIEW_THRESHOLD, _strip_particles
@@ -298,7 +298,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
             return []
 
         try:
-            from src.nlp.morpheme_analyzer import get_analyzer
+            from src.nlp.korean.morpheme_analyzer import get_analyzer
 
             analyzer = get_analyzer()
             if not analyzer.is_available:

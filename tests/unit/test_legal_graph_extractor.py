@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.domain.models import RawDocument
-from src.pipeline.legal_graph import LegalGraphExtractor
-from src.pipeline.legal_graph.extractor import _CROSS_REF_RE, _law_slug
+from src.core.models import RawDocument
+from src.pipelines.legal_graph import LegalGraphExtractor
+from src.pipelines.legal_graph.extractor import _CROSS_REF_RE, _law_slug
 
 
 # ---------------------------------------------------------------------------

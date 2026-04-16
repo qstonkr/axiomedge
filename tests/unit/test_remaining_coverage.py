@@ -15,7 +15,7 @@ import pytest
 # GraphIntegrityChecker
 # ===========================================================================
 
-from src.graph.integrity import (
+from src.stores.neo4j.integrity import (
     GraphIntegrityChecker,
     IntegrityIssue,
     IntegrityReport,
@@ -161,7 +161,7 @@ class TestGraphIntegrityChecker:
 # RedisDedupIndex
 # ===========================================================================
 
-from src.pipeline.dedup.redis_index import RedisDedupIndex
+from src.pipelines.dedup.redis_index import RedisDedupIndex
 
 
 class TestRedisDedupIndex:
@@ -677,7 +677,7 @@ class TestAuthServiceFacade:
 # ===========================================================================
 
 from src.search.composite_reranker import CompositeReranker
-from src.domain.models import SearchChunk
+from src.core.models import SearchChunk
 
 
 class TestCompositeRerankerExtra:

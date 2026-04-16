@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.graph.repository import Neo4jGraphRepository, NoOpNeo4jGraphRepository
+from src.stores.neo4j.repository import Neo4jGraphRepository, NoOpNeo4jGraphRepository
 
 
 def _run(coro):

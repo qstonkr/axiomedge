@@ -13,7 +13,7 @@ import pytest
 # OllamaEmbeddingProvider
 # ---------------------------------------------------------------------------
 
-from src.embedding.ollama_provider import OllamaEmbeddingProvider
+from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
 
 
 class TestOllamaProvider:
@@ -168,7 +168,7 @@ class TestOllamaProvider:
 # TEIEmbeddingProvider
 # ---------------------------------------------------------------------------
 
-from src.embedding.tei_provider import TEIEmbeddingProvider
+from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
 
 
 class TestTEIProvider:
@@ -271,7 +271,7 @@ class TestTEIProvider:
 # DualEmbeddingProvider
 # ---------------------------------------------------------------------------
 
-from src.embedding.dual_provider import DualEmbeddingProvider, DualEmbedding
+from src.nlp.embedding.dual_provider import DualEmbeddingProvider, DualEmbedding
 
 
 class TestDualEmbedding:

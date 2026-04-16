@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 # Make dashboard modules importable (dashboard uses `from services.xxx` imports)
-_DASHBOARD_DIR = str(Path(__file__).resolve().parents[2] / "dashboard")
+_DASHBOARD_DIR = str(Path(__file__).resolve().parents[2] / "src" / "apps" / "dashboard")
 if _DASHBOARD_DIR not in sys.path:
     sys.path.insert(0, _DASHBOARD_DIR)
 

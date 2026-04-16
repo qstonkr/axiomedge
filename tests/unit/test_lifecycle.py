@@ -15,7 +15,7 @@ def _run(coro):
     finally:
         loop.close()
 
-from src.domain.lifecycle import (
+from src.core.lifecycle import (
     ALLOWED_TRANSITIONS,
     LifecycleStateMachine,
     LifecycleStatus,

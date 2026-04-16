@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.pipeline.graphrag_extractor import (
+from src.pipelines.graphrag_extractor import (
     ALLOWED_NODES,
     ALLOWED_RELATIONSHIPS,
     DEFAULT_SCHEMA_PROFILE,
@@ -397,7 +397,7 @@ class TestGraphRAGExtractorGetLlm:
     def test_ollama_by_default(self):
         ext = GraphRAGExtractor()
         with patch.dict("os.environ", {"GRAPHRAG_USE_SAGEMAKER": "false"}):
-            with patch("src.pipeline.graphrag_extractor._OllamaLLMClient") as mock_cls:
+            with patch("src.pipelines.graphrag_extractor._OllamaLLMClient") as mock_cls:
                 mock_cls.return_value = MagicMock()
                 llm = ext._get_llm()
                 assert llm is not None
@@ -405,7 +405,7 @@ class TestGraphRAGExtractorGetLlm:
     def test_sagemaker_when_enabled(self):
         ext = GraphRAGExtractor()
         with patch.dict("os.environ", {"GRAPHRAG_USE_SAGEMAKER": "true"}):
-            with patch("src.pipeline.graphrag_extractor._SageMakerLLMClient") as mock_cls:
+            with patch("src.pipelines.graphrag_extractor._SageMakerLLMClient") as mock_cls:
                 mock_cls.return_value = MagicMock()
                 llm = ext._get_llm()
                 assert llm is not None

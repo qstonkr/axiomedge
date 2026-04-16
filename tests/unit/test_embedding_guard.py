@@ -1,6 +1,6 @@
 """Unit tests for embedding guard: sparse_token_hash + vector validation."""
 
-from src.embedding.embedding_guard import (
+from src.nlp.embedding.embedding_guard import (
     EXPECTED_DIMENSION,
     sparse_token_hash,
     validate_vector,
@@ -34,7 +34,7 @@ class TestSparseTokenHash:
 
 class TestExpectedDimension:
     def test_matches_config_weights(self) -> None:
-        from src.config_weights import weights
+        from src.config.weights import weights
         assert EXPECTED_DIMENSION == weights.embedding.dimension
         assert EXPECTED_DIMENSION == 1024
 

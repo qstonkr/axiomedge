@@ -7,7 +7,7 @@ import math
 
 import pytest
 
-from src.pipeline.dedup.semhash import DocumentEmbedding, SemHash, SemanticMatch
+from src.pipelines.dedup.semhash import DocumentEmbedding, SemHash, SemanticMatch
 
 
 class FakeEmbeddingProvider:

@@ -69,7 +69,7 @@ def _get_state() -> AppState:
 
 async def _init_db_with_retry(settings) -> None:
     """Attempt DB init with up to 3 retries."""
-    from src.database.init_db import init_database
+    from src.stores.postgres.init_db import init_database
     import asyncio as _asyncio
 
     db_url = settings.database.database_url
@@ -87,22 +87,22 @@ async def _init_db_with_retry(settings) -> None:
 
 def _create_repositories(state: AppState, session_factory, db_url: str):
     """Create all repository instances and store in state."""
-    from src.database.repositories.kb_registry import KBRegistryRepository
-    from src.database.repositories.glossary import GlossaryRepository
-    from src.database.repositories.ownership import (
+    from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
+    from src.stores.postgres.repositories.glossary import GlossaryRepository
+    from src.stores.postgres.repositories.ownership import (
         DocumentOwnerRepository,
         TopicOwnerRepository,
         ErrorReportRepository,
     )
-    from src.database.repositories.feedback import FeedbackRepository
-    from src.database.repositories.ingestion_run import IngestionRunRepository
-    from src.database.repositories.trust_score import TrustScoreRepository
-    from src.database.repositories.lifecycle import DocumentLifecycleRepository
-    from src.database.repositories.data_source import DataSourceRepository
-    from src.database.repositories.traceability import ProvenanceRepository
-    from src.database.repositories.category import CategoryRepository
-    from src.database.repositories.search_group import SearchGroupRepository
-    from src.database.repositories.usage_log import UsageLogRepository
+    from src.stores.postgres.repositories.feedback import FeedbackRepository
+    from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
+    from src.stores.postgres.repositories.trust_score import TrustScoreRepository
+    from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
+    from src.stores.postgres.repositories.data_source import DataSourceRepository
+    from src.stores.postgres.repositories.traceability import ProvenanceRepository
+    from src.stores.postgres.repositories.category import CategoryRepository
+    from src.stores.postgres.repositories.search_group import SearchGroupRepository
+    from src.stores.postgres.repositories.usage_log import UsageLogRepository
 
     state["glossary_repo"] = GlossaryRepository(session_factory)
     state["doc_owner_repo"] = DocumentOwnerRepository(session_factory)
@@ -129,7 +129,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str):
 
 async def _init_database(state: AppState, settings) -> None:
     """Initialize PostgreSQL + all repositories + domain services."""
-    from src.database.session import create_async_session_factory
+    from src.stores.postgres.session import create_async_session_factory
 
     db_url = settings.database.database_url
     await _init_db_with_retry(settings)
@@ -156,14 +156,14 @@ async def _init_database(state: AppState, settings) -> None:
         if cat_repo:
             l1_cats = await cat_repo.get_l1_categories()
             if l1_cats:
-                from src.pipeline.ingestion import load_l1_categories_from_db
+                from src.pipelines.ingestion import load_l1_categories_from_db
                 load_l1_categories_from_db(l1_cats)
     except Exception as e:  # noqa: BLE001
         logger.warning("L1 category cache load failed (using defaults): %s", e)
 
     # Term extractor for ingestion
     try:
-        from src.pipeline.term_extractor import TermExtractor
+        from src.pipelines.term_extractor import TermExtractor
         state["term_extractor"] = TermExtractor(
             glossary_repo=state.get("glossary_repo"),
             embedder=state.get("embedder"),
@@ -185,7 +185,7 @@ async def _init_database(state: AppState, settings) -> None:
 
     # Lifecycle State Machine
     try:
-        from src.domain.lifecycle import LifecycleStateMachine
+        from src.core.lifecycle import LifecycleStateMachine
         state["lifecycle_service"] = LifecycleStateMachine(
             lifecycle_repo=state.get("lifecycle_repo"),
         )
@@ -211,8 +211,8 @@ async def _init_cache(state: AppState) -> None:
     # Redis cache (search cache + dedup cache + multi-layer cache)
     try:
         redis_url = _default_redis_url()
-        from src.cache.redis_cache import SearchCache
-        from src.cache.dedup_cache import DedupCache
+        from src.stores.redis.redis_cache import SearchCache
+        from src.stores.redis.dedup_cache import DedupCache
 
         state["search_cache"] = SearchCache(redis_url=redis_url)
         state["dedup_cache"] = DedupCache(redis_url=redis_url)
@@ -222,11 +222,11 @@ async def _init_cache(state: AppState) -> None:
 
     # Multi-Layer Cache (L1 memory + L2 Redis semantic)
     try:
-        from src.cache.multi_layer_cache import MultiLayerCache
-        from src.cache.l1_memory_cache import L1InMemoryCache
-        from src.cache.l2_semantic_cache import L2SemanticCache
-        from src.cache.idempotency_cache import IdempotencyCache
-        from src.config_weights import weights as _cache_weights
+        from src.stores.redis.multi_layer_cache import MultiLayerCache
+        from src.stores.redis.l1_memory_cache import L1InMemoryCache
+        from src.stores.redis.l2_semantic_cache import L2SemanticCache
+        from src.stores.redis.idempotency_cache import IdempotencyCache
+        from src.config.weights import weights as _cache_weights
 
         cache_cfg = _cache_weights.cache
         l1 = L1InMemoryCache(
@@ -280,10 +280,10 @@ async def _init_dedup(state: AppState) -> None:
     """Initialize 4-stage dedup pipeline."""
     await asyncio.sleep(0)
     try:
-        from src.pipeline.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
-        from src.pipeline.dedup.bloom_filter import BloomFilter
-        from src.pipeline.dedup.conflict_detector import OllamaLLMClient
-        from src.config_weights import weights as _w
+        from src.pipelines.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
+        from src.pipelines.dedup.bloom_filter import BloomFilter
+        from src.pipelines.dedup.conflict_detector import OllamaLLMClient
+        from src.config.weights import weights as _w
 
         dedup_cfg = _w.dedup
         bloom = BloomFilter(
@@ -339,16 +339,16 @@ async def _init_dedup(state: AppState) -> None:
 async def _init_vectordb(state: AppState, settings) -> None:
     """Initialize Qdrant client, collections, search engine, and store."""
     try:
-        from src.vectordb.client import QdrantConfig, QdrantClientProvider
+        from src.stores.qdrant.client import QdrantConfig, QdrantClientProvider
 
         config = QdrantConfig.from_env()
         provider = QdrantClientProvider(config)
         await provider.ensure_client()
         state["qdrant_provider"] = provider
 
-        from src.vectordb.collections import QdrantCollectionManager
-        from src.vectordb.search import QdrantSearchEngine
-        from src.vectordb.store import QdrantStoreOperations
+        from src.stores.qdrant.collections import QdrantCollectionManager
+        from src.stores.qdrant.search import QdrantSearchEngine
+        from src.stores.qdrant.store import QdrantStoreOperations
 
         cm = QdrantCollectionManager(provider)
         state["qdrant_collections"] = cm
@@ -365,7 +365,7 @@ async def _init_graph(state: AppState, settings) -> None:
         return
 
     try:
-        from src.graph.client import Neo4jClient
+        from src.stores.neo4j.client import Neo4jClient
 
         neo4j = Neo4jClient(
             uri=settings.neo4j.uri,
@@ -376,7 +376,7 @@ async def _init_graph(state: AppState, settings) -> None:
         await neo4j.connect()
         state["neo4j"] = neo4j
 
-        from src.graph.repository import Neo4jGraphRepository
+        from src.stores.neo4j.repository import Neo4jGraphRepository
 
         state["graph_repo"] = Neo4jGraphRepository(neo4j)
 
@@ -385,7 +385,7 @@ async def _init_graph(state: AppState, settings) -> None:
 
         # Ensure graph indexes (idempotent)
         try:
-            from src.graph.indexer import ensure_indexes
+            from src.stores.neo4j.indexer import ensure_indexes
             index_result = await ensure_indexes(neo4j)
             logger.info(
                 "Graph indexes ensured: %d constraints, %d indexes, %d fulltext",
@@ -398,8 +398,8 @@ async def _init_graph(state: AppState, settings) -> None:
 
         # Initialize graph integrity checker and multi-hop searcher
         try:
-            from src.graph.integrity import GraphIntegrityChecker
-            from src.graph.multi_hop_searcher import MultiHopSearcher
+            from src.stores.neo4j.integrity import GraphIntegrityChecker
+            from src.stores.neo4j.multi_hop_searcher import MultiHopSearcher
 
             state["graph_integrity"] = GraphIntegrityChecker(
                 neo4j_client=neo4j,
@@ -425,7 +425,7 @@ def _try_tei_embedding(_settings):
         logger.info("Cloud embedding disabled (USE_CLOUD_EMBEDDING=false), using local")
         return None
     try:
-        from src.embedding.tei_provider import TEIEmbeddingProvider
+        from src.nlp.embedding.tei_provider import TEIEmbeddingProvider
 
         from src.config import get_settings as _gs
         tei_url = _gs().tei.embedding_url
@@ -441,7 +441,7 @@ def _try_tei_embedding(_settings):
 def _try_ollama_embedding(settings):
     """Try to initialize Ollama embedding provider."""
     try:
-        from src.embedding.ollama_provider import OllamaEmbeddingProvider
+        from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
 
         ollama_embedder = OllamaEmbeddingProvider(
             base_url=settings.ollama.base_url,
@@ -458,7 +458,7 @@ def _try_ollama_embedding(settings):
 def _try_onnx_embedding(settings):
     """Try to initialize ONNX embedding provider."""
     try:
-        from src.embedding.onnx_provider import OnnxBgeEmbeddingProvider
+        from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
 
         model_path = settings.embedding.onnx_model_path or os.getenv(
             "KNOWLEDGE_BGE_ONNX_MODEL_PATH", ""
@@ -510,7 +510,7 @@ async def _init_llm(state: AppState, settings) -> None:
     """
     await asyncio.sleep(0)
     try:
-        from src.providers.llm import create_llm_client
+        from src.core.providers.llm import create_llm_client
         state["llm"] = create_llm_client(settings=settings)
     except Exception as e:  # noqa: BLE001
         logger.warning("LLM init failed: %s", e)
@@ -518,7 +518,7 @@ async def _init_llm(state: AppState, settings) -> None:
     # GraphRAG extractor
     if state.get("llm") and state.get("neo4j"):
         try:
-            from src.pipeline.graphrag_extractor import GraphRAGExtractor
+            from src.pipelines.graphrag_extractor import GraphRAGExtractor
             state["graphrag_extractor"] = GraphRAGExtractor()
             logger.info("GraphRAGExtractor initialized")
         except Exception as e:  # noqa: BLE001
@@ -546,7 +546,7 @@ async def _init_auth(state: AppState, settings) -> None:
         from src.auth.abac import DEFAULT_ABAC_POLICIES, ABACEngine
         from src.auth.rbac import RBACEngine
         from src.auth.service import AuthService
-        from src.providers.auth import create_auth_provider
+        from src.core.providers.auth import create_auth_provider
 
         auth_settings = settings.auth
 

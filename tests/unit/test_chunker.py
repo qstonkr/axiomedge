@@ -1,6 +1,6 @@
 """Unit tests for src/pipeline/chunker.py."""
 
-from src.pipeline.chunker import ChunkStrategy, Chunker, ChunkResult, extract_heading_sections
+from src.pipelines.chunker import ChunkStrategy, Chunker, ChunkResult, extract_heading_sections
 
 
 class TestChunkStrategy:

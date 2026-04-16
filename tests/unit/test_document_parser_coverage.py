@@ -19,7 +19,7 @@ import pytest
 # _extract_pdf_date
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _extract_pdf_date
+from src.pipelines.document_parser import _extract_pdf_date
 
 
 class TestExtractPdfDate:
@@ -43,7 +43,7 @@ class TestExtractPdfDate:
 # _table_to_markdown
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _table_to_markdown
+from src.pipelines.document_parser import _table_to_markdown
 
 
 class TestTableToMarkdown:
@@ -76,7 +76,7 @@ class TestTableToMarkdown:
 # _extract_page_tables
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _extract_page_tables
+from src.pipelines.document_parser import _extract_page_tables
 
 
 class TestExtractPageTables:
@@ -111,7 +111,7 @@ class TestExtractPageTables:
 # _extract_page_images
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _extract_page_images
+from src.pipelines.document_parser import _extract_page_images
 
 
 class TestExtractPageImages:
@@ -156,7 +156,7 @@ class TestExtractPageImages:
 # _classify_pdf_page
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _classify_pdf_page
+from src.pipelines.document_parser import _classify_pdf_page
 
 
 class TestClassifyPdfPage:
@@ -215,7 +215,7 @@ class TestClassifyPdfPage:
 # parse_bytes / parse_bytes_enhanced dispatch
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import parse_bytes, parse_bytes_enhanced
+from src.pipelines.document_parser import parse_bytes, parse_bytes_enhanced
 
 
 class TestParseBytes:
@@ -249,7 +249,7 @@ class TestParseBytes:
 class TestParseBytesEnhanced:
     def test_image_routing(self):
         """Image files should route to _parse_image."""
-        with patch("src.pipeline.document_parser._process_images_ocr") as mock_ocr:
+        with patch("src.pipelines.document_parser._process_images_ocr") as mock_ocr:
             mock_ocr.return_value = ("OCR text", [])
             result = parse_bytes_enhanced(b"\x89PNG\r\n" + b"\x00" * 100, "test.png")
             assert result.ocr_text == "OCR text"
@@ -259,7 +259,7 @@ class TestParseBytesEnhanced:
         assert result.text == "hello"
 
     def test_ppt_conversion_failure(self):
-        with patch("src.pipeline.document_parser._convert_ppt_to_pptx", return_value=None):
+        with patch("src.pipelines.document_parser._convert_ppt_to_pptx", return_value=None):
             result = parse_bytes_enhanced(b"ppt-data", "test.ppt")
             assert "Error" in result.text
 
@@ -268,7 +268,7 @@ class TestParseBytesEnhanced:
 # _parse_pdf with mock pymupdf
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _parse_pdf
+from src.pipelines.document_parser import _parse_pdf
 
 
 def _make_mock_pymupdf(doc):
@@ -316,7 +316,7 @@ class TestParsePdf:
 # _parse_pdf_enhanced with mock pymupdf
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _parse_pdf_enhanced
+from src.pipelines.document_parser import _parse_pdf_enhanced
 
 
 class TestParsePdfEnhanced:
@@ -377,7 +377,7 @@ class TestParsePdfEnhanced:
 
         with (
             patch.dict("sys.modules", {"pymupdf": mock_pymupdf}),
-            patch("src.pipeline.document_parser._process_images_ocr") as mock_ocr,
+            patch("src.pipelines.document_parser._process_images_ocr") as mock_ocr,
         ):
             mock_ocr.return_value = ("[Image 1 OCR] Scanned text", [])
             result = _parse_pdf_enhanced(b"pdf-data", "scanned.pdf")
@@ -398,7 +398,7 @@ class TestParsePdfEnhanced:
 
         with (
             patch.dict("sys.modules", {"pymupdf": mock_pymupdf}),
-            patch("src.pipeline.document_parser._process_images_ocr") as mock_ocr,
+            patch("src.pipelines.document_parser._process_images_ocr") as mock_ocr,
         ):
             mock_ocr.return_value = ("[Image 1 OCR] img text", [{"shapes": []}])
             result = _parse_pdf_enhanced(b"pdf", "test.pdf")
@@ -409,7 +409,7 @@ class TestParsePdfEnhanced:
 # _process_images_ocr with mocked httpx + PIL
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _process_images_ocr
+from src.pipelines.document_parser import _process_images_ocr
 
 
 class TestProcessImagesOcr:
@@ -542,7 +542,7 @@ class TestProcessImagesOcr:
 
         with (
             patch("httpx.Client") as MockClient,
-            patch("src.pipeline.document_parser._w") as mock_w,
+            patch("src.pipelines.document_parser._w") as mock_w,
         ):
             mock_w.ocr.enable_vision_analysis = True
             mock_client = MagicMock()
@@ -559,7 +559,7 @@ class TestProcessImagesOcr:
 # ParseResult
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import ParseResult
+from src.pipelines.document_parser import ParseResult
 
 
 class TestParseResult:
@@ -581,7 +581,7 @@ class TestParseResult:
 # _format_docx_paragraph
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _format_docx_paragraph
+from src.pipelines.document_parser import _format_docx_paragraph
 
 
 class TestFormatDocxParagraph:
@@ -616,7 +616,7 @@ class TestFormatDocxParagraph:
 # _convert_ppt_to_pptx
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _convert_ppt_to_pptx
+from src.pipelines.document_parser import _convert_ppt_to_pptx
 
 
 class TestConvertPptToPptx:
@@ -656,7 +656,7 @@ class TestConvertPptToPptx:
 # parse_file / parse_file_enhanced with real tmp files
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import parse_file, parse_file_enhanced
+from src.pipelines.document_parser import parse_file, parse_file_enhanced
 import tempfile
 import os
 
@@ -673,7 +673,7 @@ class TestParseFile:
     def test_file_too_large(self, tmp_path):
         f = tmp_path / "big.txt"
         f.write_bytes(b"x" * 10)
-        with patch("src.pipeline.document_parser.MAX_FILE_SIZE", 5):
+        with patch("src.pipelines.document_parser.MAX_FILE_SIZE", 5):
             with pytest.raises(ValueError, match="File too large"):
                 parse_file(str(f))
 
@@ -692,7 +692,7 @@ class TestParseFileEnhanced:
     def test_file_too_large(self, tmp_path):
         f = tmp_path / "big.txt"
         f.write_bytes(b"x" * 10)
-        with patch("src.pipeline.document_parser.MAX_FILE_SIZE", 5):
+        with patch("src.pipelines.document_parser.MAX_FILE_SIZE", 5):
             with pytest.raises(ValueError, match="File too large"):
                 parse_file_enhanced(str(f))
 
@@ -740,7 +740,7 @@ class TestHasBrokenCmapFonts:
         mock_pymupdf.open.side_effect = [doc, doc2]
 
         with patch.dict("sys.modules", {"pymupdf": mock_pymupdf}):
-            with patch("src.pipeline.document_parser._process_images_ocr", return_value=("OCR text", [])):
+            with patch("src.pipelines.document_parser._process_images_ocr", return_value=("OCR text", [])):
                 result = _parse_pdf_enhanced(b"fake", "test.pdf")
                 assert result.images_processed >= 1
 
@@ -805,7 +805,7 @@ class TestHasBrokenCmapFonts:
         mock_pymupdf.open.side_effect = [doc, doc2]
 
         with patch.dict("sys.modules", {"pymupdf": mock_pymupdf}):
-            with patch("src.pipeline.document_parser._process_images_ocr", return_value=("OCR", [])):
+            with patch("src.pipelines.document_parser._process_images_ocr", return_value=("OCR", [])):
                 result = _parse_pdf_enhanced(b"fake", "test.pdf")
                 assert result.images_processed >= 1
 
@@ -919,7 +919,7 @@ class TestProcessImagesOcrConversion:
 # _extract_pptx_modified_date
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _extract_pptx_modified_date
+from src.pipelines.document_parser import _extract_pptx_modified_date
 
 
 class TestExtractPptxModifiedDate:
@@ -948,7 +948,7 @@ class TestExtractPptxModifiedDate:
 # _extract_table_data
 # ---------------------------------------------------------------------------
 
-from src.pipeline.document_parser import _extract_table_data
+from src.pipelines.document_parser import _extract_table_data
 
 
 class TestExtractTableData:

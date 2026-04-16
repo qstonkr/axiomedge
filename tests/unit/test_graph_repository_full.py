@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.graph.repository import NoOpNeo4jGraphRepository
+from src.stores.neo4j.repository import NoOpNeo4jGraphRepository
 
 
 class TestNoOpNeo4jGraphRepository:
@@ -101,7 +101,7 @@ class TestNeo4jGraphRepositoryHelpers:
     """Test private helper methods that don't require a Neo4j connection."""
 
     def _make_repo(self):
-        from src.graph.repository import Neo4jGraphRepository
+        from src.stores.neo4j.repository import Neo4jGraphRepository
         mock_client = object()  # Unused for helper tests
         return Neo4jGraphRepository(mock_client)
 
@@ -135,13 +135,13 @@ class TestNeo4jGraphRepositoryHelpers:
         assert result == "RELATED_TO"
 
     def test_fact_relation_whitelist(self):
-        from src.graph.repository import Neo4jGraphRepository
+        from src.stores.neo4j.repository import Neo4jGraphRepository
         wl = Neo4jGraphRepository._FACT_RELATION_WHITELIST
         assert "RESPONSIBLE_FOR" in wl
         assert "BELONGS_TO" in wl
         assert "NEXT_STEP" in wl
 
     def test_fulltext_index_names(self):
-        from src.graph.repository import Neo4jGraphRepository
+        from src.stores.neo4j.repository import Neo4jGraphRepository
         assert Neo4jGraphRepository._FULLTEXT_INDEX == "entity_name_title"
         assert Neo4jGraphRepository._FULLTEXT_INDEX_GRAPHRAG == "entity_search"

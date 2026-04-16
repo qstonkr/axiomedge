@@ -18,7 +18,7 @@ sys.modules.setdefault("streamlit.components", MagicMock())
 sys.modules.setdefault("streamlit.components.v1", MagicMock())
 st_mock = sys.modules["streamlit"]
 
-_DASHBOARD_DIR = str(Path(__file__).resolve().parents[2] / "dashboard")
+_DASHBOARD_DIR = str(Path(__file__).resolve().parents[2] / "src" / "apps" / "dashboard")
 
 
 class TestAppConstants:
