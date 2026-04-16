@@ -36,7 +36,7 @@ from components.constants import (
     STEP_STATUS_ICONS,
     TIER_ICONS,
 )
-from src.config_weights import ConfidenceConfig, DedupConfig, TrustScoreWeights
+from src.config.weights import ConfidenceConfig, DedupConfig, TrustScoreWeights
 
 
 # ===========================================================================

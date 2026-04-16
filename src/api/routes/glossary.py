@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from src.api.app import _get_state
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 # Import helpers and re-export for backward compatibility
 from src.api.routes.glossary_helpers import (  # noqa: F401 — re-exports

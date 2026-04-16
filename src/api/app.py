@@ -226,7 +226,7 @@ async def _init_cache(state: AppState) -> None:
         from src.cache.l1_memory_cache import L1InMemoryCache
         from src.cache.l2_semantic_cache import L2SemanticCache
         from src.cache.idempotency_cache import IdempotencyCache
-        from src.config_weights import weights as _cache_weights
+        from src.config.weights import weights as _cache_weights
 
         cache_cfg = _cache_weights.cache
         l1 = L1InMemoryCache(
@@ -283,7 +283,7 @@ async def _init_dedup(state: AppState) -> None:
         from src.pipeline.dedup import DedupPipeline, DedupResultTracker, RedisDedupIndex
         from src.pipeline.dedup.bloom_filter import BloomFilter
         from src.pipeline.dedup.conflict_detector import OllamaLLMClient
-        from src.config_weights import weights as _w
+        from src.config.weights import weights as _w
 
         dedup_cfg = _w.dedup
         bloom = BloomFilter(

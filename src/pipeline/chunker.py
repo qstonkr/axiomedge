@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from src.config_weights import weights
+from src.config.weights import weights
 
 logger = logging.getLogger(__name__)
 

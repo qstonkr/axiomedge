@@ -27,7 +27,7 @@ class TestEmbeddingProviderProtocol:
         assert OnnxBgeEmbeddingProvider.backend == "onnx"
 
     def test_all_have_consistent_dimension(self) -> None:
-        from src.config_weights import weights
+        from src.config.weights import weights
         expected = weights.embedding.dimension
         assert OllamaEmbeddingProvider._DENSE_DIM == expected
         assert TEIEmbeddingProvider._DENSE_DIM == expected

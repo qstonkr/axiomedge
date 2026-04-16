@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, AsyncIterator
 
-from src.config_weights import weights
+from src.config.weights import weights
 
 logger = logging.getLogger(__name__)
 

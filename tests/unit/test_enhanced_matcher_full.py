@@ -542,7 +542,7 @@ class TestMatchBatch:
         ))
         m.load_standard_terms([FakeTerm(term="A")])
         # Create a batch larger than reduced_ce_max_terms
-        from src.config_weights import weights as _w
+        from src.config.weights import weights as _w
         big_batch = [FakeTerm(term=f"term_{i}") for i in range(_w.similarity.reduced_ce_max_terms + 1)]
         results = await m.match_batch(big_batch)
         assert len(results) == len(big_batch)

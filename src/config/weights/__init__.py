@@ -1,7 +1,7 @@
 """Centralized weights, thresholds, and tuning parameters (SSOT).
 
 검색/인제스트/임베딩/캐시/LLM 관련 **하이퍼파라미터** 를 한 곳에 모은다.
-코드에서는 ``from src.config_weights import weights`` 한 줄만 쓰면 됨.
+코드에서는 ``from src.config.weights import weights`` 한 줄만 쓰면 됨.
 
 ### Config 3파일 경계 (이 파일은 가운데)
 
@@ -21,7 +21,7 @@
 - **cache** — CacheConfig
 
 Usage:
-    from src.config_weights import weights
+    from src.config.weights import weights
 
     weights.reranker.model_weight      # 0.6
     weights.llm.temperature            # 0.7

@@ -37,7 +37,7 @@ from typing import Any
 
 import numpy as np
 
-from src.config_weights import weights
+from src.config.weights import weights
 
 logger = logging.getLogger(__name__)
 

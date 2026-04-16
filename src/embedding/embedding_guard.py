@@ -15,7 +15,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 

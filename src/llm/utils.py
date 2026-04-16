@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from src.config_weights import weights
+from src.config.weights import weights
 
 # Pre-compiled regex patterns for token estimation
 LATIN_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")

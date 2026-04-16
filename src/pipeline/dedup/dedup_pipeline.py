@@ -248,7 +248,7 @@ class DedupPipeline:
         """
         # Thresholds: constructor > config_weights > class fallback
         try:
-            from src.config_weights import weights
+            from src.config.weights import weights
             dedup_cfg = weights.dedup
             _cfg_near = dedup_cfg.near_duplicate_threshold
             _cfg_semantic = dedup_cfg.semantic_duplicate_threshold

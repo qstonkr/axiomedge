@@ -334,7 +334,7 @@ async def _create_collection_via_rest(collections, kb_id: str) -> None:
     """Create Qdrant collection via REST API as SDK fallback."""
     import httpx as _httpx
     from src.vectordb.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
-    from src.config_weights import weights as _cw
+    from src.config.weights import weights as _cw
 
     _embed_dim = _cw.embedding.dimension
     from src.config import get_settings as _gs

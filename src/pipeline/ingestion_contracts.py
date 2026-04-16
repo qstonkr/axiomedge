@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Any, Protocol
 
-from src.config_weights import weights
+from src.config.weights import weights
 
 logger = logging.getLogger(__name__)
 

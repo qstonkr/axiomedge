@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 from src.nlp.term_normalizer import TermNormalizer
 from src.nlp.lexical_scorer import LexicalScorer
 

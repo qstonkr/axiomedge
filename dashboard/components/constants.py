@@ -10,7 +10,7 @@ Created: 2026-02-20
 프론트 전용 표시 임계값(UI 등급 표시, 통과율 등)은 여기서 관리.
 """
 
-from src.config_weights import (
+from src.config.weights import (
     ConfidenceConfig,
     DedupConfig,
     TrustScoreWeights,

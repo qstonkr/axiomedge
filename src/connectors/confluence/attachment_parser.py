@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 from .models import AttachmentOCRPolicy, AttachmentParseResult
 
 logger = logging.getLogger(__name__)

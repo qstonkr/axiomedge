@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
 from src.api.routes.metrics import inc as metrics_inc
-from src.config_weights import weights
+from src.config.weights import weights
 from src.search.answer_guard import AnswerGuard
 from src.search.passage_cleaner import clean_chunks
 from src.search.cross_encoder_reranker import async_rerank_with_cross_encoder

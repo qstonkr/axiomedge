@@ -1,6 +1,6 @@
 """Unit tests for config_weights hot-reload and serialization."""
 
-from src.config_weights import Weights
+from src.config.weights import Weights
 
 
 class TestWeights:

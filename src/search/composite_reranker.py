@@ -34,7 +34,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import cast
 
-from ..config_weights import weights as _w
+from ..config.weights import weights as _w
 from ..domain.models import SearchChunk
 
 logger = logging.getLogger(__name__)

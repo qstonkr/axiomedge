@@ -42,7 +42,7 @@ class NoOpEmbeddingProvider:
 
     def __init__(self, dimension: int | None = None) -> None:
         if dimension is None:
-            from src.config_weights import weights
+            from src.config.weights import weights
             dimension = weights.embedding.dimension
         self._dimension = dimension
 

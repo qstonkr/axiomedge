@@ -53,12 +53,12 @@ class TestEmbeddingDimensionSSOT:
     """config_weights.weights.embedding.dimension 이 단일 SSOT."""
 
     def test_weights_embedding_dimension_is_1024(self):
-        from src.config_weights import weights
+        from src.config.weights import weights
         assert weights.embedding.dimension == 1024
 
     def test_vectordb_client_references_weights_embedding_dimension(self):
         """QdrantConfig default 가 weights SSOT 를 사용."""
-        from src.config_weights import weights
+        from src.config.weights import weights
         from src.vectordb.client import QdrantConfig
         cfg = QdrantConfig()
         assert cfg.dense_dimension == weights.embedding.dimension

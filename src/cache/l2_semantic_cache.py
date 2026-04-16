@@ -22,7 +22,7 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 from .cache_types import (
     CacheDomain,

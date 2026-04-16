@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from src.config_weights import weights
+from src.config.weights import weights
 from ..domain.models import IngestionResult, RawDocument
 from .chunker import Chunker, ChunkStrategy
 from .document_parser import parse_bytes_enhanced, ParseResult, _table_to_markdown

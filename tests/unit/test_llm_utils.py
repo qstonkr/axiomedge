@@ -22,7 +22,7 @@ class TestSanitizeText:
         assert result == "short"
 
     def test_default_max_length_from_config(self) -> None:
-        from src.config_weights import weights
+        from src.config.weights import weights
         long_text = "x" * (weights.llm.max_query_length + 100)
         result = sanitize_text(long_text)
         assert len(result) == weights.llm.max_query_length

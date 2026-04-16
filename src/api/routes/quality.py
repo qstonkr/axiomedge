@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.api.app import _get_state
 from src.config import get_settings
+from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["Quality"])
@@ -687,7 +688,7 @@ async def get_embedding_stats():
     """Get embedding stats."""
     state = _get_state()
     embedder = state.get("embedder")
-    from src.config_weights import weights as _w
+    from src.config.weights import weights as _w
 
     return {
         "model": "bge-m3-onnx" if embedder else "not_initialized",

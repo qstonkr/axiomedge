@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 

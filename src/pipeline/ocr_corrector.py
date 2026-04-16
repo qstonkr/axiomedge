@@ -335,7 +335,7 @@ async def correct_ocr_chunks(
     Splits by [Image N OCR] tags, corrects each chunk, rejoins.
     """
     if not _chunk_size:
-        from src.config_weights import weights
+        from src.config.weights import weights
         _chunk_size = weights.chunking.ocr_correction_chunk_size
     if not ocr_text or not needs_correction(ocr_text):
         return ocr_text

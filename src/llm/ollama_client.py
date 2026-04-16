@@ -25,7 +25,7 @@ from typing import AsyncIterator
 import httpx
 
 from src.config import DEFAULT_LLM_MODEL, get_settings
-from src.config_weights import weights
+from src.config.weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 

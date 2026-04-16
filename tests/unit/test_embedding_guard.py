@@ -34,7 +34,7 @@ class TestSparseTokenHash:
 
 class TestExpectedDimension:
     def test_matches_config_weights(self) -> None:
-        from src.config_weights import weights
+        from src.config.weights import weights
         assert EXPECTED_DIMENSION == weights.embedding.dimension
         assert EXPECTED_DIMENSION == 1024
 

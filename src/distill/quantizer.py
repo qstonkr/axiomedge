@@ -28,7 +28,7 @@ import os
 import shutil
 import subprocess
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 from pathlib import Path
 
 from src.distill.config import DistillProfile

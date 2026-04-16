@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..config import get_settings
-from ..config_weights import weights as _w
+from ..config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
 

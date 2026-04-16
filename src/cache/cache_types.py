@@ -31,7 +31,7 @@ class CacheDomain(str, Enum):
 
 # Domain-specific similarity thresholds — SSOT: config_weights.CacheConfig
 def _build_domain_thresholds() -> dict[CacheDomain, float]:
-    from src.config_weights import weights as _w
+    from src.config.weights import weights as _w
     c = _w.cache
     return {
         CacheDomain.POLICY: c.threshold_policy,

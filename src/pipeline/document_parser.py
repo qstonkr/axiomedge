@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from src.config_weights import weights as _w
+from src.config.weights import weights as _w
 
 _EXT_PPTX = ".pptx"
 

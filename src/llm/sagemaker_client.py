@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
-from src.config_weights import weights
+from src.config.weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 

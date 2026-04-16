@@ -6,7 +6,7 @@ import dataclasses
 
 import pytest
 
-from src.config_weights import (
+from src.config.weights import (
     CacheConfig,
     ChunkingConfig,
     ConfidenceConfig,
