@@ -309,8 +309,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] Circular import 해결 + `_spawn_background` 패턴 통합
   - [x] `tests/unit/test_distill_training_data_routes.py` (14 cases)
 - **Follow-up (Phase C)**:
-  - distill_profiles, distill_builds, distill_edge_servers, distill_base_models, distill_edge_logs 분리
-  - distill.py → thin facade
+  - [x] distill_edge.py 추출 (13 endpoints, 406줄 — edge servers/heartbeat/manifest/fleet)
+  - distill_profiles, distill_builds 추가 분리 (후속)
   - SPA admin prefix 검토
 - **머지**: PR #27 (2026-04-16)
 
