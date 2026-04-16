@@ -86,6 +86,7 @@ asyncio_mode = "auto"
 markers = [
     "integration: integration tests requiring running API server",
     "e2e: end-to-end tests requiring running API server and all services",
+    "forked: run test in forked subprocess (numpy/C extension isolation)",
 ]
 # Coverage is opt-in via `make test-unit` or manual `--cov` flag. We do NOT
 # enable it on every pytest call because individual test runs during

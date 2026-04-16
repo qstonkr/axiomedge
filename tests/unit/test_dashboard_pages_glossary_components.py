@@ -21,7 +21,8 @@ _mods = {
     "plotly": MagicMock(),
     "plotly.graph_objects": MagicMock(),
     "plotly.express": MagicMock(),
-    "pandas": MagicMock(),
+    # NOTE: pandas는 mock하지 않음 — sklearn이 sys.modules["pandas"]를
+    # 참조하므로 MagicMock이 들어가면 전체 suite가 깨짐.
 }
 for mod_name, mock_obj in _mods.items():
     sys.modules.setdefault(mod_name, mock_obj)
@@ -32,10 +33,7 @@ sys.modules.setdefault("components.sidebar", MagicMock())
 sys.modules.setdefault("services", MagicMock())
 sys.modules.setdefault("services.api_client", MagicMock())
 
-# Restore real pandas for data transformation tests
 import pandas as pd  # noqa: E402
-
-sys.modules["pandas"] = pd
 
 
 @pytest.fixture(autouse=True)
