@@ -64,7 +64,11 @@ class SageMakerLLMClient:
         from botocore.config import Config
         return session.client(
             "sagemaker-runtime",
-            config=Config(read_timeout=180, connect_timeout=30, retries={"max_attempts": 2}),
+            config=Config(
+                read_timeout=weights.timeouts.httpx_sagemaker_read,
+                connect_timeout=weights.timeouts.httpx_sagemaker_connect,
+                retries={"max_attempts": 2},
+            ),
         )
 
     def _invoke_sync(

@@ -373,8 +373,8 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] Confluence `https://wiki.gsretail.com` SSOT
 - [x] Redis URL SSOT (`RedisSettings` 추가)
 - [x] TEI embedding/reranker URL SSOT (`TeiSettings` 추가)
-- [ ] Timeout 리터럴 (`600`, `7200`, `10`) → config
-- [ ] Chunk size 리터럴 (`_KSS_MAX_CHARS=2000`) → config_weights
+- [x] Timeout 리터럴 → TimeoutConfig SSOT (httpx/subprocess/sagemaker 추가, 7파일)
+- [x] Chunk size 리터럴 → ChunkingConfig (kss_max_chars, ocr_correction_chunk_size)
 - [ ] Pydantic `dict | None` → subclass 변환 (ProfileCreateRequest 등)
 - [ ] `ProfileUpdateRequest` 도 동일
 - [x] Ruff custom rule — bare except 방지 (`BLE001` 활성화, 기존 564건 noqa pragma)
@@ -397,7 +397,7 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 
 - [ ] `src/pipeline/ingestion.py` (3500+줄)
 - [x] `src/search/composite_reranker.py` (24 tests — entity/keyword/graph/source/position/edge)
-- [ ] `src/search/similarity/matcher.py` (900줄)
+- [x] `src/search/similarity/matcher.py` (24 tests — penalty, zone, init, L1, CE degradation)
 - [x] `src/pipeline/graphrag/extractor.py` (32 tests — corruption/invalid/reclassify/validate)
 - [ ] `src/connectors/confluence/attachment_parser.py` (1876줄)
 - [ ] `src/distill/service.py` 나머지 메서드

@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from src.config_weights import weights as _w
 from .models import AttachmentOCRPolicy, AttachmentParseResult
 
 logger = logging.getLogger(__name__)
@@ -1089,7 +1090,7 @@ class AttachmentParser:
                         "--outdir", tmpdir,
                         str(file_path),
                     ],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True, text=True, timeout=_w.timeouts.subprocess_ocr_cli,
                 )
                 if result.returncode != 0:
                     return None
@@ -1593,7 +1594,8 @@ def _try_cli_doc_extract(
         if extra_args:
             cmd.extend(extra_args)
         cmd.append(str(file_path))
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        _timeout = _w.timeouts.httpx_default
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=_timeout)
         if result.returncode == 0 and result.stdout.strip():
             text = result.stdout.strip()
             return AttachmentParseResult(
@@ -1677,7 +1679,7 @@ def _try_libreoffice_ppt_convert(
                     "--outdir", tmpdir,
                     str(file_path),
                 ],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=_w.timeouts.subprocess_ocr_cli,
             )
             if result.returncode == 0:
                 pptx_files = list(Path(tmpdir).glob("*.pptx"))

@@ -172,7 +172,7 @@ def _convert_ppt_to_pptx(data: bytes, filename: str) -> bytes | None:
                     str(ppt_path),
                 ],
                 capture_output=True,
-                timeout=30,
+                timeout=_w.timeouts.httpx_default,
             )
 
             if result.returncode != 0:
@@ -719,7 +719,7 @@ def _ocr_request(client, endpoint: str, payload: bytes) -> dict | None:
     import base64
     b64_image = base64.b64encode(payload).decode("utf-8")
     try:
-        resp = client.post(endpoint, json={"image": b64_image}, timeout=60.0)
+        resp = client.post(endpoint, json={"image": b64_image}, timeout=_w.timeouts.httpx_ocr)
         resp.raise_for_status()
         return resp.json()
     except Exception:  # noqa: BLE001
@@ -877,7 +877,7 @@ def _process_images_ocr(
     vision_enabled = _w.ocr.enable_vision_analysis
     endpoint = f"{base_url}/analyze" if vision_enabled else f"{base_url}/ocr"
     min_conf = float(os.getenv("OCR_MIN_CONFIDENCE", "0.65"))
-    client = httpx.Client(timeout=60.0)
+    client = httpx.Client(timeout=_w.timeouts.httpx_ocr)
 
     for i, img_bytes in enumerate(images):
         _process_single_image_ocr(

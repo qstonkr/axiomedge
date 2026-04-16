@@ -92,7 +92,7 @@ class Chunker:
                 logger.info("kss not available, using regex sentence splitting")
             self._initialized = True
 
-    _KSS_MAX_CHARS = 2000  # Max chars per KSS call to prevent pecab hang
+    _KSS_MAX_CHARS = weights.chunking.kss_max_chars
     _kss_executor = None  # Shared executor for KSS timeout
 
     def split_sentences(self, text: str) -> list[str]:
@@ -127,7 +127,7 @@ class Chunker:
             if self._kss_executor is None:
                 self.__class__._kss_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             future = self._kss_executor.submit(kss.split_sentences, sub)
-            sentences = future.result(timeout=10)
+            sentences = future.result(timeout=weights.timeouts.httpx_default)
             return [s.strip() for s in sentences if s.strip()]
         except Exception as e:  # noqa: BLE001
             if "timeout" in str(e).lower() or isinstance(e, concurrent.futures.TimeoutError):

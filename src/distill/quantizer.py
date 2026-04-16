@@ -27,6 +27,8 @@ import logging
 import os
 import shutil
 import subprocess
+
+from src.config_weights import weights as _w
 from pathlib import Path
 
 from src.distill.config import DistillProfile
@@ -173,7 +175,10 @@ class DistillQuantizer:
                 str(model_path),
             ]
             logger.info("Converting HF → GGUF f16: %s", " ".join(cmd))
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            _timeout = _w.timeouts.subprocess_convert
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=_timeout,
+            )
             if result.returncode == 0:
                 return
             logger.warning(
@@ -222,7 +227,10 @@ class DistillQuantizer:
         if quantize_bin:
             cmd = [quantize_bin, str(input_path), str(output_path), self.quantize_method.upper()]
             logger.info("Quantizing: %s", " ".join(cmd))
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            _timeout = _w.timeouts.subprocess_convert
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=_timeout,
+            )
             if result.returncode != 0:
                 raise RuntimeError(f"Quantization failed: {result.stderr[:200]}")
         else:
@@ -252,7 +260,7 @@ print('Loading model from {model_path}...')
 # 여기서는 에러를 발생시켜 상위에서 처리
 raise NotImplementedError('Manual GGUF conversion needed')
 """],
-                capture_output=True, text=True, timeout=300,
+                capture_output=True, text=True, timeout=_w.timeouts.subprocess_validate,
             )
         except ImportError:
             pass

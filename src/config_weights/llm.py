@@ -47,20 +47,36 @@ class EmbeddingConfig:
 class TimeoutConfig:
     """All timeout values in one place."""
 
+    # Qdrant
     qdrant_connection: int = 30
     qdrant_search_ms: int = 5000
     qdrant_clone_batch: int = 120
     qdrant_scroll: float = 8.0
     qdrant_count: int = 5
 
+    # Neo4j
     neo4j_query: int = 30
     neo4j_batch: int = 5000
 
+    # Ollama
     ollama_llm: float = 120.0
     ollama_embedding: float = 60.0
 
+    # API / Dashboard
     api_default: int = 30
     api_search: int = 60
-
     dashboard_api: int = 30
     dashboard_search: int = 60
+
+    # HTTP client defaults (src/ 내부 httpx 호출용)
+    httpx_default: float = 30.0
+    httpx_ocr: float = 60.0
+    httpx_reranker: float = 60.0
+    httpx_sagemaker_read: int = 180
+    httpx_sagemaker_connect: int = 30
+
+    # Subprocess (quantize, convert, OCR CLI)
+    subprocess_convert: int = 600
+    subprocess_quantize: int = 600
+    subprocess_validate: int = 300
+    subprocess_ocr_cli: int = 120

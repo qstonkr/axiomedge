@@ -50,7 +50,8 @@ def _get_tei_client():
     global _tei_client
     if _tei_client is None:
         import httpx
-        _tei_client = httpx.Client(timeout=60.0)
+        from src.config_weights import weights as _cw
+        _tei_client = httpx.Client(timeout=_cw.timeouts.httpx_reranker)
     return _tei_client
 
 
