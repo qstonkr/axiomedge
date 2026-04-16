@@ -281,15 +281,20 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 **목표**: 플러그인/레지스트리 패턴 도입. 확장성 확보.
 **예상 기간**: 3~4주
 
-### PR8. Provider registry 중앙화 ⏳
+### PR8. Provider registry 중앙화 🔨
 
 - **Severity**: 🔴 Blocker (modularity 축)
 - **축**: Modularity / SRP
-- **Why**: LLM / Auth / OCR provider 선택이 `app.py` 에 if-elif 로 박힘. 새 provider 추가 시 3~5 파일 수정.
 - **Files**:
-  - [ ] 신규 `src/providers/llm.py` — `@register_llm_provider("ollama")` decorator + factory
-  - [ ] 신규 `src/providers/auth.py` — `@register_auth_provider("keycloak")` decorator
-  - [ ] 기존 `src/embedding/provider_factory.py` → `src/providers/embedding.py` re-export (backward compat)
+  - [x] 신규 `src/providers/__init__.py` — facade re-export
+  - [x] 신규 `src/providers/llm.py` — `@register_llm_provider("ollama")` decorator + factory + `_resolve_provider_name` (LLM_PROVIDER env + legacy USE_SAGEMAKER_LLM)
+  - [x] 신규 `src/providers/auth.py` — `@register_auth_provider("local/internal/keycloak/azure_ad")` — Settings + state 기반 factory
+  - [x] `src/api/app.py::_init_llm` — registry 호출로 단순화 (22 → 5 줄)
+  - [x] `src/api/app.py::_init_auth` — registry 호출로 if-elif 체인 (39 lines) 제거
+  - [x] 신규 `tests/unit/test_providers_registry.py` (18 cases)
+- **Deferred**:
+  - `src/embedding/provider_factory.py` → `src/providers/embedding.py` 이동 (facade 유지로 deferred 가능, PR 작게 유지)
+  - OCR / VectorDB / Graph provider registry (Phase D 장기 과제)
   - [ ] `src/api/app.py` — `create_llm_client()`, `create_auth_provider()` 로 단순화
   - [ ] `src/auth/providers.py::create_auth_provider` if-elif 제거
 - **Effort**: 6~8h
