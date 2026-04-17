@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request
 
 from src.auth.providers import AuthUser, AuthenticationError
+
+if TYPE_CHECKING:
+    from src.api.state import AppState
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +118,7 @@ async def get_optional_user(request: Request) -> AuthUser | None:
 
 
 async def _check_rbac_roles(
-    state: Any, user: AuthUser, roles: tuple[str, ...],
+    state: AppState, user: AuthUser, roles: tuple[str, ...],
 ) -> bool:
     """Check if user has any of the required roles via RBAC engine."""
     rbac = state.get("rbac_engine")
@@ -206,7 +209,7 @@ def require_permission(resource: str, action: str) -> Callable:
     return _check
 
 
-async def _check_rbac_admin(state: Any, user: AuthUser) -> bool:
+async def _check_rbac_admin(state: AppState, user: AuthUser) -> bool:
     """Check if user has admin-level KB management permission via RBAC."""
     rbac = state.get("rbac_engine")
     auth_service = state.get("auth_service")
@@ -218,7 +221,7 @@ async def _check_rbac_admin(state: Any, user: AuthUser) -> bool:
 
 
 async def _check_kb_level_permission(
-    state: Any, user: AuthUser, kb_id: str, min_level: str,
+    state: AppState, user: AuthUser, kb_id: str, min_level: str,
     level_order: dict[str, int],
 ) -> bool:
     """Check if user has sufficient KB-level permission."""
@@ -232,7 +235,7 @@ async def _check_kb_level_permission(
 
 
 async def _check_abac_kb_access(
-    state: Any, user: AuthUser, kb_id: str, min_level: str,
+    state: AppState, user: AuthUser, kb_id: str, min_level: str,
 ) -> bool:
     """Check KB access via ABAC policies."""
     abac = state.get("abac_engine")
@@ -262,7 +265,7 @@ async def _check_abac_kb_access(
     return abac.evaluate(ctx).allowed
 
 
-async def _fetch_kb_info(state: Any, kb_id: str) -> dict:
+async def _fetch_kb_info(state: AppState, kb_id: str) -> dict:
     """Fetch KB info from registry, returning empty dict on failure."""
     kb_registry = state.get("kb_registry")
     if not kb_registry:

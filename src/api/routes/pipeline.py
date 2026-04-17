@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["Pipeline"])
 
 
-def _compute_duration(started: Any, completed: Any) -> float | None:
+def _compute_duration(started: str | object | None, completed: str | object | None) -> float | None:
     """Compute duration in seconds between started and completed timestamps."""
     if not started or not completed:
         return None

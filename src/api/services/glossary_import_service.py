@@ -7,7 +7,10 @@ import io
 import logging
 import unicodedata
 import uuid
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.stores.postgres.repositories.glossary import GlossaryRepository
 
 from fastapi import UploadFile
 
@@ -36,7 +39,7 @@ BATCH_SIZE = 500
 
 
 async def import_csv(
-    repo: Any,
+    repo: GlossaryRepository,
     upload_files: list[UploadFile],
     encoding: str = "utf-8",
     kb_id: str = "global-standard",
@@ -71,7 +74,7 @@ async def import_csv(
 
 
 async def _import_single_csv(
-    repo: Any, uf: UploadFile, encoding: str, kb_id: str,
+    repo: GlossaryRepository, uf: UploadFile, encoding: str, kb_id: str,
 ) -> dict[str, Any]:
     """Process a single CSV file and return import stats."""
     morpheme_analyzer = get_analyzer()
@@ -140,7 +143,7 @@ def _map_korean_columns(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _flush_batch(
-    repo: Any, batch: list[dict], fname: str, row_ref: Any, errors: list[str],
+    repo: GlossaryRepository, batch: list[dict], fname: str, row_ref: Any, errors: list[str],
 ) -> int:
     """Save batch to repo, return count inserted."""
     try:

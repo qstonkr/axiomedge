@@ -7,7 +7,10 @@ import logging
 import os
 import re
 import tempfile
-from typing import Annotated, Any
+from typing import Annotated, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.api.state import AppState
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
@@ -76,7 +79,7 @@ def _collect_files(source_dir: str) -> list[tuple[str, str]]:
     return result
 
 
-async def _update_kb_counts(state: Any, kb_id: str, docs: int, chunks: int) -> None:
+async def _update_kb_counts(state: AppState, kb_id: str, docs: int, chunks: int) -> None:
     """Update KB registry counts if documents were processed."""
     if docs <= 0:
         return

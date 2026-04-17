@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from fastapi import HTTPException
 
@@ -19,6 +19,10 @@ from src.api.routes.metrics import inc as metrics_inc
 from src.config.weights import weights as _w  # alias for timeout refs
 from src.config.weights import weights
 from src.core.models import SearchChunk
+
+if TYPE_CHECKING:
+    from src.stores.redis.multi_layer_cache import MultiLayerCache
+    from src.stores.redis.redis_cache import SearchCache
 from src.search.crag_evaluator import RetrievalAction
 from src.search.transparency_formatter import SourceType, TransparencyFormatter
 from src.search.trust_score_service import SOURCE_CREDIBILITY
@@ -1007,7 +1011,7 @@ def _try_deserialize_cache(
 
 
 async def _check_multi_layer_cache(
-    multi_cache: Any, query: str, cache_collections: list[str],
+    multi_cache: MultiLayerCache, query: str, cache_collections: list[str],
     top_k: int, expected_version: str, start: float,
 ) -> HubSearchResponse | None:
     """Try multi-layer cache lookup."""
@@ -1029,7 +1033,7 @@ async def _check_multi_layer_cache(
 
 
 async def _check_legacy_cache(
-    search_cache: Any, query: str, cache_collections: list[str],
+    search_cache: SearchCache, query: str, cache_collections: list[str],
     top_k: int, expected_version: str, start: float,
 ) -> HubSearchResponse | None:
     """Try legacy search cache lookup."""

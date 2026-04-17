@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.pipelines.ingestion import IngestionPipeline
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -193,7 +196,7 @@ async def _stage1_parse_to_jsonl(
 async def _stage2_ingest_from_jsonl(
     job_id: str,
     jsonl_path: str,
-    pipeline: Any,
+    pipeline: IngestionPipeline,
     effective_kb_id: str,
 ) -> tuple[int, int, list[str]]:
     """Stage 2: Read JSONL checkpoint and ingest (chunk/embed/store).
@@ -264,7 +267,7 @@ async def _update_kb_and_invalidate_cache(effective_kb_id: str, total_docs: int,
 async def _process_files(
     job_id: str,
     file_paths: list[tuple[str, str]],
-    pipeline: Any,
+    pipeline: IngestionPipeline,
     effective_kb_id: str,
     save_dir: str = "",
 ) -> None:

@@ -7,16 +7,20 @@ All public names are re-exported from glossary.py for backward compatibility.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from fastapi import HTTPException
+
+if TYPE_CHECKING:
+    from src.api.state import AppState
+    from src.stores.postgres.repositories.glossary import GlossaryRepository
 
 logger = logging.getLogger(__name__)
 
 _TERM_NOT_FOUND = "Term not found"
 
 
-async def _check_not_global_standard(repo: Any, term_id: str) -> dict[str, Any]:
+async def _check_not_global_standard(repo: GlossaryRepository, term_id: str) -> dict[str, Any]:
     """Check term exists and is NOT a global standard (read-only).
 
     Global standards (scope='global', source from CSV import) are read-only.
@@ -33,7 +37,7 @@ async def _check_not_global_standard(repo: Any, term_id: str) -> dict[str, Any]:
     return existing
 
 
-async def _approve_single_synonym(repo: Any, syn_id: str, errors: list[str]) -> bool:
+async def _approve_single_synonym(repo: GlossaryRepository, syn_id: str, errors: list[str]) -> bool:
     """Approve a single synonym record. Returns True if approved."""
     syn_record = await repo.get_by_id(syn_id)
     if not syn_record:
@@ -62,7 +66,7 @@ async def _approve_single_synonym(repo: Any, syn_id: str, errors: list[str]) -> 
     return True
 
 
-async def _fetch_sample_and_standard(repo: Any) -> tuple[list, str, list, int, int]:
+async def _fetch_sample_and_standard(repo: GlossaryRepository) -> tuple[list, str, list, int, int]:
     """Fetch sample terms and standard terms with random sampling.
 
     Returns (sample_terms, sample_source, standard_terms, total_approved, total_pending).
@@ -216,7 +220,7 @@ def _compute_text_scores(
 
 
 async def _compute_dense_scores(
-    embedder: Any,
+    embedder: Any,  # IEmbedder — varies by cloud/local provider
     sample_terms: list[dict],
     comparison_names: list[str],
     sample_size: int,
@@ -281,7 +285,7 @@ def _compute_score_stats(scores: list[float]) -> dict[str, Any]:
 
 
 async def compute_similarity_distribution(
-    state: Any,
+    state: AppState,
     exact_match_threshold: float,
 ) -> dict[str, Any]:
     """Compute similarity score distribution with RapidFuzz sampling.

@@ -6,8 +6,12 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from src.config.weights import weights as _w
+
+if TYPE_CHECKING:
+    from src.stores.qdrant.collections import QdrantCollectionManager
+    from src.search.graph_expander import GraphSearchExpander
 
 logger = logging.getLogger(__name__)
 
@@ -564,7 +568,7 @@ async def graph_expansion(
     display_query: str,
     all_chunks: list[dict[str, Any]],
     collections: list[str],
-    graph_expander: Any,
+    graph_expander: GraphSearchExpander,
     qdrant_url: str,
 ) -> list[dict[str, Any]]:
     """Enrich results with structurally related content from Neo4j graph."""
@@ -617,7 +621,7 @@ async def graph_expansion(
 
 
 async def retrieve_chunks_by_ids(
-    qdrant_client: Any,
+    qdrant_client: QdrantCollectionManager,
     collections: list[str],
     point_ids: list[Any],
     scores: dict[str, float],
