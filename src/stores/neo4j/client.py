@@ -224,7 +224,7 @@ class Neo4jClient:
                 result = await session.run("RETURN 1 as n")
                 await result.consume()
             return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"Neo4j health check failed: {e}")
             return False
 

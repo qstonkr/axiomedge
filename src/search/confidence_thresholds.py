@@ -69,7 +69,7 @@ def clamp_unit_interval(value: float, default: float) -> float:
     """Clamp a numeric value into [0.0, 1.0] with a safe default fallback."""
     try:
         parsed = float(value)
-    except (TypeError, ValueError):
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         parsed = float(default)
     return max(0.0, min(parsed, 1.0))
 

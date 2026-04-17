@@ -97,7 +97,7 @@ class TestCheckNeo4j:
     def test_neo4j_exception_returns_false(self):
         """If neo4j is importable but connection fails, return False."""
         mock_neo4j = MagicMock()
-        mock_neo4j.GraphDatabase.driver.side_effect = Exception("connection refused")
+        mock_neo4j.GraphDatabase.driver.side_effect = RuntimeError("connection refused")
         with patch.dict(sys.modules, {"neo4j": mock_neo4j}):
             import services.health as health_mod
             # Directly test the function which tries to import neo4j
@@ -151,7 +151,7 @@ class TestCheckQdrant:
             assert _check_qdrant() is False
 
     def test_qdrant_unreachable(self):
-        with patch("services.health.httpx.Client", side_effect=Exception("fail")), \
+        with patch("services.health.httpx.Client", side_effect=RuntimeError("fail")), \
              patch("services.health.cfg") as mock_cfg:
             mock_cfg.QDRANT_URL = "http://localhost:6333"
             assert _check_qdrant() is False

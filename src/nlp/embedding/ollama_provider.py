@@ -68,7 +68,7 @@ class OllamaEmbeddingProvider:
                 return False
             models = [m.get("name", "") for m in resp.json().get("models", [])]
             return any(self._model.split(":")[0] in m for m in models)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return False
 
     def encode(

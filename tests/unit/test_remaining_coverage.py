@@ -120,7 +120,7 @@ class TestGraphIntegrityChecker:
 
     async def test_query_exception_graceful(self):
         mock_client = AsyncMock()
-        mock_client.execute_query = AsyncMock(side_effect=Exception("neo4j down"))
+        mock_client.execute_query = AsyncMock(side_effect=RuntimeError("neo4j down"))
         checker = GraphIntegrityChecker(neo4j_client=mock_client)
         report = await checker.check_integrity()
         assert report.status == "ok"  # exceptions are caught per check
@@ -185,7 +185,7 @@ class TestRedisDedupIndex:
 
     async def test_contains_error(self):
         mock_redis = AsyncMock()
-        mock_redis.sismember = AsyncMock(side_effect=Exception("redis down"))
+        mock_redis.sismember = AsyncMock(side_effect=RuntimeError("redis down"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.contains("kb1", "hash123") is False
 
@@ -211,7 +211,7 @@ class TestRedisDedupIndex:
 
     async def test_add_error(self):
         mock_redis = AsyncMock()
-        mock_redis.sadd = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.sadd = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.add("kb1", "hash") is False
 
@@ -234,7 +234,7 @@ class TestRedisDedupIndex:
 
     async def test_add_batch_error(self):
         mock_redis = AsyncMock()
-        mock_redis.sadd = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.sadd = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.add_batch("kb1", ["h1"]) == 0
 
@@ -250,7 +250,7 @@ class TestRedisDedupIndex:
 
     async def test_clear_error(self):
         mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.delete = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.clear("kb1") is False
 
@@ -266,7 +266,7 @@ class TestRedisDedupIndex:
 
     async def test_size_error(self):
         mock_redis = AsyncMock()
-        mock_redis.scard = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.scard = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.size("kb1") == 0
 
@@ -284,7 +284,7 @@ class TestRedisDedupIndex:
 
     async def test_contains_doc_error(self):
         mock_redis = AsyncMock()
-        mock_redis.sismember = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.sismember = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.contains_doc("kb1", "hash") is False
 
@@ -302,7 +302,7 @@ class TestRedisDedupIndex:
 
     async def test_add_doc_error(self):
         mock_redis = AsyncMock()
-        mock_redis.sadd = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.sadd = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.add_doc("kb1", "hash") is False
 
@@ -325,7 +325,7 @@ class TestRedisDedupIndex:
 
     async def test_add_doc_batch_error(self):
         mock_redis = AsyncMock()
-        mock_redis.sadd = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.sadd = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.add_doc_batch("kb1", ["h1"]) == 0
 
@@ -341,7 +341,7 @@ class TestRedisDedupIndex:
 
     async def test_clear_docs_error(self):
         mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.delete = AsyncMock(side_effect=RuntimeError("fail"))
         idx = RedisDedupIndex(redis_client=mock_redis)
         assert await idx.clear_docs("kb1") is False
 
@@ -433,7 +433,7 @@ class TestRerankWithCrossEncoder:
         import src.search.cross_encoder_reranker as ce_module
         orig_model = ce_module._model
         mock_model = MagicMock()
-        mock_model.predict.side_effect = Exception("predict failed")
+        mock_model.predict.side_effect = RuntimeError("predict failed")
         ce_module._model = mock_model
         try:
             chunks = [{"content": "a"}]
@@ -835,7 +835,7 @@ class TestDenseTermIndex:
         # First call builds, second call (search) fails
         provider.encode.side_effect = [
             {"dense_vecs": [[0.5] * 1024]},
-            Exception("encode error"),
+            RuntimeError("encode error"),
         ]
         idx = DenseTermIndex(provider=provider)
         idx.build([self._make_precomputed()])
@@ -846,7 +846,7 @@ class TestDenseTermIndex:
         """Batch failure should pad with zeros."""
         provider = MagicMock()
         provider.is_ready.return_value = True
-        provider.encode.side_effect = Exception("batch failed")
+        provider.encode.side_effect = RuntimeError("batch failed")
         idx = DenseTermIndex(provider=provider)
         idx.build([self._make_precomputed()])
         # Should build with zero vectors
@@ -985,7 +985,7 @@ class TestGraphExpanderEntities:
     async def test_expand_with_entities_error(self):
         mock_repo = AsyncMock()
         mock_repo.find_related_chunks = AsyncMock(return_value=[])
-        mock_repo.search_entities = AsyncMock(side_effect=Exception("neo4j down"))
+        mock_repo.search_entities = AsyncMock(side_effect=RuntimeError("neo4j down"))
 
         expander = GraphSearchExpander(graph_repo=mock_repo)
         result = await expander.expand_with_entities("query", [])

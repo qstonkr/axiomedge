@@ -91,7 +91,7 @@ class TestImportGlossaryCsv:
             assert result == {"imported": 10}
 
     def test_failure(self):
-        with patch("services.api.glossary.httpx.Client", side_effect=Exception("connection error")):
+        with patch("services.api.glossary.httpx.Client", side_effect=RuntimeError("connection error")):
             result = glossary.import_glossary_csv(b"csv,data", "terms.csv")
             assert result["_api_failed"] is True
 

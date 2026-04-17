@@ -58,7 +58,7 @@ class QualityFilter:
                 np.dot(vecs[0], vecs[1])
                 / (np.linalg.norm(vecs[0]) * np.linalg.norm(vecs[1]) + 1e-8)
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Embedding similarity failed, falling back to fuzz: %s", e)
             return fuzz.token_sort_ratio(text_a, text_b) / 100.0
 
@@ -109,7 +109,7 @@ class QualityFilter:
                 np.dot(v, centroid) / (np.linalg.norm(v) * np.linalg.norm(centroid) + 1e-8)
                 for v in vecs
             ]))
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Centroid selection failed, using first answer: %s", e)
             best_idx = 0
 

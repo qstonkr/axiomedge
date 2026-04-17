@@ -391,7 +391,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
                 document=doc_text,
                 prompt_template=prompt,
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"LLM 호출 실패: {e}")
             return ExtractionResult(
                 source_document=source_title,
@@ -510,7 +510,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON 파싱 실패: {e}")
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"파싱 오류: {e}")
 
         return result
@@ -578,7 +578,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
                         created += 1
                     else:
                         updated += 1
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
         return created, updated
 
@@ -637,7 +637,7 @@ class GraphRAGBatchProcessor:
 
                 stats["success"] += 1
 
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.error(f"문서 처리 실패: {e}")
                 stats["failed"] += 1
 

@@ -271,7 +271,7 @@ class TestGetActiveJobCount:
     async def test_returns_zero_when_no_redis(self):
         from src.api.routes.jobs import get_active_job_count
 
-        with patch("src.api.routes.jobs._get_redis", side_effect=Exception("no redis")):
+        with patch("src.api.routes.jobs._get_redis", side_effect=RuntimeError("no redis")):
             count = await get_active_job_count()
             assert count == 0
 
@@ -596,7 +596,7 @@ class TestEnsureKbAndUpdateCounts:
         from src.api.routes.data_source_sync import _ensure_kb_and_update_counts
 
         kb_registry = AsyncMock()
-        kb_registry.get_kb.side_effect = Exception("DB error")
+        kb_registry.get_kb.side_effect = RuntimeError("DB error")
         state = {"kb_registry": kb_registry}
 
         # Should not raise (logs warning)
@@ -712,9 +712,9 @@ class TestReportSyncFailure:
         from src.api.routes.data_source_sync import _report_sync_failure
 
         ds_repo = AsyncMock()
-        ds_repo.complete_sync.side_effect = Exception("db error")
+        ds_repo.complete_sync.side_effect = RuntimeError("db error")
         run_repo = AsyncMock()
-        run_repo.complete.side_effect = Exception("db error")
+        run_repo.complete.side_effect = RuntimeError("db error")
 
         # Should not raise
         await _report_sync_failure(

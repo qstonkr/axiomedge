@@ -55,7 +55,7 @@ class TestProcessChunk:
 
     def test_extraction_failure(self) -> None:
         mock_extractor = MagicMock()
-        mock_extractor.extract.side_effect = Exception("SageMaker timeout")
+        mock_extractor.extract.side_effect = RuntimeError("SageMaker timeout")
 
         stats = {"success": 0, "failed": 0, "nodes": 0, "rels": 0}
         stats_lock = threading.Lock()

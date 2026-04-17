@@ -181,7 +181,7 @@ async def deploy_build(build_id: str):
         )
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         await repo.update_build(build_id, status="completed",
                                 error_message=f"Deploy failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -215,7 +215,7 @@ async def rollback_build(build_id: str):
         await deployer.create_and_upload_manifest(
             build["s3_uri"], build["version"], build,
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(status_code=500, detail=f"Rollback failed: {e}")
 
     # rollback_from 기록
@@ -285,7 +285,7 @@ async def trigger_retrain(request: RetrainRequest):
                     )
                     resp.raise_for_status()
                     answer = resp.json().get("answer", "")
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("Teacher answer generation failed for '%s': %s", question[:30], e)
                 answer = ""
         else:
@@ -394,7 +394,7 @@ async def delete_build(build_id: str):
                 dp = dict_to_profile(profile)
                 deployer = DistillDeployer(dp)
                 await deployer.delete_s3_object(s3_uri)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("S3 cleanup failed for build %s: %s", build_id, e)
 
     deleted = await repo.delete_build(build_id)
@@ -434,7 +434,7 @@ async def get_app_info(profile_name: str):
             }
 
         return await asyncio.to_thread(_fetch)
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         return {"app_version": "", "app_downloads": {}, "error": str(e)}
 
 

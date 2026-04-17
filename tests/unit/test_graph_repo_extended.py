@@ -135,7 +135,7 @@ class TestFindRelatedChunks:
 
     def test_failure_returns_empty(self):
         repo, client = _make_repo()
-        client.execute_query = AsyncMock(side_effect=Exception("neo4j error"))
+        client.execute_query = AsyncMock(side_effect=RuntimeError("neo4j error"))
         result = _run(repo.find_related_chunks(["entity1"]))
         assert result == set()
 
@@ -161,7 +161,7 @@ class TestSearchEntities:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise Exception("graphrag index missing")
+                raise RuntimeError("graphrag index missing")
             return [{"name": "X", "node_type": "Entity"}]
 
         client.execute_query = AsyncMock(side_effect=_side_effect)
@@ -203,7 +203,7 @@ class TestSearchRelatedNodes:
 
     def test_failure(self):
         repo, client = _make_repo()
-        client.execute_query = AsyncMock(side_effect=Exception("fail"))
+        client.execute_query = AsyncMock(side_effect=RuntimeError("fail"))
         result = _run(repo.search_related_nodes("doc1"))
         assert result == []
 
@@ -216,7 +216,7 @@ class TestGetEntityNeighbors:
 
     def test_failure(self):
         repo, client = _make_repo()
-        client.execute_query = AsyncMock(side_effect=Exception("fail"))
+        client.execute_query = AsyncMock(side_effect=RuntimeError("fail"))
         result = _run(repo.get_entity_neighbors("Alice", "Person"))
         assert result == []
 
@@ -229,7 +229,7 @@ class TestGetKnowledgePath:
 
     def test_failure(self):
         repo, client = _make_repo()
-        client.execute_query = AsyncMock(side_effect=Exception("fail"))
+        client.execute_query = AsyncMock(side_effect=RuntimeError("fail"))
         result = _run(repo.get_knowledge_path("d1", "d2"))
         assert result == []
 
@@ -294,7 +294,7 @@ class TestStats:
 
     def test_get_entity_count_failure(self):
         repo, client = _make_repo()
-        client.execute_query = AsyncMock(side_effect=Exception("fail"))
+        client.execute_query = AsyncMock(side_effect=RuntimeError("fail"))
         result = _run(repo.get_entity_count())
         assert result == 0
 

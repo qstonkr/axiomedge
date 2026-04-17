@@ -311,7 +311,7 @@ class TestComputeKtsService:
             "consistency_score": 1.0,
             "kts_score": 40.0,
         })
-        mock_feedback_repo.get_votes_for_entry = AsyncMock(side_effect=Exception("db error"))
+        mock_feedback_repo.get_votes_for_entry = AsyncMock(side_effect=OSError("db error"))
 
         result = await service.compute_kts("e1", "kb1")
         assert "kts_score" in result  # should still succeed
@@ -352,7 +352,7 @@ class TestBatchRecompute:
             nonlocal call_count
             call_count += 1
             if eid == "e1":
-                raise Exception("fail")
+                raise ValueError("fail")
             return {
                 "entry_id": eid, "kb_id": kid,
                 "source_type": "auto_extracted",

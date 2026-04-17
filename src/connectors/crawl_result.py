@@ -68,7 +68,7 @@ class CrawlResultConnector:
                             self._upsert_page(pages_by_id, page)
                     continue
                 self._upsert_page(pages_by_id, obj)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, json.JSONDecodeError, ValueError) as e:
             return ConnectorResult(
                 success=False, source_type=self.source_type,
                 error=f"Failed to read crawl JSONL: {fp} ({e})",
@@ -85,7 +85,7 @@ class CrawlResultConnector:
         try:
             raw = await asyncio.to_thread(fp.read_text, encoding="utf-8")
             data = json.loads(raw)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, json.JSONDecodeError, ValueError) as e:
             return ConnectorResult(
                 success=False, source_type=self.source_type,
                 error=f"Failed to read crawl JSON: {fp} ({e})",
@@ -248,7 +248,7 @@ class CrawlResultConnector:
                     continue
                 try:
                     row = json.loads(raw)
-                except Exception:  # noqa: BLE001
+                except (RuntimeError, json.JSONDecodeError, ValueError):
                     continue
                 if isinstance(row, dict):
                     rows.append(row)
@@ -312,7 +312,7 @@ class CrawlResultConnector:
     def _page_sort_key(page: dict[str, Any]) -> tuple[int, str]:
         try:
             version = int(page.get("version") or 0)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             version = 0
         return (version, str(page.get("updated_at") or ""))
 
@@ -388,7 +388,7 @@ class CrawlResultConnector:
             content_text = str(page.get("content_text") or "")
             try:
                 version = int(page.get("version") or 0)
-            except (TypeError, ValueError):
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 version = 0
             sig = f"{page_id}:{version}:{RawDocument.sha256(content_text)}"
             signatures.append(sig)

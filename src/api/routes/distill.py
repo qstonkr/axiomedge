@@ -269,7 +269,7 @@ async def collect_edge_logs(profile_name: str | None = None):
             collector = EdgeLogCollector(dp)
             count = await collector.collect(repo, profile["name"])
             total += count
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Log collection failed for %s: %s", profile["name"], e)
 
     return {"collected": total}

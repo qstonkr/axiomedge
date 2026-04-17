@@ -149,7 +149,7 @@ class AnswerService:
         if self._llm:
             try:
                 answer = await self._llm.generate(prompt=prompt)
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("LLM generation failed: %s", e)
                 answer = f"답변 생성 중 오류: {e}\n\n관련 문서 {len(chunks)}건이 검색되었습니다."
         else:

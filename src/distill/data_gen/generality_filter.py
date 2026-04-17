@@ -90,7 +90,7 @@ class GeneralityFilter:
                 llm_sc = self._parse_score(result)
                 # 패턴과 LLM 점수 가중 평균 (LLM 70%, 패턴 30%)
                 return round(llm_sc * 0.7 + pattern_sc * 0.3, 3)
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("Generality LLM scoring failed: %s", e)
 
         return pattern_sc

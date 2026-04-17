@@ -51,7 +51,7 @@ def generate_structured_ir(
     code_extractor = CodeBlockExtractor()
     try:
         code_extractor.feed(content_html)
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         logger.debug("HTML 코드 블록 파싱 중 오류 발생 (무시)")
     code_blocks = code_extractor.code_blocks
 

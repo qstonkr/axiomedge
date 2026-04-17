@@ -474,6 +474,6 @@ class TestCorrectOcrText:
 
     async def test_fallback_on_error(self):
         mock_client = AsyncMock()
-        mock_client.generate.side_effect = Exception("LLM down")
+        mock_client.generate.side_effect = RuntimeError("LLM down")
         result = await correct_ocr_text("원본 텍스트", mock_client)
         assert result == "원본 텍스트"  # should return original

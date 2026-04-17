@@ -331,7 +331,7 @@ class TermExtractor:
         """Extract terms using KiwiPy morphological analysis."""
         try:
             tokens = kiwi.tokenize(text)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return
 
         compounds = self._build_compounds_from_tokens(tokens)
@@ -380,7 +380,7 @@ class TermExtractor:
                 try:
                     result = await get_fn(kb_id, t)
                     return result is not None
-                except Exception:  # noqa: BLE001
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                     return False
             existing_flags = await asyncio.gather(*[_exists(t.term) for t in terms])
         else:
@@ -409,7 +409,7 @@ class TermExtractor:
                 }
                 await self._glossary_repo.save(term_data)
                 saved += 1
-            except Exception as exc:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 logger.debug(
                     "Failed to save term '%s': %s", term.term, exc
                 )
@@ -492,7 +492,7 @@ class TermExtractor:
             end = min(len(content), idx + len(term) + context_size)
             context = _WHITESPACE_RE.sub(" ", content[start:end].strip())
             return f"...{context}..."
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return None
 
     # -- Synonym discovery --------------------------------------------------
@@ -665,7 +665,7 @@ class TermExtractor:
                 ok = await self._save_single_synonym(kb_id, base_term, synonym, pattern_type)
                 if ok:
                     saved += 1
-            except Exception as exc:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 logger.debug(
                     "Failed to save discovered synonym '%s' -> '%s': %s",
                     base_term, synonym, exc,
@@ -723,7 +723,7 @@ class TermExtractor:
                     if self._is_global_hit(result, term_str, normalized):
                         return True
                 return False
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 return False
 
         checks = await asyncio.gather(*[_is_global(c.term) for c in candidates])
@@ -824,7 +824,7 @@ class TermExtractor:
                 )
             return filtered
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Dense similarity filter failed, skipping: %s", e)
             return candidates
 

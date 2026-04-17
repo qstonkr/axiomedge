@@ -54,7 +54,7 @@ class BatchMatchMixin:
                 scorer=fuzz.WRatio, score_cutoff=60, limit=10,
             )
             return [self._rf_idx_map[choice_idx] for _, _, choice_idx in results]
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("RapidFuzz extraction failed: %s", e)
             return []
 
@@ -139,7 +139,7 @@ class BatchMatchMixin:
             return self._build_and_search_mini_index(
                 candidate_list, l1_unmatched_indices, l1_unmatched_texts,
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Mini dense index build/search failed: %s", e)
             return None
 
@@ -152,7 +152,7 @@ class BatchMatchMixin:
             self._dense_index = DenseTermIndex(provider)
             self._dense_index.build(self._precomputed)
             logger.info("Dense term index built: %d terms", len(self._precomputed))
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Dense index init failed: %s", e)
             self._dense_index = None
 

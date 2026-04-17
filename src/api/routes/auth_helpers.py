@@ -101,7 +101,7 @@ def _filter_activities_by_date(
             if date_to and act_date > date_to:
                 continue
             filtered.append(act)
-        except (ValueError, TypeError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             filtered.append(act)
     return filtered
 

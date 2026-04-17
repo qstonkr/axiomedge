@@ -133,7 +133,7 @@ class TestExtract:
 
     def test_llm_failure(self):
         mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("LLM timeout")
+        mock_llm.invoke.side_effect = RuntimeError("LLM timeout")
         extractor = GraphRAGExtractor(llm_client=mock_llm)
         result = extractor.extract("문서 내용", source_title="test")
         assert result.node_count == 0
@@ -439,13 +439,13 @@ class TestQueryRecentEntities:
     def test_driver_failure(self):
         extractor = GraphRAGExtractor(llm_client=MagicMock())
         # No driver set, _get_neo4j_driver will try to import neo4j
-        with patch.object(extractor, "_get_neo4j_driver", side_effect=Exception("no driver")):
+        with patch.object(extractor, "_get_neo4j_driver", side_effect=RuntimeError("no driver")):
             entities = extractor.query_recent_entities()
             assert entities == []
 
     def test_query_failure(self):
         mock_session = MagicMock()
-        mock_session.run.side_effect = Exception("query failed")
+        mock_session.run.side_effect = RuntimeError("query failed")
         mock_driver = MagicMock()
         mock_driver.session.return_value.__enter__ = MagicMock(return_value=mock_session)
         mock_driver.session.return_value.__exit__ = MagicMock(return_value=False)
@@ -503,7 +503,7 @@ class TestBatchProcessor:
         mock_extractor = MagicMock()
         mock_extractor.extract.side_effect = [
             ExtractionResult(nodes=[GraphNode("A", "Person")]),
-            Exception("Unexpected error"),
+            RuntimeError("Unexpected error"),
         ]
         processor = GraphRAGBatchProcessor(extractor=mock_extractor)
 

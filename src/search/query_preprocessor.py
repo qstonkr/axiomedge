@@ -199,7 +199,7 @@ def _resolve_relative_time(query: str, llm_client=None) -> tuple[str, list[Query
                     original=query, corrected=resolved, reason="시점 해석 (LLM)",
                 ))
                 return resolved, corrections
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("LLM time resolution failed: %s", e)
 
     return result, corrections
@@ -384,7 +384,7 @@ class QueryPreprocessor:
             return _w.preprocessor.fuzzy_cutoff
         try:
             parsed = float(raw)
-        except (TypeError, ValueError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return _w.preprocessor.fuzzy_cutoff
         return max(0.0, min(parsed, 1.0))
 

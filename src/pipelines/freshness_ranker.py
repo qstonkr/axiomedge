@@ -120,7 +120,7 @@ class FreshnessRanker:
             if len(updated_at) >= 10:
                 update_date = datetime.fromisoformat(updated_at[:10])
                 return (datetime.now() - update_date).days
-        except (ValueError, TypeError) as e:
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Failed to parse updated_at date: %s", e)
 
         return None
@@ -144,7 +144,7 @@ class FreshnessRanker:
         """숫자형 메타데이터를 안전하게 int로 변환."""
         try:
             return int(value)
-        except (TypeError, ValueError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return default
 
     def _get_warning(self, days_old: int | None) -> str | None:

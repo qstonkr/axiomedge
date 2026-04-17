@@ -248,7 +248,7 @@ class TestHubSearch:
     def test_hub_search_search_collection_exception(self):
         """If a collection search raises, it is logged and skipped."""
         state = _mock_search_state()
-        state["qdrant_search"].search = AsyncMock(side_effect=Exception("Qdrant error"))
+        state["qdrant_search"].search = AsyncMock(side_effect=RuntimeError("Qdrant error"))
 
         with patch.object(search_route, "_get_state", return_value=state):
             app = _make_test_app()
@@ -313,7 +313,7 @@ class TestListSearchableKBs:
 
         state = AppState()
         collections = AsyncMock()
-        collections.get_existing_collection_names = AsyncMock(side_effect=Exception("Qdrant down"))
+        collections.get_existing_collection_names = AsyncMock(side_effect=RuntimeError("Qdrant down"))
         state["qdrant_collections"] = collections
 
         with patch.object(search_route, "_get_state", return_value=state):

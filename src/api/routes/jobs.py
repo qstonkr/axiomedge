@@ -117,7 +117,7 @@ async def get_active_job_count() -> int:
             if status == "processing":
                 count += 1
         return count
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return 0
 
 
@@ -135,7 +135,7 @@ def _deserialize(raw: dict) -> dict:
         if int_field in job:
             try:
                 job[int_field] = int(job[int_field])
-            except (ValueError, TypeError) as e:
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.debug("Failed to parse int field %s: %s", int_field, e)
     if "errors" in job:
         try:

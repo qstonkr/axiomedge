@@ -35,7 +35,7 @@ async def graph_stats():
     try:
         stats = await graph.get_stats()
         return stats
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph stats failed: %s", e)
         return {"nodes": 0, "edges": 0, "error": str(e)}
 
@@ -87,7 +87,7 @@ async def graph_search(body: dict[str, Any]):
 
         entities = sorted(entities_map.values(), key=lambda x: x.get("score", 0), reverse=True)
         return {"query": query, "entities": entities, "total": len(entities)}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph search failed: %s", e)
         return {"query": query, "entities": [], "total": 0, "error": str(e)}
 
@@ -111,7 +111,7 @@ async def find_experts(
     try:
         experts = await graph.find_experts(topic)
         return {"topic": topic, "experts": experts[:limit]}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Expert search failed: %s", e)
         return {"topic": topic, "experts": [], "error": str(e)}
 
@@ -137,7 +137,7 @@ async def graph_expand(body: dict[str, Any]):
             result = await graph.expand_node(node_id, max_neighbors=max_neighbors)
             return result
         return {"node_id": node_id, "neighbors": [], "edges": []}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph expand failed: %s", e)
         return {"node_id": node_id, "neighbors": [], "edges": [], "error": str(e)}
 
@@ -236,7 +236,7 @@ async def graph_integrity_check():
             "inconsistencies": inconsistencies,
             "details": issues,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning(_GRAPH_INTEGRITY_FAILED, e)
         return {
             "total_nodes": 0, "total_edges": 0,
@@ -265,7 +265,7 @@ async def graph_path(body: dict[str, Any]):
             result = await graph.shortest_path(from_id, to_id)
             return result
         return {"from_node_id": from_id, "to_node_id": to_id, "path": [], "length": 0}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph path failed: %s", e)
         return {"from_node_id": from_id, "to_node_id": to_id, "path": [], "error": str(e)}
 
@@ -288,7 +288,7 @@ async def graph_communities():
             result = await graph.get_communities()
             return result
         return {"communities": [], "total": 0}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph communities failed: %s", e)
         return {"communities": [], "total": 0, "error": str(e)}
 
@@ -319,7 +319,7 @@ async def graph_integrity():
         result = report.to_dict()
         result["last_check"] = None  # Could be stored if needed
         return result
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning(_GRAPH_INTEGRITY_FAILED, e)
         return {
             "status": "error",
@@ -355,7 +355,7 @@ async def run_graph_integrity_check(body: dict[str, Any] | None = None):
         result = report.to_dict()
         result["success"] = True
         return result
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning(_GRAPH_INTEGRITY_FAILED, e)
         return {
             "success": False,
@@ -412,7 +412,7 @@ async def graph_impact(body: dict[str, Any]):
             "total_impacted": len(impacted),
             "max_hops": max_hops,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph impact analysis failed: %s", e)
         return {
             "node_id": node_id,
@@ -443,7 +443,7 @@ async def graph_health():
                 "nodes": stats.get("nodes", 0),
                 "edges": stats.get("edges", 0),
             }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             return {"status": "degraded", "connected": True, "error": str(e)}
 
     return {"status": "disconnected", "connected": False}
@@ -479,7 +479,7 @@ async def list_collections():
     try:
         names = await collections.get_existing_collection_names()
         return {"collections": names}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         return {"collections": [], "error": str(e)}
 
 
@@ -494,7 +494,7 @@ async def collection_stats(name: str):
     try:
         count = await store.count(name)
         return {"collection": name, "point_count": count}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -542,7 +542,7 @@ async def graph_cleanup(body: dict[str, Any] | None = None):
             "total_found": total_found,
             "total_fixed": total_fixed,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph cleanup failed: %s", e)
         return {
             "success": False,
@@ -586,7 +586,7 @@ async def graph_cleanup_analyze(body: dict[str, Any] | None = None):
             "total_found": total_found,
             "total_fixed": 0,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("Graph cleanup analysis failed: %s", e)
         return {
             "success": False,
@@ -730,7 +730,7 @@ def _apply_single_classification(
                 parameters={"eid": eid},
             )
             stats["relabeled"] += 1
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("AI classify apply error for %s: %s", eid, e)
         stats["errors"] += 1
 
@@ -791,7 +791,7 @@ def _resolve_llm_client(state: dict[str, Any]) -> Any | None:
         from src.nlp.llm.sagemaker_client import SageMakerLLMClient
         logger.info("AI classify: using SageMaker LLM (fallback)")
         return SageMakerLLMClient()
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("SageMaker LLM init failed: %s", e)
         return None
 
@@ -869,7 +869,7 @@ async def graph_ai_classify(body: dict[str, Any] | None = None):
             try:
                 batch_result = await _classify_batch(llm, candidates[i : i + batch_size])
                 all_classifications.extend(batch_result)
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
                 logger.warning("AI classify LLM batch %d failed: %s", i // batch_size, e)
 
         stats: dict[str, int] = {"relabeled": 0, "deleted": 0, "skipped": 0, "errors": 0}
@@ -894,7 +894,7 @@ async def graph_ai_classify(body: dict[str, Any] | None = None):
             ],
             "stats": stats,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
         logger.warning("AI classify failed: %s", e)
         return {
             "success": False,

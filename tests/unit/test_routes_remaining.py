@@ -74,7 +74,7 @@ class TestRagRoutes:
 
     def test_rag_query_pipeline_error(self):
         rag = AsyncMock()
-        rag.process = AsyncMock(side_effect=Exception("LLM timeout"))
+        rag.process = AsyncMock(side_effect=RuntimeError("LLM timeout"))
         state = _mock_state(rag_pipeline=rag)
         with patch("src.api.app._get_state", return_value=state):
             app = self._make_app()

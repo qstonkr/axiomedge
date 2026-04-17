@@ -319,7 +319,7 @@ class GraphNormalizer:
             parsed = json.loads(repaired)
             logger.info("JSON repaired successfully for graph normalization")
             return self._extract_fields(parsed)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("Failed to parse LLM response as JSON after repair: %s", exc)
             return {
                 "image_type": "unknown",

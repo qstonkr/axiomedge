@@ -89,7 +89,7 @@ class DatasetBuilder:
                         "source_type": qa.get("source_type", "chunk_qa") + SOURCE_TYPE_AUG_SUFFIX,
                         "augmented_from": qa.get("id", ""),
                     })
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("Augmentation failed for '%s': %s", question[:30], e)
 
         logger.info("Augmented: %d → %d QA pairs", len(qa_pairs), len(augmented))
@@ -129,7 +129,7 @@ class DatasetBuilder:
                     )
                     qa["augmentation_verified"] = sim >= threshold
                     return qa if qa["augmentation_verified"] else None
-                except Exception as e:  # noqa: BLE001
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                     logger.warning("Augmentation verify failed: %s", e)
                     return None
 

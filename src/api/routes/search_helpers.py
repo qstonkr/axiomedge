@@ -151,7 +151,7 @@ async def identifier_search(
                 _identifiers[:3],
                 _id_count,
             )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Identifier search failed: %s", e)
 
     return all_chunks
@@ -301,7 +301,7 @@ async def date_filter_search(
             _q_date,
             sum(1 for c in all_chunks if c.get("_date_filtered")),
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Date-filtered search failed: %s", e)
 
     all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -451,7 +451,7 @@ async def week_name_search(
             logger.info("Week-name search [%s] → %d chunks injected", pattern_label, wk_injected)
             all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
             all_chunks = all_chunks[:pool_size]
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Week-name search failed: %s", e)
 
     return all_chunks
@@ -560,7 +560,7 @@ async def _inject_graph_docs(
                     await _inject_single_doc(
                         qc, doc_name, coll, qdrant_url, display_query, all_chunks,
                     )
-                except Exception as e:  # noqa: BLE001
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                     logger.debug("Graph chunk injection failed: %s", e)
 
 
@@ -611,7 +611,7 @@ async def graph_expansion(
         all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
     except asyncio.TimeoutError:
         logger.warning("Graph expansion timed out (5s), skipping")
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Graph expansion failed in search route: %s", e)
 
     return all_chunks

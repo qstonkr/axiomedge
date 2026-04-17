@@ -106,7 +106,7 @@ def _load_model_sync():
         requests.Session.get = _orig_get  # type: ignore
         requests.Session.post = _orig_post  # type: ignore
         logger.info("Cross-encoder loaded: %s", CROSS_ENCODER_MODEL)
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ImportError, RuntimeError) as e:
         logger.warning("Cross-encoder load failed (graceful degradation): %s", e)
         _model = None
     finally:
@@ -165,7 +165,7 @@ def rerank_with_cross_encoder(
     if _use_cloud_reranker:
         try:
             return _rerank_via_tei(query, chunks, top_k, score_key)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Cloud reranker failed, fallback to local: %s", e)
 
     # Local cross-encoder
@@ -190,7 +190,7 @@ def rerank_with_cross_encoder(
 
         chunks.sort(key=lambda c: c.get(score_key, 0), reverse=True)
 
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Cross-encoder predict failed: %s", e)
 
     return chunks[:top_k]

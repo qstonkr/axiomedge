@@ -276,7 +276,7 @@ class TestCreateGraphEdges:
     def test_graph_edges_failure_logged(self):
         p = IngestionPipeline()
         p.graph_store = AsyncMock()
-        p.graph_store.execute_write = AsyncMock(side_effect=Exception("neo4j down"))
+        p.graph_store.execute_write = AsyncMock(side_effect=RuntimeError("neo4j down"))
 
         raw = _make_raw(content="content", metadata={"parent_id": "p1"})
         # Should not raise

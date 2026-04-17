@@ -371,7 +371,7 @@ class TestCheckHealth:
         client = OllamaClient()
 
         mock_http = AsyncMock()
-        mock_http.get = AsyncMock(side_effect=Exception("connection refused"))
+        mock_http.get = AsyncMock(side_effect=RuntimeError("connection refused"))
         client._client = mock_http
 
         result = await client.check_health()

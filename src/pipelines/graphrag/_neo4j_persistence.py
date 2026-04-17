@@ -59,7 +59,7 @@ class Neo4jPersistenceMixin:
                     stats["relationships_updated"] += rel_stats.get("updated", 0)
                     stats["relationships_archived"] += rel_stats.get("archived", 0)
                     stats["relationships_skipped"] += rel_stats.get("skipped", 0)
-                except Exception as e:  # noqa: BLE001
+                except (OSError, RuntimeError, ValueError) as e:
                     logger.error(f"관계 생성 실패 ({rel.source}->{rel.target}): {e}")
 
         logger.info(f"Neo4j 저장 완료: {stats}")
@@ -247,7 +247,7 @@ class Neo4jPersistenceMixin:
             d1 = datetime.fromisoformat(date1.replace("Z", "+00:00"))
             d2 = datetime.fromisoformat(date2.replace("Z", "+00:00"))
             return d1 > d2
-        except (ValueError, AttributeError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             logger.warning(f"날짜 비교 실패 (date1={date1}, date2={date2}), 새 문서 우선 처리")
             return True
 
@@ -379,7 +379,7 @@ class Neo4jPersistenceMixin:
         """Neo4j에서 최근 저장된 엔티티 조회."""
         try:
             driver = self._get_neo4j_driver()
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return []
 
         try:
@@ -394,7 +394,7 @@ class Neo4jPersistenceMixin:
             with driver.session() as session:
                 result = session.run(query, limit=limit)
                 return [dict(record) for record in result]
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(f"최근 엔티티 조회 실패: {e}")
             return []
 

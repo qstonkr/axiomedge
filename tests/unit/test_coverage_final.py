@@ -1258,7 +1258,7 @@ class TestAuthDependencies:
         auth_provider = AsyncMock()
         auth_provider.verify_token = AsyncMock(return_value=user)
         auth_service = AsyncMock()
-        auth_service.sync_user_from_idp = AsyncMock(side_effect=Exception("sync failed"))
+        auth_service.sync_user_from_idp = AsyncMock(side_effect=RuntimeError("sync failed"))
         app_state = {"auth_provider": auth_provider, "auth_service": auth_service}
         request = self._make_request(
             headers={"Authorization": "Bearer tok123"},
@@ -1831,7 +1831,7 @@ class TestL2SemanticCache:
         from src.stores.redis.cache_types import CacheEntry
         redis_mock = AsyncMock()
         provider = AsyncMock()
-        provider.embed = AsyncMock(side_effect=Exception("embed fail"))
+        provider.embed = AsyncMock(side_effect=RuntimeError("embed fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
         cache._redis = redis_mock
         cache._embedding_provider = provider
@@ -1845,7 +1845,7 @@ class TestL2SemanticCache:
         from src.stores.redis.l2_semantic_cache import L2SemanticCache
         from src.stores.redis.cache_types import CacheEntry
         redis_mock = AsyncMock()
-        redis_mock.setex = AsyncMock(side_effect=Exception("redis fail"))
+        redis_mock.setex = AsyncMock(side_effect=RuntimeError("redis fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
         cache._redis = redis_mock
         cache._embedding_provider = None
@@ -1875,7 +1875,7 @@ class TestL2SemanticCache:
     def test_delete_error(self):
         from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
-        redis_mock.delete = AsyncMock(side_effect=Exception("fail"))
+        redis_mock.delete = AsyncMock(side_effect=RuntimeError("fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
         cache._redis = redis_mock
         cache._prefix = "test"
@@ -1979,7 +1979,7 @@ class TestL2SemanticCache:
     def test_semantic_search_error(self):
         from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
-        redis_mock.scan = AsyncMock(side_effect=Exception("redis error"))
+        redis_mock.scan = AsyncMock(side_effect=RuntimeError("redis error"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
         cache._redis = redis_mock
         cache._prefix = "test"
@@ -2016,7 +2016,7 @@ class TestL2SemanticCache:
     def test_invalidate_by_metadata_error(self):
         from src.stores.redis.l2_semantic_cache import L2SemanticCache
         redis_mock = AsyncMock()
-        redis_mock.scan = AsyncMock(side_effect=Exception("fail"))
+        redis_mock.scan = AsyncMock(side_effect=RuntimeError("fail"))
         cache = L2SemanticCache.__new__(L2SemanticCache)
         cache._redis = redis_mock
         cache._prefix = "test"
@@ -2279,7 +2279,7 @@ class TestOCRWithCoords:
         from src.pipelines.cv.ocr_with_coords import OCRWithCoords
         ocr = OCRWithCoords()
         # Cause an exception in parsing
-        boxes = ocr._extract_legacy([Exception("bad")])
+        boxes = ocr._extract_legacy([RuntimeError("bad")])
         assert boxes == []
 
 
@@ -2306,7 +2306,7 @@ class TestActivityLogger:
 
     def test_log_activity_error(self):
         al, session = self._make_logger()
-        session.commit = AsyncMock(side_effect=Exception("fail"))
+        session.commit = AsyncMock(side_effect=RuntimeError("fail"))
         _run(al.log_activity("u-1", "search", "kb"))  # should not raise
 
     def test_get_user_activities(self):

@@ -144,7 +144,7 @@ class TestCorrectOcrIfNeeded:
             patch(
                 "src.pipelines.ocr_corrector.correct_ocr_chunks",
                 new_callable=AsyncMock,
-                side_effect=Exception("LLM timeout"),
+                side_effect=RuntimeError("LLM timeout"),
             ),
         ):
             _run(_correct_ocr_if_needed(pr))
@@ -177,7 +177,7 @@ class TestEnsureQdrantCollection:
 
         coll = AsyncMock()
         coll.ensure_collection = AsyncMock(
-            side_effect=Exception("SDK err")
+            side_effect=RuntimeError("SDK err")
         )
         state = _mock_state(qdrant_collections=coll)
 
@@ -327,7 +327,7 @@ class TestAutoRegisterKb:
         from src.api.routes.rag import _auto_register_kb
 
         reg = AsyncMock()
-        reg.get_kb = AsyncMock(side_effect=Exception("db"))
+        reg.get_kb = AsyncMock(side_effect=RuntimeError("db"))
         state = _mock_state(kb_registry=reg)
         _run(_auto_register_kb(state, "kb4", None, None))
         # Should not raise
@@ -380,7 +380,7 @@ class TestUpdateKbAndInvalidateCache:
         from src.api.routes.rag import _update_kb_and_invalidate_cache
 
         mc = AsyncMock()
-        mc.invalidate_by_kb = AsyncMock(side_effect=Exception("err"))
+        mc.invalidate_by_kb = AsyncMock(side_effect=RuntimeError("err"))
         sc = AsyncMock()
         sc.clear = AsyncMock()
         state = _mock_state(
@@ -396,7 +396,7 @@ class TestUpdateKbAndInvalidateCache:
         from src.api.routes.rag import _update_kb_and_invalidate_cache
 
         sc = AsyncMock()
-        sc.clear = AsyncMock(side_effect=Exception("redis"))
+        sc.clear = AsyncMock(side_effect=RuntimeError("redis"))
         state = _mock_state(
             kb_registry=None,
             multi_layer_cache=None,
@@ -771,7 +771,7 @@ class TestProcessFiles:
             patch(
                 "src.api.routes.rag._update_kb_and_invalidate_cache",
                 new_callable=AsyncMock,
-                side_effect=Exception("count update fail"),
+                side_effect=RuntimeError("count update fail"),
             ),
             patch(
                 "src.api.routes.rag.update_job",

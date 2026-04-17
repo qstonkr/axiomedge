@@ -53,7 +53,7 @@ def _extract_query_keywords(query: str) -> list[str]:
         tokens = _kiwi_instance.tokenize(query)
         keywords = [tok.form for tok in tokens if tok.tag in _NOUN_TAGS and len(tok.form) >= 2]
         return keywords if keywords else [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return [t.strip() for t in query.lower().split() if len(t.strip()) >= 2]
 
 
@@ -99,7 +99,7 @@ async def _resolve_collections_from_qdrant(state: dict[str, Any]) -> list[str]:
             if not n.startswith("kb_test")
         ]
         return collections if collections else ["knowledge"]
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return ["knowledge"]
 
 
@@ -115,7 +115,7 @@ async def _filter_by_kb_registry(
         active_kb_ids = await get_active_kb_ids(kb_registry)
         filtered = [c for c in collections if c in active_kb_ids]
         return filtered if filtered else collections
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("KB registry filter failed, using unfiltered collections: %s", e)
         return collections
 
@@ -185,7 +185,7 @@ async def _step_expand_query(
             expanded_q = getattr(expansion_result, "expanded_query", None)
             if expanded_q and expanded_q != corrected_query:
                 search_query = expanded_q
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Query expansion failed: %s", e)
 
     return search_query, display_query, expanded_terms
@@ -217,7 +217,7 @@ def _step_classify_query(
             elif qtype in ("procedure", "troubleshoot"):
                 _dense_w = weights.hybrid_search.procedure_dense_weight
                 _sparse_w = weights.hybrid_search.procedure_sparse_weight
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Query type weight adjustment failed: %s", e)
 
     if _re_dq.search(r"20\d{2}년\s*\d{1,2}월|20\d{2}[_\-]\d{2}|\d{1,2}월\s*\d주차", display_query):
@@ -362,7 +362,7 @@ async def _step_keyword_fallback(
                     ]},
                 },
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Keyword fallback scroll failed (coll=%s): %s", coll, e)
             return []
         if resp.status_code != 200:
@@ -396,7 +396,7 @@ async def _step_keyword_fallback(
             "Keyword fallback: injected %d chunks across %d collections for '%s'",
             sum(len(c) for c in per_collection_chunks), len(collections), kw_primary,
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Keyword fallback search failed: %s", e)
 
     return all_chunks
@@ -562,7 +562,7 @@ async def _try_tiered_generation(
         else:
             confidence = "낮음"
         return tiered_result.content, tiered_result.query_type.value, confidence
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("TieredResponseGenerator failed, falling back to AnswerService: %s", e)
         return None
 
@@ -640,7 +640,7 @@ async def _step_follow_ups(
         result = await llm.generate(prompt, temperature=0.3, max_tokens=200)
         if result:
             return [q.strip().lstrip("- ·•123.") for q in result.strip().split("\n") if q.strip()][:3]
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Follow-up generation skipped: %s", e)
     return []
 
@@ -709,14 +709,14 @@ async def _step_cache_store(
                 metadata={"kb_ids": collections},
                 kb_ids=collections, top_k=effective_top_k,
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Failed to write multi-layer cache: %s", e)
 
     search_cache = state.get("search_cache")
     if search_cache:
         try:
             await search_cache.set(query, collections, response_dict, effective_top_k)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Failed to write search cache: %s", e)
 
 
@@ -812,7 +812,7 @@ async def _step_tree_expand(
             "Tree expansion: siblings=%d, section_hits=%d",
             len(siblings), len(section_hits),
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Tree context expansion failed: %s", e)
 
     return all_chunks
@@ -828,7 +828,7 @@ def _parse_datetime_safe(value: Any) -> datetime | None:
         try:
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-        except (ValueError, TypeError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return None
     return None
 
@@ -912,7 +912,7 @@ async def _step_crag_evaluate(
             crag_evaluation.confidence_level.value,
         )
         return crag_evaluation
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("CRAG evaluation failed: %s", e)
         return None
 
@@ -966,7 +966,7 @@ async def _step_log_usage(
             user_id="local-user", usage_type="hub_search",
             context=context,
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         # usage log 실패는 hub_search 전체를 막지 않음 (best-effort) —
         # 하지만 조용히 삼키지 말고 로그를 남겨 상위 인시던트 디버깅 가능하게 함.
         logger.warning("Failed to log hub_search usage: %s", e, exc_info=True)
@@ -1005,7 +1005,7 @@ def _try_deserialize_cache(
     try:
         from src.api.routes.search import HubSearchResponse as _HSR
         return _HSR(**cached)
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         logger.warning("%s cache deserialization failed, proceeding", cache_layer or "Legacy")
         return None
 
@@ -1027,7 +1027,7 @@ async def _check_multi_layer_cache(
         cached = cache_entry.response
         if isinstance(cached, dict) and _is_valid_cache(cached, expected_version):
             return _try_deserialize_cache(cached, start, "multi_layer")
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("MultiLayerCache lookup failed: %s", e)
     return None
 
@@ -1041,7 +1041,7 @@ async def _check_legacy_cache(
         cached = await search_cache.get(query, cache_collections, top_k)
         if cached and isinstance(cached, dict) and _is_valid_cache(cached, expected_version):
             return _try_deserialize_cache(cached, start, "")
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Search cache lookup failed: %s", e)
     return None
 

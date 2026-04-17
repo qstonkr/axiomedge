@@ -99,7 +99,7 @@ class KnowledgeRAGPipeline:
                         query[:80],
                         preprocessed[:80],
                     )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("QueryPreprocessor failed in RAG pipeline, using original: %s", e)
         return preprocessed
 
@@ -115,7 +115,7 @@ class KnowledgeRAGPipeline:
             expanded_text = getattr(expanded, "expanded_query", None)
             if expanded_text and expanded_text != query:
                 return expanded_text
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Query expansion failed: %s", e)
         return query
 
@@ -307,7 +307,7 @@ class KnowledgeRAGPipeline:
                 answer = "담당자 정보:\n" + "\n".join(lines)
             else:
                 answer = f"'{query}' 관련 담당자 정보를 찾을 수 없습니다."
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Owner query failed: %s", e)
             answer = f"담당자 조회 중 오류가 발생했습니다: {e}"
 

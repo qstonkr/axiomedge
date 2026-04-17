@@ -65,7 +65,7 @@ class TestNeo4jClient:
         client = Neo4jClient()
         client._driver = None
         # connect will fail
-        with patch.object(client, "connect", side_effect=Exception("no neo4j")):
+        with patch.object(client, "connect", side_effect=RuntimeError("no neo4j")):
             result = await client.health_check()
         assert result is False
 
@@ -373,7 +373,7 @@ class TestGraphSchema:
         from src.stores.neo4j.schema import apply_schema
 
         client = AsyncMock()
-        client.execute_write.side_effect = Exception("already exists")
+        client.execute_write.side_effect = RuntimeError("already exists")
 
         result = await apply_schema(client)
         # Should not raise, and counts should be 0

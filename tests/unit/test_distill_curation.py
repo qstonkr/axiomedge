@@ -118,7 +118,7 @@ class TestQualityFilterSimilarity:
         llm = AsyncMock()
         # embedder가 없으면 fuzz fallback
         embedder = MagicMock()
-        embedder.encode = MagicMock(side_effect=Exception("no embedder"))
+        embedder.encode = MagicMock(side_effect=RuntimeError("no embedder"))
 
         profile = MagicMock()
         qf = QualityFilter(llm, embedder, profile)
@@ -131,7 +131,7 @@ class TestQualityFilterSimilarity:
 
         llm = AsyncMock()
         embedder = MagicMock()
-        embedder.encode = MagicMock(side_effect=Exception("no embedder"))
+        embedder.encode = MagicMock(side_effect=RuntimeError("no embedder"))
 
         profile = MagicMock()
         qf = QualityFilter(llm, embedder, profile)

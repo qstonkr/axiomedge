@@ -202,7 +202,7 @@ class DistillQuantizer:
                 shutil.copy(cached, tm_target)
                 logger.info("Recovered tokenizer.model from HF cache (%s)", base_ref)
                 return
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("HF cache lookup failed: %s", e)
         try:
             base_path = Path(base_ref)
@@ -210,7 +210,7 @@ class DistillQuantizer:
                 shutil.copy(base_path / "tokenizer.model", tm_target)
                 logger.info("Recovered tokenizer.model from local base %s", base_path)
                 return
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Local base path lookup failed: %s", e)
         logger.warning(
             "tokenizer.model missing in %s and not recoverable from base %s — "
@@ -310,7 +310,7 @@ raise NotImplementedError('Manual GGUF conversion needed')
                 "test_output": test_output,
                 "quantize_method": self.quantize_method,
             }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             return {
                 "valid": False, "error": str(e),
                 "size_mb": round(size_mb, 1), "sha256": sha256,

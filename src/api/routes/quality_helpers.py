@@ -280,6 +280,6 @@ async def query_document_owner_count(session_factory: Any) -> int:
         async with session_factory() as session:
             r = await session.execute(text("SELECT count(*) FROM document_owners"))
             return r.scalar() or 0
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Failed to query document_owners count: %s", e)
         return 0

@@ -205,7 +205,7 @@ class ConfluenceFullClient(CheckpointMixin):
                 "email": data.get("email"),
                 "profile_picture": data.get("profilePicture", {}).get("path"),
             }
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return None
 
     async def get_comments(self, page_id: str) -> list[ExtractedComment]:
@@ -249,7 +249,7 @@ class ConfluenceFullClient(CheckpointMixin):
                     )
                 )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Could not fetch comments of %s: %s", page_id, e)
 
         return comments
@@ -272,7 +272,7 @@ class ConfluenceFullClient(CheckpointMixin):
                     )
                 )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Could not fetch labels of %s: %s", page_id, e)
 
         return labels
@@ -296,19 +296,19 @@ class ConfluenceFullClient(CheckpointMixin):
         code_extractor = CodeBlockExtractor()
         try:
             code_extractor.feed(body_html)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
         email_extractor = EmailExtractor()
         try:
             email_extractor.feed(body_html)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
         macro_extractor = MacroExtractor()
         try:
             macro_extractor.feed(body_html)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
         content_ir = generate_structured_ir(
@@ -449,7 +449,7 @@ class ConfluenceFullClient(CheckpointMixin):
             link_extractor = LinkExtractor(base_url=self.base_url)
             try:
                 link_extractor.feed(body_html)
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 pass
 
             await self._enrich_mentions_with_email(elements["mentions"])
@@ -499,7 +499,7 @@ class ConfluenceFullClient(CheckpointMixin):
             body = e.response.text[:200]
             logger.error("Page %s HTTP %d: %s", page_id, status, body)
             return None
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(
                 "Page %s ERROR (%s): %s", page_id, type(e).__name__, e
             )
@@ -513,7 +513,7 @@ class ConfluenceFullClient(CheckpointMixin):
         try:
             response = await self._http_get_with_retry(url, params=params)
             return response.json().get("results", [])
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(
                 "Could not fetch attachments of %s: %s", page_id, e
             )
@@ -669,7 +669,7 @@ class ConfluenceFullClient(CheckpointMixin):
             )
             self._apply_parse_result(result, parse_result)
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             result.parse_error = str(e)
 
         self._record_attachment_stats(result)
@@ -711,7 +711,7 @@ class ConfluenceFullClient(CheckpointMixin):
                     params = {}
                 else:
                     url = None
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(
                 "Could not fetch children of %s: %s", page_id, e
             )
@@ -726,7 +726,7 @@ class ConfluenceFullClient(CheckpointMixin):
             resp = await self._http_get_with_retry(url, params=params)
             data = resp.json()
             return data.get("results", []), data.get("totalSize", 0)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("CQL search error (start=%s): %s", params.get("start"), e)
             return None
 
@@ -792,7 +792,7 @@ class ConfluenceFullClient(CheckpointMixin):
                     download_attachments, max_attachments_per_page,
                     progress, task_id, source_key,
                 )
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
     async def crawl_recursive(

@@ -44,6 +44,6 @@ async def ensure_indexes(client: "Neo4jClient") -> dict[str, Any]:
                 results["fulltext_indexes_created"],
             )
         return results
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.error("Failed to ensure graph indexes: %s", e)
         return {"constraints_created": 0, "indexes_created": 0, "fulltext_indexes_created": 0, "errors": [str(e)]}

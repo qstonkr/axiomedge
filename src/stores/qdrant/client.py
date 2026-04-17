@@ -236,7 +236,7 @@ class QdrantClientProvider:
             from qdrant_client.models import PayloadSelectorExclude
 
             return PayloadSelectorExclude(exclude=fields)
-        except Exception:  # noqa: BLE001
+        except (ImportError, AttributeError):
             return True
 
     @staticmethod
@@ -250,7 +250,7 @@ class QdrantClientProvider:
             from qdrant_client.models import PayloadSelectorInclude
 
             return PayloadSelectorInclude(include=fields)
-        except Exception:  # noqa: BLE001
+        except (ImportError, AttributeError):
             return fields
 
     @staticmethod

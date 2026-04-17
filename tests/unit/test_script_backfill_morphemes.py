@@ -47,7 +47,7 @@ class TestExtractMorphemes:
 
     def test_exception_returns_empty(self) -> None:
         mock_kiwi = MagicMock()
-        mock_kiwi.tokenize.side_effect = Exception("tokenize error")
+        mock_kiwi.tokenize.side_effect = RuntimeError("tokenize error")
         result = extract_morphemes(mock_kiwi, "test text")
         assert result == ""
 

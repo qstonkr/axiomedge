@@ -101,7 +101,7 @@ def _ocr_worker_fn(image_bytes: bytes) -> tuple:
             for t in (result.tables or [])
         ]
         return (result.text, result.confidence, tables)
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return (None, 0.0, [])
 
 
@@ -215,7 +215,7 @@ def _decode_ole_text(raw: bytes) -> str | None:
             text = re.sub(r"\s{3,}", "\n\n", text)
             if len(text) > 50:
                 return text
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             continue
     return None
 
@@ -246,7 +246,7 @@ def _try_cli_doc_extract(
                 confidence=confidence,
                 native_text_chars=_text_chars(text),
             )
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return None
 
@@ -336,7 +336,7 @@ def _try_libreoffice_ppt_convert(
             logger.info("[PPT] LibreOffice conversion failed: %s", result.stderr[:200])
     except subprocess.TimeoutExpired:
         logger.warning("[PPT] LibreOffice conversion timeout for %s", file_path.name)
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("[PPT] LibreOffice conversion error: %s", e)
 
     return None
@@ -363,7 +363,7 @@ def _try_catppt_extract(file_path: Path) -> AttachmentParseResult | None:
                 confidence=0.6,
                 native_text_chars=_text_chars(text),
             )
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return None
 
@@ -384,7 +384,7 @@ def _preprocess_shape_image(img, ocr_preprocess: bool):
         try:
             from scripts.ocr_preprocessor import preprocess_for_ocr
             return preprocess_for_ocr(img, mode="auto")
-        except Exception as preproc_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as preproc_err:
             logger.warning("[OCR] Preprocess failed, using original: %s", preproc_err)
 
     if img.mode != "RGB":
@@ -402,7 +402,7 @@ def _try_layout_ocr(img_original, policy) -> tuple[str | None, float]:
         if regions:
             text = "\n".join(r["content"] for r in regions if r.get("content"))
             return text, 0.7
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         pass
     return None, 0.0
 
@@ -412,7 +412,7 @@ def _apply_ocr_postprocess(ocr_text: str, ocr_conf: float) -> tuple[str, float]:
     try:
         from scripts.ocr_postprocessor import postprocess_ocr_text
         return postprocess_ocr_text(ocr_text, ocr_conf)
-    except Exception as postproc_err:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as postproc_err:
         logger.warning("[OCR] Postprocess failed: %s", postproc_err)
     return ocr_text, ocr_conf
 
@@ -422,7 +422,7 @@ def _preprocess_slide_image(img, slide_num: int):
     try:
         from scripts.ocr_preprocessor import preprocess_for_ocr
         return preprocess_for_ocr(img, mode="slide")
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("[OCR] Slide %d preprocess failed: %s", slide_num, e)
     return img
 
@@ -443,7 +443,7 @@ def _try_slide_layout_ocr(
                 slide_num, len(regions),
             )
             return text
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("[OCR] Slide %d layout analysis failed: %s", slide_num, e)
     return None
 
@@ -453,7 +453,7 @@ def _postprocess_slide_text(ocr_text: str, slide_num: int) -> str:
     try:
         from scripts.ocr_postprocessor import postprocess_ocr_text
         ocr_text, _ = postprocess_ocr_text(ocr_text)
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("[OCR] Slide %d postprocess failed: %s", slide_num, e)
     return ocr_text
 

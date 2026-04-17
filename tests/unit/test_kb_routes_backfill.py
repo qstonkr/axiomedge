@@ -54,7 +54,7 @@ class TestEnrichKbCounts:
         from src.api.routes.kb import _enrich_kb_counts
 
         store = AsyncMock()
-        store.count = AsyncMock(side_effect=Exception("conn refused"))
+        store.count = AsyncMock(side_effect=RuntimeError("conn refused"))
         kbs = [{"kb_id": "a"}]
         _run(_enrich_kb_counts(kbs, store))
         assert kbs[0]["chunk_count"] == 0
@@ -108,7 +108,7 @@ class TestListKbsFromRegistry:
         from src.api.routes.kb import _list_kbs_from_registry
 
         reg = AsyncMock()
-        reg.list_all = AsyncMock(side_effect=Exception("db down"))
+        reg.list_all = AsyncMock(side_effect=RuntimeError("db down"))
         result = _run(
             _list_kbs_from_registry(reg, None, tier=None, status=None)
         )
@@ -168,7 +168,7 @@ class TestListKbsFromQdrant:
             return_value=["kb_z"]
         )
         store = AsyncMock()
-        store.count = AsyncMock(side_effect=Exception("timeout"))
+        store.count = AsyncMock(side_effect=RuntimeError("timeout"))
 
         result = _run(_list_kbs_from_qdrant(collections, store))
         assert result["kbs"][0]["chunk_count"] == 0
@@ -178,7 +178,7 @@ class TestListKbsFromQdrant:
 
         collections = AsyncMock()
         collections.get_existing_collection_names = AsyncMock(
-            side_effect=Exception("conn")
+            side_effect=RuntimeError("conn")
         )
         result = _run(_list_kbs_from_qdrant(collections, None))
         assert result["kbs"] == []
@@ -231,7 +231,7 @@ class TestListKbsImpl:
         from src.api.routes.kb import _list_kbs_impl
 
         reg = AsyncMock()
-        reg.list_all = AsyncMock(side_effect=Exception("db err"))
+        reg.list_all = AsyncMock(side_effect=RuntimeError("db err"))
 
         config = MagicMock()
         config.collection_prefix = "kb"
@@ -286,7 +286,7 @@ class TestCreateKb:
 
         coll = AsyncMock()
         coll.ensure_collection = AsyncMock(
-            side_effect=Exception("vector dim mismatch")
+            side_effect=RuntimeError("vector dim mismatch")
         )
         state = _mock_state(qdrant_collections=coll)
         with patch("src.api.routes.kb._get_state", return_value=state):
@@ -331,7 +331,7 @@ class TestDeleteKb:
 
         provider = AsyncMock()
         provider.ensure_client = AsyncMock(
-            side_effect=Exception("connection lost")
+            side_effect=RuntimeError("connection lost")
         )
         state = _mock_state(
             qdrant_provider=provider, qdrant_collections=None
@@ -393,7 +393,7 @@ class TestAdminCreateKb:
         from src.api.routes.kb import admin_create_kb
 
         coll = AsyncMock()
-        coll.ensure_collection = AsyncMock(side_effect=Exception("fail"))
+        coll.ensure_collection = AsyncMock(side_effect=RuntimeError("fail"))
         state = _mock_state(qdrant_collections=coll)
         with patch("src.api.routes.kb._get_state", return_value=state):
             with pytest.raises(Exception) as exc_info:
@@ -426,7 +426,7 @@ class TestGetRegistryCounts:
         from src.api.routes.kb import _get_registry_counts
 
         reg = AsyncMock()
-        reg.list_all = AsyncMock(side_effect=Exception("fail"))
+        reg.list_all = AsyncMock(side_effect=RuntimeError("fail"))
         result = _run(_get_registry_counts(reg))
         assert result == (0, 0)
 
@@ -472,7 +472,7 @@ class TestGetQdrantChunkCounts:
             return_value=["kb_a"]
         )
         store = AsyncMock()
-        store.count = AsyncMock(side_effect=Exception("timeout"))
+        store.count = AsyncMock(side_effect=RuntimeError("timeout"))
 
         result = _run(_get_qdrant_chunk_counts(collections, store, 3))
         assert result == (0, 3)
@@ -482,7 +482,7 @@ class TestGetQdrantChunkCounts:
 
         collections = AsyncMock()
         collections.get_existing_collection_names = AsyncMock(
-            side_effect=Exception("conn")
+            side_effect=RuntimeError("conn")
         )
         store = AsyncMock()
         result = _run(_get_qdrant_chunk_counts(collections, store, 7))
@@ -555,7 +555,7 @@ class TestGetAvgQualityScore:
 
         collections = AsyncMock()
         collections.get_existing_collection_names = AsyncMock(
-            side_effect=Exception("fail")
+            side_effect=RuntimeError("fail")
         )
         store = MagicMock()
 
@@ -640,7 +640,7 @@ class TestClearSearchCache:
         from src.api.routes.kb import clear_search_cache
 
         cache = AsyncMock()
-        cache.clear = AsyncMock(side_effect=Exception("redis down"))
+        cache.clear = AsyncMock(side_effect=RuntimeError("redis down"))
         state = _mock_state(search_cache=cache)
         with patch("src.api.routes.kb._get_state", return_value=state):
             with pytest.raises(Exception) as exc_info:
@@ -681,7 +681,7 @@ class TestAdminGetKb:
         from src.api.routes.kb import admin_get_kb
 
         reg = AsyncMock()
-        reg.get_kb = AsyncMock(side_effect=Exception("db err"))
+        reg.get_kb = AsyncMock(side_effect=RuntimeError("db err"))
         state = _mock_state(kb_registry=reg, qdrant_store=None)
         with patch("src.api.routes.kb._get_state", return_value=state):
             result = _run(admin_get_kb("broken"))
@@ -704,7 +704,7 @@ class TestAdminGetKb:
         reg = AsyncMock()
         reg.get_kb = AsyncMock(return_value=None)
         store = AsyncMock()
-        store.count = AsyncMock(side_effect=Exception("timeout"))
+        store.count = AsyncMock(side_effect=RuntimeError("timeout"))
         state = _mock_state(kb_registry=reg, qdrant_store=store)
         with patch("src.api.routes.kb._get_state", return_value=state):
             result = _run(admin_get_kb("kb3"))
@@ -757,7 +757,7 @@ class TestAdminDeleteKb:
 
         provider = AsyncMock()
         provider.ensure_client = AsyncMock(
-            side_effect=Exception("err")
+            side_effect=RuntimeError("err")
         )
         state = _mock_state(
             qdrant_provider=provider, qdrant_collections=None
@@ -795,7 +795,7 @@ class TestAdminKbStats:
         from src.api.routes.kb import admin_kb_stats
 
         store = AsyncMock()
-        store.count = AsyncMock(side_effect=Exception("fail"))
+        store.count = AsyncMock(side_effect=RuntimeError("fail"))
         state = _mock_state(qdrant_store=store)
         with patch("src.api.routes.kb._get_state", return_value=state):
             result = _run(admin_kb_stats("kb3"))
@@ -958,7 +958,7 @@ class TestAdminKbDocuments:
 
         coll = MagicMock()
         coll.get_collection_name = MagicMock(
-            side_effect=Exception("oops")
+            side_effect=RuntimeError("oops")
         )
         state = _mock_state(qdrant_collections=coll)
         with (
@@ -1034,7 +1034,7 @@ class TestAdminKbCategories:
 
         coll = MagicMock()
         coll.get_collection_name = MagicMock(
-            side_effect=Exception("fail")
+            side_effect=RuntimeError("fail")
         )
         state = _mock_state(qdrant_collections=coll)
         with (
@@ -1076,7 +1076,7 @@ class TestAdminKbTrustScores:
         from src.api.routes.kb import admin_kb_trust_scores
 
         repo = AsyncMock()
-        repo.get_by_kb = AsyncMock(side_effect=Exception("db"))
+        repo.get_by_kb = AsyncMock(side_effect=RuntimeError("db"))
         state = _mock_state(trust_score_repo=repo)
         with patch("src.api.routes.kb._get_state", return_value=state):
             result = _run(admin_kb_trust_scores("kb1"))
@@ -1118,7 +1118,7 @@ class TestAdminKbTrustScoreDistribution:
         from src.api.routes.kb import admin_kb_trust_score_distribution
 
         repo = AsyncMock()
-        repo.get_by_kb = AsyncMock(side_effect=Exception("err"))
+        repo.get_by_kb = AsyncMock(side_effect=RuntimeError("err"))
         state = _mock_state(trust_score_repo=repo)
         with patch("src.api.routes.kb._get_state", return_value=state):
             result = _run(admin_kb_trust_score_distribution("kb1"))

@@ -96,7 +96,7 @@ class CheckpointMixin:
             try:
                 with open(self.checkpoint_file, "r", encoding="utf-8") as f:
                     checkpoint_data = json.load(f)
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, json.JSONDecodeError, ValueError):
                 checkpoint_data = None
 
         if checkpoint_data is None:
@@ -141,7 +141,7 @@ class CheckpointMixin:
             )
 
             return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Failed to load checkpoint: %s", e)
             return False
 
@@ -197,7 +197,7 @@ class CheckpointMixin:
                     f.truncate()
 
             logger.warning("Repaired incomplete trailing line in incremental file.")
-        except Exception as repair_error:  # noqa: BLE001
+        except OSError as repair_error:
             logger.warning("Incremental file repair failed: %s", repair_error)
 
     def save_incremental(self, source_key: str) -> None:
@@ -260,7 +260,7 @@ class CheckpointMixin:
                         loaded += 1
                     else:
                         skipped_empty += 1
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, json.JSONDecodeError, ValueError) as e:
             logger.warning("Error loading incremental file: %s", e)
 
         if loaded > 0 or skipped_empty > 0:

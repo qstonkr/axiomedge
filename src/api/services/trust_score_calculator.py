@@ -70,7 +70,7 @@ def _compute_freshness(doc_date: str, now: dt) -> float:
         if days < 180:
             return _qc.kts_freshness_180d
         return _qc.kts_freshness_old
-    except (ValueError, TypeError):
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return _qc.kts_freshness_default
 
 
@@ -142,7 +142,7 @@ async def _save_trust_score(
             "last_evaluated_at": now,
         })
         return True
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return False
 
 
@@ -178,7 +178,7 @@ async def calculate_kb_trust_scores(
             "scores_saved": saved,
             "errors": errors,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.error("Trust score calculation failed: %s", e)
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Trust score calculation failed: {e}")

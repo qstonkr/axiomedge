@@ -372,7 +372,7 @@ def _assess_freshness(
 
             return False, None, days_old
 
-    except (ValueError, TypeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Date parsing failed for freshness check: %s", e)
 
     return False, None, None

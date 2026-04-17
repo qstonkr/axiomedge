@@ -150,7 +150,7 @@ class TestGetIngestedHashes:
         from src.cli.ingest import _get_ingested_hashes
 
         mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
+        mock_client.get = AsyncMock(side_effect=RuntimeError("connection refused"))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 

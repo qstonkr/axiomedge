@@ -77,7 +77,7 @@ async def expand_siblings(
         siblings_map = await graph_repo.find_tree_siblings_batch(
             hit_chunk_ids, window=window,
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Tree sibling expansion failed: %s", e)
         return []
 
@@ -136,7 +136,7 @@ async def search_by_section_titles(
         results = await graph_repo.search_section_titles(
             query, kb_id=kb_id, limit=limit * 2,
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Section title search failed: %s", e)
         return []
 
@@ -176,7 +176,7 @@ async def get_section_bonus_map(
 
     try:
         paths = await graph_repo.get_chunk_section_paths_batch(chunk_ids)
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Section bonus calculation failed: %s", e)
         return {}
 

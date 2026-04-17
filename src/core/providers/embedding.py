@@ -62,7 +62,7 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
             if provider.is_ready():
                 logger.info("Auto-detected TEI embedding provider: %s", tei_url)
                 return provider
-        except Exception as e:  # noqa: BLE001
+        except (OSError, ImportError, RuntimeError, ValueError) as e:
             logger.debug("TEI not available: %s", e)
 
     # 2. Ollama
@@ -73,7 +73,7 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
         if provider.is_ready():
             logger.info("Auto-detected Ollama embedding provider: %s", ollama_url)
             return provider
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ImportError, RuntimeError, ValueError) as e:
         logger.debug("Ollama not available: %s", e)
 
     # 3. ONNX
@@ -82,7 +82,7 @@ def _auto_detect(**kwargs) -> EmbeddingProvider:
         if provider.is_ready():
             logger.info("Auto-detected ONNX embedding provider")
             return provider
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ImportError, RuntimeError, ValueError) as e:
         logger.debug("ONNX not available: %s", e)
 
     raise RuntimeError(

@@ -162,7 +162,7 @@ class Weights:
             expected_type = next(f.type for f in fields(cls) if f.name == field_name)
             try:
                 coerced = _coerce_value(new_value, expected_type)
-            except (ValueError, TypeError):  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 continue
             changes[field_name] = coerced
             applied[f"{section_name}.{field_name}"] = {"old": old_value, "new": coerced}

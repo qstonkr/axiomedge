@@ -263,7 +263,7 @@ class TestParsePdf:
             assert "Page 1" in result
 
     def test_parse_pdf_corrupt(self):
-        with patch("pymupdf.open", side_effect=Exception("corrupt")):
+        with patch("pymupdf.open", side_effect=RuntimeError("corrupt")):
             from src.pipelines.document_parser import _parse_pdf
             with pytest.raises(ValueError, match="PDF open failed"):
                 _parse_pdf(b"bad-pdf", "test.pdf")
@@ -313,7 +313,7 @@ class TestParseDocx:
             assert "cell value" in result
 
     def test_parse_docx_corrupt(self):
-        with patch("docx.Document", side_effect=Exception("corrupt")):
+        with patch("docx.Document", side_effect=RuntimeError("corrupt")):
             from src.pipelines.document_parser import _parse_docx
             with pytest.raises(ValueError, match="DOCX open failed"):
                 _parse_docx(b"bad-docx", "test.docx")

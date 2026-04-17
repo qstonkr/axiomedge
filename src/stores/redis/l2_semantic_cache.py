@@ -100,7 +100,7 @@ class L2SemanticCache(ICacheLayer):
                 kb_ids=kwargs.get("kb_ids"),
                 cache_version=kwargs.get("cache_version", ""),
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 semantic search error, falling back to exact match: %s", e)
             return await self._exact_match(key)
 
@@ -123,7 +123,7 @@ class L2SemanticCache(ICacheLayer):
             entry.hit_count += 1
             entry.last_accessed_at = _utc_now()
             return entry
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 exact match error: %s", e)
             return None
 
@@ -193,7 +193,7 @@ class L2SemanticCache(ICacheLayer):
                 best_entry.hit_count += 1
                 best_entry.last_accessed_at = _utc_now()
             return best_entry
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 semantic search scan error: %s", e)
             return None
 
@@ -244,7 +244,7 @@ class L2SemanticCache(ICacheLayer):
             sim = _cosine_similarity(query_embedding, emb)
             if sim >= threshold:
                 return self._build_cache_entry(redis_key, stored, emb, sim), sim
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
         return None, 0.0
 
@@ -257,7 +257,7 @@ class L2SemanticCache(ICacheLayer):
         if self._embedding_provider and not entry.embedding:
             try:
                 entry.embedding = await self._embedding_provider.embed(entry.query)
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("L2 embedding generation failed: %s", e)
 
         stored = {
@@ -274,7 +274,7 @@ class L2SemanticCache(ICacheLayer):
                 ttl,
                 json.dumps(stored, ensure_ascii=False, default=str),
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 cache set error: %s", e)
 
     async def delete(self, key: str) -> bool:
@@ -282,7 +282,7 @@ class L2SemanticCache(ICacheLayer):
         try:
             deleted = await self._redis.delete(redis_key)
             return deleted > 0
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 cache delete error: %s", e)
             return False
 
@@ -313,11 +313,11 @@ class L2SemanticCache(ICacheLayer):
                     try:
                         if await self._check_and_delete_key(redis_key, meta_key, meta_value):
                             deleted_count += 1
-                    except Exception:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                         continue
                 if cursor == 0:
                     break
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 metadata invalidation error: %s", e)
         return deleted_count
 
@@ -329,7 +329,7 @@ class L2SemanticCache(ICacheLayer):
             if keys:
                 return await self._redis.delete(*keys)
             return 0
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("L2 cache clear error: %s", e)
             return 0
 

@@ -149,7 +149,7 @@ class TestExtractTermsKiwi:
     def test_tokenize_error(self):
         ex = TermExtractor()
         mock_kiwi = MagicMock()
-        mock_kiwi.tokenize.side_effect = Exception("tokenize failed")
+        mock_kiwi.tokenize.side_effect = RuntimeError("tokenize failed")
         counter = Counter()
         types = {}
         contexts = {}
@@ -351,7 +351,7 @@ class TestFilterByDenseSimilarity:
 
         mock_repo.list_by_kb = mock_list_by_kb
         mock_embedder = MagicMock()
-        mock_embedder.encode = MagicMock(side_effect=Exception("encode error"))
+        mock_embedder.encode = MagicMock(side_effect=RuntimeError("encode error"))
 
         ex = TermExtractor(glossary_repo=mock_repo, embedder=mock_embedder)
         candidates = [ExtractedTerm(term="term1", pattern_type="noun")]
@@ -394,7 +394,7 @@ class TestSaveExtractedTerms:
     async def test_save_error(self):
         mock_repo = AsyncMock()
         mock_repo.get_by_term = AsyncMock(return_value=None)
-        mock_repo.save = AsyncMock(side_effect=Exception("db error"))
+        mock_repo.save = AsyncMock(side_effect=RuntimeError("db error"))
         ex = TermExtractor(glossary_repo=mock_repo)
         terms = [ExtractedTerm(term="term1", pattern_type="noun")]
         saved = await ex.save_extracted_terms(terms, kb_id="test")
@@ -472,7 +472,7 @@ class TestSaveDiscoveredSynonyms:
 
     async def test_save_error_graceful(self):
         mock_repo = AsyncMock()
-        mock_repo.get_by_term = AsyncMock(side_effect=Exception("db error"))
+        mock_repo.get_by_term = AsyncMock(side_effect=RuntimeError("db error"))
         ex = TermExtractor(glossary_repo=mock_repo)
         discoveries = [("A", "B", "parenthetical")]
         saved = await ex.save_discovered_synonyms(discoveries, kb_id="test")
@@ -536,7 +536,7 @@ class TestFilterGlobalTermsEdgeCases:
         mock_repo = MagicMock()
 
         async def mock_get_by_term(kb_id, term):
-            raise Exception("db error")
+            raise RuntimeError("db error")
 
         mock_repo.get_by_term = mock_get_by_term
         ex = TermExtractor(glossary_repo=mock_repo)

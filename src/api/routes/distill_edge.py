@@ -132,7 +132,7 @@ def _build_provision_config(
             local_ip = s.getsockname()[0]
             s.close()
             api_url = f"http://{local_ip}:8000"
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             # Local IP 해결 실패 → localhost fallback. edge server 는 실제
             # 네트워크 IP 가 필요하므로 이 fallback 이 발동되면 provision
             # command 가 로컬 테스트만 가능. 운영팀이 인지할 수 있도록 warning.
@@ -251,7 +251,7 @@ async def get_manifest(profile_name: str):
         s3 = _s3_client()
         obj = s3.get_object(Bucket=bucket, Key=manifest_key)
         manifest = _json.loads(obj["Body"].read().decode())
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(status_code=404, detail=f"Manifest not found: {e}")
 
     s3_uri = manifest.get("s3_uri", "")
@@ -263,7 +263,7 @@ async def get_manifest(profile_name: str):
                 Params={"Bucket": model_bucket, "Key": model_key},
                 ExpiresIn=86400,
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Failed to refresh presigned URL for %s: %s", s3_uri, e)
 
     return manifest
@@ -304,7 +304,7 @@ async def set_app_version(profile_name: str, request: AppVersionRequest):
         try:
             obj = s3.get_object(Bucket=bucket, Key=manifest_key)
             manifest = _json.loads(obj["Body"].read().decode())
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             # 기존 manifest 가 없거나 접근 실패하면 새로 시작. 하지만 기존
             # 값이 있는데 조용히 날리면 버전 히스토리 손실이므로 로그 남김.
             logger.warning(
@@ -323,7 +323,7 @@ async def set_app_version(profile_name: str, request: AppVersionRequest):
 
     try:
         updated = await asyncio.to_thread(_update)
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(status_code=500, detail=f"Failed to update app version: {e}")
 
     return {

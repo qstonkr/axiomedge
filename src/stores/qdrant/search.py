@@ -181,7 +181,7 @@ class QdrantSearchEngine:
 
         try:
             from qdrant_client.http.exceptions import UnexpectedResponse as _unexpected_resp_cls
-        except Exception:  # noqa: BLE001
+        except (ImportError, AttributeError):
             _unexpected_resp_cls = ValueError  # type: ignore[assignment,misc]
 
         qdrant_filter = self._build_qdrant_filter(filter_conditions)
@@ -419,7 +419,7 @@ class QdrantSearchEngine:
                 with_vectors=False,
                 with_payload=payload_selector,
             )
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning(
                 "Qdrant hydrate_by_ids failed for kb_id=%s collection=%s: %s",
                 kb_id, collection_name, exc,
@@ -461,7 +461,7 @@ class QdrantSearchEngine:
                 with_vectors=False,
                 with_payload=["colbert_vectors"],
             )
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning(
                 "Failed to fetch ColBERT vectors for kb_id=%s collection=%s: %s",
                 kb_id, collection_name, exc,

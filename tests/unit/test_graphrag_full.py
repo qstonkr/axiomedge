@@ -332,7 +332,7 @@ class TestGraphRAGExtractorExtract:
 
     def test_extract_llm_failure(self):
         mock_llm = MagicMock()
-        mock_llm.invoke.side_effect = Exception("LLM timeout")
+        mock_llm.invoke.side_effect = RuntimeError("LLM timeout")
         ext = GraphRAGExtractor(llm_client=mock_llm, neo4j_driver=MagicMock())
         result = ext.extract("text", source_title="T")
         assert result.node_count == 0
@@ -449,7 +449,7 @@ class TestGraphRAGBatchProcessor:
 
     def test_process_documents_failure(self):
         mock_ext = MagicMock(spec=GraphRAGExtractor)
-        mock_ext.extract.side_effect = Exception("fail")
+        mock_ext.extract.side_effect = RuntimeError("fail")
         bp = GraphRAGBatchProcessor(extractor=mock_ext)
 
         stats = bp.process_documents([{"content": "x"}])

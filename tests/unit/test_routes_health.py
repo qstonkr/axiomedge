@@ -87,7 +87,7 @@ class TestHealthEndpoint:
 
         mock_state = AppState()
         mock_provider = AsyncMock()
-        mock_provider.ensure_client = AsyncMock(side_effect=Exception("connection refused"))
+        mock_provider.ensure_client = AsyncMock(side_effect=RuntimeError("connection refused"))
         mock_state["qdrant_provider"] = mock_provider
 
         with patch.object(health, "_get_state", return_value=mock_state):

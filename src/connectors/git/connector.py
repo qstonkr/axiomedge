@@ -170,7 +170,7 @@ class GitConnector:
 
             try:
                 text = await asyncio.to_thread(parse_file, abs_path)
-            except Exception as exc:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 logger.warning("parse_file failed for %s: %s", rel_path, exc)
                 continue
 

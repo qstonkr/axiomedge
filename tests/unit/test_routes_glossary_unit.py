@@ -105,7 +105,7 @@ class TestListGlossaryTerms:
     def test_list_terms_repo_error_returns_empty(self):
         """If repo raises, gracefully return empty."""
         repo = AsyncMock()
-        repo.list_by_kb = AsyncMock(side_effect=Exception("DB error"))
+        repo.list_by_kb = AsyncMock(side_effect=RuntimeError("DB error"))
         repo.count_by_kb = AsyncMock(return_value=0)
 
         state = _mock_state_with_repo(repo)
@@ -245,7 +245,7 @@ class TestCreateGlossaryTerm:
 
     def test_create_term_repo_error(self):
         repo = AsyncMock()
-        repo.save = AsyncMock(side_effect=Exception("DB write error"))
+        repo.save = AsyncMock(side_effect=RuntimeError("DB write error"))
 
         state = _mock_state_with_repo(repo)
         with patch.object(glossary, "_get_state", return_value=state):

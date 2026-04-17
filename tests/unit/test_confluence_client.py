@@ -331,7 +331,7 @@ class TestGetChildPages:
     async def test_error_returns_empty(self, tmp_output):
         client = _make_client(tmp_output)
         client._http_get_with_retry = AsyncMock(
-            side_effect=Exception("connection error")
+            side_effect=RuntimeError("connection error")
         )
         children = await client.get_child_pages("parent")
         assert children == []
@@ -821,7 +821,7 @@ class TestParsePdf:
         AttachmentParser.configure_run("test")
 
         mock_fitz = MagicMock()
-        mock_fitz.open.side_effect = Exception("corrupt file")
+        mock_fitz.open.side_effect = RuntimeError("corrupt file")
 
         with patch.dict("sys.modules", {"fitz": mock_fitz}):
             result = AttachmentParser.parse_pdf(tmp_path / "bad.pdf")
@@ -899,7 +899,7 @@ class TestParseExcel:
         from src.connectors.confluence.attachment_parser import AttachmentParser
 
         mock_openpyxl = MagicMock()
-        mock_openpyxl.load_workbook.side_effect = Exception("bad file")
+        mock_openpyxl.load_workbook.side_effect = RuntimeError("bad file")
 
         with patch.dict("sys.modules", {"openpyxl": mock_openpyxl}):
             result = AttachmentParser.parse_excel(tmp_path / "bad.xlsx")
@@ -963,7 +963,7 @@ class TestParseWord:
         from src.connectors.confluence.attachment_parser import AttachmentParser
 
         mock_docx_module = MagicMock()
-        mock_docx_module.Document.side_effect = Exception("corrupt docx")
+        mock_docx_module.Document.side_effect = RuntimeError("corrupt docx")
 
         with patch.dict("sys.modules", {"docx": mock_docx_module}):
             result = AttachmentParser.parse_word(tmp_path / "bad.docx")
@@ -1508,7 +1508,7 @@ class TestDownloadAttachment:
     @pytest.mark.asyncio
     async def test_download_error_captured(self, tmp_output):
         client = _make_client(tmp_output)
-        client.client.get = AsyncMock(side_effect=Exception("network failure"))
+        client.client.get = AsyncMock(side_effect=RuntimeError("network failure"))
         att_meta = {
             "id": "a3", "title": "doc.pdf",
             "extensions": {"mediaType": "application/pdf", "fileSize": 1000},
@@ -2020,7 +2020,7 @@ class TestParsePpt:
 
         AttachmentParser.configure_run("test")
         mock_pptx = MagicMock()
-        mock_pptx.Presentation.side_effect = Exception("corrupt pptx")
+        mock_pptx.Presentation.side_effect = RuntimeError("corrupt pptx")
 
         with patch.dict("sys.modules", {
             "pptx": mock_pptx, "pptx.enum": MagicMock(),
@@ -2505,7 +2505,7 @@ class TestApiWrappers:
     @pytest.mark.asyncio
     async def test_get_user_details_error(self, tmp_output):
         client = _make_client(tmp_output)
-        client.client.get = AsyncMock(side_effect=Exception("api error"))
+        client.client.get = AsyncMock(side_effect=RuntimeError("api error"))
         assert await client.get_user_details("acc1") is None
 
     @pytest.mark.asyncio
@@ -2529,7 +2529,7 @@ class TestApiWrappers:
     @pytest.mark.asyncio
     async def test_get_comments_error(self, tmp_output):
         client = _make_client(tmp_output)
-        client.client.get = AsyncMock(side_effect=Exception("err"))
+        client.client.get = AsyncMock(side_effect=RuntimeError("err"))
         assert await client.get_comments("pg1") == []
 
     @pytest.mark.asyncio
@@ -2549,7 +2549,7 @@ class TestApiWrappers:
     @pytest.mark.asyncio
     async def test_get_labels_error(self, tmp_output):
         client = _make_client(tmp_output)
-        client.client.get = AsyncMock(side_effect=Exception("err"))
+        client.client.get = AsyncMock(side_effect=RuntimeError("err"))
         assert await client.get_labels("pg1") == []
 
     @pytest.mark.asyncio
@@ -2565,7 +2565,7 @@ class TestApiWrappers:
     @pytest.mark.asyncio
     async def test_get_attachments_error(self, tmp_output):
         client = _make_client(tmp_output)
-        client._http_get_with_retry = AsyncMock(side_effect=Exception("err"))
+        client._http_get_with_retry = AsyncMock(side_effect=RuntimeError("err"))
         assert await client.get_attachments("pg1") == []
 
 
@@ -3205,7 +3205,7 @@ class TestExtractPdfPageTables:
         from src.connectors.confluence.attachment_parser import AttachmentParser
 
         page = MagicMock()
-        page.find_tables.side_effect = Exception("corrupt")
+        page.find_tables.side_effect = RuntimeError("corrupt")
 
         tables = AttachmentParser._extract_pdf_page_tables(page, 1)
         assert tables == []
@@ -3574,7 +3574,7 @@ class TestParsePpt:
         AttachmentParser.configure_run("test")
 
         mock_pptx = MagicMock()
-        mock_pptx.Presentation.side_effect = Exception("corrupt pptx")
+        mock_pptx.Presentation.side_effect = RuntimeError("corrupt pptx")
 
         with patch.dict("sys.modules", {
             "pptx": mock_pptx,
@@ -4050,7 +4050,7 @@ class TestRetryOneImage:
         policy = self._make_policy()
         with patch.object(
             AttachmentParser, "_ocr_extract_safe",
-            side_effect=Exception("OCR crash"),
+            side_effect=RuntimeError("OCR crash"),
         ):
             result = AttachmentParser._retry_one_image(
                 1, b"png_bytes", policy, False, set(), set(),
@@ -4199,7 +4199,7 @@ class TestRenderAndOcrSlides:
         with patch.dict("sys.modules", {
             "scripts": MagicMock(),
             "scripts.slide_renderer": MagicMock(
-                render_slides_as_images=MagicMock(side_effect=Exception("render fail")),
+                render_slides_as_images=MagicMock(side_effect=RuntimeError("render fail")),
             ),
         }):
             result = AttachmentParser._render_and_ocr_slides(
@@ -4496,8 +4496,8 @@ class TestCollectImageShape:
         from src.connectors.confluence.attachment_parser import AttachmentParser
 
         shape = MagicMock()
-        shape.image.blob = property(lambda s: (_ for _ in ()).throw(Exception("fail")))
-        type(shape.image).blob = property(lambda s: (_ for _ in ()).throw(Exception("fail")))
+        shape.image.blob = property(lambda s: (_ for _ in ()).throw(RuntimeError("fail")))
+        type(shape.image).blob = property(lambda s: (_ for _ in ()).throw(RuntimeError("fail")))
         images = []
         # Should not raise
         AttachmentParser._collect_image_shape(shape, 1, images)
@@ -4749,7 +4749,7 @@ class TestProcessTextlessPdfPage:
         counters = {"attempted": 0, "extracted": 0, "deferred": 0, "chars": 0}
 
         with patch.object(
-            AttachmentParser, "_ocr_pdf_page", side_effect=Exception("OCR crash"),
+            AttachmentParser, "_ocr_pdf_page", side_effect=RuntimeError("OCR crash"),
         ):
             AttachmentParser._process_textless_pdf_page(
                 MagicMock(), 1, 5, policy, None, text_parts, counters,
@@ -5008,6 +5008,6 @@ class TestTryCliDocExtract:
     def test_exception(self):
         from src.connectors.confluence.attachment_parser import _try_cli_doc_extract
         with patch("subprocess.run") as mock_run:
-            mock_run.side_effect = Exception("timeout")
+            mock_run.side_effect = RuntimeError("timeout")
             result = _try_cli_doc_extract("/usr/bin/antiword", Path("/fake.doc"), confidence=0.7)
         assert result is None

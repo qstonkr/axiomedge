@@ -53,7 +53,7 @@ class OCRWithCoords:
             boxes = self._extract_v3(ocr_result)
             if boxes is not None:
                 return boxes
-        except (AttributeError, TypeError) as e:
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("PaddleOCR v3 format extraction failed, trying legacy: %s", e)
 
         return self._extract_legacy(result)
@@ -98,7 +98,7 @@ class OCRWithCoords:
                 box = self._parse_legacy_line(line)
                 if box is not None:
                     boxes.append(box)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
             logger.warning("Legacy OCR parsing failed: %s", exc)
         return boxes
 

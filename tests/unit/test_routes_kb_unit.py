@@ -75,7 +75,7 @@ class TestListKBs:
 
         state = AppState()
         registry = AsyncMock()
-        registry.list_all = AsyncMock(side_effect=Exception("DB down"))
+        registry.list_all = AsyncMock(side_effect=RuntimeError("DB down"))
         state["kb_registry"] = registry
 
         collections = AsyncMock()

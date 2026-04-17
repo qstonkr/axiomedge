@@ -43,7 +43,7 @@ class TestSearchCache:
 
         with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
-            redis.get.side_effect = Exception("Redis down")
+            redis.get.side_effect = OSError("Redis down")
             mock_redis.from_url.return_value = redis
 
             cache = SearchCache(redis_url="redis://localhost:6379")
@@ -66,7 +66,7 @@ class TestSearchCache:
 
         with patch("src.stores.redis.redis_cache.aioredis") as mock_redis:
             redis = AsyncMock()
-            redis.setex.side_effect = Exception("Redis error")
+            redis.setex.side_effect = OSError("Redis error")
             mock_redis.from_url.return_value = redis
 
             cache = SearchCache(redis_url="redis://localhost:6379")
@@ -175,7 +175,7 @@ class TestDedupCache:
 
         with patch("src.stores.redis.dedup_cache.aioredis") as mock_redis:
             redis = AsyncMock()
-            redis.sismember.side_effect = Exception("fail")
+            redis.sismember.side_effect = RuntimeError("fail")
             mock_redis.from_url.return_value = redis
 
             cache = DedupCache(redis_url="redis://localhost:6379")

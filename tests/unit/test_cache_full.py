@@ -276,7 +276,7 @@ class TestL2SemanticCache:
 
     async def test_exact_match_error(self):
         mock_redis = AsyncMock()
-        mock_redis.get = AsyncMock(side_effect=Exception("redis error"))
+        mock_redis.get = AsyncMock(side_effect=RuntimeError("redis error"))
         cache = self._make_cache(redis_mock=mock_redis)
 
         result = await cache._exact_match("key")
@@ -301,7 +301,7 @@ class TestL2SemanticCache:
 
     async def test_get_semantic_error_falls_back(self):
         mock_emb = AsyncMock()
-        mock_emb.embed = AsyncMock(side_effect=Exception("embed fail"))
+        mock_emb.embed = AsyncMock(side_effect=RuntimeError("embed fail"))
         mock_redis = AsyncMock()
         mock_redis.get = AsyncMock(return_value=None)
         cache = self._make_cache(redis_mock=mock_redis, embedding_provider=mock_emb)
@@ -341,7 +341,7 @@ class TestL2SemanticCache:
 
     async def test_set_embedding_error(self):
         mock_emb = AsyncMock()
-        mock_emb.embed = AsyncMock(side_effect=Exception("fail"))
+        mock_emb.embed = AsyncMock(side_effect=RuntimeError("fail"))
         mock_redis = AsyncMock()
         mock_redis.setex = AsyncMock()
         cache = self._make_cache(redis_mock=mock_redis, embedding_provider=mock_emb)
@@ -352,7 +352,7 @@ class TestL2SemanticCache:
 
     async def test_set_redis_error(self):
         mock_redis = AsyncMock()
-        mock_redis.setex = AsyncMock(side_effect=Exception("redis down"))
+        mock_redis.setex = AsyncMock(side_effect=RuntimeError("redis down"))
         cache = self._make_cache(redis_mock=mock_redis)
 
         entry = CacheEntry(key="k", query="q", response="r")
@@ -374,7 +374,7 @@ class TestL2SemanticCache:
 
     async def test_delete_error(self):
         mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock(side_effect=Exception("err"))
+        mock_redis.delete = AsyncMock(side_effect=RuntimeError("err"))
         cache = self._make_cache(redis_mock=mock_redis)
 
         assert await cache.delete("k") is False
@@ -410,7 +410,7 @@ class TestL2SemanticCache:
         mock_redis = AsyncMock()
 
         async def mock_scan_iter(**kw):
-            raise Exception("scan error")
+            raise RuntimeError("scan error")
             yield  # noqa: unreachable
 
         mock_redis.scan_iter = mock_scan_iter
@@ -501,7 +501,7 @@ class TestMultiLayerCache:
 
     async def test_set_l1_error_continues(self):
         l1 = AsyncMock(spec=ICacheLayer)
-        l1.set = AsyncMock(side_effect=Exception("l1 fail"))
+        l1.set = AsyncMock(side_effect=OSError("l1 fail"))
         l1.get = AsyncMock(return_value=None)
         l2 = AsyncMock(spec=ICacheLayer)
         l2.set = AsyncMock()
@@ -710,7 +710,7 @@ class TestIdempotencyCache:
 
     async def test_redis_error_allows(self):
         mock_redis = AsyncMock()
-        mock_redis.set = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.set = AsyncMock(side_effect=OSError("fail"))
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.check_and_set("hash1") is True
 
@@ -728,7 +728,7 @@ class TestIdempotencyCache:
 
     async def test_remove_redis_error(self):
         mock_redis = AsyncMock()
-        mock_redis.delete = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.delete = AsyncMock(side_effect=OSError("fail"))
         cache = IdempotencyCache(redis_client=mock_redis)
         assert await cache.remove("hash1") is False
 

@@ -262,7 +262,7 @@ class TestRerankEdgeCases:
         with patch.object(
             mod,
             "_rerank_via_tei",
-            side_effect=Exception("timeout"),
+            side_effect=RuntimeError("timeout"),
         ):
             chunks = [{"content": f"c{i}"} for i in range(4)]
             result = rerank_with_cross_encoder("q", chunks, top_k=2)
@@ -278,7 +278,7 @@ class TestRerankEdgeCases:
             patch.object(
                 mod,
                 "_rerank_via_tei",
-                side_effect=Exception("timeout"),
+                side_effect=RuntimeError("timeout"),
             ),
             patch.object(mod, "_model", mock_model),
         ):
@@ -372,7 +372,7 @@ class TestRerankViaTeiEdgeCases:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_resp = MagicMock()
-        mock_resp.raise_for_status.side_effect = Exception("503")
+        mock_resp.raise_for_status.side_effect = RuntimeError("503")
         mock_client.post.return_value = mock_resp
 
         chunks = [{"content": "test"}]

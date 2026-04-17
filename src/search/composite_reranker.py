@@ -225,7 +225,7 @@ class CompositeReranker:
             return 0.0
         try:
             distance = int(raw_distance)
-        except (TypeError, ValueError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return 0.0
         if distance <= 0:
             return 0.0
@@ -489,7 +489,7 @@ class CompositeReranker:
             # Fallback for non-dataclass-compatible chunk implementations.
             try:
                 return chunk.__class__(**(chunk.__dict__ | {"score": score}))
-            except (TypeError, AttributeError, KeyError):
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 logger.warning(
                     "CompositeReranker: failed to clone chunk safely; returning original instance",
                     extra={"chunk_id": getattr(chunk, "chunk_id", None)},

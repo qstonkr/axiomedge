@@ -173,7 +173,7 @@ class TestInitServicesOrchestrator:
         mock_settings = MagicMock()
 
         with (
-            patch("src.api.app._init_database", new_callable=AsyncMock, side_effect=Exception("DB down")) as m_db,
+            patch("src.api.app._init_database", new_callable=AsyncMock, side_effect=RuntimeError("DB down")) as m_db,
             patch("src.api.app._init_cache", new_callable=AsyncMock) as m_cache,
             patch("src.api.app._init_dedup", new_callable=AsyncMock) as m_dedup,
             patch("src.api.app._init_vectordb", new_callable=AsyncMock) as m_vec,

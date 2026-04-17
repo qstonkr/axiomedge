@@ -133,7 +133,7 @@ class PaddleOCRProvider(OCRProvider):
                     texts.append(str(txt))
                 if score is not None:
                     scores.append(float(score))
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 continue
 
         merged_text = "\n".join(texts).strip()

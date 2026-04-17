@@ -64,7 +64,7 @@ def _cluster_embeddings(
                 random_state=42,
             )
             reduced = reducer.fit_transform(embeddings)
-        except Exception as e:  # noqa: BLE001
+        except (ImportError, ValueError, RuntimeError) as e:
             logger.debug("UMAP reduction failed, using raw embeddings: %s", e)
             reduced = embeddings
 
@@ -83,7 +83,7 @@ def _cluster_embeddings(
             if bic < best_bic:
                 best_bic = bic
                 best_gmm = gmm
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("GMM fit failed for k=%d: %s", k, e)
             break
 
@@ -110,7 +110,7 @@ async def _summarize_cluster(
     prompt = SUMMARY_PROMPT.format(context=combined)
     try:
         return await llm.generate(prompt, max_tokens=300)
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Summary generation failed: %s", e)
         return ""
 

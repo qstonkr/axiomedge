@@ -206,7 +206,7 @@ class TestInitEmbedding:
         settings.ollama.embedding_model = "bge-m3"
         settings.embedding.onnx_model_path = ""
 
-        with patch("src.nlp.embedding.tei_provider.TEIEmbeddingProvider", side_effect=Exception("no tei")), \
+        with patch("src.nlp.embedding.tei_provider.TEIEmbeddingProvider", side_effect=RuntimeError("no tei")), \
              patch("src.nlp.embedding.ollama_provider.OllamaEmbeddingProvider") as MockOllama, \
              patch("src.nlp.embedding.onnx_provider.OnnxBgeEmbeddingProvider") as MockOnnx:
             MockOllama.return_value.is_ready.return_value = False
@@ -303,6 +303,8 @@ class TestShutdownServices:
 
         test_state.search_cache = search_cache
         test_state.dedup_cache = dedup_cache
+        test_state.multi_layer_cache = AsyncMock()
+        test_state.idempotency_cache = AsyncMock()
         test_state.qdrant_provider = qdrant
         test_state.neo4j = neo4j
         test_state.kb_registry = kb_reg
@@ -330,6 +332,8 @@ class TestShutdownServices:
 
         original_state = app_mod._state
         test_state = AppState()
+        test_state.multi_layer_cache = AsyncMock()
+        test_state.idempotency_cache = AsyncMock()
         app_mod._state = test_state
 
         jobs_mod._jobs = {"job1": {"status": "completed"}}
@@ -387,7 +391,7 @@ class TestInitDatabase:
         settings.database.database_url = "postgresql+asyncpg://localhost/test"
 
         with patch("src.stores.postgres.init_db.init_database", new_callable=AsyncMock) as mock_init:
-            mock_init.side_effect = Exception("connection refused")
+            mock_init.side_effect = RuntimeError("connection refused")
             with pytest.raises(Exception, match="connection refused"):
                 await _init_database(state, settings)
             assert mock_init.await_count == 3  # 3 retries

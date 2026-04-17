@@ -337,7 +337,7 @@ class TestUploadAndIngest:
             assert "_conflict" not in result
 
     def test_upload_connection_error(self):
-        with patch("services.api.misc.httpx.Client", side_effect=Exception("conn refused")):
+        with patch("services.api.misc.httpx.Client", side_effect=RuntimeError("conn refused")):
             result = misc.upload_and_ingest(b"data", "test.pdf", "kb1")
             assert result["_api_failed"] is True
 

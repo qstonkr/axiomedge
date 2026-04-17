@@ -130,7 +130,7 @@ class CVPipeline:
             ocr_boxes = await loop.run_in_executor(
                 pool, _ocr_in_process, image_bytes
             )
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("OCR process failed (resetting pool): %s", exc)
             # SIGSEGV -> BrokenProcessPool: recreate pool
             with CVPipeline._pool_lock:
@@ -147,7 +147,7 @@ class CVPipeline:
                 pool, _detect_shapes_in_process,
                 image_np_bytes, image_shape, ocr_boxes
             )
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("Shape detection failed: %s", exc)
             shapes = []
 
@@ -157,7 +157,7 @@ class CVPipeline:
                 pool, _detect_arrows_in_process,
                 image_np_bytes, image_shape, shapes
             )
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("Arrow detection failed: %s", exc)
             edges = []
 
@@ -318,7 +318,7 @@ class CVPipeline:
         # Cases requiring LLM call
         try:
             return await self.normalizer.normalize(cv_result, quality)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("Graph normalization failed: %s", exc)
 
         # Fallback on failure

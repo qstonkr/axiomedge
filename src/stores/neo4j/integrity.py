@@ -228,7 +228,7 @@ class GraphIntegrityChecker:
                     )
                 )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Orphan node check failed: %s", e)
 
     async def _check_docs_without_kb(
@@ -263,7 +263,7 @@ class GraphIntegrityChecker:
                     )
                 )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Docs without KB check failed: %s", e)
 
     async def _check_persons_no_authorship(
@@ -291,5 +291,5 @@ class GraphIntegrityChecker:
                 )
                 report.missing_relationships += 1
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Persons authorship check failed: %s", e)

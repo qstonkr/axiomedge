@@ -181,7 +181,7 @@ class TestEnsureCollection:
         # First create fails with alias conflict, second succeeds
         client.create_collection = AsyncMock(
             side_effect=[
-                Exception("Alias with the same name already exists"),
+                RuntimeError("Alias with the same name already exists"),
                 None,
             ]
         )
@@ -243,7 +243,7 @@ class TestEnsureCollection:
 class TestAliasManagement:
     async def test_resolve_collection_name_no_alias(self, mgr: QdrantCollectionManager, provider):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("not found"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("not found"))
 
         result = await mgr.resolve_collection_name("test")
         assert result == "kb_test"
@@ -265,7 +265,7 @@ class TestAliasManagement:
     async def test_resolve_collection_name_expired_cache(self, mgr: QdrantCollectionManager, provider):
         mgr._alias_resolution_cache["test"] = ("kb_test__alias", time.time() - 10)
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("not found"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("not found"))
 
         result = await mgr.resolve_collection_name("test")
         assert result == "kb_test"
@@ -365,7 +365,7 @@ class TestCloneCollection:
             pts = kwargs.get("points", [])
             # Fail for batches > 1 (first 3 tries), succeed for single items
             if len(pts) > 1:
-                raise Exception("batch too large")
+                raise RuntimeError("batch too large")
 
         client.upsert = AsyncMock(side_effect=fail_then_succeed)
 

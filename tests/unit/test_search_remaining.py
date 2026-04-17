@@ -363,7 +363,7 @@ class TestAnswerService:
     async def test_enrich_llm_failure(self):
         from src.search.answer_service import AnswerService
         llm = AsyncMock()
-        llm.generate.side_effect = Exception("LLM error")
+        llm.generate.side_effect = RuntimeError("LLM error")
         svc = AnswerService(llm_client=llm)
 
         chunks = [{"content": "test", "document_name": "d", "source_uri": "u", "score": 0.5}]

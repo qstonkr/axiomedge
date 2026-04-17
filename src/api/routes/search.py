@@ -187,7 +187,7 @@ async def hub_search(request: HubSearchRequest):
             query=search_query, chunks=all_chunks,
             top_k=effective_top_k * weights.search.rerank_pool_multiplier,
         )
-    except Exception as ce_err:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as ce_err:
         logger.warning("Cross-encoder reranking skipped: %s", ce_err)
 
     # 5. Composite reranking + week-match guarantee
@@ -276,6 +276,6 @@ async def list_searchable_kbs():
             kb_id = n[3:].replace("_", "-") if n.startswith("kb_") else n
             kbs.append({"kb_id": kb_id, "name": kb_id, "collection": n})
         return {"kbs": kbs}
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("KB list failed: %s", e)
         return {"kbs": []}

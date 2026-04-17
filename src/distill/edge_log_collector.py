@@ -69,13 +69,13 @@ class EdgeLogCollector:
                                 "model_version": entry.get("model_version"),
                                 "edge_timestamp": self._parse_timestamp(entry.get("ts")),
                             })
-                    except Exception as e:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                         logger.warning("Failed to process %s: %s", key, e)
 
                     # 처리 완료된 파일 삭제 (또는 아카이브)
                     try:
                         s3.delete_object(Bucket=self.bucket, Key=key)
-                    except Exception:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                         pass
 
             return all_logs
@@ -104,5 +104,5 @@ class EdgeLogCollector:
             return datetime.now(timezone.utc)
         try:
             return datetime.fromisoformat(ts_str)
-        except (ValueError, TypeError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return datetime.now(timezone.utc)

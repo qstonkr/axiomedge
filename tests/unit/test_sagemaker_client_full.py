@@ -183,7 +183,7 @@ class TestSageMakerLLMClient:
 
     async def test_check_health_error(self):
         with patch("boto3.Session") as MockSession:
-            MockSession.side_effect = Exception("No credentials")
+            MockSession.side_effect = RuntimeError("No credentials")
             result = await self.client.check_health()
         assert result["status"] == "unhealthy"
         assert "error" in result

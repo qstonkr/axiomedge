@@ -295,7 +295,7 @@ class TestParsePdf:
 
     def test_corrupt_pdf(self):
         mock_pymupdf = MagicMock()
-        mock_pymupdf.open.side_effect = Exception("corrupt")
+        mock_pymupdf.open.side_effect = RuntimeError("corrupt")
         with patch.dict("sys.modules", {"pymupdf": mock_pymupdf}):
             with pytest.raises(ValueError, match="PDF open failed"):
                 _parse_pdf(b"bad-data", "test.pdf")
@@ -345,7 +345,7 @@ class TestParsePdfEnhanced:
 
     def test_corrupt_pdf_raises(self):
         mock_pymupdf = MagicMock()
-        mock_pymupdf.open.side_effect = Exception("corrupt")
+        mock_pymupdf.open.side_effect = RuntimeError("corrupt")
         with patch.dict("sys.modules", {"pymupdf": mock_pymupdf}):
             with pytest.raises(ValueError, match="PDF open failed"):
                 _parse_pdf_enhanced(b"bad", "test.pdf")
@@ -500,7 +500,7 @@ class TestProcessImagesOcr:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
             # First call fails, second (retry) succeeds
-            mock_client.post.side_effect = [Exception("timeout"), success_resp]
+            mock_client.post.side_effect = [RuntimeError("timeout"), success_resp]
             text, _ = _process_images_ocr([png_bytes])
 
         assert "Retried" in text
@@ -890,7 +890,7 @@ class TestProcessImagesOcrConversion:
         with patch("httpx.Client") as MockClient:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
-            mock_client.post.side_effect = Exception("always fails")
+            mock_client.post.side_effect = RuntimeError("always fails")
             text, _ = _process_images_ocr([png_bytes])
 
         assert text == ""
@@ -939,7 +939,7 @@ class TestExtractPptxModifiedDate:
     def test_error(self):
         prs = MagicMock()
         prs.core_properties = property(lambda s: 1/0)
-        type(prs).core_properties = PropertyMock(side_effect=Exception("fail"))
+        type(prs).core_properties = PropertyMock(side_effect=RuntimeError("fail"))
         result = _extract_pptx_modified_date(prs)
         assert result == ""
 

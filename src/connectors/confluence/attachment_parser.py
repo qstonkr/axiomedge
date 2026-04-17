@@ -187,7 +187,7 @@ class AttachmentParser:
                             if len(row) == len(headers)
                         ],
                     })
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass  # 테이블 추출 실패 시 건너뛰기
         return tables
 
@@ -282,7 +282,7 @@ class AttachmentParser:
                 ocr_text_chars=ocr_counters["chars"],
             )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             return AttachmentParseResult(
                 extracted_text=f"[PDF 파싱 오류: {e}]",
                 extracted_tables=[],
@@ -314,7 +314,7 @@ class AttachmentParser:
                 text_parts.append(f"[Page {page_num}]\n{ocr_text}")
                 ocr_counters["extracted"] += 1
                 ocr_counters["chars"] += cls._text_chars(ocr_text)
-        except Exception as ocr_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as ocr_err:
             logger.warning("[PDF OCR] Page %d OCR failed: %s", page_num, ocr_err)
 
     # =================================================================
@@ -392,7 +392,7 @@ class AttachmentParser:
                 native_text_chars=AttachmentParser._text_chars(full_text),
             )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             return AttachmentParseResult(
                 extracted_text=f"[Excel 파싱 오류: {e}]",
                 extracted_tables=[],
@@ -414,7 +414,7 @@ class AttachmentParser:
 
         try:
             ole = olefile.OleFileIO(str(file_path))
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return None
 
         try:
@@ -509,7 +509,7 @@ class AttachmentParser:
                 native_text_chars=AttachmentParser._text_chars(full_text),
             )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             return AttachmentParseResult(
                 extracted_text=f"[Word 파싱 오류: {e}]",
                 extracted_tables=[],
@@ -533,7 +533,7 @@ class AttachmentParser:
 
         try:
             ole = olefile.OleFileIO(str(file_path))
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return None
 
         try:
@@ -656,7 +656,7 @@ class AttachmentParser:
             image_bytes = shape.image.blob
             if len(image_bytes) > 10_000:  # 10KB 이상만
                 image_shapes.append((slide_num, image_bytes))
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
     @classmethod
@@ -717,7 +717,7 @@ class AttachmentParser:
                 ocr_units_extracted, ocr_units_deferred,
                 ocr_text_chars, extracted_slides,
             )
-        except Exception as render_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as render_err:
             logger.warning(
                 "[OCR] Slide rendering failed, falling back to shape OCR: %s",
                 render_err,
@@ -801,7 +801,7 @@ class AttachmentParser:
                 result["chars"] = cls._text_chars(ocr_text)
             elif timed_out:
                 result["timed_out_item"] = (slide_num, image_bytes)
-        except Exception as ocr_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as ocr_err:
             logger.warning("[OCR Warning] Slide %d image: %s", slide_num, ocr_err)
         return result
 
@@ -921,7 +921,7 @@ class AttachmentParser:
                 logger.info("[OCR Retry] slide_%d: OK (%d chars)", slide_num, len(ocr_text))
             else:
                 logger.info("[OCR Retry] slide_%d: still failed", slide_num)
-        except Exception as retry_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as retry_err:
             logger.warning("[OCR Retry] slide_%d: error - %s", slide_num, retry_err)
         return r
 
@@ -973,7 +973,7 @@ class AttachmentParser:
                         pdf_result.extracted_tables,
                         pdf_result.ocr_text_chars,
                     )
-        except Exception as fb_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as fb_err:
             logger.warning("[PPT] PDF fallback failed: %s", fb_err)
 
         return None
@@ -1126,7 +1126,7 @@ class AttachmentParser:
                 ocr_units_deferred, native_text_chars, ocr_text_chars,
             )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             return AttachmentParseResult(
                 extracted_text=f"[PPT 파싱 오류: {e}]",
                 extracted_tables=[],
@@ -1167,7 +1167,7 @@ class AttachmentParser:
         if cls._ocr_process_pool is not None:
             try:
                 cls._ocr_process_pool.shutdown(wait=False)
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 pass
             cls._ocr_process_pool = None
         gc.collect()
@@ -1209,7 +1209,7 @@ class AttachmentParser:
         except TimeoutError:
             logger.warning("[OCR Timeout] %s exceeded %ds — skipped", file_name, timeout)
             return None, 0.0, []
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("[OCR Error] %s: %s — skipped", file_name, e)
             return None, 0.0, []
 
@@ -1279,7 +1279,7 @@ class AttachmentParser:
 
             return ocr_text if ocr_text and ocr_text.strip() else None
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("[OCR] Slide %d OCR error: %s", slide_num, e)
             return None
 
@@ -1333,7 +1333,7 @@ class AttachmentParser:
 
             return cls._perform_image_ocr(img, content, file_path, metadata_text, policy)
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             return AttachmentParseResult(
                 extracted_text=f"[이미지 파싱 오류: {e}]",
                 extracted_tables=[],
@@ -1385,7 +1385,7 @@ class AttachmentParser:
                     ocr_text_chars=cls._text_chars(ocr_text),
                 )
 
-        except Exception as ocr_error:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as ocr_error:
             logger.warning("[OCR Warning] %s: %s", file_path.name, ocr_error)
 
         return AttachmentParseResult(

@@ -88,7 +88,7 @@ class QdrantCollectionManager:
                 aliases_resp = await client.get_aliases()
                 for alias in aliases_resp.aliases:
                     names.add(alias.alias_name)
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.debug("Failed to fetch Qdrant aliases: %s", e)
             self._collection_exists_cache = names
             self._collection_cache_ts = now
@@ -193,7 +193,7 @@ class QdrantCollectionManager:
                     field_schema=PayloadSchemaType.KEYWORD,
                     wait=True,
                 )
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 logger.debug(
                     "Payload index create skipped: %s.%s",
                     collection_name, field_name,
@@ -226,7 +226,7 @@ class QdrantCollectionManager:
             try:
                 count_result = await client.count(collection_name, exact=True)
                 point_count = count_result.count if hasattr(count_result, "count") else 0
-            except Exception:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                 point_count = -1
 
             if point_count == 0:
@@ -243,7 +243,7 @@ class QdrantCollectionManager:
                     extra={"collection": collection_name, "kb_id": kb_id, "point_count": point_count},
                 )
                 return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Schema validation skipped: %s", e, extra={"collection": collection_name})
             return True
 
@@ -258,7 +258,7 @@ class QdrantCollectionManager:
                 ],
             )
             logger.info("Deleted conflicting alias", extra={"alias_name": alias_name})
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.error(
                 "Failed to delete conflicting alias",
                 extra={"alias_name": alias_name, "error": str(exc)},
@@ -281,7 +281,7 @@ class QdrantCollectionManager:
             await client.get_collection(alias_name)
             self._alias_resolution_cache[kb_id] = (alias_name, time.time() + 60)
             return alias_name
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             self._alias_resolution_cache[kb_id] = (base_name, time.time() + 60)
             return base_name
 
@@ -300,7 +300,7 @@ class QdrantCollectionManager:
             client = await self._provider.ensure_client()
             try:
                 aliases = await client.get_aliases()
-            except Exception as exc:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 logger.debug("Qdrant alias lookup failed: %s", exc)
                 return None
 
@@ -442,7 +442,7 @@ class QdrantCollectionManager:
                     wait=True,
                 )
                 return
-            except Exception as exc:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
                 last_error = exc
                 if attempt < 2:
                     logger.warning(

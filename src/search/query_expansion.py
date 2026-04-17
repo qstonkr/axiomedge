@@ -244,7 +244,7 @@ class QueryExpansionService:
 
         try:
             expanded = await self._llm_expander.expand(term)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("Semantic fallback expansion failed for term '%s': %s", term, exc)
             return None
 
@@ -426,7 +426,7 @@ class SearchQueryExpander:
                         expanded_query=expansion_result.expanded_query,
                         method="glossary",
                     )
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning(
                     "Knowledge query expansion failed, using original query",
                     extra={

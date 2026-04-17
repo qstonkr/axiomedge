@@ -43,7 +43,7 @@ def discover_and_register_routes(app: FastAPI) -> int:
         module_name = f"src.api.routes.{module_info.name}"
         try:
             module = importlib.import_module(module_name)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             logger.warning("Failed to import route module %s: %s", module_name, e)
             continue
 

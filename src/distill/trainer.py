@@ -68,7 +68,7 @@ class DistillTrainer:
                 shutil.copy(cached, tm_target)
                 logger.info("Copied tokenizer.model from HF cache (%s)", base_ref)
                 return
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("HF cache lookup for tokenizer.model failed: %s", e)
         try:
             base_path = Path(base_ref)
@@ -76,7 +76,7 @@ class DistillTrainer:
                 shutil.copy(base_path / "tokenizer.model", tm_target)
                 logger.info("Copied tokenizer.model from local base path %s", base_path)
                 return
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Local base path lookup for tokenizer.model failed: %s", e)
         logger.warning(
             "tokenizer.model not found for base=%s — GGUF conversion will "

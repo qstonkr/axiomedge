@@ -30,7 +30,7 @@ async def list_data_sources():
         try:
             sources = await repo.list()
             return {"sources": sources, "total": len(sources)}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo list failed: %s", e)
     return {"sources": [], "total": 0}
 
@@ -51,7 +51,7 @@ async def create_data_source(body: dict[str, Any]):
             data.setdefault("status", "active")
             await repo.register(data)
             return {"success": True, "source_id": source_id, "message": "Data source created"}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo register failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to create data source: {e}")
     return {"success": True, "source_id": source_id, "message": "Data source created (stub - no DB)"}
@@ -70,7 +70,7 @@ async def get_data_source(source_id: str):
             source = await repo.get(source_id)
             if source:
                 return source
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo get failed: %s", e)
     raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
 
@@ -95,7 +95,7 @@ async def update_data_source(source_id: str, body: dict[str, Any]):
             return {"success": True, "source_id": source_id, "message": "Updated"}
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo update failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to update data source: {e}")
     return {"success": True, "source_id": source_id, "message": "Updated (stub - no DB)"}
@@ -117,7 +117,7 @@ async def delete_data_source(source_id: str):
             return {"success": True, "source_id": source_id}
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo delete failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to delete data source: {e}")
     return {"success": True, "source_id": source_id}
@@ -158,7 +158,7 @@ async def trigger_data_source_sync(
             }
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source trigger sync failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to trigger sync: {e}")
     return {"success": True, "source_id": source_id, "sync_mode": sync_mode, "message": "Sync triggered (stub - no DB)"}
@@ -182,7 +182,7 @@ async def get_data_source_status(source_id: str):
                     "last_sync": source.get("last_sync_at"),
                     "documents_synced": source.get("last_sync_result", {}).get("documents_synced", 0),
                 }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source status query failed: %s", e)
     return {"source_id": source_id, "status": "idle", "last_sync": None, "documents_synced": 0}
 
@@ -202,6 +202,6 @@ async def trigger_file_ingest(body: dict[str, Any]):
             if source:
                 await repo.update_status(source["id"], "syncing")
             return {"success": True, "message": "File ingest triggered"}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("File ingest trigger failed: %s", e)
     return {"success": True, "message": "File ingest triggered"}

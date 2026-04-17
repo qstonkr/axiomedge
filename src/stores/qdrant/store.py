@@ -272,7 +272,7 @@ class QdrantStoreOperations:
                 wait=True,
             )
             return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             err_msg = str(e)
             if "doesn't exist" in err_msg or "Not found" in err_msg:
                 logger.debug(
@@ -299,7 +299,7 @@ class QdrantStoreOperations:
                 extra={"collection": collection_name, "kb_id": kb_id},
             )
             return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Failed to delete collection %s: %s", collection_name, e)
             return False
 
@@ -315,7 +315,7 @@ class QdrantStoreOperations:
                 points_selector=PointIdsList(points=point_ids),
             )
             return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Failed to delete points: %s", e)
             return False
 
@@ -342,7 +342,7 @@ class QdrantStoreOperations:
                 with_vectors=False,
                 with_payload=True,
             )
-        except Exception as primary_error:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as primary_error:
             logger.warning(
                 "Qdrant retrieve() failed, returning empty fallback: %s",
                 primary_error,
@@ -392,7 +392,7 @@ class QdrantStoreOperations:
             value = result.count if hasattr(result, "count") else int(result)
             self._set_cached_stat(cache_key, value)
             return value
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(
                 "Failed to count vectors for kb_id=%s collection=%s: %s",
                 kb_id, collection_name, e,
@@ -427,7 +427,7 @@ class QdrantStoreOperations:
             value = len(base_uris)
             self._set_cached_stat(cache_key, value)
             return value
-        except Exception as facet_err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as facet_err:
             logger.debug(
                 "Facet API unavailable or timed out for kb_id=%s collection=%s: %s. "
                 "Returning 0.",
@@ -456,7 +456,7 @@ class QdrantStoreOperations:
                 for hit in getattr(facet_result, "hits", []) or []
                 if getattr(hit, "value", None)
             }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug(
                 "Facet l1_category unavailable for kb_id=%s: %s", kb_id, e,
             )
@@ -507,7 +507,7 @@ class QdrantStoreOperations:
                 if isinstance(value, str) and value.strip():
                     source_uri_set.add(value.strip())
             return sorted(source_uri_set)
-        except Exception as facet_exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as facet_exc:
             logger.info(
                 "Facet distinct source_uri unavailable, falling back to scroll for %s: %s",
                 collection_name, facet_exc,
@@ -515,7 +515,7 @@ class QdrantStoreOperations:
 
         try:
             return await self._scroll_distinct_source_uris(client, collection_name, safe_limit)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(
                 "Failed to list distinct documents for kb_id=%s: %s",
                 kb_id, e,
@@ -577,7 +577,7 @@ class QdrantStoreOperations:
             )
             return results
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(
                 "scroll_by_source_uris failed for kb_id=%s: %s",
                 kb_id, e,

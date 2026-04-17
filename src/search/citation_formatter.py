@@ -46,7 +46,7 @@ def _safe_float(value: Any) -> float | None:
         if value is None:
             return None
         return float(value)
-    except (TypeError, ValueError):
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
 
 
@@ -55,7 +55,7 @@ def _safe_int(value: Any) -> int | None:
         if value is None:
             return None
         return int(value)
-    except (TypeError, ValueError):
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
 
 

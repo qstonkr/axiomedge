@@ -57,7 +57,7 @@ class TestDomainStats:
 
     def test_with_repo_error(self):
         repo = AsyncMock()
-        repo._get_session = AsyncMock(side_effect=Exception("db error"))
+        repo._get_session = AsyncMock(side_effect=RuntimeError("db error"))
         state = _mock_state(repo=repo)
         with patch.object(glossary, "_get_state", return_value=state):
             app = _make_test_app()

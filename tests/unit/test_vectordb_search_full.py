@@ -71,7 +71,7 @@ def _make_point(pid: str, score: float, content: str = "test content", **extra_p
 class TestQueryCandidates:
     async def test_hybrid_search_with_sparse(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("p1", 0.9)
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
 
@@ -90,7 +90,7 @@ class TestQueryCandidates:
 
     async def test_dense_only_search(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("p2", 0.8)
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
 
@@ -108,7 +108,7 @@ class TestQueryCandidates:
 
     async def test_score_threshold_filtering(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pts = [_make_point("high", 0.9), _make_point("low", 0.1)]
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=pts))
 
@@ -126,7 +126,7 @@ class TestQueryCandidates:
 
     async def test_filter_conditions(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[]))
 
         await engine.query_candidates(
@@ -142,7 +142,7 @@ class TestQueryCandidates:
 
     async def test_filter_with_match_text(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[]))
 
         await engine.query_candidates(
@@ -159,7 +159,7 @@ class TestQueryCandidates:
     async def test_hybrid_fallback_to_legacy_names(self, engine: QdrantSearchEngine, provider, collection_mgr):
         """When named-vector query fails with non-500 error, retry with legacy names."""
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
 
         call_count = 0
 
@@ -187,7 +187,7 @@ class TestQueryCandidates:
 
     async def test_dense_fallback_to_legacy(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
 
         call_count = 0
 
@@ -214,7 +214,7 @@ class TestQueryCandidates:
 
     async def test_server_500_error_raises(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
 
         err = ValueError("server error")
         err.status_code = 500
@@ -240,7 +240,7 @@ class TestQueryCandidates:
 class TestSearch:
     async def test_search_no_projection(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("s1", 0.85)
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
 
@@ -256,7 +256,7 @@ class TestSearch:
     async def test_search_with_projection(self, engine: QdrantSearchEngine, provider, collection_mgr):
         provider.config.retrieval_projection_enabled = True
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("s2", 0.85)
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
         record = SimpleNamespace(
@@ -273,7 +273,7 @@ class TestSearch:
 
     async def test_search_empty_results(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[]))
 
         results = await engine.search(
@@ -291,7 +291,7 @@ class TestSearch:
 class TestColBERTRerank:
     async def test_colbert_rerank_no_colbert_vectors(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("c1", 0.9)
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
 
@@ -305,7 +305,7 @@ class TestColBERTRerank:
 
     async def test_colbert_rerank_with_vectors(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("c2", 0.8, colbert_vectors=[[0.5] * 128])
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
 
@@ -320,7 +320,7 @@ class TestColBERTRerank:
     async def test_colbert_rerank_with_projection(self, engine: QdrantSearchEngine, provider, collection_mgr):
         provider.config.retrieval_projection_enabled = True
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("c3", 0.8)
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
         record = SimpleNamespace(
@@ -338,7 +338,7 @@ class TestColBERTRerank:
 
     async def test_colbert_score_threshold(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         pt = _make_point("low", 0.1, colbert_vectors=[[0.1] * 128])
         client.query_points = AsyncMock(return_value=SimpleNamespace(points=[pt]))
 
@@ -363,7 +363,7 @@ class TestHydrateByIds:
 
     async def test_hydrate_returns_map(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         record = SimpleNamespace(
             id="h1", payload={"content": "hydrated", "meta": "val"}, score=None
         )
@@ -375,8 +375,8 @@ class TestHydrateByIds:
 
     async def test_hydrate_error_returns_empty(self, engine: QdrantSearchEngine, provider, collection_mgr):
         client = provider._client
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
-        client.retrieve = AsyncMock(side_effect=Exception("fail"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
+        client.retrieve = AsyncMock(side_effect=RuntimeError("fail"))
 
         result = await engine.hydrate_by_ids("test", ["h1"])
         assert result == {}

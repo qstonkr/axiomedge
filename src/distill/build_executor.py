@@ -126,7 +126,7 @@ class BuildPipelineExecutor:
             await self._repo.update_build(self._build_id, status="completed")
             logger.info("Build %s completed successfully", self._build_id)
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Build %s failed: %s", self._build_id, e)
             await self._repo.update_build(
                 self._build_id, status="failed",

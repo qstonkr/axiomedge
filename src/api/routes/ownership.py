@@ -31,7 +31,7 @@ async def list_document_owners(
         try:
             owners = await repo.get_by_kb(kb_id)
             return {"owners": owners, "total": len(owners), "kb_id": kb_id}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo query failed: %s", e)
     return {"owners": [], "total": 0, "kb_id": kb_id}
 
@@ -52,7 +52,7 @@ async def get_document_owner(
             owner = await repo.get_by_document(document_id, kb_id)
             if owner:
                 return owner
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo get failed: %s", e)
     return {
         "document_id": document_id,
@@ -74,7 +74,7 @@ async def assign_document_owner(body: dict[str, Any]):
         try:
             await repo.save(body)
             return {"success": True, "message": "Owner assigned"}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to assign owner: {e}")
     return {"success": True, "message": "Owner assigned (stub - no DB)"}
@@ -105,7 +105,7 @@ async def transfer_ownership(document_id: str, body: dict[str, Any]):
             return {"success": True, "document_id": document_id, "message": "Ownership transferred"}
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo transfer failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to transfer ownership: {e}")
     return {"success": True, "document_id": document_id, "message": "Ownership transferred (stub - no DB)"}
@@ -131,7 +131,7 @@ async def verify_document_owner(document_id: str, body: dict[str, Any]):
             return {"success": True, "document_id": document_id, "message": "Verified"}
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo verify failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to verify owner: {e}")
     return {"success": True, "document_id": document_id, "message": "Verified (stub - no DB)"}
@@ -178,7 +178,7 @@ async def get_stale_owners(
             cutoff = datetime.now(UTC) - timedelta(days=days_threshold)
             stale = _find_stale_owners(all_owners, cutoff)
             return {"stale_owners": stale, "total": len(stale), "kb_id": kb_id, "days_threshold": days_threshold}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo stale query failed: %s", e)
     return {"stale_owners": [], "total": 0, "kb_id": kb_id, "days_threshold": days_threshold}
 
@@ -200,7 +200,7 @@ async def get_owner_availability(owner_user_id: str):
                 "status": "active",
                 "owned_documents": len(docs),
             }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Doc owner repo availability check failed: %s", e)
     return {"user_id": owner_user_id, "available": True, "status": "active", "owned_documents": 0}
 
@@ -218,7 +218,7 @@ async def update_owner_availability(owner_user_id: str, body: dict[str, Any]):
         try:
             # This is an informational endpoint - owner availability is tracked externally
             return {"success": True, "user_id": owner_user_id}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Owner availability update failed: %s", e)
     return {"success": True, "user_id": owner_user_id}
 
@@ -237,7 +237,7 @@ async def list_topic_owners(
         try:
             topics = await repo.get_by_kb(kb_id)
             return {"topics": topics, "total": len(topics), "kb_id": kb_id}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Topic owner repo query failed: %s", e)
     return {"topics": [], "total": 0, "kb_id": kb_id}
 
@@ -254,7 +254,7 @@ async def assign_topic_owner(body: dict[str, Any]):
         try:
             await repo.save(body)
             return {"success": True, "message": "Topic owner assigned"}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Topic owner repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to assign topic owner: {e}")
     return {"success": True, "message": "Topic owner assigned (stub - no DB)"}
@@ -290,6 +290,6 @@ async def search_experts(
                             "kb_id": t["kb_id"],
                         })
             return {"experts": matched_experts, "total": len(matched_experts), "query": query}
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Expert search failed: %s", e)
     return {"experts": [], "total": 0, "query": query}

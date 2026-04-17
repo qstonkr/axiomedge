@@ -307,7 +307,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
             if not analyzer.is_available:
                 return []
             result = analyzer.analyze(candidate_ko)
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return []
 
         # 명사 형태소 추출 (2글자 이상의 NNG/NNP)
@@ -530,7 +530,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
             raw_score = float(raw_scores[0])
             # sigmoid(s/3) 정규화
             return 1 / (1 + math.exp(-raw_score / 3))
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("CrossEncoder scoring failed: %s", e)
             return None
 
@@ -570,7 +570,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
                 results.append((top_indices[i], normalized))
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:top_k]
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("CrossEncoder batch rerank failed: %s", e)
             return []
 

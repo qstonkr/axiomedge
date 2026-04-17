@@ -73,7 +73,7 @@ class Neo4jKnowledgeLoader:
         except ImportError:
             logger.warning("neo4j 패키지 미설치 - Mock 모드로 동작")
             self._driver = None
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"Neo4j 연결 실패: {e}")
             self._driver = None
 
@@ -89,7 +89,7 @@ class Neo4jKnowledgeLoader:
                     "ON EACH [n.name, n.title]"
                 )
             logger.info("Fulltext index 'entity_name_title' ensured")
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Fulltext index creation skipped: %s", e)
 
     async def close(self) -> None:
@@ -124,7 +124,7 @@ class Neo4jKnowledgeLoader:
                 try:
                     await self._create_node(session, node)
                     loaded += 1
-                except Exception as e:  # noqa: BLE001
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                     logger.error(f"노드 생성 실패: {node.get('node_id')}, {e}")
 
             # 엣지 로드
@@ -132,7 +132,7 @@ class Neo4jKnowledgeLoader:
                 try:
                     await self._create_edge(session, edge)
                     loaded += 1
-                except Exception as e:  # noqa: BLE001
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                     logger.error(f"엣지 생성 실패: {edge}, {e}")
 
         logger.info(f"Neo4j 로드 완료: {loaded}개 (노드: {len(nodes)}, 엣지: {len(edges)})")
@@ -169,7 +169,7 @@ class Neo4jKnowledgeLoader:
                         loaded += len(batch)
                         logger.info(f"노드 배치 로드: {loaded}/{len(nodes)}")
                         break
-                    except Exception as e:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                         if attempt < max_retries - 1:
                             logger.warning(
                                 f"노드 배치 로드 재시도 ({attempt + 1}/{max_retries}): {e}"
@@ -211,7 +211,7 @@ class Neo4jKnowledgeLoader:
                         loaded += len(batch)
                         logger.info(f"엣지 배치 로드: {loaded}/{len(edges)}")
                         break
-                    except Exception as e:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                         if attempt < max_retries - 1:
                             logger.warning(
                                 f"엣지 배치 로드 재시도 ({attempt + 1}/{max_retries}): {e}"

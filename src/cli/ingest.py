@@ -75,7 +75,7 @@ async def _init_services():
             neo4j = Neo4jClient(uri=settings.neo4j.uri)
             await neo4j.connect()
             graph_repo = Neo4jGraphRepository(neo4j)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Neo4j not available: %s", e)
 
     sparse_embedder = OnnxSparseEmbedder(embedder)
@@ -130,7 +130,7 @@ async def _get_ingested_hashes(kb_id: str, _provider) -> set[str]:
                 if not offset:
                     break
 
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Could not fetch ingested hashes: %s", e)
 
     return hashes

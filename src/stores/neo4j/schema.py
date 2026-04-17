@@ -96,7 +96,7 @@ async def _apply_ddl_group(
         try:
             await client.execute_write(stmt.strip())
             results[count_key] += 1
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             if _ALREADY_EXISTS not in str(e).lower():
                 results["errors"].append(f"{label} error: {e}")
                 logger.warning("%s creation failed: %s", label, e)

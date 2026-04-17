@@ -91,7 +91,7 @@ class DedupResultTracker:
                 maxlen=DEDUP_RESULTS_MAXLEN,
                 approximate=True,
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("dedup_tracker.track_result_failed: %s", e)
 
     async def track_conflict(
@@ -177,7 +177,7 @@ class DedupResultTracker:
             )
 
             return conflict_id
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("dedup_tracker.track_conflict_failed: %s", e)
             return ""
 
@@ -224,7 +224,7 @@ class DedupResultTracker:
             )
 
             return True
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("dedup_tracker.resolve_failed: %s", e)
             return False
 
@@ -253,7 +253,7 @@ class DedupResultTracker:
                 "pending": pending,
                 "total_conflicts": conflicts_len,
             }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("dedup_tracker.get_stats_failed: %s", e)
             return _empty_stats()
 
@@ -284,7 +284,7 @@ class DedupResultTracker:
                     try:
                         status = await self._redis.hget(hash_key, "status")
                         entry_data["resolution_status"] = status or "unknown"
-                    except Exception:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
                         entry_data["resolution_status"] = "unknown"
                 conflicts.append(entry_data)
 
@@ -294,7 +294,7 @@ class DedupResultTracker:
                 "page": page,
                 "page_size": page_size,
             }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("dedup_tracker.get_conflicts_failed: %s", e)
             return {"conflicts": [], "total": 0, "page": page, "page_size": page_size}
 

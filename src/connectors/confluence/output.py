@@ -293,7 +293,7 @@ def _parse_jsonl_line(line: str, seen_ids: set[str]) -> dict | None:
         return None
     try:
         page = json.loads(line)
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
     if not isinstance(page, dict):
         return None

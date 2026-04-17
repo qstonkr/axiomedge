@@ -189,7 +189,7 @@ class TestRerankWithCrossEncoder:
         assert result == [{"content": "reranked"}]
 
     @patch("src.search.cross_encoder_reranker._use_cloud_reranker", True)
-    @patch("src.search.cross_encoder_reranker._rerank_via_tei", side_effect=Exception("network error"))
+    @patch("src.search.cross_encoder_reranker._rerank_via_tei", side_effect=RuntimeError("network error"))
     @patch("src.search.cross_encoder_reranker._model", None)
     def test_cloud_failure_falls_back(self, mock_tei: MagicMock) -> None:
         """Cloud reranker failure should fall back to local (which is None -> passthrough)."""

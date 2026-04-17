@@ -112,7 +112,7 @@ class TestOllamaProvider:
 
     def test_is_ready_connection_error(self):
         mock_client = MagicMock()
-        mock_client.get.side_effect = Exception("connection refused")
+        mock_client.get.side_effect = RuntimeError("connection refused")
 
         p = OllamaEmbeddingProvider()
         p._client = mock_client
@@ -220,7 +220,7 @@ class TestTEIProvider:
 
     def test_is_ready_failure(self):
         mock_client = MagicMock()
-        mock_client.get.side_effect = Exception("down")
+        mock_client.get.side_effect = RuntimeError("down")
 
         p = TEIEmbeddingProvider()
         p._client = mock_client
@@ -319,7 +319,7 @@ class TestDualProvider:
 
     async def test_embed_dual_encode_failure(self):
         provider = MagicMock()
-        provider.encode.side_effect = Exception("encode failed")
+        provider.encode.side_effect = RuntimeError("encode failed")
         dual = DualEmbeddingProvider(provider=provider)
         result = await dual.embed_dual("hello")
         assert result.dense == []
@@ -332,7 +332,7 @@ class TestDualProvider:
 
     async def test_embed_failure_returns_zeros(self):
         provider = MagicMock(spec=["encode", "dimension"])
-        provider.encode.side_effect = Exception("fail")
+        provider.encode.side_effect = RuntimeError("fail")
         provider.dimension = 1024
         dual = DualEmbeddingProvider(provider=provider)
         result = await dual.embed("hello")
@@ -353,7 +353,7 @@ class TestDualProvider:
 
     async def test_embed_documents_failure(self):
         provider = MagicMock(spec=["encode", "dimension"])
-        provider.encode.side_effect = Exception("fail")
+        provider.encode.side_effect = RuntimeError("fail")
         provider.dimension = 1024
         dual = DualEmbeddingProvider(provider=provider)
         result = await dual.embed_documents(["a"])

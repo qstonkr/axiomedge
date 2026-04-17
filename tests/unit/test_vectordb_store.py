@@ -242,7 +242,7 @@ class TestDelete:
 
     async def test_delete_by_filter_collection_not_found(self, store: QdrantStoreOperations, provider):
         client = provider._client
-        client.delete = AsyncMock(side_effect=Exception("Collection doesn't exist"))
+        client.delete = AsyncMock(side_effect=RuntimeError("Collection doesn't exist"))
 
         result = await store.delete_by_filter(
             kb_id="test",
@@ -252,7 +252,7 @@ class TestDelete:
 
     async def test_delete_by_filter_unexpected_error(self, store: QdrantStoreOperations, provider):
         client = provider._client
-        client.delete = AsyncMock(side_effect=Exception("Network error"))
+        client.delete = AsyncMock(side_effect=RuntimeError("Network error"))
 
         result = await store.delete_by_filter(
             kb_id="test",
@@ -270,7 +270,7 @@ class TestDelete:
 
     async def test_delete_by_kb_error(self, store: QdrantStoreOperations, provider):
         client = provider._client
-        client.delete_collection = AsyncMock(side_effect=Exception("fail"))
+        client.delete_collection = AsyncMock(side_effect=RuntimeError("fail"))
 
         result = await store.delete_by_kb("test")
         assert result is False
@@ -284,7 +284,7 @@ class TestDelete:
 
     async def test_delete_points_error(self, store: QdrantStoreOperations, provider):
         client = provider._client
-        client.delete = AsyncMock(side_effect=Exception("fail"))
+        client.delete = AsyncMock(side_effect=RuntimeError("fail"))
 
         result = await store.delete_points("test", ["id1"])
         assert result is False
@@ -305,7 +305,7 @@ class TestFetchByIds:
         )
         client = provider._client
         client.retrieve = AsyncMock(return_value=[record])
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
 
         results = await store.fetch_by_ids("test", ["abc"])
         assert len(results) == 1
@@ -314,8 +314,8 @@ class TestFetchByIds:
 
     async def test_fetch_by_ids_error_returns_empty(self, store: QdrantStoreOperations, provider):
         client = provider._client
-        client.retrieve = AsyncMock(side_effect=Exception("fail"))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.retrieve = AsyncMock(side_effect=RuntimeError("fail"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
 
         result = await store.fetch_by_ids("test", ["id1"])
         assert result == []
@@ -329,7 +329,7 @@ class TestCountStatistics:
     async def test_count_returns_value(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.count = AsyncMock(return_value=SimpleNamespace(count=42))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.count("test")
@@ -338,7 +338,7 @@ class TestCountStatistics:
     async def test_count_uses_cache(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
         client.count = AsyncMock(return_value=SimpleNamespace(count=42))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         await store.count("test")
@@ -349,8 +349,8 @@ class TestCountStatistics:
 
     async def test_count_error_returns_zero(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
-        client.count = AsyncMock(side_effect=Exception("fail"))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.count = AsyncMock(side_effect=RuntimeError("fail"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.count("test")
@@ -362,7 +362,7 @@ class TestCountStatistics:
         hit3 = SimpleNamespace(value="http://b.com#sec2")
         client = provider._client
         client.facet = AsyncMock(return_value=SimpleNamespace(hits=[hit1, hit2, hit3]))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.count_distinct_documents("test")
@@ -370,8 +370,8 @@ class TestCountStatistics:
 
     async def test_count_distinct_documents_facet_error(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
-        client.facet = AsyncMock(side_effect=Exception("facet not supported"))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.facet = AsyncMock(side_effect=RuntimeError("facet not supported"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.count_distinct_documents("test")
@@ -382,7 +382,7 @@ class TestCountStatistics:
         hit2 = SimpleNamespace(value="개발", count=5)
         client = provider._client
         client.facet = AsyncMock(return_value=SimpleNamespace(hits=[hit1, hit2]))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.facet_l1_categories("test")
@@ -398,7 +398,7 @@ class TestListDistinctSourceUris:
         hit = SimpleNamespace(value="http://a.com")
         client = provider._client
         client.facet = AsyncMock(return_value=SimpleNamespace(hits=[hit]))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.list_distinct_source_uris("test")
@@ -406,10 +406,10 @@ class TestListDistinctSourceUris:
 
     async def test_list_facet_fallback_to_scroll(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
-        client.facet = AsyncMock(side_effect=Exception("not supported"))
+        client.facet = AsyncMock(side_effect=RuntimeError("not supported"))
         pt = SimpleNamespace(payload={"source_uri": "http://b.com"})
         client.scroll = AsyncMock(return_value=([pt], None))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.list_distinct_source_uris("test")
@@ -429,7 +429,7 @@ class TestScrollBySourceUris:
         pt = SimpleNamespace(id="p1", payload={"content": "data", "kb_id": "test"})
         client = provider._client
         client.scroll = AsyncMock(return_value=([pt], None))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         results = await store.scroll_by_source_uris("test", ["http://a.com"])
@@ -439,8 +439,8 @@ class TestScrollBySourceUris:
 
     async def test_scroll_error_returns_empty(self, store: QdrantStoreOperations, provider, collection_mgr):
         client = provider._client
-        client.scroll = AsyncMock(side_effect=Exception("fail"))
-        client.get_collection = AsyncMock(side_effect=Exception("no alias"))
+        client.scroll = AsyncMock(side_effect=RuntimeError("fail"))
+        client.get_collection = AsyncMock(side_effect=RuntimeError("no alias"))
         client.get_aliases = AsyncMock(return_value=SimpleNamespace(aliases=[]))
 
         result = await store.scroll_by_source_uris("test", ["http://a.com"])

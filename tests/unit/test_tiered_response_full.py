@@ -177,7 +177,7 @@ class TestFactualNoContext:
 
 class TestErrorHandling:
     async def test_factual_llm_error(self, generator: TieredResponseGenerator, mock_llm):
-        mock_llm.generate = AsyncMock(side_effect=Exception("LLM failed"))
+        mock_llm.generate = AsyncMock(side_effect=RuntimeError("LLM failed"))
         ctx = _make_context()
         resp = await generator.generate(QueryType.FACTUAL, ctx)
         assert "오류" in resp.content
@@ -185,13 +185,13 @@ class TestErrorHandling:
         assert resp.disclaimer == TieredResponseGenerator.ERROR_DISCLAIMER
 
     async def test_analytical_llm_error(self, generator: TieredResponseGenerator, mock_llm):
-        mock_llm.generate = AsyncMock(side_effect=Exception("LLM failed"))
+        mock_llm.generate = AsyncMock(side_effect=RuntimeError("LLM failed"))
         ctx = _make_context()
         resp = await generator.generate(QueryType.ANALYTICAL, ctx)
         assert "오류" in resp.content
 
     async def test_advisory_llm_error(self, generator: TieredResponseGenerator, mock_llm):
-        mock_llm.generate = AsyncMock(side_effect=Exception("LLM failed"))
+        mock_llm.generate = AsyncMock(side_effect=RuntimeError("LLM failed"))
         ctx = _make_context()
         resp = await generator.generate(QueryType.ADVISORY, ctx)
         assert "오류" in resp.content

@@ -88,7 +88,7 @@ async def _update_kb_counts(state: AppState, kb_id: str, docs: int, chunks: int)
         return
     try:
         await kb_registry.update_counts(kb_id, docs, chunks)
-    except Exception as _e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as _e:
         logger.warning("KB count update failed: %s", _e)
 
 
@@ -175,7 +175,7 @@ async def ingest_directory(request: IngestRequest):
             chunks_created=chunks_created,
             errors=errors,
         )
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.error("Ingestion failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -251,7 +251,7 @@ async def upload_file(
             if kb_registry:
                 try:
                     await kb_registry.update_counts(kb_id, 1, ingest_result.chunks_stored)
-                except Exception as _e:  # noqa: BLE001
+                except (OSError, ValueError, RuntimeError) as _e:
                     logger.warning("KB count update failed: %s", _e)
 
         return {
@@ -260,7 +260,7 @@ async def upload_file(
             "kb_id": kb_id,
             "chunks_created": ingest_result.chunks_stored,
         }
-    except Exception as e:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.error("Upload ingestion failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:

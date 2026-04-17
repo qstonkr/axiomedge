@@ -210,7 +210,7 @@ class TestProcess:
     async def test_process_preprocessor_failure(self):
         search = _make_search_mock([])
         pp = MagicMock()
-        pp.preprocess.side_effect = Exception("preprocessor error")
+        pp.preprocess.side_effect = RuntimeError("preprocessor error")
 
         pipeline = KnowledgeRAGPipeline(
             search_engine=search,
@@ -282,7 +282,7 @@ class TestHandleOwnerQuery:
 
     async def test_owner_query_graph_error(self):
         graph = AsyncMock()
-        graph.execute_query = AsyncMock(side_effect=Exception("neo4j down"))
+        graph.execute_query = AsyncMock(side_effect=RuntimeError("neo4j down"))
 
         pipeline = KnowledgeRAGPipeline(graph_client=graph)
         resp = await pipeline._handle_owner_query(

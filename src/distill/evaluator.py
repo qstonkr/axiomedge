@@ -56,7 +56,7 @@ class DistillEvaluator:
                     max_tokens=256,
                 )
                 student_answer = output["choices"][0]["message"]["content"].strip()
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("Student inference failed for Q%d: %s", i, e)
                 student_answer = ""
 
@@ -142,7 +142,7 @@ class DistillEvaluator:
                     "faithfulness": float(scores.get("faithfulness", 0)),
                     "relevancy": float(scores.get("relevancy", 0)),
                 }
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Teacher judge failed: %s", e)
 
         return {"faithfulness": 0.5, "relevancy": 0.5}
@@ -165,7 +165,7 @@ class DistillEvaluator:
                 return 0.0
             v1, v2 = np.array(vecs[0]), np.array(vecs[1])
             return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-8))
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning(
                 "Embedding similarity failed for texts (%s / %s): %s",
                 text1[:30], text2[:30], e,

@@ -74,7 +74,7 @@ class IdempotencyCache:
         try:
             result = await self._redis.set(key, "1", nx=True, ex=self._ttl)
             return result is not None
-        except Exception as e:  # noqa: BLE001
+        except OSError as e:
             logger.warning("Idempotency cache Redis error (allowing): %s", e)
             return True  # Allow on Redis failure (at-least-once)
 
@@ -99,7 +99,7 @@ class IdempotencyCache:
                 key = f"{self._prefix}:{req_hash}"
                 deleted = await self._redis.delete(key)
                 return deleted > 0
-            except Exception:  # noqa: BLE001
+            except OSError:
                 return False
         with self._lock:
             return self._memory.pop(req_hash, None) is not None

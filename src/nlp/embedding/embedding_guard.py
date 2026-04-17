@@ -68,7 +68,7 @@ def validate_vector(
     """
     try:
         return _validate_impl(vector, expected_dim=expected_dim)
-    except Exception:  # noqa: BLE001
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return _VALID_DEFAULT
 
 

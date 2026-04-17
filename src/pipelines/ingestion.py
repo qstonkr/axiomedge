@@ -174,7 +174,7 @@ class IngestionPipeline:
                 from .ingestion_gate import IngestionGate
                 self._ingestion_gate = IngestionGate(enabled=True)
                 logger.info("Ingestion gate enabled")
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
                 logger.warning("Ingestion gate init failed: %s", e)
 
     _EMBED_MAX_RETRIES = 3
@@ -236,7 +236,7 @@ class IngestionPipeline:
                         dedup_result.duplicate_of, dedup_result.similarity_score,
                         dedup_result.processing_time_ms,
                     )
-            except Exception as _dedup_err:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as _dedup_err:
                 logger.warning("Dedup pipeline check failed, proceeding: %s", _dedup_err)
         elif self.dedup_cache is not None:
             try:
@@ -248,7 +248,7 @@ class IngestionPipeline:
                     return IngestionResult.failure_result(
                         reason="Duplicate content (dedup cache hit)", stage="dedup",
                     ), dedup_result_info
-            except Exception as _dedup_err:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as _dedup_err:
                 logger.warning("Dedup cache check failed, proceeding: %s", _dedup_err)
 
         return None, dedup_result_info
@@ -264,7 +264,7 @@ class IngestionPipeline:
             file_bytes = raw.metadata.get("file_bytes")
             if isinstance(file_bytes, bytes):
                 return parse_bytes_enhanced(file_bytes, filename)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             logger.warning(
                 "Enhanced parsing failed for doc_id=%s, falling back to plain text: %s",
                 raw.doc_id, e,
@@ -383,7 +383,7 @@ class IngestionPipeline:
                 morphs = " ".join(t.form for t in tokens if t.tag in _noun_tags and len(t.form) >= 2)
                 morphemes.append(morphs)
             return morphemes
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError):
             return [""] * len(typed_chunks)
 
     @staticmethod
@@ -540,7 +540,7 @@ class IngestionPipeline:
                 return
             tree_data = build_tree_from_chunks(collection_name, raw.doc_id, chunks_for_tree)
             await persist_tree_to_neo4j(self.graph_store, tree_data)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as exc:
             logger.warning("Tree index build failed for doc_id=%s: %s", raw.doc_id, exc)
 
     async def _run_summary_tree_builder(
@@ -618,7 +618,7 @@ class IngestionPipeline:
                 "Summary tree stored: doc_id=%s, summaries=%d",
                 raw.doc_id, len(summary_items),
             )
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as exc:
             logger.warning("Summary tree build failed for doc_id=%s: %s", raw.doc_id, exc)
 
     async def _run_term_extraction(
@@ -643,7 +643,7 @@ class IngestionPipeline:
                     "Term extraction completed for doc_id=%s: %d extracted, %d saved",
                     raw.doc_id, len(extracted_terms), saved_count,
                 )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             logger.warning("Term extraction failed for doc_id=%s: %s", raw.doc_id, e)
             stats = {"error": str(e)}
         return stats
@@ -671,7 +671,7 @@ class IngestionPipeline:
                         known_terms = await list_fn(
                             kb_id=collection_name, status="approved", limit=500, offset=0,
                         )
-                    except Exception:  # noqa: BLE001
+                    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError):
                         known_terms = []
 
             discoveries = await discover_fn(raw.content, known_terms)
@@ -682,7 +682,7 @@ class IngestionPipeline:
                     "Synonym discovery completed for doc_id=%s: %d found, %d saved",
                     raw.doc_id, len(discoveries), syn_saved,
                 )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             logger.warning("Synonym discovery failed for doc_id=%s: %s", raw.doc_id, e)
             stats = {"error": str(e)}
         return stats
@@ -728,7 +728,7 @@ class IngestionPipeline:
                     "GraphRAG extraction completed for doc_id=%s: %d nodes, %d rels",
                     raw.doc_id, extraction_result.node_count, extraction_result.relationship_count,
                 )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             logger.warning("GraphRAG extraction failed for doc_id=%s: %s", raw.doc_id, e)
             stats = {"error": str(e)}
         return stats
@@ -759,7 +759,7 @@ class IngestionPipeline:
                 extraction_result.node_count,
                 extraction_result.relationship_count,
             )
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             logger.warning(
                 "Legal graph extraction failed for doc_id=%s: %s", raw.doc_id, e,
             )
@@ -988,7 +988,7 @@ class IngestionPipeline:
             if self.dedup_cache:
                 try:
                     await self.dedup_cache.add(collection_name, _content_hash)
-                except Exception as _dedup_err:  # noqa: BLE001
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as _dedup_err:
                     logger.warning("Dedup cache registration failed: %s", _dedup_err)
 
             # Build result metadata
@@ -1089,7 +1089,7 @@ class IngestionPipeline:
                     {"category": l1_category, "doc_id": raw.doc_id},
                 )
 
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
             # Graph edge creation is non-critical; log and continue
             logger.warning(
                 "Graph edge creation failed for doc_id=%s: %s",

@@ -47,7 +47,7 @@ class TestInitDbWithRetry:
         with patch(
             "src.stores.postgres.init_db.init_database",
             new_callable=AsyncMock,
-            side_effect=[Exception("fail"), None],
+            side_effect=[RuntimeError("fail"), None],
         ) as mock_init, patch("asyncio.sleep", new_callable=AsyncMock):
             await _init_db_with_retry(settings)
             assert mock_init.await_count == 2
@@ -267,7 +267,7 @@ class TestInitDatabaseDomainServices:
         ):
             cat_repo = AsyncMock()
             cat_repo.get_l1_categories = AsyncMock(
-                side_effect=Exception("DB error")
+                side_effect=RuntimeError("DB error")
             )
 
             def fake_cr(s, sf, url):
@@ -312,7 +312,7 @@ class TestInitDatabaseDomainServices:
             patch("src.api.app._create_repositories") as mock_cr,
             patch(
                 "src.pipelines.term_extractor.TermExtractor",
-                side_effect=Exception("TermExtractor broken"),
+                side_effect=RuntimeError("TermExtractor broken"),
             ),
             patch(
                 "src.search.trust_score_service.TrustScoreService",
@@ -355,7 +355,7 @@ class TestInitCacheMultiLayer:
         state = AppState()
         with patch(
             "src.api.app._default_redis_url",
-            side_effect=Exception("no redis"),
+            side_effect=RuntimeError("no redis"),
         ):
             await _init_cache(state)
 
@@ -380,7 +380,7 @@ class TestInitCacheMultiLayer:
             ),
             patch(
                 "src.stores.redis.multi_layer_cache.MultiLayerCache",
-                side_effect=Exception("ML cache broken"),
+                side_effect=RuntimeError("ML cache broken"),
             ),
             patch(
                 "src.stores.redis.l1_memory_cache.L1InMemoryCache",
@@ -428,7 +428,7 @@ class TestInitCacheMultiLayer:
             ),
             patch(
                 "redis.asyncio.from_url",
-                side_effect=Exception("conn refused"),
+                side_effect=RuntimeError("conn refused"),
             ),
             patch(
                 "src.config.weights.weights",
@@ -596,7 +596,7 @@ class TestInitVectorDBError:
         settings = MagicMock()
         with patch(
             "src.stores.qdrant.client.QdrantConfig.from_env",
-            side_effect=Exception("qdrant down"),
+            side_effect=RuntimeError("qdrant down"),
         ):
             await _init_vectordb(state, settings)
 
@@ -635,7 +635,7 @@ class TestInitGraphErrors:
                 patch(
                     "src.stores.neo4j.indexer.ensure_indexes",
                     new_callable=AsyncMock,
-                    side_effect=Exception("index error"),
+                    side_effect=RuntimeError("index error"),
                 ),
                 patch(
                     "src.stores.neo4j.integrity.GraphIntegrityChecker",
@@ -687,7 +687,7 @@ class TestInitGraphErrors:
                 ),
                 patch(
                     "src.stores.neo4j.integrity.GraphIntegrityChecker",
-                    side_effect=Exception("integrity broken"),
+                    side_effect=RuntimeError("integrity broken"),
                 ),
             ):
                 await _init_graph(state, settings)
@@ -712,7 +712,7 @@ class TestInitGraphErrors:
         settings.neo4j.database = "neo4j"
 
         original_cls = graph_client_mod.Neo4jClient
-        mock_cls = MagicMock(side_effect=Exception("neo4j unreachable"))
+        mock_cls = MagicMock(side_effect=RuntimeError("neo4j unreachable"))
         graph_client_mod.Neo4jClient = mock_cls
         try:
             await _init_graph(state, settings)
@@ -782,7 +782,7 @@ class TestTryOllamaEmbedding:
         settings = MagicMock()
         with patch(
             "src.nlp.embedding.ollama_provider.OllamaEmbeddingProvider",
-            side_effect=Exception("no ollama"),
+            side_effect=RuntimeError("no ollama"),
         ):
             result = _try_ollama_embedding(settings)
 
@@ -833,7 +833,7 @@ class TestTryOnnxEmbedding:
         settings.embedding.onnx_model_path = ""
         with patch(
             "src.nlp.embedding.onnx_provider.OnnxBgeEmbeddingProvider",
-            side_effect=Exception("onnx broken"),
+            side_effect=RuntimeError("onnx broken"),
         ):
             result = _try_onnx_embedding(settings)
 
@@ -899,7 +899,7 @@ class TestInitLLMGraphRAG:
 
         with patch(
             "src.core.providers.llm.create_llm_client",
-            side_effect=Exception("llm broken"),
+            side_effect=RuntimeError("llm broken"),
         ):
             await _init_llm(state, settings)
 
@@ -945,7 +945,7 @@ class TestInitLLMGraphRAG:
             ),
             patch(
                 "src.pipelines.graphrag_extractor.GraphRAGExtractor",
-                side_effect=Exception("graphrag broken"),
+                side_effect=RuntimeError("graphrag broken"),
             ),
         ):
             await _init_llm(state, settings)
@@ -1033,7 +1033,7 @@ class TestInitAuthInternal:
 
         mock_auth_svc = MagicMock()
         mock_auth_svc.seed_defaults = AsyncMock(
-            side_effect=Exception("seed fail")
+            side_effect=RuntimeError("seed fail")
         )
 
         with (
@@ -1068,7 +1068,7 @@ class TestInitAuthInternal:
 
         with patch(
             "src.core.providers.auth.create_auth_provider",
-            side_effect=Exception("auth broken"),
+            side_effect=RuntimeError("auth broken"),
         ):
             await _init_auth(state, settings)
 
@@ -1168,7 +1168,7 @@ class TestInitDistill:
         mock_repo = AsyncMock()
         mock_repo.get_profile = AsyncMock(return_value=None)
         mock_repo.create_profile = AsyncMock(
-            side_effect=Exception("DB error")
+            side_effect=RuntimeError("DB error")
         )
         state["distill_repo"] = mock_repo
 
@@ -1208,7 +1208,7 @@ class TestInitDistill:
 
         with patch(
             "src.distill.config.load_config",
-            side_effect=Exception("no config"),
+            side_effect=RuntimeError("no config"),
         ):
             await _init_distill(state, settings)
 
@@ -1227,10 +1227,10 @@ class TestCloseCaches:
 
         state = AppState()
         state["search_cache"] = AsyncMock(
-            close=AsyncMock(side_effect=Exception("close fail"))
+            close=AsyncMock(side_effect=RuntimeError("close fail"))
         )
         state["dedup_cache"] = AsyncMock(
-            close=AsyncMock(side_effect=Exception("close fail"))
+            close=AsyncMock(side_effect=RuntimeError("close fail"))
         )
 
         await _close_caches(state)
@@ -1259,7 +1259,7 @@ class TestCloseCaches:
 
         state = AppState()
         mock_l2 = AsyncMock()
-        mock_l2.close = AsyncMock(side_effect=Exception("l2 close fail"))
+        mock_l2.close = AsyncMock(side_effect=RuntimeError("l2 close fail"))
         mock_cache = MagicMock()
         mock_cache._l2 = mock_l2
         state["multi_layer_cache"] = mock_cache
@@ -1280,13 +1280,13 @@ class TestCloseConnections:
 
         state = AppState()
         state["qdrant_provider"] = AsyncMock(
-            close=AsyncMock(side_effect=Exception("close fail"))
+            close=AsyncMock(side_effect=RuntimeError("close fail"))
         )
         state["neo4j"] = AsyncMock(
-            close=AsyncMock(side_effect=Exception("close fail"))
+            close=AsyncMock(side_effect=RuntimeError("close fail"))
         )
         state["kb_registry"] = AsyncMock(
-            shutdown=AsyncMock(side_effect=Exception("close fail"))
+            shutdown=AsyncMock(side_effect=RuntimeError("close fail"))
         )
 
         await _close_connections(state)
@@ -1299,7 +1299,7 @@ class TestCloseConnections:
 
         state = AppState()
         state["auth_service"] = AsyncMock(
-            close=AsyncMock(side_effect=Exception("auth close fail"))
+            close=AsyncMock(side_effect=RuntimeError("auth close fail"))
         )
 
         await _close_connections(state)

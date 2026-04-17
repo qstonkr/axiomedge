@@ -355,7 +355,7 @@ class TestDedupResultTracker:
 
     async def test_track_result_error(self):
         mock_redis = AsyncMock()
-        mock_redis.xadd = AsyncMock(side_effect=Exception("redis down"))
+        mock_redis.xadd = AsyncMock(side_effect=RuntimeError("redis down"))
         tracker = DedupResultTracker(redis_client=mock_redis)
         await tracker.track_result(MagicMock(), kb_id="kb1")  # should not crash
 
@@ -387,7 +387,7 @@ class TestDedupResultTracker:
 
     async def test_track_conflict_error(self):
         mock_redis = AsyncMock()
-        mock_redis.xadd = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.xadd = AsyncMock(side_effect=RuntimeError("fail"))
         tracker = DedupResultTracker(redis_client=mock_redis)
         result = await tracker.track_conflict(MagicMock(), None, "kb1")
         assert result == ""
@@ -414,7 +414,7 @@ class TestDedupResultTracker:
 
     async def test_resolve_conflict_error(self):
         mock_redis = AsyncMock()
-        mock_redis.exists = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.exists = AsyncMock(side_effect=RuntimeError("fail"))
         tracker = DedupResultTracker(redis_client=mock_redis)
         result = await tracker.resolve_conflict("c1", "keep")
         assert result is False
@@ -442,7 +442,7 @@ class TestDedupResultTracker:
 
     async def test_get_stats_error(self):
         mock_redis = AsyncMock()
-        mock_redis.xlen = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.xlen = AsyncMock(side_effect=RuntimeError("fail"))
         tracker = DedupResultTracker(redis_client=mock_redis)
         stats = await tracker.get_stats()
         assert stats["total_duplicates_found"] == 0
@@ -466,7 +466,7 @@ class TestDedupResultTracker:
 
     async def test_get_conflicts_error(self):
         mock_redis = AsyncMock()
-        mock_redis.xlen = AsyncMock(side_effect=Exception("fail"))
+        mock_redis.xlen = AsyncMock(side_effect=RuntimeError("fail"))
         tracker = DedupResultTracker(redis_client=mock_redis)
         result = await tracker.get_conflicts()
         assert result["conflicts"] == []

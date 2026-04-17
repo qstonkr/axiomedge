@@ -421,7 +421,7 @@ class TestTermExtractorSave:
     async def test_save_handles_exception(self):
         repo = MagicMock()
         repo.get_by_term = AsyncMock(return_value=None)
-        repo.save = AsyncMock(side_effect=Exception("db error"))
+        repo.save = AsyncMock(side_effect=RuntimeError("db error"))
         te = TermExtractor(glossary_repo=repo)
 
         terms = [ExtractedTerm(term="정산금", pattern_type="compound_noun")]
@@ -505,7 +505,7 @@ class TestTermExtractorSaveDiscoveredSynonyms:
 
     async def test_exception_handling(self):
         repo = MagicMock()
-        repo.get_by_term = AsyncMock(side_effect=Exception("fail"))
+        repo.get_by_term = AsyncMock(side_effect=RuntimeError("fail"))
         te = TermExtractor(glossary_repo=repo)
 
         saved = await te.save_discovered_synonyms(

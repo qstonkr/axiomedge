@@ -207,7 +207,7 @@ class OllamaLLMClient(ILLMClient):
                 response.raise_for_status()
                 data = response.json()
                 return data.get("response", "")
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Ollama LLM call failed: %s", e)
             return json.dumps(
                 {"has_conflict": False, "conflicts": [], "confidence": 0.0}
@@ -379,7 +379,7 @@ Focus on information that could cause confusion or errors if both documents are 
                 "Conflict analysis timed out after %ds", self.LLM_TIMEOUT_SECONDS
             )
             result.confidence = 0.0
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Conflict analysis failed: %s", e)
             result.confidence = 0.0
 

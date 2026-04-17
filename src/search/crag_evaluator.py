@@ -346,7 +346,7 @@ class CRAGRetrievalEvaluator:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt.astimezone(timezone.utc)
-        except (TypeError, ValueError):
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             return None
 
 

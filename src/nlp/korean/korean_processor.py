@@ -139,7 +139,7 @@ class KoreanProcessor:
                 import kss
                 sentences = kss.split_sentences(text)
                 return [s.strip() for s in sentences if s.strip()]
-            except Exception as e:  # noqa: BLE001
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 logger.warning("KSS sentence split failed, using fallback: %s", e)
 
         return self._regex_split_sentences(text)
@@ -166,7 +166,7 @@ class KoreanProcessor:
                 if token.tag.startswith("NN")  # NNG, NNP, NNB, etc.
             ]
             return MorphemeResult(morphemes=morphemes, nouns=nouns, text=text)
-        except Exception as e:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Kiwi morpheme analysis failed: %s", e)
             return MorphemeResult(morphemes=[], nouns=[], text=text)
 
