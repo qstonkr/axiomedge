@@ -138,4 +138,18 @@ select = ["E", "F", "W", "BLE001"]
 
 [tool.ruff.lint.per-file-ignores]
 # Streamlit pages: module-level st.set_page_config() 이 다른 import 앞에 와야 함
-"dashboard/pages/*.py" = ["E402"]
+"src/apps/dashboard/pages/*.py" = ["E402"]
+
+# ---------------------------------------------------------------------------
+# Type checking (pyright)
+# ---------------------------------------------------------------------------
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+reportMissingReturnType = "warning"
+reportUnknownMemberType = false
+include = ["src"]
+exclude = [
+    "src/apps/dashboard",   # Streamlit, 향후 교체
+    "scripts",
+]
