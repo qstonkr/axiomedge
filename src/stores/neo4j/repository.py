@@ -13,7 +13,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .client import Neo4jClient
+
+from .types import NodeProperties, ScalarValue
 
 from .node_registry import (
     NODE_LABELS,
@@ -33,7 +38,7 @@ class Neo4jGraphRepository:
     single MERGE key to prevent duplicate Document nodes.
     """
 
-    def __init__(self, neo4j_client: Any) -> None:
+    def __init__(self, neo4j_client: Neo4jClient) -> None:
         self._client = neo4j_client
 
     async def execute_write(
@@ -889,57 +894,68 @@ class NoOpNeo4jGraphRepository:
         await asyncio.sleep(0)
         return dict(self._EMPTY_REL)
 
-    async def _noop_list(self) -> list[dict[str, Any]]:
+    async def _noop_list(self) -> list[NodeProperties]:
         await asyncio.sleep(0)
         return []
 
-    async def upsert_document(self, _doc_id: str, **_kw: Any) -> dict[str, int]:
+    async def upsert_document(self, _doc_id: str, **_kw: ScalarValue) -> dict[str, int]:
         return await self._noop_upsert()
 
-    async def upsert_entity(self, _entity_type: str, _entity_id: str, **_kw: Any) -> dict[str, int]:
+    async def upsert_entity(
+        self, _entity_type: str, _entity_id: str, **_kw: ScalarValue,
+    ) -> dict[str, int]:
         return await self._noop_upsert()
 
-    async def create_relationship(self, _source_id: str, _target_id: str, _rel_type: str, **_kw: Any) -> dict[str, int]:
+    async def create_relationship(
+        self, _source_id: str, _target_id: str, _rel_type: str,
+        **_kw: ScalarValue,
+    ) -> dict[str, int]:
         return await self._noop_rel()
 
-    async def batch_upsert_nodes(self, _node_type: str, _nodes: list[dict[str, Any]], **_kw: Any) -> list[dict[str, Any]]:
-        return await self._noop_list()
+    async def batch_upsert_nodes(
+        self, _node_type: str, _nodes: list[NodeProperties], **_kw: Any,
+    ) -> list[dict[str, int]]:
+        return await self._noop_list()  # type: ignore[return-value]
 
-    async def batch_upsert_edges(self, _rel_type: str, _edges: list[dict[str, Any]], **_kw: Any) -> list[dict[str, Any]]:
-        return await self._noop_list()
+    async def batch_upsert_edges(
+        self, _rel_type: str, _edges: list[NodeProperties], **_kw: Any,
+    ) -> list[dict[str, int]]:
+        return await self._noop_list()  # type: ignore[return-value]
 
-    async def upsert_document_lineage(self, _doc_id: str, **_kw: Any) -> dict[str, int]:
+    async def upsert_document_lineage(self, _doc_id: str, **_kw: ScalarValue) -> dict[str, int]:
         return await self._noop_upsert()
 
     async def find_related_chunks(self, _entity_names: list[str], **_kw: Any) -> set[str]:
         await asyncio.sleep(0)
         return set()
 
-    async def search_entities(self, _keywords: list[str], **_kw: Any) -> list[dict[str, Any]]:
+    async def search_entities(self, _keywords: list[str], **_kw: Any) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def find_experts(self, _topic: str, **_kw: Any) -> list[dict[str, Any]]:
+    async def find_experts(self, _topic: str, **_kw: Any) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def search_related_nodes(self, _doc_id: str, **_kw: Any) -> list[dict[str, Any]]:
+    async def search_related_nodes(self, _doc_id: str, **_kw: Any) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def get_entity_neighbors(self, _entity_name: str, _entity_type: str, **_kw: Any) -> list[dict[str, Any]]:
+    async def get_entity_neighbors(
+        self, _entity_name: str, _entity_type: str, **_kw: Any,
+    ) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def get_knowledge_path(self, _source_id: str, _target_id: str) -> list[dict[str, Any]]:
+    async def get_knowledge_path(self, _source_id: str, _target_id: str) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def find_common_entities(self, _doc_ids: list[str]) -> list[dict[str, Any]]:
+    async def find_common_entities(self, _doc_ids: list[str]) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def find_similar_documents(self, _doc_id: str, **_kw: Any) -> list[dict[str, Any]]:
+    async def find_similar_documents(self, _doc_id: str, **_kw: Any) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def query_process_chain(self, _process_keyword: str, **_kw: Any) -> list[dict[str, Any]]:
+    async def query_process_chain(self, _process_keyword: str, **_kw: Any) -> list[NodeProperties]:
         return await self._noop_list()
 
-    async def find_step_context(self, _step_keyword: str, **_kw: Any) -> dict[str, Any]:
+    async def find_step_context(self, _step_keyword: str, **_kw: Any) -> NodeProperties:
         await asyncio.sleep(0)
         return {}
 

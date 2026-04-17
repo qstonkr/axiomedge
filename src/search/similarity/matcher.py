@@ -30,13 +30,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from collections.abc import Callable
 from typing import Any
 
 from src.config.weights import weights as _w
 from src.nlp.korean.term_normalizer import TermNormalizer
 from src.nlp.korean.lexical_scorer import LexicalScorer
 
-from .strategies import EnhancedMatcherConfig, MatchDecision, _PrecomputedStd
+from .strategies import EnhancedMatcherConfig, GlossaryTermLike, MatchDecision, _PrecomputedStd
 from .utils import AUTO_MATCH_THRESHOLD, REVIEW_THRESHOLD, _strip_particles
 
 logger = logging.getLogger(__name__)
@@ -67,10 +68,10 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
         self._scorer = LexicalScorer()
 
         # L1: Exact match lookup (both word + term)
-        self._normalized_lookup: dict[str, Any] = {}
+        self._normalized_lookup: dict[str, GlossaryTermLike] = {}
         # L1.5: Word-only lookup (단어사전 전용, morpheme decomposition용)
-        self._word_lookup: dict[str, Any] = {}
-        self._all_standard: list[Any] = []
+        self._word_lookup: dict[str, GlossaryTermLike] = {}
+        self._all_standard: list[GlossaryTermLike] = []
         self._precomputed: list[_PrecomputedStd] = []  # TERM 타입만 (L2 유사도용)
 
         # L2 Sparse: n-gram 역색인
@@ -98,7 +99,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
     # =========================================================================
 
     def _register_l1_lookups(
-        self, t: Any, normalized: str, normalized_ko: str,
+        self, t: GlossaryTermLike, normalized: str, normalized_ko: str,
     ) -> int:
         """Register L1 exact/synonym lookups for a term. Returns collision count."""
         collisions = 0
@@ -129,7 +130,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
         return collisions
 
     def _register_term_for_l2(
-        self, t: Any, normalized: str, normalized_ko: str, term_idx: int,
+        self, t: GlossaryTermLike, normalized: str, normalized_ko: str, term_idx: int,
     ) -> None:
         """Register a TERM-type entry for L2 similarity matching."""
         ngrams = self._scorer._ngrams(normalized)
@@ -162,9 +163,9 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
 
     def load_standard_terms(
         self,
-        terms: list[Any],
+        terms: list[GlossaryTermLike],
         *,
-        get_term_type: Any = None,
+        get_term_type: Callable[[GlossaryTermLike], str] | None = None,
     ) -> None:
         """표준 용어 로드 + 사전 계산.
 
@@ -279,7 +280,9 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
     # Layer 1.5: Morpheme Decomposition (Korean Compound Words)
     # =========================================================================
 
-    def _l1_5_morpheme_decompose(self, term: Any) -> list[tuple[str, Any]]:
+    def _l1_5_morpheme_decompose(
+        self, term: GlossaryTermLike,
+    ) -> list[tuple[str, GlossaryTermLike]]:
         """L1.5: 한국어 복합어 형태소 분리 (enrichment only, 조기 종료 없음).
 
         "결제수단종류" -> ["결제", "수단", "종류"] 분리 후 개별 형태소를
@@ -588,7 +591,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
     # Public API
     # =========================================================================
 
-    async def match_enhanced(self, term: Any) -> MatchDecision:
+    async def match_enhanced(self, term: GlossaryTermLike) -> MatchDecision:
         """3-Layer 파이프라인 매칭 (단일 용어).
 
         L1 -> L2 -> L3 순서로 실행. 각 Layer에서 확정 시 조기 반환.
@@ -610,7 +613,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
 
     def _l2_retrieve_all_channels(
         self,
-        term: Any,
+        term: GlossaryTermLike,
         dense_override: list[tuple[int, float]] | None,
     ) -> tuple[list[tuple[int, float]], list[tuple[int, float]], list[tuple[int, float]], str]:
         """Run all L2 retrieval channels. Returns (edit, sparse, dense, query_text)."""
@@ -637,7 +640,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
 
     async def _l3_rerank_fused(
         self,
-        term: Any,
+        term: GlossaryTermLike,
         fused: list[tuple[int, float]],
         edit_results: list[tuple[int, float]],
         sparse_results: list[tuple[int, float]],
@@ -680,7 +683,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
 
     def _decide_zone_from_rrf(
         self,
-        term: Any,
+        term: GlossaryTermLike,
         fused: list[tuple[int, float]],
         edit_results: list[tuple[int, float]],
         sparse_results: list[tuple[int, float]],
@@ -721,7 +724,7 @@ class EnhancedSimilarityMatcher(BatchMatchMixin):
 
     async def _match_single(
         self,
-        term: Any,
+        term: GlossaryTermLike,
         ce_top_k: int = 50,
         dense_override: list[tuple[int, float]] | None = None,
     ) -> MatchDecision:

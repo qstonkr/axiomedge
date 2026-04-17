@@ -7,9 +7,17 @@ All public names are re-exported from auth.py for backward compatibility.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from starlette.responses import Response
+
+    from src.auth.service import AuthService
+    from src.auth.jwt_service import JWTService
+    from src.auth.token_store import TokenStore
+    from src.auth.rbac import RBACEngine
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +107,10 @@ def _filter_activities_by_date(
 
 
 async def build_login_tokens(
-    auth_service: Any,
-    jwt_service: Any,
-    token_store: Any,
-    rbac: Any,
+    auth_service: AuthService,
+    jwt_service: JWTService,
+    token_store: TokenStore | None,
+    rbac: RBACEngine | None,
     user: dict[str, Any],
     ip_address: str | None,
     user_agent: str,
@@ -144,10 +152,10 @@ async def build_login_tokens(
 
 
 async def rotate_refresh_token(
-    jwt_service: Any,
-    token_store: Any,
-    auth_service: Any,
-    rbac: Any,
+    jwt_service: JWTService,
+    token_store: TokenStore | None,
+    auth_service: AuthService,
+    rbac: RBACEngine | None,
     claims: dict[str, Any],
 ) -> dict[str, Any]:
     """Rotate a refresh token — fetch fresh roles/permissions and create new pair.
@@ -188,8 +196,8 @@ async def rotate_refresh_token(
 
 
 def set_auth_cookies(
-    response: Any,
-    jwt_service: Any,
+    response: Response,
+    jwt_service: JWTService,
     access_token: str,
     refresh_token: str,
 ) -> None:

@@ -14,11 +14,16 @@ import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import httpx
 
 from src.config import get_settings
+
+if TYPE_CHECKING:
+    from src.api.state import AppState
+    from src.stores.postgres.repositories.data_source import DataSourceRepository
+    from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +315,7 @@ async def _fetch_documents(
 
 
 async def _run_ingestion(
-    state: Any, documents: list[Any], kb_id: str,
+    state: AppState, documents: list[Any], kb_id: str,
 ) -> tuple[int, int, list[str]]:
     """Ingest documents via IngestionPipeline. Returns (docs_ingested, total_chunks, errors)."""
     store = state.get("qdrant_store")
@@ -390,7 +395,7 @@ async def _run_ingestion(
 
 
 async def _ensure_kb_and_update_counts(
-    state: Any, kb_id: str, source_name: str, metadata: dict,
+    state: AppState, kb_id: str, source_name: str, metadata: dict,
     docs_ingested: int, total_chunks: int,
 ) -> None:
     """Ensure KB exists in registry and update document/chunk counts."""
@@ -423,7 +428,9 @@ async def _ensure_kb_and_update_counts(
 
 
 async def _update_sync_status(
-    ds_repo: Any, run_repo: Any, source_id: str, run_id: str,
+    ds_repo: DataSourceRepository | None,
+    run_repo: IngestionRunRepository | None,
+    source_id: str, run_id: str,
     docs_ingested: int, documents_total: int, total_chunks: int,
     errors: list[str],
 ) -> None:
@@ -454,7 +461,9 @@ async def _update_sync_status(
 
 
 async def _report_sync_failure(
-    ds_repo: Any, run_repo: Any, source_id: str, run_id: str, exc: Exception,
+    ds_repo: DataSourceRepository | None,
+    run_repo: IngestionRunRepository | None,
+    source_id: str, run_id: str, exc: Exception,
 ) -> None:
     """Update data source and ingestion run records on failure."""
     logger.error("Data source sync failed for %s: %s", source_id, exc)
@@ -478,7 +487,7 @@ async def _report_sync_failure(
 
 async def run_data_source_sync(
     source: dict[str, Any],
-    state: Any,
+    state: AppState,
     sync_mode: str = "full",
 ) -> None:
     """Dispatch a data source sync to the connector matching its source_type."""
@@ -491,7 +500,7 @@ async def run_data_source_sync(
 
 async def _run_confluence_source_sync(
     source: dict[str, Any],
-    state: Any,
+    state: AppState,
     sync_mode: str = "full",
 ) -> None:
     """Run Confluence crawl + ingest pipeline for a data source in background.
@@ -595,7 +604,7 @@ async def _run_confluence_source_sync(
 # Git source sync path
 # ---------------------------------------------------------------------------
 
-async def _run_git_source_sync(source: dict[str, Any], state: Any) -> None:
+async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
     """Clone/pull a git repo via GitConnector, then run the ingestion pipeline."""
     source_id = source["id"]
     kb_id = source.get("kb_id", "knowledge")

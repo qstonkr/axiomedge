@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Protocol, runtime_checkable
+
+
+@runtime_checkable
+class GlossaryTermLike(Protocol):
+    """Duck-type Protocol for glossary term objects (GlossaryTermModel etc.)."""
+
+    term: str
+    term_ko: str | None
+    term_type: str  # "word" | "term"
 
 
 @dataclass
@@ -11,19 +20,20 @@ class MatchDecision:
     """3-zone 매칭 판정 결과."""
 
     zone: str  # "AUTO_MATCH" | "REVIEW" | "NEW_TERM"
-    matched_term: Any | None = None
+    matched_term: GlossaryTermLike | None = None
     score: float = 0.0
-    match_type: str = "none"  # exact, synonym, particle, rapidfuzz, sparse, dense, cross_encoder, morpheme
+    # exact, synonym, particle, rapidfuzz, sparse, dense, cross_encoder, morpheme
+    match_type: str = "none"
     channel_scores: dict[str, float] = field(default_factory=dict)
     # 복합어 형태소 매칭 시 모든 매칭 결과 (e.g. 방송서비스 -> [방송, 서비스])
-    matched_morphemes: list[tuple[str, Any]] = field(default_factory=list)
+    matched_morphemes: list[tuple[str, GlossaryTermLike]] = field(default_factory=list)
 
 
 @dataclass
 class _PrecomputedStd:
     """사전 계산된 표준 용어 데이터."""
 
-    term: Any
+    term: GlossaryTermLike
     normalized: str
     normalized_ko: str
     ngrams: set[str]
