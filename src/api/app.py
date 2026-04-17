@@ -776,12 +776,16 @@ discover_and_register_routes(app)
 from src.auth.middleware import AuthMiddleware  # noqa: E402
 app.add_middleware(AuthMiddleware)
 
+# Security headers (defense-in-depth)
+from src.api.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORSMiddleware MUST be added LAST (outermost = first to execute)
 cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True if cors_origins != ["*"] else False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Requested-With"],
 )
