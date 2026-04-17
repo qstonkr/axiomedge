@@ -98,7 +98,7 @@ test-unit:
 		--cov-report=term-missing \
 		--cov-report=html:htmlcov \
 		--cov-report=json:coverage.json \
-		--cov-fail-under=75 \
+		--cov-fail-under=76 \
 		-q
 	@PYTHONPATH=src/apps/dashboard uv run pytest tests/unit/test_dashboard_*.py -q --no-cov 2>/dev/null || true
 
