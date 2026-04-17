@@ -40,6 +40,10 @@ def discover_and_register_routes(app: FastAPI) -> int:
 
     registered = 0
     for module_info in pkgutil.iter_modules(routes_pkg.__path__):
+        # Skip private sub-modules (e.g. _admin_graph, _auth_abac) — their
+        # routes are included via the parent facade module's router.
+        if module_info.name.startswith("_"):
+            continue
         module_name = f"src.api.routes.{module_info.name}"
         try:
             module = importlib.import_module(module_name)

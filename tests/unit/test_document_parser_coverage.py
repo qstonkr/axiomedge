@@ -377,7 +377,7 @@ class TestParsePdfEnhanced:
 
         with (
             patch.dict("sys.modules", {"pymupdf": mock_pymupdf}),
-            patch("src.pipelines.document_parser._process_images_ocr") as mock_ocr,
+            patch("src.pipelines._parser_utils._process_images_ocr") as mock_ocr,
         ):
             mock_ocr.return_value = ("[Image 1 OCR] Scanned text", [])
             result = _parse_pdf_enhanced(b"pdf-data", "scanned.pdf")
@@ -398,7 +398,7 @@ class TestParsePdfEnhanced:
 
         with (
             patch.dict("sys.modules", {"pymupdf": mock_pymupdf}),
-            patch("src.pipelines.document_parser._process_images_ocr") as mock_ocr,
+            patch("src.pipelines._parser_utils._process_images_ocr") as mock_ocr,
         ):
             mock_ocr.return_value = ("[Image 1 OCR] img text", [{"shapes": []}])
             result = _parse_pdf_enhanced(b"pdf", "test.pdf")
@@ -542,7 +542,7 @@ class TestProcessImagesOcr:
 
         with (
             patch("httpx.Client") as MockClient,
-            patch("src.pipelines.document_parser._w") as mock_w,
+            patch("src.pipelines._parser_utils._w") as mock_w,
         ):
             mock_w.ocr.enable_vision_analysis = True
             mock_client = MagicMock()
@@ -740,7 +740,7 @@ class TestHasBrokenCmapFonts:
         mock_pymupdf.open.side_effect = [doc, doc2]
 
         with patch.dict("sys.modules", {"pymupdf": mock_pymupdf}):
-            with patch("src.pipelines.document_parser._process_images_ocr", return_value=("OCR text", [])):
+            with patch("src.pipelines._parser_utils._process_images_ocr", return_value=("OCR text", [])):
                 result = _parse_pdf_enhanced(b"fake", "test.pdf")
                 assert result.images_processed >= 1
 
@@ -805,7 +805,7 @@ class TestHasBrokenCmapFonts:
         mock_pymupdf.open.side_effect = [doc, doc2]
 
         with patch.dict("sys.modules", {"pymupdf": mock_pymupdf}):
-            with patch("src.pipelines.document_parser._process_images_ocr", return_value=("OCR", [])):
+            with patch("src.pipelines._parser_utils._process_images_ocr", return_value=("OCR", [])):
                 result = _parse_pdf_enhanced(b"fake", "test.pdf")
                 assert result.images_processed >= 1
 

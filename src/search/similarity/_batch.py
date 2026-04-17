@@ -8,6 +8,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.nlp.korean.term_normalizer import TermNormalizer
+
+from .strategies import MatchDecision
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +37,9 @@ class BatchMatchMixin:
         results: list[MatchDecision] = []
         for i, term in enumerate(terms):
             override_dense = dense_batch_results.get(i) if dense_batch_results else None
-            decision = await self._match_single(term, ce_top_k=ce_top_k, dense_override=override_dense)
+            decision = await self._match_single(
+                term, ce_top_k=ce_top_k, dense_override=override_dense,
+            )
             results.append(decision)
 
         self._force_disable_ce = False

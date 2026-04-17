@@ -91,7 +91,7 @@ class TestGraphCleanup:
             patch.object(admin_mod, "_get_state", return_value=state),
             patch.dict("sys.modules", {"scripts.graph_cleanup": mock_module}),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=fake_results,
             ),
@@ -114,7 +114,7 @@ class TestGraphCleanup:
             patch.object(admin_mod, "_get_state", return_value=state),
             patch.dict("sys.modules", {"scripts.graph_cleanup": mock_module}),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=fake_results,
             ),
@@ -136,7 +136,7 @@ class TestGraphCleanup:
             patch.object(admin_mod, "_get_state", return_value=state),
             patch.dict("sys.modules", {"scripts.graph_cleanup": mock_module}),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 side_effect=ImportError("no script"),
             ),
@@ -168,7 +168,7 @@ class TestGraphCleanupAnalyze:
             patch.object(admin_mod, "_get_state", return_value=state),
             patch.dict("sys.modules", {"scripts.graph_cleanup": mock_module}),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=fake_results,
             ),
@@ -190,7 +190,7 @@ class TestGraphCleanupAnalyze:
             patch.object(admin_mod, "_get_state", return_value=state),
             patch.dict("sys.modules", {"scripts.graph_cleanup": mock_module}),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
@@ -208,7 +208,7 @@ class TestGraphCleanupAnalyze:
             patch.object(admin_mod, "_get_state", return_value=state),
             patch.dict("sys.modules", {"scripts.graph_cleanup": mock_module}),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("boom"),
             ),
@@ -304,7 +304,7 @@ class TestResolveLlmClient:
                 clear=False,
             ),
             patch(
-                "src.api.routes.admin.SageMakerLLMClient",
+                "src.api.routes.admin_helpers.SageMakerLLMClient",
                 mock_client,
                 create=True,
             ),
@@ -443,7 +443,7 @@ class TestApplyAiClassifications:
 
         with (
             patch(
-                "src.api.routes.admin.get_settings",
+                "src.api.routes.admin_helpers.get_settings",
             ) as mock_settings,
             patch(
                 "neo4j.GraphDatabase.driver",
@@ -518,7 +518,7 @@ class TestFetchAiClassifyCandidates:
 
         with (
             patch(
-                "src.api.routes.admin.get_settings",
+                "src.api.routes.admin_helpers.get_settings",
             ) as mock_settings,
             patch(
                 "neo4j.GraphDatabase.driver",
@@ -554,7 +554,7 @@ class TestFetchAiClassifyCandidates:
 
         with (
             patch(
-                "src.api.routes.admin.get_settings",
+                "src.api.routes.admin_helpers.get_settings",
             ) as mock_settings,
             patch(
                 "neo4j.GraphDatabase.driver",
@@ -585,7 +585,7 @@ class TestFetchAiClassifyCandidates:
 
         with (
             patch(
-                "src.api.routes.admin.get_settings",
+                "src.api.routes.admin_helpers.get_settings",
             ) as mock_settings,
             patch(
                 "neo4j.GraphDatabase.driver",
@@ -682,7 +682,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
@@ -721,7 +721,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 side_effect=fake_to_thread,
             ),
         ):
@@ -771,7 +771,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 side_effect=fake_to_thread,
             ),
         ):
@@ -793,7 +793,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("fetch fail"),
             ),
@@ -829,7 +829,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 side_effect=fake_to_thread,
             ),
         ):
@@ -851,7 +851,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=[],
             ) as mock_thread,
@@ -873,7 +873,7 @@ class TestGraphAiClassify:
                 return_value=llm,
             ),
             patch(
-                "src.api.routes.admin.asyncio.to_thread",
+                "src.api.routes._admin_cleanup.asyncio.to_thread",
                 new_callable=AsyncMock,
                 return_value=[],
             ) as mock_thread,

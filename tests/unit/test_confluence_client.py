@@ -2032,9 +2032,9 @@ class TestParsePpt:
     def test_parse_legacy_ppt_all_fail(self, tmp_path, _clean_env):
         from src.connectors.confluence.attachment_parser import AttachmentParser
 
-        with patch("src.connectors.confluence.attachment_parser._try_libreoffice_ppt_convert",
+        with patch("src.connectors.confluence._ppt_parser._try_libreoffice_ppt_convert",
                     return_value=None), \
-             patch("src.connectors.confluence.attachment_parser._try_catppt_extract",
+             patch("src.connectors.confluence._ppt_parser._try_catppt_extract",
                     return_value=None), \
              patch.object(AttachmentParser, "_extract_ppt_olefile", return_value=None):
             result = AttachmentParser._parse_legacy_ppt(tmp_path / "old.ppt")
@@ -2709,7 +2709,7 @@ class TestParseWordDoc:
         )
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_cli_doc_extract",
+            "src.connectors.confluence._word_parser._try_cli_doc_extract",
             return_value=fake_result,
         ):
             result = AttachmentParser.parse_word(tmp_path / "test.doc")
@@ -2979,7 +2979,7 @@ class TestResizeImageEdgeCases:
         mock_img.size = (500, 400)
 
         with patch(
-            "src.connectors.confluence.attachment_parser._pad_extreme_aspect_ratio",
+            "src.connectors.confluence._ocr_manager._pad_extreme_aspect_ratio",
             return_value=mock_img,
         ):
             result = AttachmentParser._resize_image_if_needed(mock_img)
@@ -3015,11 +3015,11 @@ class TestResizeImageEdgeCases:
 
         with (
             patch(
-                "src.connectors.confluence.attachment_parser._downscale_image",
+                "src.connectors.confluence._ocr_manager._downscale_image",
                 return_value=resized_img,
             ),
             patch(
-                "src.connectors.confluence.attachment_parser._pad_extreme_aspect_ratio",
+                "src.connectors.confluence._ocr_manager._pad_extreme_aspect_ratio",
                 return_value=resized_img,
             ),
         ):
@@ -3034,7 +3034,7 @@ class TestResizeImageEdgeCases:
         mock_img.size = (3000, 10)  # Very thin image
 
         with patch(
-            "src.connectors.confluence.attachment_parser._downscale_image",
+            "src.connectors.confluence._ocr_manager._downscale_image",
             return_value=None,
         ):
             result = AttachmentParser._resize_image_if_needed(mock_img)
@@ -3699,13 +3699,13 @@ class TestOcrSlideImage:
         png_bytes = buf.getvalue()
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            "src.connectors.confluence._ocr_manager._try_slide_layout_ocr",
             return_value="Layout OCR text",
         ), patch(
-            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            "src.connectors.confluence._ocr_manager._filter_ocr_noise",
             side_effect=lambda x: x,
         ), patch(
-            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            "src.connectors.confluence._ocr_manager._preprocess_slide_image",
             side_effect=lambda img, sn: img,
         ):
             result = AttachmentParser._ocr_slide_image(
@@ -3725,15 +3725,15 @@ class TestOcrSlideImage:
         png_bytes = buf.getvalue()
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            "src.connectors.confluence._ocr_manager._try_slide_layout_ocr",
             return_value=None,
         ), patch.object(
             AttachmentParser, "_fallback_standard_ocr", return_value="Standard OCR text",
         ), patch(
-            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            "src.connectors.confluence._ocr_manager._filter_ocr_noise",
             side_effect=lambda x: x,
         ), patch(
-            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            "src.connectors.confluence._ocr_manager._preprocess_slide_image",
             side_effect=lambda img, sn: img,
         ):
             result = AttachmentParser._ocr_slide_image(
@@ -3753,12 +3753,12 @@ class TestOcrSlideImage:
         png_bytes = buf.getvalue()
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            "src.connectors.confluence._ocr_manager._try_slide_layout_ocr",
             return_value=None,
         ), patch.object(
             AttachmentParser, "_fallback_standard_ocr", return_value=None,
         ), patch(
-            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            "src.connectors.confluence._ocr_manager._preprocess_slide_image",
             side_effect=lambda img, sn: img,
         ):
             result = AttachmentParser._ocr_slide_image(
@@ -3778,16 +3778,16 @@ class TestOcrSlideImage:
         png_bytes = buf.getvalue()
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            "src.connectors.confluence._ocr_manager._try_slide_layout_ocr",
             return_value="Raw text",
         ), patch(
-            "src.connectors.confluence.attachment_parser._postprocess_slide_text",
+            "src.connectors.confluence._ocr_manager._postprocess_slide_text",
             return_value="Processed text",
         ), patch(
-            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            "src.connectors.confluence._ocr_manager._filter_ocr_noise",
             side_effect=lambda x: x,
         ), patch(
-            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            "src.connectors.confluence._ocr_manager._preprocess_slide_image",
             side_effect=lambda img, sn: img,
         ):
             result = AttachmentParser._ocr_slide_image(
@@ -3817,12 +3817,12 @@ class TestOcrSlideImage:
         png_bytes = buf.getvalue()
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            "src.connectors.confluence._ocr_manager._try_slide_layout_ocr",
             return_value="OCR text",
         ), patch(
-            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            "src.connectors.confluence._ocr_manager._preprocess_slide_image",
         ) as mock_preprocess, patch(
-            "src.connectors.confluence.attachment_parser._filter_ocr_noise",
+            "src.connectors.confluence._ocr_manager._filter_ocr_noise",
             side_effect=lambda x: x,
         ):
             result = AttachmentParser._ocr_slide_image(
@@ -3843,10 +3843,10 @@ class TestOcrSlideImage:
         png_bytes = buf.getvalue()
 
         with patch(
-            "src.connectors.confluence.attachment_parser._try_slide_layout_ocr",
+            "src.connectors.confluence._ocr_manager._try_slide_layout_ocr",
             return_value="Good text\n폐폐폐폐폐",
         ), patch(
-            "src.connectors.confluence.attachment_parser._preprocess_slide_image",
+            "src.connectors.confluence._ocr_manager._preprocess_slide_image",
             side_effect=lambda img, sn: img,
         ):
             result = AttachmentParser._ocr_slide_image(
@@ -4806,7 +4806,7 @@ class TestModuleLevelHelpers:
 
     def test_get_ocr_feature_flags_import_error(self, monkeypatch):
         """Falls back to env when FeatureFlags not importable."""
-        from src.connectors.confluence.attachment_parser import _get_ocr_feature_flags
+        from src.connectors.confluence._attachment_helpers import _get_ocr_feature_flags
 
         monkeypatch.setenv("KNOWLEDGE_OCR_PREPROCESS_ENABLED", "false")
         monkeypatch.setenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "true")
@@ -4825,7 +4825,7 @@ class TestModuleLevelHelpers:
         assert post is True
 
     def test_get_ocr_postprocess_flag_import_error(self, monkeypatch):
-        from src.connectors.confluence.attachment_parser import _get_ocr_postprocess_flag
+        from src.connectors.confluence._attachment_helpers import _get_ocr_postprocess_flag
 
         monkeypatch.setenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "false")
 
