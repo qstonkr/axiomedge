@@ -1,0 +1,12 @@
+[importlinter]
+root_packages =
+    src
+
+[importlinter:contract:layered]
+name = Clean Architecture Layers
+type = layers
+layers =
+    src.api
+    src.search | src.pipelines | src.distill
+    src.stores | src.nlp | src.connectors
+    src.core | src.config

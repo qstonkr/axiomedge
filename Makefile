@@ -82,6 +82,13 @@ k8s-teardown:
 k8s-logs:
 	kubectl -n knowledge logs -f deploy/knowledge-api
 
+# === Quality ===
+type-check:
+	uv run pyright src/
+
+lint-imports:
+	uv run lint-imports
+
 # === Tests ===
 test:
 	uv run pytest tests/ -v --no-cov
