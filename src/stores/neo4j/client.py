@@ -57,6 +57,10 @@ class Neo4jClient:
         self._auth_disabled = auth_disabled
         self._driver = None
 
+        # Query timeout from settings
+        from src.config import get_settings
+        self._query_timeout_ms = get_settings().neo4j.query_timeout_ms
+
     async def connect(self) -> None:
         """Neo4j 연결"""
         try:
@@ -66,6 +70,7 @@ class Neo4jClient:
             self._driver = AsyncGraphDatabase.driver(
                 self.uri,
                 auth=auth,
+                max_transaction_retry_time=self._query_timeout_ms / 1000,
             )
             # 연결 테스트
             async with self._driver.session(database=self.database) as session:

@@ -78,6 +78,7 @@ class Neo4jSettings(BaseSettings):
     user: str = Field(default="neo4j")
     password: str = Field(default="")
     database: str = Field(default="neo4j")
+    query_timeout_ms: int = Field(default=30000, description="쿼리 타임아웃 (ms)")
 
 
 class OllamaSettings(BaseSettings):
