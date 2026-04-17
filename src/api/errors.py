@@ -88,14 +88,50 @@ def http_exception_handler(_request: Request, exc: HTTPException) -> JSONRespons
     )
 
 
-def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
-    """Catch-all for unhandled exceptions — return 500 with safe message."""
-    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all for unhandled exceptions — map domain exceptions to HTTP status."""
+    from src.core.exceptions import (
+        AuthenticationError,
+        ConfigurationError,
+        ConnectorError,
+        KnowledgeBaseError,
+        PipelineError,
+        SearchError,
+        StorageError,
+    )
+
+    # Domain exception → HTTP status mapping
+    status = 500
+    code = "INTERNAL_ERROR"
+    detail = "Internal server error"
+
+    if isinstance(exc, AuthenticationError):
+        status, code = 401, "AUTH_ERROR"
+        detail = str(exc)
+    elif isinstance(exc, ConfigurationError):
+        status, code = 500, "CONFIG_ERROR"
+        detail = str(exc)
+    elif isinstance(exc, StorageError):
+        status, code = 503, "STORAGE_ERROR"
+        detail = f"Storage operation failed: {exc}"
+    elif isinstance(exc, SearchError):
+        status, code = 500, "SEARCH_ERROR"
+        detail = f"Search failed: {exc}"
+    elif isinstance(exc, PipelineError):
+        status, code = 500, "PIPELINE_ERROR"
+        detail = f"Pipeline failed: {exc}"
+    elif isinstance(exc, ConnectorError):
+        status, code = 502, "CONNECTOR_ERROR"
+        detail = f"External source error: {exc}"
+    elif isinstance(exc, KnowledgeBaseError):
+        status, code = 500, "DOMAIN_ERROR"
+        detail = str(exc)
+
+    logger.exception(
+        "Exception on %s %s [%s]: %s",
+        request.method, request.url.path, code, exc,
+    )
     return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Internal server error",
-            "error_code": "INTERNAL_ERROR",
-            "status_code": 500,
-        },
+        status_code=status,
+        content={"detail": detail, "error_code": code, "status_code": status},
     )
