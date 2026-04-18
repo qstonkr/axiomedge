@@ -255,10 +255,11 @@ class InternalAuthProvider(AuthProviderBase):
     issued by the internal login endpoint.
     """
 
-    def __init__(self, jwt_service: Any) -> None:
+    def __init__(self, jwt_service: Any, revoked_token_store: Any | None = None) -> None:
         from src.auth.jwt_service import JWTService
 
         self._jwt_service: JWTService = jwt_service
+        self._revoked_store = revoked_token_store
 
     @property
     def provider_name(self) -> str:
@@ -270,6 +271,10 @@ class InternalAuthProvider(AuthProviderBase):
     async def verify_token(self, token: str) -> AuthUser:
         """Verify a JWT access token and return AuthUser."""
         claims = self._jwt_service.verify_access_token(token)
+        if self._revoked_store is not None:
+            jti = claims.get("jti")
+            if jti and await self._revoked_store.is_revoked(jti):
+                raise AuthenticationError("Token revoked")
         return AuthUser(
             sub=claims["sub"],
             email=claims.get("email", ""),

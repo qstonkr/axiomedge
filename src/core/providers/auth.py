@@ -111,8 +111,14 @@ def _create_local(settings: "Settings", state: dict[str, Any]) -> "AuthProviderB
 
 @register_auth_provider("internal")
 def _create_internal(settings: "Settings", state: dict[str, Any]) -> "AuthProviderBase":
+    import os
+
     from src.auth.jwt_service import JWTService
     from src.auth.providers import InternalAuthProvider
+    from src.auth.revoked_token_store import (
+        InMemoryRevokedTokenStore,
+        RedisRevokedTokenStore,
+    )
 
     auth = settings.auth
     if not auth.jwt_secret:
@@ -128,7 +134,25 @@ def _create_internal(settings: "Settings", state: dict[str, Any]) -> "AuthProvid
         issuer=auth.jwt_issuer,
     )
     state["jwt_service"] = jwt_svc
-    return InternalAuthProvider(jwt_service=jwt_svc)
+
+    # Revoked-token store: Redis if available (multi-instance safe), else in-memory.
+    revoked_store: Any
+    redis_url = os.getenv("AUTH_REDIS_URL") or os.getenv("REDIS_URL")
+    if redis_url:
+        try:
+            import redis.asyncio as aioredis
+            revoked_store = RedisRevokedTokenStore(
+                aioredis.from_url(redis_url, decode_responses=True),
+            )
+            logger.info("Token revocation: Redis-backed (%s)", redis_url)
+        except (ImportError, OSError, ValueError) as e:
+            logger.warning("Token revocation: Redis unavailable (%s) — falling back to in-memory", e)
+            revoked_store = InMemoryRevokedTokenStore()
+    else:
+        revoked_store = InMemoryRevokedTokenStore()
+        logger.info("Token revocation: in-memory (single-instance only)")
+    state["revoked_token_store"] = revoked_store
+    return InternalAuthProvider(jwt_service=jwt_svc, revoked_token_store=revoked_store)
 
 
 @register_auth_provider("keycloak")

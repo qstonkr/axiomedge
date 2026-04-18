@@ -199,7 +199,9 @@ async def logout(request: Request, response: Response) -> dict[str, Any]:
     state = _get_state()
     jwt_service = state.get("jwt_service")
     token_store = state.get("token_store")
+    revoked_store = state.get("revoked_token_store")
 
+    # Revoke refresh token family (DB-backed)
     refresh_token_raw = request.cookies.get("refresh_token", "")
     if refresh_token_raw and jwt_service and token_store:
         try:
@@ -208,11 +210,33 @@ async def logout(request: Request, response: Response) -> dict[str, Any]:
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
+    # Revoke access token jti (Redis/in-memory) so it can't be reused until natural expiry
+    access_token_raw = request.cookies.get("access_token", "") or _bearer_token(request)
+    if access_token_raw and jwt_service and revoked_store:
+        try:
+            claims = jwt_service.verify_access_token(access_token_raw)
+            jti = claims.get("jti")
+            exp = claims.get("exp")
+            if jti and exp:
+                import time
+                ttl = max(int(exp - time.time()), 0)
+                await revoked_store.revoke(jti, ttl)
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+            pass
+
     is_secure = _is_cookie_secure()
     response.delete_cookie("access_token", path="/", secure=is_secure, samesite="lax")
     response.delete_cookie("refresh_token", path=_REFRESH_PATH, secure=is_secure, samesite="lax")
 
     return {"success": True}
+
+
+def _bearer_token(request: Request) -> str:
+    """Extract Bearer token from Authorization header (returns empty string if absent)."""
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    return ""
 
 
 @router.post(
