@@ -75,3 +75,6 @@ deploy/docker/paddleocr/wheels/
 .legalize-kr-resume.md
 .legalize-kr-failures.jsonl
 .legalize-kr-dedup-skipped.txt
+
+# 정부 R&D 신청 작업 공간 — 비공개 (개인사업체 정보, 전략 등)
+_grant/
