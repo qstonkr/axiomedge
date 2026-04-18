@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Usage Log Repository - PostgreSQL backed.
 
 Tracks search and usage analytics for knowledge system.

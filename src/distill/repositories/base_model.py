@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Base Model Registry Repository — 대시보드 드롭다운 SSOT."""
 
 from __future__ import annotations

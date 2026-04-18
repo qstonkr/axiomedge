@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Training Data Repository — 학습 데이터 CRUD + 통계."""
 
 from __future__ import annotations

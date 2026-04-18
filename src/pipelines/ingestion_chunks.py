@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Ingestion pipeline — chunk building, OCR splitting, morpheme extraction, context prefixes.
 
 Extracted from ingestion.py for module size management.

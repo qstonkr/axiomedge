@@ -19,7 +19,7 @@ def _get_admin() -> ModuleType:
     return _admin
 
 
-def _get_state() -> dict[str, Any]:
+def _get_state() -> Any:  # AppState (dict-compatible)
     """Late-bound accessor through parent admin module for test patchability."""
     return _get_admin()._get_state()
 
@@ -57,7 +57,7 @@ async def graph_cleanup(body: dict[str, Any] | None = None) -> dict[str, Any]:
     kb_id = body.get("kb_id")
 
     try:
-        from scripts.graph_cleanup import run_cleanup
+        from scripts.graphrag.graph_cleanup import run_cleanup
 
         results = await asyncio.to_thread(run_cleanup, apply=apply, kb_id=kb_id)
 
@@ -102,7 +102,7 @@ async def graph_cleanup_analyze(body: dict[str, Any] | None = None) -> dict[str,
     kb_id = (body or {}).get("kb_id")
 
     try:
-        from scripts.graph_cleanup import run_cleanup
+        from scripts.graphrag.graph_cleanup import run_cleanup
 
         results = await asyncio.to_thread(run_cleanup, apply=False, kb_id=kb_id)
 

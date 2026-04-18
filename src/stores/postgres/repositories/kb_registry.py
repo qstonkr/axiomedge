@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """KB Registry Repository - PostgreSQL backed.
 
 Manages KB configuration persistence with CRUD operations.

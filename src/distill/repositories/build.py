@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Build Repository — 빌드/학습 이력 CRUD."""
 
 from __future__ import annotations

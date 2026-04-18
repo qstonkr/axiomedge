@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/distill", tags=["Distill Edge"])
 
 
-def _get_state() -> dict[str, Any]:
+def _get_state() -> Any:  # AppState (dict-compatible)
     from src.api.app import _get_state as _inner
     return _inner()
 

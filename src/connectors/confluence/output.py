@@ -10,6 +10,10 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import TextIO
 
 from .models import FullPageContent, page_to_dict
 
@@ -277,7 +281,7 @@ def save_results_from_jsonl(
 # Streaming I/O helpers
 # ---------------------------------------------------------------------------
 
-def _write_json_header(out_f: object, source_info: dict | None) -> None:
+def _write_json_header(out_f: "TextIO", source_info: dict | None) -> None:
     """Write the JSON envelope header (crawled_at, source_info, pages array open)."""
     out_f.write('{"crawled_at":"')
     out_f.write(datetime.now(timezone.utc).isoformat())

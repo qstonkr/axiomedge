@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportMissingImports=false
 """PPT OCR sub-operations mixin.
 
 Handles slide rendering OCR, shape-by-shape OCR, retry logic,

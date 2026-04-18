@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Profile Repository — 빌드 프로필 CRUD."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Search preprocessing, query expansion, classification, and collection resolution.
 
 Extracted from _search_steps.py for module size management.

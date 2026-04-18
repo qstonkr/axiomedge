@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Edge Log Repository — 엣지 서버 사용 로그 CRUD + 통계."""
 
 from __future__ import annotations

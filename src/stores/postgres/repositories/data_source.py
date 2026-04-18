@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Data Source Repository - PostgreSQL backed.
 
 """

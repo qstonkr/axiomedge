@@ -89,3 +89,7 @@ class EmbeddingProvider(SyncEmbeddingEncoder, AsyncEmbeddingProvider, Protocol):
     """
 
     ...
+
+
+# Backwards-compatible alias — earlier code referred to ``IEmbedder``.
+IEmbedder = EmbeddingProvider

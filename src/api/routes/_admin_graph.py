@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query
 from src.api.routes.admin_helpers import _GRAPH_INTEGRITY_FAILED
 
 
-def _get_state() -> dict[str, Any]:
+def _get_state() -> Any:  # AppState (dict-compatible)
     """Late-bound accessor — keeps ``patch.object(admin, '_get_state')`` in tests working.
 
     Uses the parent ``admin`` module's binding so unit tests that

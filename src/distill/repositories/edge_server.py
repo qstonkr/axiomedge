@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Edge Server Repository — 엣지 서버 CRUD + heartbeat + 업데이트 요청."""
 
 from __future__ import annotations

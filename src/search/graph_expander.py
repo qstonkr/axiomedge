@@ -35,6 +35,11 @@ _COMPOUND_SPLIT_PATTERN = re.compile(r"[a-zA-Z0-9]+|[가-힣]+")
 class IGraphRepository(Protocol):
     """Minimal protocol for the graph backend."""
 
+    # Optional escape hatch — implementations exposing a low-level client
+    # (e.g. Neo4jClient) populate this so callers can run custom Cypher.
+    # Callers MUST hasattr-check before using.
+    _client: Any
+
     async def find_related_chunks(
         self,
         entity_names: list[str],

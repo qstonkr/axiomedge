@@ -206,7 +206,7 @@ def _resize_image(raw: bytes, scale: float = 0.75) -> bytes | None:
         img = Image.open(io.BytesIO(raw))
         new_w = max(int(img.width * scale), 32)
         new_h = max(int(img.height * scale), 32)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
+        img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         return buf.getvalue()

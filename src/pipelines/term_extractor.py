@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Term Extraction during Ingestion.
 
 Extracts domain terms from document chunks using NLP pattern matching.

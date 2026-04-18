@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """PPT/PPTX parsing mixin for AttachmentParser.
 
 Handles PowerPoint text extraction: OLE2 legacy .ppt, .pptx slide

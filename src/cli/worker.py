@@ -60,7 +60,7 @@ def _register_routes(app: FastAPI, mode: str) -> None:
     """
     from src.api.routes import (
         health, ingest, admin, kb, pipeline, quality,
-        feedback, data_sources, whitelist,
+        feedback, data_sources,
     )
     from src.api.routes import metrics as metrics_route
     from src.api.routes import jobs as jobs_route
@@ -76,7 +76,6 @@ def _register_routes(app: FastAPI, mode: str) -> None:
     app.include_router(feedback.admin_router)
     app.include_router(feedback.knowledge_router)
     app.include_router(data_sources.router)
-    app.include_router(whitelist.router)
     app.include_router(metrics_route.router)
     app.include_router(jobs_route.router)
 

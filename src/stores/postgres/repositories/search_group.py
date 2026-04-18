@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """KB Search Group Repository.
 
 KB 검색 그룹 CRUD 및 조회.

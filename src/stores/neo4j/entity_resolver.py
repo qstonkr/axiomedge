@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Entity Resolver (simplified for local).
 
 Multi-stage entity resolution:

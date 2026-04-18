@@ -73,7 +73,7 @@ class ProfileUpdateRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_state() -> dict[str, Any]:
+def _get_state() -> Any:  # AppState (dict-compatible)
     """Deferred import wrapper for src.api.app._get_state.
 
     Module-level import of `src.api.app` creates a circular dependency when

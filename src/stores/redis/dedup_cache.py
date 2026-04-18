@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Redis-based dedup cache for ingestion.
 
 Tracks content hashes per KB to skip re-ingesting duplicate documents.

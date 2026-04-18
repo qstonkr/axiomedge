@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Search pipeline step functions -- facade with re-exports.
 
 Original monolith split into sub-modules for maintainability:

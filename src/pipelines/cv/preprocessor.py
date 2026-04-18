@@ -42,7 +42,7 @@ class ImagePreprocessor:
         if max(w, h) > MAX_DIMENSION:
             scale = MAX_DIMENSION / max(w, h)
             new_w, new_h = int(w * scale), int(h * scale)
-            img = img.resize((new_w, new_h), Image.LANCZOS)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
             logger.debug("Resized image from %dx%d to %dx%d", w, h, new_w, new_h)
 
         # PIL RGB -> numpy RGB -> OpenCV BGR

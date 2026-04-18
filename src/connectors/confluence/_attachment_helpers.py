@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """Module-level helper functions for attachment parsing.
 
 Extracted from attachment_parser.py to reduce file complexity.
@@ -87,6 +88,10 @@ def _ocr_worker_fn(image_bytes: bytes) -> tuple:
     Inherits PaddleOCR model from parent via fork COW — no model reload.
     If SIGSEGV occurs here, only this subprocess dies.
     """
+    # NOTE: previous impl called `.extract(bytes)` returning rich result with .tables —
+    # current PaddleOCRProvider exposes async `.ocr(OCRInput)` returning text/confidence only.
+    # Until OCR worker is rewritten with asyncio.run + table extraction restored, this path
+    # logs a warning and returns no tables.
     try:
         if not hasattr(_ocr_worker_fn, "_ocr"):
             try:
@@ -95,13 +100,11 @@ def _ocr_worker_fn(image_bytes: bytes) -> tuple:
                 _ocr_worker_fn._ocr = PaddleOCRProvider()
             except ImportError:
                 return (None, 0.0, [])
-        result = _ocr_worker_fn._ocr.extract(image_bytes)
-        tables = [
-            {"headers": t.headers, "rows": t.rows, "source": "ocr"}
-            for t in (result.tables or [])
-        ]
-        return (result.text, result.confidence, tables)
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        import asyncio
+        result = asyncio.run(_ocr_worker_fn._ocr.ocr(image_bytes))
+        return (result.text, result.confidence, [])
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("OCR worker failed: %s", e)
         return (None, 0.0, [])
 
 

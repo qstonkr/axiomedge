@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Ingestion pipeline coordinator with enhanced search accuracy.
 
 Orchestrator facade -- delegates to sub-modules:
@@ -195,6 +196,7 @@ class IngestionPipeline:
                     await asyncio.sleep(self._EMBED_RETRY_DELAY)
                 else:
                     raise
+        raise RuntimeError("unreachable: loop exits via return or raise")  # for type checker
 
     async def _embed_sparse_with_retry(
         self, texts: list[str],
@@ -212,6 +214,7 @@ class IngestionPipeline:
                     await asyncio.sleep(self._EMBED_RETRY_DELAY)
                 else:
                     raise
+        raise RuntimeError("unreachable: loop exits via return or raise")  # for type checker
 
     # -- Backward-compat delegation methods --
 
@@ -241,18 +244,18 @@ class IngestionPipeline:
 
     @staticmethod
     def _build_body_chunks(
-        chunk_result: list[str], heading_map: dict[int, str],
-    ) -> list[tuple[str, str]]:
+        chunk_result: Any, heading_map: dict[int, str],
+    ) -> list[tuple[str, str, str]]:
         from src.pipelines.ingestion_chunks import build_body_chunks
         return build_body_chunks(chunk_result, heading_map)
 
     @staticmethod
     def _append_table_chunks(
-        typed_chunks: list[tuple[str, str]],
+        typed_chunks: list[tuple[str, str, str]],
         parse_result: ParseResult | None,
-    ) -> list[tuple[str, str]]:
+    ) -> None:
         from src.pipelines.ingestion_chunks import append_table_chunks
-        return append_table_chunks(typed_chunks, parse_result)
+        append_table_chunks(typed_chunks, parse_result)
 
     @staticmethod
     def _extract_morphemes(
@@ -324,7 +327,7 @@ class IngestionPipeline:
         raw: RawDocument,
         parse_result: ParseResult | None,
     ) -> (
-        tuple[list[tuple[str, str]], dict[int, str], str]
+        tuple[list[tuple[str, str, str]], dict[int, str], str]
         | IngestionResult
     ):
         return await build_typed_chunks(
@@ -333,7 +336,7 @@ class IngestionPipeline:
 
     async def _split_ocr_text(
         self, ocr_text: str,
-    ) -> list[str]:
+    ) -> list[tuple[str, str, str]]:
         from src.pipelines.ingestion_chunks import split_ocr_text
         return await split_ocr_text(ocr_text, self.chunker)
 

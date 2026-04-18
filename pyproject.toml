@@ -164,6 +164,8 @@ reportMissingReturnType = "warning"
 reportUnknownMemberType = false
 include = ["src"]
 exclude = ["src/apps/dashboard", "scripts"]
+# scripts/ 는 exclude 됐지만 src/ 가 lazy import 하는 경우가 있음 (느슨한 동적 의존)
+extraPaths = ["scripts"]
 # Optional/None flow analysis 가 stateful object/Redis guard 패턴에서 false positive 다수 →
 # 점진적으로 error 로 승격 목표. 지금은 warning 으로 가시화.
 reportOptionalMemberAccess = "warning"
