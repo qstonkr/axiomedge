@@ -14,7 +14,7 @@ Usage:
 Examples:
     score = scorer.score("고객명", "고객성명", "cust_name", "customer_name")
 
-Extracted from: oreo-ecosystem (infrastructure/data_standard/lexical_scorer.py)
+Extracted from: the upstream codebase (infrastructure/data_standard/lexical_scorer.py)
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ TTL: 90 days auto-expiry (set on first add, not refreshed)
 
 Pattern: lazy init, fire-and-forget, graceful degradation.
 
-Adapted from oreo-ecosystem infrastructure/dedup/redis_dedup_index.py.
+py.
 """
 
 from __future__ import annotations

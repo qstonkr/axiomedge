@@ -3,7 +3,7 @@
 Defines node labels, relationship types, cardinality rules, and
 fulltext indexes for the Knowledge Graph.
 
-Adapted from oreo-ecosystem graph_schema.py for knowledge-local.
+py for knowledge-local.
 """
 
 from __future__ import annotations

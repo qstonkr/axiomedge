@@ -5,11 +5,11 @@ Phase 1 reformatter 로 만든 reformatted approved 샘플에 대해 질문을 N
 
 Usage:
     # Dry run (LLM 호출만, DB 저장 없음)
-    AWS_PROFILE=jeongbeomkim uv run python scripts/augment_questions.py \\
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/augment_questions.py \\
       --profile pbu-store --limit 5 --dry-run
 
     # 전체 배치 (기본 4 variations per fact)
-    AWS_PROFILE=jeongbeomkim uv run python scripts/augment_questions.py \\
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/augment_questions.py \\
       --profile pbu-store --n-variations 4 --concurrency 4
 
     # 이미 증강된 건 스킵됨 (idempotent) — 실패 배치 재실행 가능

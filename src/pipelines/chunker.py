@@ -1,6 +1,5 @@
 """Simplified text chunker with Korean sentence-boundary awareness.
 
-Extracted from oreo-ecosystem KoreanProcessor and ChunkProcessor.
 Supports fixed-size and semantic chunking strategies.
 """
 

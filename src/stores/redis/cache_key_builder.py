@@ -5,7 +5,7 @@ Key format: {prefix}:{kb_id_hash}:{query_hash}
 
 Normalizes query text before hashing for consistent key generation.
 
-Adapted from oreo-ecosystem infrastructure/cache/cache_key_builder.py.
+py.
 Simplified: no PII normalization, no model-specific namespacing.
 """
 

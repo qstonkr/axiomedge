@@ -1,7 +1,6 @@
 # pyright: reportAttributeAccessIssue=false
 """Data Source Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgDataSourceRepository.
 """
 
 from __future__ import annotations

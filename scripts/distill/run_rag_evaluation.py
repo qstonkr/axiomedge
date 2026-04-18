@@ -7,8 +7,8 @@ For each approved golden set question:
 4. Save results to DB + update eval/history API
 
 Usage:
-    AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py
-    AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py a-ari
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/run_rag_evaluation.py
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/run_rag_evaluation.py a-ari
 """
 import sys
 import json
@@ -53,7 +53,7 @@ def _get_db_url() -> str:
 def get_sm_client():
     """Fresh boto3 session each call to handle SSO token refresh."""
     session = boto3.Session(
-        profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+        profile_name=os.getenv("AWS_PROFILE", ""),
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
     )
     return session.client("sagemaker-runtime")
@@ -146,7 +146,7 @@ def judge_answer(question: str, expected: str, actual: str, chunks: list | None 
         except Exception as e:
             logger.warning(f"Judge failed (attempt {attempt+1}): {e}")
             if "AccessDeniedException" in str(e):
-                logger.error("SSO token expired. Run: aws sso login --profile jeongbeomkim")
+                logger.error("SSO token expired. Run: aws sso login --profile $AWS_PROFILE")
                 return None
     logger.warning(f"Judge exhausted retries for: {question[:50]}")
     return {"faithfulness": 0.0, "relevancy": 0.0, "completeness": 0.0}

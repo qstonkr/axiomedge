@@ -1,6 +1,5 @@
 """Category Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgCategoryRepository.
 """
 
 from __future__ import annotations

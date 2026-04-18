@@ -7,15 +7,15 @@ Currently wraps run_graphrag_parallel.py — extend with L2/definition logic lat
 
 Usage:
     # GraphRAG only (current)
-    GRAPHRAG_USE_SAGEMAKER=true AWS_PROFILE=jeongbeomkim GRAPHRAG_WORKERS=8 \
+    GRAPHRAG_USE_SAGEMAKER=true AWS_PROFILE=$AWS_PROFILE GRAPHRAG_WORKERS=8 \
         uv run python scripts/run_llm_enrichment.py graphrag drp g-espa partnertalk hax
 
     # Future: L2 category assignment
-    USE_SAGEMAKER_LLM=true AWS_PROFILE=jeongbeomkim \
+    USE_SAGEMAKER_LLM=true AWS_PROFILE=$AWS_PROFILE \
         uv run python scripts/run_llm_enrichment.py l2-category a-ari drp
 
     # Future: Term definition enrichment
-    USE_SAGEMAKER_LLM=true AWS_PROFILE=jeongbeomkim \
+    USE_SAGEMAKER_LLM=true AWS_PROFILE=$AWS_PROFILE \
         uv run python scripts/run_llm_enrichment.py term-enrich a-ari
 """
 import os
@@ -41,7 +41,7 @@ def run_graphrag(kb_ids: list[str]):
         env={
             **os.environ,
             "GRAPHRAG_USE_SAGEMAKER": os.getenv("GRAPHRAG_USE_SAGEMAKER", "true"),
-            "AWS_PROFILE": os.getenv("AWS_PROFILE", "jeongbeomkim"),
+            "AWS_PROFILE": os.getenv("AWS_PROFILE", ""),
             "GRAPHRAG_WORKERS": workers,
         },
     )
@@ -129,7 +129,7 @@ def run_l2_category(kb_ids: list[str]):
     import boto3
 
     session = boto3.Session(
-        profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+        profile_name=os.getenv("AWS_PROFILE", ""),
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
     )
     sm_client = session.client("sagemaker-runtime")
@@ -246,7 +246,7 @@ def run_term_enrich(kb_ids: list[str]):
     from sqlalchemy import text
 
     session = boto3.Session(
-        profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+        profile_name=os.getenv("AWS_PROFILE", ""),
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
     )
     sm_client = session.client("sagemaker-runtime")

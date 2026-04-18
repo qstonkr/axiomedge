@@ -1,6 +1,6 @@
 """QdrantCollectionManager -- collection lifecycle, aliases, and blue-green deployment.
 
-Standalone version extracted from oreo-ecosystem.
+Standalone version extracted from the upstream codebase.
 """
 
 from __future__ import annotations

@@ -24,7 +24,7 @@ import asyncio
 import tempfile
 from typing import Any
 
-from ..config.weights import weights as _w
+from src.config.weights import weights as _w
 from .models import OCRInput, OCRProvider, OCRResult
 
 

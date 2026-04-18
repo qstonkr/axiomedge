@@ -139,7 +139,7 @@ class AuthSettings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256")
     jwt_access_expire_minutes: int = Field(default=60)
     jwt_refresh_expire_hours: int = Field(default=8)
-    jwt_issuer: str = Field(default="oreo-internal-api")
+    jwt_issuer: str = Field(default="axiomedge-api")
     cookie_secure: bool = Field(default=False)  # True in production (HTTPS)
 
     # Keycloak
@@ -206,10 +206,12 @@ class AwsSettings(BaseSettings):
     region: str = Field(default="ap-northeast-2", alias="AWS_REGION")
     profile: str = Field(default="", alias="AWS_PROFILE")
     sagemaker_endpoint: str = Field(
-        default="oreo-exaone-dev", alias="SAGEMAKER_ENDPOINT_NAME",
+        default="", alias="SAGEMAKER_ENDPOINT_NAME",
+        description="SageMaker endpoint name. Required when USE_SAGEMAKER_LLM=true.",
     )
     s3_model_bucket: str = Field(
-        default="oreo-dev-ml-artifacts", alias="DISTILL_S3_BUCKET",
+        default="", alias="DISTILL_S3_BUCKET",
+        description="S3 bucket for edge model artifacts. Required for distill deploy.",
     )
 
 

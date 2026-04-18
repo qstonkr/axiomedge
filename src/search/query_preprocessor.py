@@ -15,7 +15,7 @@ Usage:
 Examples:
     "쿠버네티즈 pod 재시작" -> "쿠버네티스 pod 재시작"
 
-Extracted from oreo-ecosystem query_preprocessor.py.
+py.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _KO_KUBERNETES = "쿠버네티스"
 
 # ---------------------------------------------------------------------------
-# Domain synonyms (extracted from oreo query_rewriter.py)
+# Domain synonyms
 # ---------------------------------------------------------------------------
 DOMAIN_SYNONYMS: dict[str, list[str]] = {
     # Kubernetes
@@ -71,12 +71,7 @@ DOMAIN_SYNONYMS: dict[str, list[str]] = {
     "ci/cd": ["cicd", "지속적 통합 배포"],
     "jenkins": ["젠킨스"],
     "argocd": ["아르고시디", "argo cd"],
-    # GS Retail specific
-    "miso": ["미소", "미소연동"],
-    "oreo": ["오레오"],
-    "cvs": ["편의점", "convenience store"],
-    "sm": ["슈퍼마켓", "supermarket"],
-    "hs": ["홈쇼핑", "home shopping"],
+    # Domain-specific synonyms — extend this dict for your project's vocabulary.
 }
 
 

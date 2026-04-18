@@ -1,8 +1,6 @@
 """Ingestion Gate (Stage 0).
 
 Pre-ingestion quality, security, and metadata validation.
-Adapted from oreo-ecosystem IngestionGateService.
-
 Gate policy (from CLAUDE.md):
 - Security FAIL (IG-06, IG-07) -> QUARANTINE
 - Hard-reject (IG-05, IG-11..14, IG-16, IG-17) -> REJECT

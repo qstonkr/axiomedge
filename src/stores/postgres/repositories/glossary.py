@@ -1,6 +1,5 @@
 """Glossary Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgGlossaryRepository.
 """
 
 from __future__ import annotations

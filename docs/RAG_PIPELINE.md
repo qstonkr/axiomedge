@@ -447,8 +447,8 @@ tail -f logs/api.log | grep hub_search
 ### 평가 셋 재실행
 
 ```bash
-AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py          # 전체 (261 문항)
-AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py g-espa   # 단일 KB
+AWS_PROFILE=$AWS_PROFILE uv run python scripts/run_rag_evaluation.py          # 전체 (261 문항)
+AWS_PROFILE=$AWS_PROFILE uv run python scripts/run_rag_evaluation.py g-espa   # 단일 KB
 ```
 
 ### 개별 단계 디버깅

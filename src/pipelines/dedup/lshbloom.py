@@ -14,7 +14,7 @@ Algorithm:
 3. Band bucketing via LSH
 4. Return candidate pairs from same bucket
 
-Adapted from oreo-ecosystem infrastructure/dedup/lshbloom.py.
+py.
 """
 
 from __future__ import annotations

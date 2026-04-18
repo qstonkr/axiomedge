@@ -1,8 +1,6 @@
 """Freshness Predictor
 
 Document-type-aware freshness scoring and stale-date prediction.
-Mirrors oreo-ecosystem FreshnessPredictor exactly.
-
 Scoring curve:
 - score = 1.0 while age < lifespan * 0.5 (DECAY_START_RATIO)
 - Cosine decay from 1.0 -> 0.0 in the remaining window.

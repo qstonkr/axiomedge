@@ -1,8 +1,6 @@
 """Lifecycle State Machine
 
 Document lifecycle state machine with validation.
-Mirrors oreo-ecosystem DocumentLifecycle entity and KnowledgeLifecycleManager.
-
 States: draft, published, under_review, archived, deleted
 Auto-archive scheduling based on freshness.
 
@@ -36,7 +34,7 @@ class TransitionError(Exception):
     pass
 
 
-# Valid transitions (SSOT from oreo-ecosystem)
+# Valid transitions
 ALLOWED_TRANSITIONS: dict[LifecycleStatus, list[LifecycleStatus]] = {
     LifecycleStatus.DRAFT: [
         LifecycleStatus.PUBLISHED,

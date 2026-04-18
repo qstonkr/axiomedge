@@ -15,7 +15,7 @@ Examples:
     if score >= KnowledgeConfidenceThresholds.HIGH:
         level = "high"
 
-Extracted from oreo-ecosystem confidence_thresholds.py.
+py.
 """
 
 from __future__ import annotations

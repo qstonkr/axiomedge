@@ -166,7 +166,7 @@ docker build -t paddleocr-api -f docker/paddleocr/Dockerfile docker/paddleocr/
 |--------|---------|------|
 | EC2 c5.4xlarge | 54.180.231.139 | TEI 임베딩(:8080) + 리랭커(:8081) |
 | EC2 c5.xlarge | (동적 IP) | PaddleOCR API(:8866) — 온디맨드 |
-| SageMaker | oreo-exaone-dev | EXAONE LLM |
+| SageMaker | <your-sagemaker-endpoint> | EXAONE LLM |
 
 ## 체크포인트 & 재개
 

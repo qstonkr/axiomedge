@@ -5,8 +5,8 @@ question-answer pairs. Results are saved to PostgreSQL for review
 in the dashboard before RAG evaluation.
 
 Usage:
-    AWS_PROFILE=jeongbeomkim uv run python scripts/generate_golden_set.py
-    AWS_PROFILE=jeongbeomkim uv run python scripts/generate_golden_set.py a-ari drp
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/generate_golden_set.py
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/generate_golden_set.py a-ari drp
 """
 import sys
 import json
@@ -60,7 +60,7 @@ JSON 배열로만 출력하세요:
 
 def get_sm_client():
     session = boto3.Session(
-        profile_name=os.getenv("AWS_PROFILE", "jeongbeomkim"),
+        profile_name=os.getenv("AWS_PROFILE", ""),
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
     )
     return session.client("sagemaker-runtime")

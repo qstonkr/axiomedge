@@ -233,7 +233,7 @@ uv run python scripts/distill_pilot_edge_test.py --api-key test123
 uv run python scripts/distill_pilot_edge_test.py --stress --count 1000
 
 # 5. Teacher 비교
-AWS_PROFILE=jeongbeomkim uv run python scripts/distill_pilot_compare.py \
+AWS_PROFILE=$AWS_PROFILE uv run python scripts/distill_pilot_compare.py \
   --edge-results pilot_edge_results.jsonl
 ```
 

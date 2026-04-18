@@ -1,7 +1,5 @@
 """Ollama HTTP client for local LLM inference.
 
-Extracted from oreo-agents ExaoneLLMService with only the Ollama HTTP path.
-All oreo-specific framework dependencies (StatsD, input_sanitizer, LiteLLM,
 domain vocabulary) have been removed.
 
 Usage:

@@ -1,6 +1,6 @@
 """Qdrant pipeline shared utilities.
 
-Extracted from oreo-ecosystem qdrant_utils.py.
+py.
 Deterministic UUID conversion, payload truncation, and Qdrant connection helpers.
 
 Created: 2026-02-11

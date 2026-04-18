@@ -25,7 +25,7 @@ except ImportError:
 QUERY_TIMEOUT = int(os.getenv("NEO4J_QUERY_TIMEOUT", "30"))
 
 # =============================================================================
-# 노드/관계 타입 상수 (SSOT: oreo-agents graphrag_extractor.py)
+# 노드/관계 타입 상수 (SSOT: src/pipelines/graphrag/extractor.py)
 # =============================================================================
 
 NODE_TYPES = {

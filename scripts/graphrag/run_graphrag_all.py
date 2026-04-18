@@ -1,4 +1,5 @@
 """Run GraphRAG sequentially for all KBs."""
+import os
 import subprocess
 import sys
 import time
@@ -24,9 +25,9 @@ for kb in KB_ORDER:
     result = subprocess.run(
         ["uv", "run", "python", "scripts/run_graphrag.py", kb],
         env={
-            **__import__("os").environ,
+            **os.environ,
             "GRAPHRAG_USE_SAGEMAKER": "true",
-            "AWS_PROFILE": "jeongbeomkim",
+            "AWS_PROFILE": os.getenv("AWS_PROFILE", ""),
         },
     )
 

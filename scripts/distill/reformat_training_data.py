@@ -4,7 +4,7 @@
 재작성. 원본은 건드리지 않고 source_type="reformatted" 신규 행으로 저장.
 
 Usage:
-    AWS_PROFILE=jeongbeomkim \\
+    AWS_PROFILE=$AWS_PROFILE \\
       uv run python scripts/reformat_training_data.py --profile pbu-store
 
     # Dry run (LLM 호출만, DB 저장 안함) — 샘플 눈으로 확인용

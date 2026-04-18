@@ -5,7 +5,7 @@
 
 설계서: docs/design/GLOSSARY_SIMILARITY_MATCHING_DESIGN.md (3.2.3절)
 Created: 2026-03-10
-Extracted from: oreo-ecosystem (application/services/knowledge/dense_term_index.py)
+Extracted from: the upstream codebase (application/services/knowledge/dense_term_index.py)
 """
 
 from __future__ import annotations

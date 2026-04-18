@@ -192,10 +192,14 @@ class _SageMakerLLMClient:
     """
 
     def __init__(self) -> None:
-        self._endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+        self._endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "")
         self._region = os.getenv("SAGEMAKER_REGION", "ap-northeast-2")
-        self._profile = os.getenv("AWS_PROFILE", "jeongbeomkim")
+        self._profile = os.getenv("AWS_PROFILE", "")
         self._client = None
+        if not self._endpoint:
+            raise RuntimeError(
+                "SAGEMAKER_ENDPOINT_NAME env var is required when using SageMaker LLM."
+            )
 
     def _get_client(self) -> Any:
         # SSO token renewal workaround: recreate client each call

@@ -28,7 +28,7 @@ SG_ID = "sg-026e71d1b3b93c576"
 PORTS: tuple[int, ...] = (8080, 8081, 8866)
 DESC_PREFIX = "jbkim-auto"
 REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
-PROFILE = os.environ.get("AWS_PROFILE", "jeongbeomkim")
+PROFILE = os.environ.get("AWS_PROFILE", "<your-aws-profile>")
 
 HEALTH_TARGETS = [
     ("BGE embedding", "http://54.180.231.139:8080/health"),

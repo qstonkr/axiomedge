@@ -1,6 +1,6 @@
 """Standalone Qdrant vector database adapter.
 
-Extracted from oreo-ecosystem's infrastructure/adapters/qdrant/ with
+Extracted from the upstream codebase's infrastructure/adapters/qdrant/ with
 framework dependencies (FeatureFlags, StatsD, KPI) removed.
 """
 

@@ -161,25 +161,15 @@ def _resolve_bool_field(
 
 
 def _get_ocr_feature_flags() -> tuple[bool, bool]:
-    """Return (preprocess_enabled, postprocess_enabled) from feature flags or env."""
-    try:
-        from src.core.feature_flags import FeatureFlags
-        pre = FeatureFlags.is_knowledge_ocr_preprocess_enabled()
-        post = FeatureFlags.is_knowledge_ocr_postprocess_enabled()
-        return pre, post
-    except ImportError:
-        pre = os.getenv("KNOWLEDGE_OCR_PREPROCESS_ENABLED", "true").lower() == "true"
-        post = os.getenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "true").lower() == "true"
-        return pre, post
+    """Return (preprocess_enabled, postprocess_enabled) from env vars."""
+    pre = os.getenv("KNOWLEDGE_OCR_PREPROCESS_ENABLED", "true").lower() == "true"
+    post = os.getenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "true").lower() == "true"
+    return pre, post
 
 
 def _get_ocr_postprocess_flag() -> bool:
-    """Return postprocess_enabled flag from feature flags or env."""
-    try:
-        from src.core.feature_flags import FeatureFlags
-        return FeatureFlags.is_knowledge_ocr_postprocess_enabled()
-    except ImportError:
-        return os.getenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "true").lower() == "true"
+    """Return postprocess_enabled flag from env."""
+    return os.getenv("KNOWLEDGE_OCR_POSTPROCESS_ENABLED", "true").lower() == "true"
 
 
 def _filter_ocr_noise(ocr_text: str) -> str:

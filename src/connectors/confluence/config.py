@@ -140,7 +140,7 @@ def _resolve_output_dir() -> Path:
     configured_dir = os.getenv("CONFLUENCE_OUTPUT_DIR", "").strip()
     if configured_dir:
         candidates.append((Path(configured_dir), "CONFLUENCE_OUTPUT_DIR"))
-    fallback_dir = Path.home() / ".oreo" / "crawl"
+    fallback_dir = Path.home() / ".axiomedge" / "crawl"
     candidates.append((fallback_dir, "home fallback"))
 
     last_error: Exception | None = None

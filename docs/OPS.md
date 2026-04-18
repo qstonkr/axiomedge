@@ -243,8 +243,8 @@ docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db \
 curl -X POST http://localhost:8000/api/v1/distill/builds/<build_id>/rollback
 
 # 또는 S3 에서 이전 manifest 복원
-aws s3 cp s3://oreo-dev-ml-artifacts/models/edge/pbu-store/manifest.json.bak \
-  s3://oreo-dev-ml-artifacts/models/edge/pbu-store/manifest.json
+aws s3 cp s3://<your-s3-bucket>/models/edge/pbu-store/manifest.json.bak \
+  s3://<your-s3-bucket>/models/edge/pbu-store/manifest.json
 ```
 
 ---

@@ -1,6 +1,6 @@
 """QdrantClientProvider -- shared client, config, and payload helpers.
 
-Standalone version extracted from oreo-ecosystem.
+Standalone version extracted from the upstream codebase.
 StatsD / Datadog metric calls removed; FeatureFlags replaced with config booleans.
 """
 

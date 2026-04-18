@@ -6,8 +6,6 @@ After vector search returns top-K chunks, use Neo4j to find related documents:
 - Child/parent documents in the wiki hierarchy
 
 Adds these related chunks to the result set with a graph_boost score.
-Extracted from oreo-ecosystem GraphChunkExpander.
-
 Usage:
     expander = GraphSearchExpander(graph_repo=my_neo4j_repo)
     expanded = await expander.expand(query, initial_chunks, scope_kb_ids=["my-kb"])

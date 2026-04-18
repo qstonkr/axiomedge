@@ -1,6 +1,6 @@
 """Cross-Encoder Reranker for search result re-ranking.
 
-Adapted from oreo-ecosystem cross_encoder.py.
+py.
 Uses BGE-Reranker-v2-m3 (multilingual/Korean) via sentence-transformers.
 
 Features:

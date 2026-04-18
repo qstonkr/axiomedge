@@ -7,7 +7,7 @@ LLM 추출 정확도 향상을 위한 일관된 용어 처리.
 - KNOWLEDGE_EXTRACTION_SYSTEM_DESIGN.md: LLM 용어 도출 정확도 개선
 
 Created: 2026-02-05
-Extracted from: oreo-ecosystem (domain/knowledge/utils/term_normalizer.py)
+Extracted from: the upstream codebase (domain/knowledge/utils/term_normalizer.py)
 """
 
 from __future__ import annotations

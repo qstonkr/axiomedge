@@ -1,6 +1,6 @@
 """QdrantStoreOperations -- CRUD, statistics, and scroll operations.
 
-Standalone version extracted from oreo-ecosystem.
+Standalone version extracted from the upstream codebase.
 StatsD metric calls retained as no-ops via QdrantClientProvider stubs.
 """
 

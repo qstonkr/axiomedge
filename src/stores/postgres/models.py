@@ -27,7 +27,6 @@ Tables:
 - kb_configs: KB registry configurations
 - knowledge_categories: L1/L2 categories
 
-Extracted from oreo-ecosystem for standalone use.
 """
 
 from __future__ import annotations
@@ -374,7 +373,7 @@ class ProvenanceModel(KnowledgeBase):
     source_type = Column(String(20), nullable=False)
     source_url = Column(Text, nullable=True)
     source_id = Column(String(255), nullable=True)
-    source_system = Column(String(100), nullable=False, default="oreo")
+    source_system = Column(String(100), nullable=False, default="axiomedge")
     crawled_at = Column(DateTime(timezone=True), nullable=False)
     crawled_by = Column(String(100), nullable=False, default="knowledge-ingestion")
     extraction_metadata = Column(Text, nullable=True)  # JSON

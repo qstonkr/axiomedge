@@ -3,8 +3,7 @@
 지식 그래프를 Neo4j에 로드하는 모듈.
 GraphRAG 활성화를 위해 사용됨.
 
-Extracted from oreo-ecosystem neo4j_loader.py.
-- Removed oreo-specific imports (feature flags, graph_node_registry, hub_search_dependencies)
+py.
 - Removed repository facade path (feature-flag gated)
 - Kept batch upsert logic, fulltext index creation, Cypher injection prevention
 - Uses direct neo4j driver

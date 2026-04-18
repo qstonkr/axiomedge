@@ -9,7 +9,7 @@ Characteristics:
 - TTL per entry (default 300s / 5 min)
 - Expected hit rate: ~15%
 
-Adapted from oreo-ecosystem infrastructure/cache/l1_memory_cache.py.
+py.
 Uses threading.Lock instead of asyncio.Lock for broader compatibility.
 """
 

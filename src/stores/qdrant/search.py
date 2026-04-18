@@ -1,6 +1,6 @@
 """QdrantSearchEngine -- hybrid search, ColBERT rerank, and hydration.
 
-Standalone version extracted from oreo-ecosystem.
+Standalone version extracted from the upstream codebase.
 FeatureFlags replaced with config booleans on QdrantConfig.
 StatsD metric calls are retained as no-ops via QdrantClientProvider stubs.
 """

@@ -13,7 +13,7 @@ Kiwi 기반 한국어 형태소 분석기.
 4. 품사 태깅: NNG(일반명사), NNP(고유명사), SL(외국어)
 
 Created: 2026-02-05
-Extracted from: oreo-ecosystem (domain/knowledge/utils/korean_morpheme_analyzer.py)
+Extracted from: the upstream codebase (domain/knowledge/utils/korean_morpheme_analyzer.py)
 """
 
 from __future__ import annotations

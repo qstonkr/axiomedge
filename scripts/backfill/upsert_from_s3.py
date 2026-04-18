@@ -13,7 +13,7 @@ Env vars:
     S3_DATA_BUCKET   S3 bucket (default: gs-retail-svc-dev-miso-files)
     S3_OUTPUT_PREFIX Embedded JSONL prefix (default: knowledge/embedded/itops/)
     UPSERT_BATCH_SIZE Points per upsert (default: 200)
-    AWS_PROFILE      AWS profile (default: jeongbeomkim)
+    AWS_PROFILE      AWS profile (default: <your-aws-profile>)
 """
 
 from __future__ import annotations
@@ -154,7 +154,7 @@ def main() -> None:
     parser.add_argument("--bucket", default=os.getenv("S3_DATA_BUCKET", "gs-retail-svc-dev-miso-files"))
     parser.add_argument("--prefix", default=os.getenv("S3_OUTPUT_PREFIX", "knowledge/embedded/itops/"))
     parser.add_argument("--batch-size", type=int, default=int(os.getenv("UPSERT_BATCH_SIZE", "200")))
-    parser.add_argument("--profile", default=os.getenv("AWS_PROFILE", "jeongbeomkim"))
+    parser.add_argument("--profile", default=os.getenv("AWS_PROFILE", ""))
     args = parser.parse_args()
 
     logger.info("=" * 60)

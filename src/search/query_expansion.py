@@ -1,6 +1,6 @@
 """Query Expansion Service.
 
-Combined from oreo-ecosystem:
+Combined from the upstream codebase:
 - query_expansion_service.py (glossary-based expansion, tokenization, stopwords)
 - search_query_expander.py (compound splitting, orchestration)
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Glossary repository interface (simplified from oreo IGlossaryRepository)
+# Glossary repository interface
 # ---------------------------------------------------------------------------
 
 class IGlossaryRepository(Protocol):

@@ -1,7 +1,7 @@
 """Generic Answer Detection Guard.
 
 Detects vague / non-specific LLM answers and replaces them with
-chunk-based deterministic fallback. Extracted from oreo-ecosystem
+chunk-based deterministic fallback. Extracted from the upstream codebase
 HubSearchService._should_replace_enriched_answer() and _build_fallback_answer().
 
 Usage:

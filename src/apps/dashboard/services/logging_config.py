@@ -1,6 +1,5 @@
 """Structured JSON logging for Knowledge Dashboard Local.
 
-Simplified from oreo-ecosystem version.
 """
 
 from __future__ import annotations

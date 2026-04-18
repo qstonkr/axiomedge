@@ -1,6 +1,6 @@
 """Chat session persistence for Knowledge Dashboard Local.
 
-# STUB: Preserved for oreo-ecosystem interface compatibility. Not used in knowledge-local.
+# STUB: Preserved for the upstream codebase interface compatibility. Not used in knowledge-local.
 Simplified version - persistence is disabled by default for local use.
 """
 

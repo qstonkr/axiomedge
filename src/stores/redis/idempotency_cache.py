@@ -6,7 +6,7 @@ Uses SETNX for atomic check-and-set.
 Key format: {prefix}:{request_hash}
 Default TTL: 60 seconds.
 
-Adapted from oreo-ecosystem infrastructure/cache/idempotency_cache.py.
+py.
 Simplified: in-memory fallback when Redis is unavailable.
 """
 

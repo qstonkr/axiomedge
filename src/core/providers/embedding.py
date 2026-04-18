@@ -5,7 +5,7 @@ Supports: "ollama", "onnx", "tei".
 
 Resolution order matches app.py: TEI > Ollama > ONNX.
 
-Adapted from oreo-ecosystem infrastructure/embedding/provider_factory.py.
+py.
 Simplified: no Cohere/Remote/LiteLLM providers.
 """
 

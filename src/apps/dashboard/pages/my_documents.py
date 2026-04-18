@@ -258,4 +258,4 @@ with tab_notifications:
 
 
 st.markdown("---")
-st.caption("📌 문서 담당자 관리 | OrgChangeEvent 기반 자동 알림 | SSOT: oreo-agents domain/knowledge/ownership/")
+st.caption("📌 문서 담당자 관리 | OrgChangeEvent 기반 자동 알림")

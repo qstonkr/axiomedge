@@ -1,6 +1,5 @@
 """Knowledge Dashboard Local - Environment Configuration (SSOT)
 
-Adapted from oreo-ecosystem knowledge-dashboard for standalone local use.
 All API calls go to a single local FastAPI server at DASHBOARD_API_URL.
 """
 

@@ -9,7 +9,7 @@ Domain-specific thresholds determine cache behavior:
 
 Promotes L2 hits to L1 for faster subsequent access.
 
-Adapted from oreo-ecosystem infrastructure/cache/multi_layer_cache.py.
+py.
 Simplified: 2 layers (no L3 distributed), no Datadog metrics.
 """
 

@@ -118,7 +118,7 @@ tei:
   # -- S3 model download (EKS only)
   modelDownload:
     enabled: true
-    s3Bucket: "oreo-dev-ml-artifacts/models/bge-m3/hub"
+    s3Bucket: "<your-s3-bucket>/models/bge-m3/hub"
     region: "ap-northeast-2"
     serviceAccountName: bge-m3-sa
     iamRoleArn: ""  # Set for EKS: arn:aws:iam::xxx:role/bge-m3-s3-read-role

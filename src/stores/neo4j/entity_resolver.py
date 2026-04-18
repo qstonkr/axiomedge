@@ -5,7 +5,7 @@ Multi-stage entity resolution:
 2. Embedding similarity (cosine > 0.85 = same entity)
 3. Rule-based fallback (skip LLM coreference - too expensive for local)
 
-Adapted from oreo-ecosystem entity_resolver.py.
+py.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ class EntityResolver:
     3-stage resolution strategy:
     1. Glossary exact match (free, instant)
     2. Embedding similarity (~50ms, cheap)
-    3. Rule-based fallback (no LLM, unlike oreo which uses LLM coreference)
+    3. Rule-based fallback (no LLM)
     """
 
     def __init__(

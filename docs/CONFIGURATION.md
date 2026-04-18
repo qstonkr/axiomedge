@@ -60,7 +60,7 @@
 |---|---|---|
 | `USE_SAGEMAKER_LLM` | `false` | SageMaker로 전환 (API 서버 전체) |
 | `GRAPHRAG_USE_SAGEMAKER` | `false` | GraphRAG 추출만 SageMaker 사용 |
-| `SAGEMAKER_ENDPOINT_NAME` | `oreo-exaone-dev` | SageMaker 엔드포인트명 |
+| `SAGEMAKER_ENDPOINT_NAME` | `<your-sagemaker-endpoint>` | SageMaker 엔드포인트명 |
 | `SAGEMAKER_REGION` | `ap-northeast-2` | AWS 리전 |
 | `AWS_PROFILE` | (없음) | AWS 프로파일 |
 
@@ -145,7 +145,7 @@
 | `AUTH_JWT_ALGORITHM` | `HS256` | JWT 알고리즘 |
 | `AUTH_JWT_ACCESS_EXPIRE_MINUTES` | `60` | Access 토큰 만료 (분) |
 | `AUTH_JWT_REFRESH_EXPIRE_HOURS` | `8` | Refresh 토큰 만료 (시간) |
-| `AUTH_JWT_ISSUER` | `oreo-internal-api` | JWT 발급자 |
+| `AUTH_JWT_ISSUER` | `axiomedge-api` | JWT 발급자 |
 | `AUTH_COOKIE_SECURE` | `false` | HTTPS에서만 쿠키 전송 |
 
 ### Keycloak

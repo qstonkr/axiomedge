@@ -217,8 +217,8 @@ kl-home                            # return to main
 RAG quality is tracked via golden set evaluation:
 
 ```bash
-AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py          # all KBs (261 questions)
-AWS_PROFILE=jeongbeomkim uv run python scripts/run_rag_evaluation.py g-espa   # single KB
+AWS_PROFILE=$AWS_PROFILE uv run python scripts/run_rag_evaluation.py          # all KBs (261 questions)
+AWS_PROFILE=$AWS_PROFILE uv run python scripts/run_rag_evaluation.py g-espa   # single KB
 ```
 
 - **JUDGE**: RAGAS-style context-aware (faithfulness checks against retrieved chunks, not just expected answer)

@@ -6,7 +6,7 @@ and corrects them using the local LLM (EXAONE via Ollama).
 Also provides domain-dictionary-based correction for OCR misreads that
 produce valid Korean syllables (e.g., "얼업활설화" → "영업활성화").
 
-Adapted from oreo-ecosystem ocr_noise_detector.py + fix_ocr_chunks.py.
+py + fix_ocr_chunks.py.
 
 Usage:
     from src.pipelines.ocr_corrector import needs_correction, correct_ocr_text

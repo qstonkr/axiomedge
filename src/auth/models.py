@@ -46,8 +46,8 @@ class UserModel(KnowledgeBase):
     status = Column(String(20), nullable=False, default="active")  # active | inactive | locked
     department = Column(String(255), nullable=True)
     organization_id = Column(String(100), nullable=True)
-    hr_org_code = Column(String(50), nullable=True)  # oreo-ecosystem 호환
-    hr_dept_code = Column(String(50), nullable=True)  # oreo-ecosystem 호환
+    hr_org_code = Column(String(50), nullable=True)
+    hr_dept_code = Column(String(50), nullable=True)
     avatar_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     last_login_at = Column(DateTime(timezone=True), nullable=True)

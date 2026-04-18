@@ -14,7 +14,7 @@ Usage:
     evaluator = CRAGRetrievalEvaluator()
     evaluation = await evaluator.evaluate(query, chunks, search_time_ms=120.0)
 
-Extracted from oreo-ecosystem crag_retrieval_evaluator.py.
+py.
 """
 
 from __future__ import annotations

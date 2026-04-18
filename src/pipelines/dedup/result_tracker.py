@@ -10,7 +10,7 @@ Redis key structure:
 
 Pattern: fire-and-forget, error isolation (never blocks ingestion).
 
-Adapted from oreo-ecosystem infrastructure/dedup/dedup_result_tracker.py.
+py.
 """
 
 from __future__ import annotations

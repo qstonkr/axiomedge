@@ -15,7 +15,7 @@ Conflict types:
 - NUMERIC_CONFLICT: Number/value inconsistency
 - PROCEDURAL_CONFLICT: Procedure/method inconsistency
 
-Adapted from oreo-ecosystem infrastructure/dedup/conflict_detector.py.
+py.
 """
 
 from __future__ import annotations

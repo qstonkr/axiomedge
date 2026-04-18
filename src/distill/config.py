@@ -128,7 +128,7 @@ class DataQualityConfig(BaseModel):
 
 
 class DeployConfig(BaseModel):
-    s3_bucket: str = "oreo-dev-ml-artifacts"
+    s3_bucket: str = ""  # Required: set via DISTILL_S3_BUCKET env or distill.yaml
     s3_prefix: str = "models/edge/"
     app_s3_prefix: str = "apps/edge/"  # 앱 바이너리 저장 경로
     auto_update_cron: str = "0 3 * * 1"

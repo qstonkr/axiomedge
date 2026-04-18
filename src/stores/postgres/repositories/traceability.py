@@ -1,7 +1,6 @@
 # pyright: reportAttributeAccessIssue=false
 """Provenance / Traceability Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgProvenanceRepository.
 """
 
 from __future__ import annotations

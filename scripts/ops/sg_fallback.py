@@ -32,7 +32,7 @@ SG_ID = "sg-026e71d1b3b93c576"
 PORTS: tuple[int, ...] = (8080, 8081, 8866)
 DESC_PREFIX = "jbkim-fallback"
 REGION = os.environ.get("AWS_REGION", "ap-northeast-2")
-PROFILE = os.environ.get("AWS_PROFILE", "jeongbeomkim")
+PROFILE = os.environ.get("AWS_PROFILE", "<your-aws-profile>")
 
 
 def aws(*args: str) -> str:

@@ -22,7 +22,7 @@ except ImportError:
 
 
 class NodeType(Enum):
-    """그래프 노드 유형 (oreo-agents graph_builder.py 생성 노드와 정합)."""
+    """그래프 노드 유형 (GraphRAG extractor 가 생성하는 노드와 정합)."""
 
     PERSON = "Person"                # 사람
     TEAM = "Team"                    # 팀/부서

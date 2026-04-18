@@ -3,7 +3,7 @@
 EC2 user-data 가 매 부팅 시 S3 (`s3://gs-knowledge-models/scripts/train_on_gpu.py`)
 에서 다운로드해 실행한다. 이 파일을 수정한 뒤에는 반드시 같은 위치에 업로드해야 함:
 
-    AWS_PROFILE=jeongbeomkim AWS_REGION=ap-northeast-2 \\
+    AWS_PROFILE=$AWS_PROFILE AWS_REGION=ap-northeast-2 \\
       aws s3 cp scripts/train_on_gpu.py \\
       s3://gs-knowledge-models/scripts/train_on_gpu.py
 

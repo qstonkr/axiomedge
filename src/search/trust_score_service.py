@@ -1,8 +1,6 @@
 """Trust Score Service
 
 KTS computation and management service for knowledge-local.
-Mirrors oreo-ecosystem TrustScoreService + TrustScoreCalculator.
-
 6 signals:
     KTS = 0.20 * SourceCredibility
         + 0.20 * FreshnessScore
@@ -83,7 +81,7 @@ def _tier_from_score(score: float) -> str:
 class TrustScoreCalculator:
     """Stateless calculator for KTS sub-components.
 
-    All methods are pure functions. Mirrors oreo-ecosystem
+    All methods are pure functions. Mirrors the upstream codebase
     ``TrustScoreCalculator`` exactly.
     """
 

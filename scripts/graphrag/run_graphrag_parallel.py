@@ -4,7 +4,7 @@ Uses ThreadPoolExecutor to parallelize LLM extraction calls.
 Neo4j saves are serialized via a lock to avoid write conflicts.
 
 Usage:
-    GRAPHRAG_USE_SAGEMAKER=true AWS_PROFILE=jeongbeomkim \
+    GRAPHRAG_USE_SAGEMAKER=true AWS_PROFILE=$AWS_PROFILE \
         uv run python scripts/run_graphrag_parallel.py drp g-espa partnertalk hax itops_general
 
     # Custom worker count (default: 4)

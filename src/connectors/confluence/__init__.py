@@ -1,7 +1,7 @@
 """Confluence crawler package.
 
 Modular Confluence REST API crawler with attachment parsing, OCR, and BFS parallelism.
-Extracted from oreo-ecosystem's confluence_full_crawler.py.
+py.
 
 Usage (programmatic):
     from src.connectors.confluence import crawl_space, CrawlerConfig

@@ -11,7 +11,6 @@ Characteristics:
 - Cosine similarity threshold from config
 - Expected hit rate: ~20%
 
-Simplified from oreo-ecosystem L2 (no GPTCache dependency).
 """
 
 from __future__ import annotations

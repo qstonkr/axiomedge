@@ -88,7 +88,7 @@ spec:
                 - name: USE_SAGEMAKER_LLM
                   value: "true"
                 - name: SAGEMAKER_ENDPOINT_NAME
-                  value: oreo-exaone-dev
+                  value: <your-sagemaker-endpoint>
                 - name: SAGEMAKER_REGION
                   value: ap-northeast-2
               resources:

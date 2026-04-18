@@ -1,6 +1,5 @@
 """Knowledge Feedback Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgKnowledgeFeedbackRepository.
 """
 
 from __future__ import annotations

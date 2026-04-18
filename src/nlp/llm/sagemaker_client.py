@@ -33,13 +33,13 @@ class SageMakerConfig:
     """SageMaker LLM configuration."""
 
     endpoint_name: str = field(
-        default_factory=lambda: os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+        default_factory=lambda: os.getenv("SAGEMAKER_ENDPOINT_NAME", "")
     )
     region: str = field(
         default_factory=lambda: os.getenv("SAGEMAKER_REGION", "ap-northeast-2")
     )
     profile: str = field(
-        default_factory=lambda: os.getenv("AWS_PROFILE", "jeongbeomkim")
+        default_factory=lambda: os.getenv("AWS_PROFILE", "")
     )
     max_tokens: int = field(default_factory=lambda: weights.llm.max_tokens)
     temperature: float = field(default_factory=lambda: weights.llm.temperature)

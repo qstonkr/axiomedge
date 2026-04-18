@@ -14,7 +14,7 @@ Usage:
 - Content hash duplicate check
 - 30-40% filtering effect
 
-Adapted from oreo-ecosystem infrastructure/dedup/bloom_filter.py.
+py.
 """
 
 from __future__ import annotations

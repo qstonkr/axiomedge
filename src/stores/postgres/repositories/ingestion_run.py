@@ -1,7 +1,6 @@
 # pyright: reportAttributeAccessIssue=false
 """Ingestion Run Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgIngestionRunRepository.
 """
 
 from __future__ import annotations

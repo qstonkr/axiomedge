@@ -12,7 +12,6 @@ Stage 3: SemHash (~50ms)
 Stage 4: Conflict Detection (~100ms)
     -> LLM conflict analysis (local Ollama), date/version/policy conflicts
 
-Adapted from oreo-ecosystem infrastructure/dedup/ for local deployment.
 """
 
 from .bloom_filter import BloomFilter, ScalableBloomFilter

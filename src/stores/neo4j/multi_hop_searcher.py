@@ -1,7 +1,7 @@
 """Multi-hop Searcher.
 
 N-hop graph traversal from seed entities.
-Adapted from oreo-ecosystem multi_hop_searcher.py for knowledge-local.
+py for knowledge-local.
 
 Features:
 - N-hop related node discovery from a document

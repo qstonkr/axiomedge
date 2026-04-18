@@ -6,7 +6,7 @@ Clearly labels the source of each response section:
 - [inference]: Document-based inference
 - [general knowledge]: General knowledge outside documents
 
-Extracted from oreo-ecosystem transparency_formatter.py.
+py.
 """
 
 from __future__ import annotations

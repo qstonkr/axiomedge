@@ -1,6 +1,6 @@
 """Domain models for knowledge-local.
 
-Extracted and simplified from oreo-ecosystem:
+Extracted and simplified from the upstream codebase:
 - RawDocument, ConnectorResult, IKnowledgeConnector from connector.py
 - SearchChunk, KBConfig, KBTier added for local use
 - IngestionResult from ingestion_coordinator.py
@@ -110,7 +110,7 @@ class ConnectorResult:
 class IKnowledgeConnector(Protocol):
     """Industry-standard connector interface.
 
-    Simplified from oreo-ecosystem. Uses a plain config dict instead of
+    Uses a plain config dict instead of
     SyncSource to avoid importing the full KB config system.
     """
 

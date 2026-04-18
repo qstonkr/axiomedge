@@ -21,7 +21,7 @@ spec:
             - sh
             - -c
             - |
-              aws s3 sync s3://oreo-dev-ml-artifacts/models/bge-m3/hub /data \
+              aws s3 sync s3://<your-s3-bucket>/models/bge-m3/hub /data \
                 --region ap-northeast-2
           volumeMounts:
             - name: model-data

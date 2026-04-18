@@ -14,7 +14,7 @@ LLM 추출 용어를 표준 용어사전과 대조하여 중복/유사 용어를
 - TermNormalizer: Unicode NFC, 비교용 정규화
 
 Created: 2026-03-06
-Extracted from: oreo-ecosystem (application/services/knowledge/term_similarity_matcher.py)
+Extracted from: the upstream codebase (application/services/knowledge/term_similarity_matcher.py)
 """
 
 from __future__ import annotations

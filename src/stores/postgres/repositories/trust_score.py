@@ -1,6 +1,5 @@
 """Trust Score Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgTrustScoreRepository.
 """
 
 from __future__ import annotations

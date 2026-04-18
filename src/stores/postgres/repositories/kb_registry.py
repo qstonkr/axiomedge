@@ -2,7 +2,6 @@
 """KB Registry Repository - PostgreSQL backed.
 
 Manages KB configuration persistence with CRUD operations.
-Extracted from oreo-ecosystem PostgreSQLKBRegistry.
 """
 
 from __future__ import annotations

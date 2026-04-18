@@ -7,7 +7,7 @@ Applies different response strategies based on query type:
 - ADVISORY: Document + general knowledge allowed, mark opinions
 - CHITCHAT: Friendly greeting/small talk response
 
-Extracted from oreo-ecosystem tiered_response.py.
+py.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ _CITATION_REF_PATTERN = re.compile(r"\[(\d+)\]")
 
 
 # ---------------------------------------------------------------------------
-# LLM Client interface (simplified from oreo ILLMClient)
+# LLM Client interface
 # ---------------------------------------------------------------------------
 
 class ILLMClient(Protocol):

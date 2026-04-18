@@ -2,8 +2,7 @@
 
 문서 품질 필터링 및 정제를 수행하는 모듈.
 
-Extracted from oreo-ecosystem quality_processor.py.
-All oreo-specific imports (StatsD, feature flags) removed.
+py.
 Core quality tier logic preserved exactly.
 """
 

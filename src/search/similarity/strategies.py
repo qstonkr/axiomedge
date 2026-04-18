@@ -46,7 +46,7 @@ class _PrecomputedStd:
 class EnhancedMatcherConfig:
     """Configuration for EnhancedSimilarityMatcher.
 
-    Replaces oreo-ecosystem FeatureFlags with simple config booleans.
+    Replaces the upstream codebase FeatureFlags with simple config booleans.
     """
     enable_synonym_expansion: bool = True
     enable_rapidfuzz: bool = True

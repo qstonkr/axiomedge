@@ -1,7 +1,6 @@
-"""Knowledge Local - FastAPI Application.
+"""axiomedge — FastAPI application.
 
 Standalone knowledge management API server.
-All oreo framework dependencies removed.
 """
 
 from __future__ import annotations

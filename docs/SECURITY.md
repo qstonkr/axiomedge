@@ -30,7 +30,7 @@ AUTH_JWT_SECRET=<openssl rand -hex 32>
 AUTH_JWT_ALGORITHM=HS256
 AUTH_JWT_ACCESS_EXPIRE_MINUTES=60
 AUTH_JWT_REFRESH_EXPIRE_HOURS=8
-AUTH_JWT_ISSUER=oreo-internal-api
+AUTH_JWT_ISSUER=axiomedge-api
 ```
 
 - Access token: 60분 (Cookie `HttpOnly` + `SameSite=Strict`)

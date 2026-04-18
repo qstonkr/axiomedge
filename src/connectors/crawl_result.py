@@ -1,11 +1,8 @@
 """Crawl Result Knowledge Connector (local-only).
 
-Simplified from oreo-ecosystem CrawlResultConnector:
 - Reads crawler JSON/JSONL files from local filesystem.
 - Converts each crawled page into a standardized RawDocument.
 - Computes deterministic version_fingerprint for change detection.
-- Removed S3 support, document adapter, and oreo-specific imports.
-
 Usage:
     connector = CrawlResultConnector()
     result = await connector.fetch(

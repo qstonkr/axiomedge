@@ -3,8 +3,8 @@
 검색 결과에 최신성 가중치를 적용하는 모듈.
 오래된 문서는 점수를 낮추고, 최신 문서는 점수를 높임.
 
-Extracted from oreo-ecosystem freshness_ranker.py.
-All oreo-specific imports removed. Core algorithm preserved exactly.
+py.
+Core algorithm preserved exactly.
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Validates embedding vectors before use in Qdrant search.
 Catches anomalies: NaN/Inf, zero vectors, dimension mismatch, magnitude outliers.
 
-Adapted from oreo-ecosystem domain/knowledge/embedding_guard.py.
+py.
 Simplified: no StatsD metrics emission.
 """
 

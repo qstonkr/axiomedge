@@ -20,7 +20,7 @@ def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
     """Custom Korean sidebar rendering (5-group persona-based).
 
     All pages are visible for local development (admin mode).
-    ``user_role`` is accepted for oreo-ecosystem interface compatibility but
+    ``user_role`` is accepted for the upstream codebase interface compatibility but
     ignored — local mode always runs as admin.
     """
     hide_default_nav()
@@ -119,7 +119,7 @@ def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
 
         _use_sagemaker = os.getenv("USE_SAGEMAKER_LLM", "false").lower() == "true"
         if _use_sagemaker:
-            _llm_model = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+            _llm_model = os.getenv("SAGEMAKER_ENDPOINT_NAME", "sagemaker-llm")
             _llm_backend = "SageMaker"
         else:
             _llm_model = os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")

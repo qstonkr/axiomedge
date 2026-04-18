@@ -4,7 +4,6 @@ Stores query -> search results in Redis with TTL.
 L1: exact hash match (query string SHA256 -> cached result).
 L2: Redis persistence across restarts.
 
-Extracted from oreo-ecosystem MultiLayerCache (L1 + L3 layers).
 Skips GPTCache/VSS semantic matching for local simplicity.
 
 Key format: {prefix}:{sha256_hex[:16]}

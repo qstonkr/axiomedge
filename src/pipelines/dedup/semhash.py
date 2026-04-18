@@ -11,7 +11,7 @@ Features:
 Uses the local embedder interface (IEmbedder from ingestion.py) for embedding.
 Falls back to zero vectors if no embedder is available.
 
-Adapted from oreo-ecosystem infrastructure/dedup/semhash.py.
+py.
 """
 
 from __future__ import annotations

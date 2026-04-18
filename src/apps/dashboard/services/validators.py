@@ -1,6 +1,6 @@
 """Input validation and sanitization for Knowledge Dashboard.
 
-Copied from oreo-ecosystem without changes.
+Copied from the upstream codebase without changes.
 """
 
 from __future__ import annotations

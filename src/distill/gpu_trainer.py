@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 _GPU_INSTANCE_ID = os.getenv("DISTILL_GPU_INSTANCE_ID", "")
 _AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
-_AWS_PROFILE = os.getenv("AWS_PROFILE", "jeongbeomkim")
+_AWS_PROFILE = os.getenv("AWS_PROFILE", "")
 
 
 # ---------------------------------------------------------------------------

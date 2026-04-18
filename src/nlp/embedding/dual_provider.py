@@ -4,7 +4,7 @@ Orchestrates dense + sparse embedding from a single BGE-M3 model.
 Wraps any of the existing providers (Ollama, ONNX, TEI) and exposes
 a unified encode() interface returning both dense and sparse vectors.
 
-Adapted from oreo-ecosystem infrastructure/embedding/dual_embedding_provider.py.
+py.
 Simplified: no governor, no circuit breaker, no CUDA OOM recovery, no S3 download.
 """
 

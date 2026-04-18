@@ -21,7 +21,7 @@ Resolution strategy (SSOT):
 | Near dup       | Queue for merge                 |
 | Content conflict| Owner notification + review queue|
 
-Adapted from oreo-ecosystem infrastructure/dedup/dedup_pipeline.py.
+py.
 """
 
 from __future__ import annotations

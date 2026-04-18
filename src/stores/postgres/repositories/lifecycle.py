@@ -1,6 +1,5 @@
 """Document Lifecycle Repository - PostgreSQL backed.
 
-Extracted from oreo-ecosystem PgDocumentLifecycleRepository.
 """
 
 from __future__ import annotations

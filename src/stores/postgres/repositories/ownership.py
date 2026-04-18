@@ -2,7 +2,6 @@
 """Document Ownership Repositories - PostgreSQL backed.
 
 Provides DocumentOwner, TopicOwner, ErrorReport persistence.
-Extracted from oreo-ecosystem pg_document_ownership_repository.
 """
 
 from __future__ import annotations

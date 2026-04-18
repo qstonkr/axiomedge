@@ -3,7 +3,6 @@
 Tracks content hashes per KB to skip re-ingesting duplicate documents.
 Uses Redis SET per KB for O(1) membership checks.
 
-Extracted from oreo-ecosystem DedupPipeline Stage 1 (Bloom filter / hash check).
 Simplified: no LSH, no semantic dedup, no LLM conflict detection.
 
 Key format: {prefix}:{kb_id}  (Redis SET containing content hashes)

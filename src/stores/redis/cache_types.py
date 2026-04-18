@@ -2,7 +2,7 @@
 
 Common types shared across L1 memory cache, L2 semantic cache, and multi-layer cache.
 
-Adapted from oreo-ecosystem infrastructure/cache/cache_types.py.
+py.
 Simplified: no Datadog, no env-var override for thresholds.
 """
 
@@ -137,3 +137,19 @@ class ICacheLayer(ABC):
     @abstractmethod
     async def clear(self) -> int:
         pass
+
+    # ------------------------------------------------------------------
+    # Optional capabilities — concrete defaults so all layers satisfy the
+    # interface; layers with real implementations override.
+    # ------------------------------------------------------------------
+
+    async def invalidate_by_metadata_value(self, meta_key: str, meta_value: str) -> int:  # noqa: ARG002
+        """Invalidate entries matching a metadata key/value pair.
+
+        Default: not supported — caller should fall back to ``clear()``.
+        """
+        return 0
+
+    def stats(self) -> dict[str, Any]:
+        """Layer-specific stats (size, evictions, hit rate). Default: empty."""
+        return {}

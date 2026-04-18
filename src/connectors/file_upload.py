@@ -1,6 +1,5 @@
 """File Upload Knowledge Connector (local-only).
 
-Simplified from oreo-ecosystem FileUploadConnector:
 - Removed S3 loading (local file loading only).
 - Inline document parsing (no external attachment_parser dependency).
 - Uses domain.models for RawDocument/ConnectorResult.

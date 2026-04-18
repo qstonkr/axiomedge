@@ -1,6 +1,6 @@
 """Passage cleaner for pre-reranking text normalization.
 
-Adapted from oreo-ecosystem passage_cleaner.py.
+py.
 Cleans retrieved passages before cross-encoder reranking to improve quality.
 
 Features:

@@ -1,6 +1,6 @@
-"""JWT token creation and verification, compatible with oreo-ecosystem.
+"""JWT token creation and verification.
 
-Token claim structure matches oreo-internal-api:
+Token claim structure:
 - Access token: sub, email, roles, permissions, jti, iss, type="access"
 - Refresh token: sub, jti, family_id, rotation_count, iss, type="refresh"
 """
@@ -36,7 +36,7 @@ class JWTService:
         algorithm: str = "HS256",
         access_token_expire_minutes: int = 60,
         refresh_token_expire_hours: int = 8,
-        issuer: str = "oreo-internal-api",
+        issuer: str = "axiomedge-api",
     ) -> None:
         self._secret = secret_key
         self._algorithm = algorithm
@@ -62,7 +62,7 @@ class JWTService:
         rotation_count: int = 0,
         display_name: str = "",
     ) -> TokenPair:
-        """Create access + refresh tokens with oreo-compatible claims."""
+        """Create access + refresh tokens."""
         now = datetime.now(timezone.utc)
         access_jti = str(uuid.uuid4())
         refresh_jti = str(uuid.uuid4())

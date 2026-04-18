@@ -12,7 +12,7 @@ Phase 1.5 완료 후:
     - 같은 baseline_questions.json 으로 다시 실행 → results 비교 → 개선폭 정량화
 
 Usage:
-    AWS_PROFILE=jeongbeomkim uv run python scripts/baseline_test.py \\
+    AWS_PROFILE=$AWS_PROFILE uv run python scripts/baseline_test.py \\
       --model /tmp/distill_model_test/model.gguf \\
       --label phase1
 """

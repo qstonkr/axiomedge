@@ -3,7 +3,7 @@
 Creates required Neo4j indexes on startup and indexes documents
 with their entities into the graph.
 
-Adapted from oreo-ecosystem graph_indexer.py for knowledge-local.
+py for knowledge-local.
 """
 
 from __future__ import annotations

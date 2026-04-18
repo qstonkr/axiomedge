@@ -15,7 +15,7 @@ Noise filters:
 - CSS property artifacts (border-radius, flex-direction, etc.)
 - Code fragments (permission strings, exception classes, MIME types)
 
-Extracted from oreo-ecosystem glossary_extraction_service.py + term_extractor.py.
+py + term_extractor.py.
 
 Usage:
     extractor = TermExtractor(glossary_repo=my_repo)

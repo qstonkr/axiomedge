@@ -15,7 +15,7 @@ Usage:
 Examples:
     [1] [K8s 운영 가이드](https://wiki.example.com/page/123) (score=0.92)
 
-Extracted from oreo-ecosystem citation_formatter.py.
+py.
 """
 
 from __future__ import annotations
