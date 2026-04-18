@@ -257,7 +257,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] `.gitignore` — `.coverage*`, `htmlcov/`, `coverage.json`
   - [x] 신규 `tests/unit/test_coverage_gate.py` (15 cases — filter/loader/main flow)
 - **Follow-up (Phase B 내)**:
-  - Bitbucket Pipelines CI 에 `make test-unit && make test-coverage-gate` 추가 (CI 파일 위치 확인 후)
+  - GitHub Actions CI 에 `make test-unit && make test-coverage-gate` 추가 (`.github/workflows/ci.yml`)
 - **Known issue** (별도 처리):
   - `test_data_source_sync::TestRunIngestion` 2개, `test_document_parser_extended::TestParsePptx` 1개 — 기존부터 fail (main 머지 이전부터). Phase C 에서 fix.
   - `test_summary_tree_builder` 7개 — flaky, seed 고정 필요. Phase C 에서 fix.

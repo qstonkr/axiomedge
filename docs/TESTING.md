@@ -35,7 +35,7 @@ single source of truth 입니다. `docs/IMPROVEMENT_PLAN.md` 의 제약 사항 #
 
 ### 왜 이 비중인가
 
-- Unit 은 빠르고 결정적이라 PR 때마다 돌 수 있음 (GitHub / Bitbucket checks)
+- Unit 은 빠르고 결정적이라 PR 때마다 돌 수 있음 (GitHub Actions checks)
 - Integration 은 느려서 manual trigger 또는 nightly 로 제한
 - E2E 는 모든 서비스가 떠 있는 통합 환경에서만 의미 있음
 
@@ -93,7 +93,7 @@ uv run python scripts/coverage_gate.py
 uv run python scripts/coverage_gate.py --base origin/main
 ```
 
-### CI (Bitbucket Pipelines / GitHub Actions)
+### CI (GitHub Actions)
 
 Pipeline step:
 

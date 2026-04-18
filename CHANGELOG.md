@@ -26,10 +26,10 @@
 
 ### Fixed
 - Person MENTIONED_IN: execute_query 사용 (raw session 대신)
-- 228 SonarQube code smells (S8415 + S8410)
-- 77 SonarQube code smells (non-complexity)
+- 228 static-analysis code smells (S8415 + S8410)
+- 77 static-analysis code smells (non-complexity)
 - 36 S3776 (complexity 16-20) across 28 files
-- 6 SonarQube reliability issues (Overall Code)
+- 6 reliability issues (Overall Code)
 - Document parser complexity + pytest-asyncio auto mode
 - CORSMiddleware 순서 수정 (AuthMiddleware 이후)
 - S4144 중복 코드 (get_entity_count/get_document_count)

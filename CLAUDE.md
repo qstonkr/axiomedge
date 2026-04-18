@@ -208,7 +208,7 @@ kl-home                            # return to main
 
 - `agent/<name>` — worktree-isolated feature branches
 - PR required for merge to `main`
-- CI runs lint + 5,000+ unit tests on every PR (Bitbucket Pipelines + SonarQube)
+- CI runs lint + 5,000+ unit tests on every PR (GitHub Actions)
 
 ## Evaluation
 

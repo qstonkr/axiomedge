@@ -109,7 +109,7 @@ uv run pytest tests/unit/test_foo.py::test_bar -v --no-cov
 
 예시:
 Add identifier search + document diversity for chunk-level recall
-Fix 6 SonarQube reliability issues (Overall Code)
+Fix 6 reliability issues flagged by static analysis
 Improve golden set prompt: require store names and specific context
 ```
 

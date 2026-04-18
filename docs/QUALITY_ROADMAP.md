@@ -65,7 +65,7 @@ P4 (성능)                       P6 (아키텍처) ──→ P7 (문서: 모듈
 **변경 파일**:
 - `pyproject.toml` — `[tool.pyright]` 섹션 추가
 - `Makefile` — `type-check` target 추가
-- `bitbucket-pipelines.yml` — pyright 스텝 추가
+- `.github/workflows/ci.yml` — pyright 스텝 추가
 
 **설정**:
 ```toml
@@ -178,7 +178,7 @@ Referrer-Policy: strict-origin-when-cross-origin
 **변경 파일**:
 - `pyproject.toml` — dev 의존성에 `pip-audit` 추가
 - `Makefile` — `audit` target 추가
-- `bitbucket-pipelines.yml` — pip-audit 스텝 추가
+- `.github/workflows/ci.yml` — pip-audit 스텝 추가
 - `src/auth/jwt_service.py` — 쿠키에 `SameSite=Strict` 설정
 - `docs/SECURITY.md` — 보안 설정 가이드 갱신
 
