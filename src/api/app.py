@@ -783,6 +783,12 @@ app.add_middleware(AuthMiddleware)
 from src.api.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(SecurityHeadersMiddleware)
 
+# API deprecation headers (Sunset/Deprecation per RFC 8594) — registers via
+# src.api.middleware.api_version.deprecate(...) calls, no-op when registry empty
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+from src.api.middleware.api_version import add_deprecation_headers  # noqa: E402
+app.add_middleware(BaseHTTPMiddleware, dispatch=add_deprecation_headers)
+
 # CORSMiddleware MUST be added LAST (outermost = first to execute).
 # In production, CORS_ORIGINS must be explicitly set (no wildcard).
 _cors_default = "" if _is_prod else "*"
