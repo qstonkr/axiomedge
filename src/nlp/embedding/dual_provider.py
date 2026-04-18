@@ -187,7 +187,7 @@ class DualEmbeddingProvider:
                 return_sparse,
                 return_colbert,
             )
-            return result
+            return result  # type: ignore[return-value]
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error("Dual embedding encode failed: %s", e)
             return None

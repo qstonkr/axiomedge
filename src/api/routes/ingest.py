@@ -93,7 +93,7 @@ async def _update_kb_counts(state: AppState, kb_id: str, docs: int, chunks: int)
 
 
 @router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})  # noqa: E501
-async def ingest_directory(request: IngestRequest) -> tuple:
+async def ingest_directory(request: IngestRequest) -> "IngestResponse":
     """Ingest documents from a directory."""
     state = _get_state()
     store = state.get("qdrant_store")

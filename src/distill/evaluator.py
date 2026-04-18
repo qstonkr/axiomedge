@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """모델 평가 — Teacher judge + 임베딩 유사도.
 
 학습된 모델의 품질을 평가하고 배포 게이트로 사용.

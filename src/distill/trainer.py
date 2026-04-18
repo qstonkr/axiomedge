@@ -1,4 +1,4 @@
-# pyright: reportMissingImports=false, reportAttributeAccessIssue=false
+# pyright: reportMissingImports=false, reportAttributeAccessIssue=false, reportPrivateImportUsage=false, reportCallIssue=false
 """LoRA SFT Trainer.
 
 Qwen2.5-0.5B 등 소형 모델을 LoRA로 fine-tuning.

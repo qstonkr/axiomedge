@@ -79,6 +79,7 @@ class HubSearchResponse(BaseModel):
     conflicts: list[dict[str, Any]] | None = None
     follow_up_questions: list[str] | None = None
     transparency: dict[str, Any] | None = None
+    display_query: str | None = None  # corrected query when different from input
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +122,7 @@ from src.api.routes._search_steps import (  # noqa: E402
 
 
 @router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})  # noqa: E501
-async def hub_search(request: HubSearchRequest) -> dict:
+async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
     """Hub Search - unified knowledge search with full pipeline."""
     state = _get_state()
     search_engine = state.get("qdrant_search")

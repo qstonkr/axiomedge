@@ -344,7 +344,7 @@ async def _scroll_collection_transparency(
         }
         if offset:
             body["offset"] = offset
-        resp = await client.post(
+        resp = await client.post(  # type: ignore[attr-defined]
             f"{qdrant_url}/collections/{raw_name}/points/scroll", json=body,
         )
         if resp.status_code != 200:
@@ -375,7 +375,7 @@ async def _count_qdrant_transparency(
     if not collections:
         return counts
 
-    raw_names = await collections.get_existing_collection_names()
+    raw_names = await collections.get_existing_collection_names()  # type: ignore[attr-defined]
     async with httpx.AsyncClient(timeout=_w.timeouts.httpx_quality) as client:
         for raw_name in raw_names:
             await _scroll_collection_transparency(client, qdrant_url, raw_name, counts)

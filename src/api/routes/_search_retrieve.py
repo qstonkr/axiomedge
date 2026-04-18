@@ -79,7 +79,7 @@ async def _step_search_collections(
         if isinstance(result, Exception):
             logger.warning("Search in collection failed: %s", result)
             continue
-        col_name, chunks = result
+        col_name, chunks = result  # type: ignore[misc]
         all_chunks.extend(chunks)
         searched_kbs.append(col_name)
     return all_chunks, searched_kbs
@@ -239,7 +239,7 @@ async def _step_tree_expand(
             from src.api.routes.search_helpers import retrieve_chunks_by_ids
             point_ids = [str_to_uuid(eid) for eid in expanded_ids if eid]
             loaded = await retrieve_chunks_by_ids(
-                state.get("qdrant_client"), collections, point_ids, expanded_scores,
+                state.get("qdrant_provider"), collections, point_ids, expanded_scores,
             )
             all_chunks.extend(loaded)
 

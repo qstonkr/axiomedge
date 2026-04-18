@@ -300,7 +300,7 @@ class LinkExtractor(HTMLParser):
 
     def _handle_anchor_start(self, attrs_dict: dict[str, str | None]) -> None:
         """일반 <a> 태그의 href를 분석하여 내부/외부 링크로 분류"""
-        href = attrs_dict.get("href", "")
+        href = attrs_dict.get("href") or ""
 
         # 무시할 패턴 체크
         if any(href.startswith(p) for p in self.IGNORE_PATTERNS):

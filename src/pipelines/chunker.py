@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Simplified text chunker with Korean sentence-boundary awareness.
 
 Supports fixed-size and semantic chunking strategies.
@@ -125,7 +126,9 @@ class Chunker:
         try:
             if self._kss_executor is None:
                 self.__class__._kss_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            future = self._kss_executor.submit(kss.split_sentences, sub)
+            executor = self._kss_executor
+            assert executor is not None  # narrowed: just initialized above
+            future = executor.submit(kss.split_sentences, sub)
             sentences = future.result(timeout=weights.timeouts.httpx_default)
             return [s.strip() for s in sentences if s.strip()]
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:

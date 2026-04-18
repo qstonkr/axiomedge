@@ -239,7 +239,7 @@ class _OllamaLLMClient:
 
     def _get_client(self) -> Any:
         if self._client is None:
-            from ...llm.ollama_client import OllamaClient, OllamaConfig
+            from src.nlp.llm.ollama_client import OllamaClient, OllamaConfig
             self._client = OllamaClient(
                 OllamaConfig(
                     base_url=self._base_url,

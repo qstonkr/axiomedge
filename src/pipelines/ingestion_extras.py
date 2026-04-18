@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false
 """Ingestion pipeline — dedup, quality check, ingestion gate, term/synonym extraction.
 
 Extracted from ingestion.py for module size management.

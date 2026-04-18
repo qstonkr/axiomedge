@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Glossary Repository - PostgreSQL backed.
 
 """

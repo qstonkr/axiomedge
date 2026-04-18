@@ -10,7 +10,6 @@ from typing import Any, TYPE_CHECKING
 from src.config.weights import weights as _w
 
 if TYPE_CHECKING:
-    from src.stores.qdrant.collections import QdrantCollectionManager
     from src.search.graph_expander import GraphSearchExpander
 
 logger = logging.getLogger(__name__)
@@ -621,7 +620,7 @@ async def graph_expansion(
 
 
 async def retrieve_chunks_by_ids(
-    qdrant_client: QdrantCollectionManager,
+    qdrant_provider: Any,
     collections: list[str],
     point_ids: list[Any],
     scores: dict[str, float],
@@ -631,15 +630,19 @@ async def retrieve_chunks_by_ids(
     """Qdrant에서 point_id 목록으로 청크를 로드하여 chunk dict 리스트로 반환.
 
     여러 collection에 대해 병렬로 조회하고 결과를 합침.
+
+    qdrant_provider 는 QdrantClientProvider — 내부에서 raw AsyncQdrantClient 를 꺼내
+    .retrieve() 를 호출한다. (QdrantCollectionManager 에는 .retrieve() 가 없음)
     """
     import asyncio
 
-    if not qdrant_client or not point_ids:
+    if not qdrant_provider or not point_ids:
         return []
 
+    raw_client = await qdrant_provider.ensure_client()
     retrieve_coros = [
         asyncio.to_thread(
-            qdrant_client.retrieve,
+            raw_client.retrieve,
             collection_name=col, ids=point_ids, with_payload=True,
         )
         for col in collections

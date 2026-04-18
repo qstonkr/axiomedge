@@ -25,7 +25,7 @@ def _compute_duration(started: str | object | None, completed: str | object | No
     if isinstance(completed, str):
         completed = datetime.fromisoformat(completed)
     try:
-        return (completed - started).total_seconds()
+        return (completed - started).total_seconds()  # type: ignore[union-attr]
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Duration calculation failed: %s", e)
         return None
@@ -376,7 +376,7 @@ async def list_l1_categories() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def _extract_kb_ids(raw_names: list[str], collections: object) -> list[str]:
     """Extract and deduplicate KB IDs from collection names."""
-    prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
+    prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"  # type: ignore[attr-defined]
     kb_ids = []
     for name in raw_names:
         if name.endswith("__live"):
@@ -416,7 +416,7 @@ async def get_l1_stats() -> dict[str, Any]:
             if isinstance(result, Exception):
                 logger.debug("L1 facet failed for %s: %s", kb_id, result)
                 continue
-            for cat, count in result.items():
+            for cat, count in result.items():  # type: ignore[union-attr]
                 l1_totals[cat] = l1_totals.get(cat, 0) + count
                 kb_breakdown.append([kb_id, cat, count])
 

@@ -91,7 +91,7 @@ async def _list_kbs_from_registry(
         return None
 
 
-async def _list_kbs_from_qdrant(collections, store) -> dict[str, list]:
+async def _list_kbs_from_qdrant(collections, store) -> dict[str, Any]:
     """Fallback: list KBs from Qdrant collections."""
     try:
         raw_names = await collections.get_existing_collection_names()

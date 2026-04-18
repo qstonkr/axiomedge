@@ -100,7 +100,7 @@ class QdrantSearchEngine:
         query_kwargs: dict[str, Any],
         collection_name: str,
         kb_id: str,
-        error_cls: type,
+        error_cls: type[Exception],
     ) -> Any:
         """Execute hybrid (dense + sparse) query with RRF fusion."""
         from qdrant_client.models import Fusion, FusionQuery, Prefetch, SparseVector
@@ -140,7 +140,7 @@ class QdrantSearchEngine:
         query_kwargs: dict[str, Any],
         collection_name: str,
         kb_id: str,
-        error_cls: type,
+        error_cls: type[Exception],
     ) -> Any:
         """Execute dense-only query."""
         try:

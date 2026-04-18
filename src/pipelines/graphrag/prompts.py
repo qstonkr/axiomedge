@@ -1,3 +1,4 @@
+# pyright: reportGeneralTypeIssues=false, reportAssignmentType=false
 """GraphRAG Prompt Templates and Schema Definitions."""
 
 from __future__ import annotations

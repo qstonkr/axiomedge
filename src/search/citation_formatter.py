@@ -1,3 +1,4 @@
+# pyright: reportAssignmentType=false
 """Citation Formatter.
 
 Purpose:

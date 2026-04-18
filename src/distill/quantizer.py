@@ -137,24 +137,24 @@ class DistillQuantizer:
 
         llama-cpp-python의 내장 변환 또는 llama.cpp CLI 사용.
         """
-        model_path = Path(model_path)
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        model_path_p = Path(model_path)
+        output_path_p = Path(output_path)
+        output_path_p.parent.mkdir(parents=True, exist_ok=True)
 
         # Step 1: HF → GGUF f16 변환
-        f16_path = output_path.parent / "model-f16.gguf"
-        self._convert_hf_to_gguf(model_path, f16_path)
+        f16_path = output_path_p.parent / "model-f16.gguf"
+        self._convert_hf_to_gguf(model_path_p, f16_path)
 
         # Step 2: 양자화
-        self._quantize_gguf(f16_path, output_path)
+        self._quantize_gguf(f16_path, output_path_p)
 
         # Step 3: f16 임시 파일 삭제
         if f16_path.exists():
             f16_path.unlink()
 
-        size_mb = output_path.stat().st_size / (1024 * 1024)
-        logger.info("Quantized model: %s (%.1f MB, %s)", output_path, size_mb, self.quantize_method)
-        return str(output_path)
+        size_mb = output_path_p.stat().st_size / (1024 * 1024)
+        logger.info("Quantized model: %s (%.1f MB, %s)", output_path_p, size_mb, self.quantize_method)
+        return str(output_path_p)
 
     def _convert_hf_to_gguf(self, model_path: Path, output_path: Path) -> None:
         """HuggingFace → GGUF f16 변환.

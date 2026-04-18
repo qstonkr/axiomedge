@@ -20,6 +20,7 @@ class OCRResult:
     text: str
     confidence: float
     provider: str
+    used_fallback: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

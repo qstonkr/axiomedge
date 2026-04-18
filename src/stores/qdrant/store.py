@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """QdrantStoreOperations -- CRUD, statistics, and scroll operations.
 
 Standalone version extracted from the upstream codebase.

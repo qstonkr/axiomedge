@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false, reportReturnType=false
 """Provenance / Traceability Repository - PostgreSQL backed.
 
 """

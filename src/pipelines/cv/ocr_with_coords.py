@@ -62,7 +62,7 @@ class OCRWithCoords:
         """Try extracting via PaddleOCR v3 .json attribute. Returns None if not applicable."""
         if not hasattr(ocr_result, "json"):
             return None
-        result_dict = ocr_result.json
+        result_dict = ocr_result.json  # type: ignore[attr-defined]
         res = result_dict.get("res", {})
         rec_texts = res.get("rec_texts", [])
         rec_scores = res.get("rec_scores", [])

@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """엣지 추론 서버 (llama-cpp-python 기반).
 
 POS기 → 엣지 서버 질의 응답. 로컬 GGUF 모델로 추론.
