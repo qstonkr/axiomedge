@@ -1,0 +1,103 @@
+name: Search Quality Gate
+
+# 회귀 차단용 검색 품질 평가.
+# - PR 마다 돌리기엔 너무 비싸서 (LLM judge 호출 — KB 6개 * 261문항)
+#   nightly + main 푸시 + 수동 trigger 로 제한.
+# - 결과는 baseline (eval/baseline.json) 과 비교, threshold 회귀 시 fail.
+
+on:
+  schedule:
+    - cron: '0 18 * * *'  # 매일 03:00 KST (18:00 UTC)
+  push:
+    branches: [main]
+    paths:
+      - 'src/search/**'
+      - 'src/pipelines/graphrag/**'
+      - 'src/config/weights/**'
+      - 'eval/baseline.json'
+  workflow_dispatch:  # 수동 trigger
+    inputs:
+      kb_filter:
+        description: 'KB filter (예: g-espa). 비우면 전체.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    # 외부 LLM 의존 — 환경 변수가 없으면 informational
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: knowledge
+          POSTGRES_PASSWORD: knowledge
+          POSTGRES_DB: knowledge_db
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+      qdrant:
+        image: qdrant/qdrant:v1.13.0
+        ports: ['6333:6333']
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: none
+        ports: ['7687:7687']
+    env:
+      DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
+      REDIS_URL: redis://localhost:6379
+      QDRANT_URL: http://localhost:6333
+      NEO4J_URI: bolt://localhost:7687
+      NEO4J_AUTH: none
+      # LLM access (CI 시크릿 — 없으면 평가 skip)
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ap-northeast-2
+      SAGEMAKER_ENDPOINT_NAME: ${{ secrets.SAGEMAKER_ENDPOINT_NAME }}
+      USE_SAGEMAKER_LLM: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+
+      - name: Skip when LLM credentials not configured
+        if: env.AWS_ACCESS_KEY_ID == '' || env.SAGEMAKER_ENDPOINT_NAME == ''
+        run: |
+          echo "::warning::AWS credentials or SageMaker endpoint not set — skipping quality eval"
+          exit 0
+
+      - name: Start API server
+        run: |
+          uv run python -m uvicorn src.api.app:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/api.pid
+          # wait for API ready
+          for i in {1..30}; do
+            curl -sf http://localhost:8000/health && break
+            sleep 2
+          done
+
+      - name: Run search quality evaluation
+        run: |
+          uv run python scripts/eval_quality_gate.py \
+            ${{ github.event.inputs.kb_filter }} \
+            --baseline eval/baseline.json \
+            --tolerance 0.05
+
+      - name: Stop API server
+        if: always()
+        run: kill $(cat /tmp/api.pid) || true
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-eval-${{ github.run_id }}
+          path: eval/last_run.json
+          retention-days: 30

@@ -176,3 +176,12 @@ secrets-check:
 secrets-updatekeys:
 	sops updatekeys .env.encrypted
 	@echo "✓ .sops.yaml recipients re-applied to .env.encrypted"
+
+# === Search quality evaluation ===
+eval-quality:
+	uv run python scripts/eval_quality_gate.py --baseline eval/baseline.json
+
+eval-update-baseline:
+	@if [ ! -f eval/last_run.json ]; then echo "ERROR: run 'make eval-quality' first to generate eval/last_run.json"; exit 1; fi
+	cp eval/last_run.json eval/baseline.json
+	@echo "✓ Baseline updated from eval/last_run.json"

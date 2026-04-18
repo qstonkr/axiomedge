@@ -1,0 +1,9 @@
+{
+  "_comment": "Baseline RAG quality scores per KB. Update via: make eval-update-baseline. Initial values from docs/QUALITY_ROADMAP.md (F:0.62, R:0.78, C:0.66, Recall:0.85).",
+  "global": {
+    "faithfulness": 0.60,
+    "relevancy": 0.75,
+    "completeness": 0.64,
+    "source_recall": 0.83
+  }
+}
