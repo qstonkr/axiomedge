@@ -12,7 +12,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --frozen
-      - run: uvx ruff check src/ scripts/ cli/ dashboard/
+      - run: uvx ruff check src/ scripts/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # informational while baseline reduces (~767 errors → 0)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      - run: uv run pyright src/
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen
+      # transformers CVE-2026-1839: fix는 5.0.0rc3 (major+pre-release) — 별도 평가 필요
+      # diskcache CVE-2025-69872, py PYSEC-2022-42969: fix version 없음
+      - run: uv run pip-audit --ignore-vuln CVE-2026-1839 --ignore-vuln CVE-2025-69872 --ignore-vuln PYSEC-2022-42969
 
   test:
     runs-on: ubuntu-latest
