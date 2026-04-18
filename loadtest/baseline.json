@@ -1,0 +1,22 @@
+{
+  "_comment": "Baseline performance targets per scenario. Update via: make perf-update-baseline.",
+  "_units": {
+    "duration_ms": "milliseconds",
+    "rate": "fraction (0.0~1.0)",
+    "throughput": "requests per second"
+  },
+  "search.js": {
+    "http_req_duration_p50": 800,
+    "http_req_duration_p95": 1800,
+    "http_req_duration_p99": 4500,
+    "http_req_failed_rate": 0.005,
+    "throughput_min": 8.0
+  },
+  "health.js": {
+    "http_req_duration_p50": 5,
+    "http_req_duration_p95": 30,
+    "http_req_duration_p99": 100,
+    "http_req_failed_rate": 0.0,
+    "throughput_min": 100.0
+  }
+}

@@ -196,3 +196,21 @@ worker:
 
 backup-drill:
 	DRILL_CONFIRM=yes ./scripts/ops/backup_drill.sh
+
+# === Performance / Load Tests (k6) ===
+perf-search:
+	mkdir -p loadtest/results
+	k6 run --summary-export=loadtest/results/search.json loadtest/search.js
+	uv run python scripts/perf_check.py loadtest/results/search.json --scenario search.js
+
+perf-health:
+	mkdir -p loadtest/results
+	k6 run --summary-export=loadtest/results/health.json loadtest/health.js
+	uv run python scripts/perf_check.py loadtest/results/health.json --scenario health.js
+
+perf-update-baseline:
+	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make perf-update-baseline SCENARIO=search.js"; exit 1; fi
+	@uv run python -c "import json,sys; b=json.load(open('loadtest/baseline.json')); s=json.load(open('loadtest/results/$(SCENARIO).json'));\
+import importlib.util; spec=importlib.util.spec_from_file_location('p','scripts/perf_check.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m);\
+b['$(SCENARIO)'].update(m.extract_metrics(s)); open('loadtest/baseline.json','w').write(json.dumps(b, indent=2))"
+	@echo "✓ Baseline updated for $(SCENARIO) from loadtest/results/$(SCENARIO).json"
