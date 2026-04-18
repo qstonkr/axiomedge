@@ -45,8 +45,14 @@ class Agent:
         llm: AgentLLM | None = None,
         registry: ToolRegistry | None = None,
         cost_guard_config: CostGuardConfig | None = None,
+        enable_edge_routing: bool = True,
     ) -> None:
-        self._llm = llm or create_agent_llm()
+        base_llm = llm or create_agent_llm()
+        if enable_edge_routing:
+            from src.agentic.routing import maybe_wrap_with_routing
+            self._llm = maybe_wrap_with_routing(base_llm)
+        else:
+            self._llm = base_llm
         self._registry = registry or build_default_registry()
         self._planner = KoreanQueryPlanner(self._llm, self._registry)
         self._cost_guard_config = cost_guard_config
