@@ -193,3 +193,6 @@ db-check:
 # === Background Job Worker (Arq) ===
 worker:
 	uv run arq src.jobs.worker.WorkerSettings
+
+backup-drill:
+	DRILL_CONFIRM=yes ./scripts/ops/backup_drill.sh

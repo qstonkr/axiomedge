@@ -1,0 +1,52 @@
+name: Backup Recovery Drill
+
+# 자동 백업/복구 검증 — nightly + 수동 trigger.
+# 백업 스크립트가 실제로 작동하는지 (운영 환경 사고 시 의존 가능한지) 보증.
+
+on:
+  schedule:
+    - cron: '0 17 * * *'  # 매일 02:00 KST (17:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: knowledge
+          POSTGRES_PASSWORD: knowledge
+          POSTGRES_DB: knowledge_db
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      qdrant:
+        image: qdrant/qdrant:v1.13.0
+        ports: ['6333:6333']
+    env:
+      DATABASE_URL: postgresql://knowledge:knowledge@localhost:5432/knowledge_db
+      QDRANT_URL: http://localhost:6333
+      DRILL_CONFIRM: 'yes'
+      DRILL_ROWS: '500'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Qdrant ready
+        run: |
+          for i in {1..30}; do
+            curl -sf http://localhost:6333/healthz && break
+            sleep 2
+          done
+      - name: Install psql client
+        run: sudo apt-get install -y postgresql-client
+      - name: Run backup drill
+        run: ./scripts/ops/backup_drill.sh
+      - name: Upload backup artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-drill-failed-${{ github.run_id }}
+          path: backups/
+          retention-days: 7
