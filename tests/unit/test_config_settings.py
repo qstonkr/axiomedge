@@ -128,7 +128,7 @@ class TestAuthSettings:
         assert s.jwt_algorithm == "HS256"
         assert s.jwt_access_expire_minutes == 60
         assert s.jwt_refresh_expire_hours == 8
-        assert s.jwt_issuer == "oreo-internal-api"
+        assert s.jwt_issuer == "axiomedge-api"
         assert s.cookie_secure is False
 
     def test_env_override(self, monkeypatch):

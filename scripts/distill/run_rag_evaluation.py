@@ -103,7 +103,7 @@ def _get_or_refresh_sm_client(force_refresh: bool = False):
 
 def judge_answer(question: str, expected: str, actual: str, chunks: list | None = None, retry: int = 2) -> dict | None:
     """LLM judge: compare expected vs actual answer with context. Returns None only on SSO expiry."""
-    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "")
     # Build context from retrieved chunks (max 3, truncated)
     context_str = "(검색 결과 없음)"
     if chunks:

@@ -130,7 +130,7 @@ class TestJWTTokenTampering:
         payload = {
             "sub": "attacker",
             "type": "access",
-            "iss": "oreo-internal-api",
+            "iss": "axiomedge-api",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
         # Create unsigned token
@@ -154,13 +154,13 @@ class TestJWTIssuerValidation:
         with pytest.raises(AuthenticationError, match="Invalid token"):
             svc2.verify_access_token(pair.access_token)
 
-    def test_default_issuer_is_oreo(self) -> None:
+    def test_default_issuer_matches_settings(self) -> None:
         svc = JWTService(secret_key="test-secret-32-chars-minimum!!!!")
         pair = svc.create_token_pair(
             user_id="u1", email="a@b.com", roles=[], permissions=[]
         )
         claims = svc.verify_access_token(pair.access_token)
-        assert claims["iss"] == "oreo-internal-api"
+        assert claims["iss"] == "axiomedge-api"
 
 
 class TestJWTTokenPairStructure:
@@ -314,7 +314,7 @@ class TestJWTTokenTypeEnforcement:
             "jti": "fake-jti",
             "family_id": "fake-family",
             "rotation_count": 0,
-            "iss": "oreo-internal-api",
+            "iss": "axiomedge-api",
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             "type": "access",  # wrong type for refresh
@@ -329,7 +329,7 @@ class TestJWTTokenTypeEnforcement:
         """Token without type field should be rejected."""
         payload = {
             "sub": "user-1",
-            "iss": "oreo-internal-api",
+            "iss": "axiomedge-api",
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
             # no "type" field
         }

@@ -77,7 +77,7 @@ class TestJWTService:
             secret_key=self.secret,
             access_token_expire_minutes=60,
             refresh_token_expire_hours=8,
-            issuer="oreo-internal-api",
+            issuer="axiomedge-api",
         )
 
     def test_create_token_pair(self) -> None:
@@ -110,7 +110,7 @@ class TestJWTService:
         assert claims["roles"] == ["admin", "viewer"]
         assert claims["permissions"] == ["kb:read", "kb:write"]
         assert claims["type"] == "access"
-        assert claims["iss"] == "oreo-internal-api"
+        assert claims["iss"] == "axiomedge-api"
         assert "jti" in claims
 
     def test_decode_refresh_token(self) -> None:
@@ -128,7 +128,7 @@ class TestJWTService:
         assert claims["family_id"] == "family-abc"
         assert claims["rotation_count"] == 3
         assert claims["type"] == "refresh"
-        assert claims["iss"] == "oreo-internal-api"
+        assert claims["iss"] == "axiomedge-api"
         assert "jti" in claims
 
     def test_access_token_rejected_as_refresh(self) -> None:
@@ -199,8 +199,8 @@ class TestJWTService:
         assert self.service.access_expire_seconds == 3600
         assert self.service.refresh_expire_seconds == 28800
 
-    def test_oreo_compatible_claims(self) -> None:
-        """JWT claims should be compatible with oreo-ecosystem format."""
+    def test_token_claims_have_required_fields(self) -> None:
+        """JWT claims must include all required fields."""
         pair = self.service.create_token_pair(
             user_id="user-id",
             email="user@gs.com",
@@ -209,13 +209,13 @@ class TestJWTService:
             display_name="Test",
         )
         claims = self.service.verify_access_token(pair.access_token)
-        # Required oreo-compatible fields
+        # Required claim fields
         assert "sub" in claims
         assert "email" in claims
         assert "roles" in claims
         assert "permissions" in claims
         assert "jti" in claims
-        assert claims["iss"] == "oreo-internal-api"
+        assert claims["iss"] == "axiomedge-api"
 
 
 # =============================================================================

@@ -133,7 +133,7 @@ def run_l2_category(kb_ids: list[str]):
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
     )
     sm_client = session.client("sagemaker-runtime")
-    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "")
 
     QDRANT_URL = "http://localhost:6333"
 
@@ -250,7 +250,7 @@ def run_term_enrich(kb_ids: list[str]):
         region_name=os.getenv("SAGEMAKER_REGION", "ap-northeast-2"),
     )
     sm_client = session.client("sagemaker-runtime")
-    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "")
 
     PROMPT = """다음 용어를 제공된 문맥을 참고하여 1문장으로 정의하세요. 문맥에 없는 내용은 추측하지 마세요.
 

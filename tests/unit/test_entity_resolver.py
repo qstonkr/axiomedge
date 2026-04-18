@@ -24,7 +24,7 @@ class TestNormalizeEntityName:
         """Names not in the normalization rules should be returned as-is."""
         assert _basic_normalize("SomeCustomName") == "SomeCustomName"
         assert _basic_normalize("") == ""
-        assert _basic_normalize("OREO") == "OREO"
+        assert _basic_normalize("ACME") == "ACME"
 
 
 class TestAbbreviationExpansion:

@@ -15,7 +15,7 @@
 4. @멘션, 담당자 테이블 파싱
 
 Usage:
-    cd apps/oreo-agents
+    cd <project-root>
     uv run python scripts/confluence_full_crawler.py --page-id 318803690 --sample 10
     uv run python scripts/confluence_full_crawler.py --page-id 318803690 --full
     uv run python scripts/confluence_full_crawler.py --spaces "318803690,6685934" --full
@@ -160,7 +160,7 @@ def _resolve_output_dir() -> Path:
     configured_dir = os.getenv("CONFLUENCE_OUTPUT_DIR", "").strip()
     if configured_dir:
         candidates.append((Path(configured_dir), "CONFLUENCE_OUTPUT_DIR"))
-    fallback_dir = Path.home() / ".oreo" / "crawl"
+    fallback_dir = Path.home() / ".axiomedge" / "crawl"
     candidates.append((fallback_dir, "home fallback"))
 
     last_error: Exception | None = None
@@ -4328,7 +4328,7 @@ Examples:
     parser.add_argument(
         "--upload-s3",
         action="store_true",
-        help="크롤링 결과 JSON을 S3(oreo-document SSOT)를 통해 업로드",
+        help="크롤링 결과 JSON을 S3를 통해 업로드",
     )
     parser.add_argument(
         "--s3-prefix",
@@ -4404,7 +4404,7 @@ Examples:
                 f"[cyan]☁️  S3 upload enabled[/cyan] (prefix={s3_prefix}, run_id={run_id})"
             )
         except Exception as e:
-            console.print(f"[yellow]⚠️  Failed to init oreo-document adapter: {e}[/yellow]")
+            console.print(f"[yellow]⚠️  Failed to init S3 document adapter: {e}[/yellow]")
             upload_enabled = False
 
     for page_id, source_name, source_key in sources_to_crawl:
@@ -4476,10 +4476,6 @@ Examples:
 
         if upload_enabled and doc_adapter:
             try:
-                from src.infrastructure.adapters.document_http_adapter import (
-                    OREO_DOCUMENT_S3_PREFIX,
-                )
-
                 # Versioned + latest objects for simple retrieval.
                 for slot in (run_id, "latest"):
                     object_key = f"{s3_prefix}/{source_key}/{slot}/crawl_{source_key}.json"
@@ -4488,7 +4484,6 @@ Examples:
                         file_path=output_path,
                         content_type="application/json",
                     )
-                    # res.key includes "documents/" prefix from oreo-document.
                     s3_uri = f"s3://{s3_bucket}/{res.key}" if s3_bucket else res.key
                     upload_manifest.append(
                         {
@@ -4503,7 +4498,8 @@ Examples:
                         }
                     )
                 console.print(
-                    f"[green]☁️  Uploaded[/green] {source_key}: s3://{s3_bucket}/{OREO_DOCUMENT_S3_PREFIX}{s3_prefix}/{source_key}/{run_id}/crawl_{source_key}.json"
+                    f"[green]☁️  Uploaded[/green] {source_key}: "
+                    f"s3://{s3_bucket}/{s3_prefix}/{source_key}/{run_id}/crawl_{source_key}.json"
                 )
             except Exception as e:
                 console.print(f"[yellow]⚠️  S3 upload failed ({source_key}): {e}[/yellow]")

@@ -101,7 +101,7 @@ def fetch_quality_chunks(collection: str, limit: int = 20) -> list[dict]:
 
 def generate_qa_from_chunk(sm_client, chunk: dict, kb_id: str = "") -> list[dict]:
     """Generate Q&A pairs from a single chunk using LLM."""
-    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "oreo-exaone-dev")
+    endpoint = os.getenv("SAGEMAKER_ENDPOINT_NAME", "")
     kb_context = KB_CONTEXT.get(kb_id, "")
     prompt = PROMPT.format(
         title=chunk["title"], content=chunk["content"][:1500], kb_context=kb_context,

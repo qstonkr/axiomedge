@@ -14,10 +14,10 @@ def test_create_and_search_glossary_term(api):
         # 1. Create glossary term
         create_resp = api.post("/api/v1/admin/glossary", json={
             "id": term_id,
-            "term": "OREO Platform",
+            "term": "Example Platform",
             "term_ko": "오레오 플랫폼",
             "definition": "GS Retail AI Operations Platform for knowledge management",
-            "synonyms": ["oreo", "오레오"],
+            "synonyms": ["example", "예시"],
             "kb_id": "test-e2e-glossary",
             "status": "approved",
             "scope": "global",
@@ -30,7 +30,7 @@ def test_create_and_search_glossary_term(api):
         get_resp = api.get(f"/api/v1/admin/glossary/{term_id}")
         assert get_resp.status_code == 200, f"Term {term_id} not retrievable after creation"
         fetched = get_resp.json()
-        assert fetched.get("term") == "OREO Platform"
+        assert fetched.get("term") == "Example Platform"
 
     finally:
         # Cleanup

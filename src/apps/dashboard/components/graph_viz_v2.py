@@ -351,7 +351,7 @@ def _build_expand_js_v2(api_base_url: str) -> str:
         '                    showToast(addedCount + "개 노드 확장됨");\n'
         '                })\n'
         '                .catch(function(err) {\n'
-        '                    console.error("[OREO] Expand fetch failed:", err);\n'
+        '                    console.error("[GraphViz] Expand fetch failed:", err);\n'
         '                    _expandedIds[nodeId] = false;\n'
         '                    showToast("확장 실패");\n'
         '                });\n'
