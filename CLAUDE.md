@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**knowledge-local** is a standalone knowledge management system with RAG capabilities for GS Retail. Document ingestion, hybrid search, LLM-powered answer generation with cloud/local flexibility.
+**axiomedge** is a Korean GraphRAG knowledge management system. Document ingestion, hybrid search, LLM-powered answer generation with cloud/local flexibility, and edge model distillation pipeline.
+
+Internal package/Helm chart/Docker artifacts still use the legacy name `knowledge-local` — load-bearing references are intentionally not renamed.
 
 Tech stack: Python 3.12+, FastAPI, Streamlit, Qdrant (vector), Neo4j (graph), PostgreSQL, Redis, BGE-M3 (embedding via TEI), EXAONE (LLM via SageMaker/Ollama), PaddleOCR. Korean NLP via KiwiPy + KSS.
 
