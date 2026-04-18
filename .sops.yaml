@@ -1,0 +1,24 @@
+# SOPS configuration — declarative encryption rules.
+# https://github.com/getsops/sops
+#
+# Files matching `path_regex` are encrypted with the listed age recipients.
+# Replace <YOUR_AGE_PUBLIC_KEY> with your team's public key(s) before use.
+#
+# Generate a key:    age-keygen -o ~/.config/sops/age/keys.txt
+# Decrypt locally:   SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt sops -d .env.encrypted
+# Encrypt new:       sops -e .env > .env.encrypted
+
+creation_rules:
+  - path_regex: \.env\.encrypted$
+    encrypted_regex: '^(.*_KEY|.*_TOKEN|.*_SECRET|.*_PASSWORD|.*_DSN|CONFLUENCE_PAT|AUTH_JWT_SECRET|SENTRY_DSN)$'
+    age: <YOUR_AGE_PUBLIC_KEY>
+
+  # Helm values that contain secrets
+  - path_regex: deploy/helm/.*/secrets\.enc\.yaml$
+    encrypted_regex: '^(password|token|key|secret|dsn|jwt_secret|api_key)$'
+    age: <YOUR_AGE_PUBLIC_KEY>
+
+  # K8s secret manifests (encrypted in-place — apply via helm-secrets / sops-driver)
+  - path_regex: deploy/k8s/.*-secret\.enc\.yaml$
+    encrypted_regex: '^(.*)$'
+    age: <YOUR_AGE_PUBLIC_KEY>

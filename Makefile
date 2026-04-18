@@ -153,3 +153,26 @@ backup-neo4j:
 	./scripts/ops/backup_neo4j.sh
 
 backup-all: backup-pg backup-qdrant backup-neo4j
+
+# === Secret Management (SOPS + age) ===
+# Setup: docs/SECRETS.md
+# Requires: brew install age sops + ~/.config/sops/age/keys.txt
+
+secrets-encrypt:
+	@if [ ! -f .env ]; then echo "ERROR: .env not found"; exit 1; fi
+	sops -e .env > .env.encrypted
+	@echo "✓ Encrypted: .env → .env.encrypted"
+	@echo "  Commit .env.encrypted; .env stays in .gitignore"
+
+secrets-decrypt:
+	@if [ ! -f .env.encrypted ]; then echo "ERROR: .env.encrypted not found"; exit 1; fi
+	sops -d .env.encrypted > .env
+	@echo "✓ Decrypted: .env.encrypted → .env (local only — do not commit)"
+
+secrets-check:
+	@if [ ! -f .env.encrypted ]; then echo "no .env.encrypted to check"; exit 0; fi
+	@sops -d .env.encrypted > /dev/null && echo "✓ .env.encrypted is valid SOPS file"
+
+secrets-updatekeys:
+	sops updatekeys .env.encrypted
+	@echo "✓ .sops.yaml recipients re-applied to .env.encrypted"
