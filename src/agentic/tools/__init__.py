@@ -13,6 +13,7 @@ from src.agentic.tools.glossary import GlossaryLookupTool
 from src.agentic.tools.graph_query import GraphQueryTool
 from src.agentic.tools.kb_lister import KBListerTool
 from src.agentic.tools.qdrant_search import QdrantSearchTool
+from src.agentic.tools.re_ocr import ReOcrTool
 from src.agentic.tools.time_resolver import TimeResolverTool
 
 
@@ -49,6 +50,7 @@ DEFAULT_TOOLS: list[type[Tool]] = [
     GlossaryLookupTool,
     TimeResolverTool,
     KBListerTool,
+    ReOcrTool,
 ]
 
 
@@ -63,6 +65,7 @@ __all__ = [
     "GraphQueryTool",
     "KBListerTool",
     "QdrantSearchTool",
+    "ReOcrTool",
     "TimeResolverTool",
     "ToolRegistry",
     "build_default_registry",

@@ -334,12 +334,23 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
     def _get_llm(self) -> Any:
         """LLM client 가져오기 (lazy loading).
 
-        GRAPHRAG_USE_SAGEMAKER=true 이면 SageMaker 엔드포인트 사용,
-        아니면 로컬 Ollama 사용.
+        provider 결정 우선순위 (LLM_PROVIDER 일원화):
+          1. GRAPHRAG_USE_SAGEMAKER=true (legacy backward compat)
+          2. LLM_PROVIDER env (sagemaker | ollama | ...)
+          3. 기본 ollama
         """
         if self._llm is None:
-            use_sagemaker = os.getenv("GRAPHRAG_USE_SAGEMAKER", "false").lower() == "true"
-            if use_sagemaker:
+            # Legacy flag — backward compat 유지 (deprecated)
+            if os.getenv("GRAPHRAG_USE_SAGEMAKER", "false").lower() == "true":
+                logger.warning(
+                    "GRAPHRAG_USE_SAGEMAKER is deprecated — use LLM_PROVIDER=sagemaker instead",
+                )
+                resolved = "sagemaker"
+            else:
+                from src.core.providers.llm import _resolve_provider_name
+                resolved = _resolve_provider_name(None)
+
+            if resolved == "sagemaker":
                 self._llm = _SageMakerLLMClient()
                 logger.info("GraphRAG LLM: SageMaker (%s)", self._llm._endpoint)
             else:
@@ -347,7 +358,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
                     base_url=self.ollama_base_url,
                     model=self.ollama_model,
                 )
-                logger.info("GraphRAG LLM: Ollama (%s)", self.ollama_model)
+                logger.info("GraphRAG LLM: Ollama (%s) [resolved=%s]", self.ollama_model, resolved)
         return self._llm
 
     def _get_neo4j_driver(self) -> Any:

@@ -25,11 +25,12 @@ from src.agentic.tools import (
 # =============================================================================
 
 
-def test_default_registry_has_5_tools() -> None:
+def test_default_registry_has_6_tools() -> None:
     reg = build_default_registry()
-    assert len(reg.names()) == 5
+    assert len(reg.names()) == 6
     assert reg.names() == sorted([
-        "qdrant_search", "graph_query", "glossary_lookup", "time_resolver", "kb_list",
+        "qdrant_search", "graph_query", "glossary_lookup",
+        "time_resolver", "kb_list", "re_ocr_search",
     ])
 
 
@@ -42,7 +43,7 @@ def test_registry_get_unknown_raises() -> None:
 def test_registry_specs_returns_metadata_for_each() -> None:
     reg = build_default_registry()
     specs = reg.specs()
-    assert len(specs) == 5
+    assert len(specs) == 6
     for s in specs:
         assert s.name and s.description and s.args_schema
 
@@ -71,7 +72,7 @@ def test_registry_contains_operator() -> None:
 
 
 def test_default_tools_constant_size() -> None:
-    assert len(DEFAULT_TOOLS) == 5
+    assert len(DEFAULT_TOOLS) == 6
 
 
 # =============================================================================
