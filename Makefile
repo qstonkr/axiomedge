@@ -141,3 +141,15 @@ db-history:
 
 db-current:
 	uv run alembic current
+
+# === Backups ===
+backup-pg:
+	./scripts/ops/backup_db.sh
+
+backup-qdrant:
+	./scripts/ops/backup_qdrant.sh
+
+backup-neo4j:
+	./scripts/ops/backup_neo4j.sh
+
+backup-all: backup-pg backup-qdrant backup-neo4j

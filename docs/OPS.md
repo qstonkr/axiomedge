@@ -76,31 +76,44 @@ docker stats --no-stream
 
 ## DB 작업
 
-### 백업
+### 백업 (자동화)
+
+| Store | 스크립트 | 보관 |
+|---|---|---|
+| PostgreSQL | `scripts/ops/backup_db.sh` | 기본 7개 (`KEEP_COUNT` 환경변수) |
+| Qdrant | `scripts/ops/backup_qdrant.sh` | 기본 7개 (collection 별) |
+| Neo4j | `scripts/ops/backup_neo4j.sh` | 기본 7개 (offline dump — 짧은 downtime) |
 
 ```bash
-# PostgreSQL 백업
-docker exec knowledge-local-postgres-1 \
-  pg_dump -U knowledge knowledge_db > backup_$(date +%Y%m%d).sql
+# 한 번에 — make 사용
+make backup-all
 
-# 복구
-docker exec -i knowledge-local-postgres-1 \
-  psql -U knowledge knowledge_db < backup_20260416.sql
+# 개별
+make backup-pg
+make backup-qdrant
+make backup-neo4j
+
+# cron 권장 (예: 매일 03:00)
+0 3 * * * cd /opt/axiomedge && make backup-all >> /var/log/axiomedge_backup.log 2>&1
 ```
 
-### 스키마 변경 (Alembic 없음)
+복구:
+- PostgreSQL: `docker exec -i <pg> psql -U knowledge knowledge_db < backups/knowledge_db_*.sql.gz` (gunzip 선행)
+- Qdrant: snapshot recover API — `POST /collections/{name}/snapshots/upload` 또는 storage 디렉토리 교체
+- Neo4j: `docker exec <neo4j> neo4j-admin database load <db> --from-path=/backups --overwrite-destination`
+
+### 스키마 변경 (Alembic)
 
 ```bash
-# 1. models.py 수정 (nullable=True default 필수)
-# 2. 수동 ALTER TABLE
-docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db \
-  -c "ALTER TABLE distill_profiles ADD COLUMN new_field VARCHAR(100);"
-
-# 3. 앱 재시작 (create_all() 이 새 column 인식)
-# 4. Backfill (필요 시)
-docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db \
-  -c "UPDATE distill_profiles SET new_field = 'default' WHERE new_field IS NULL;"
+# 1. models.py 수정 (nullable=True default 권장)
+# 2. autogenerate migration
+make db-revision MSG="add new_field to distill_profiles"
+# 3. migrations/versions/XXXX_*.py 검토
+# 4. 적용
+make db-upgrade
 ```
+
+상세: [docs/MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
 
 ### 주요 조회 쿼리
 
