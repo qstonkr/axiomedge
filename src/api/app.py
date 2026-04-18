@@ -758,8 +758,12 @@ app = FastAPI(
 app.add_exception_handler(HTTPException, _http_exc_handler)
 app.add_exception_handler(Exception, _unhandled_exc_handler)
 
-# Rate limiter middleware (conditional on env var) — added before CORS
-if os.getenv("RATE_LIMIT_ENABLED", "false").lower() == "true":
+# Production-safe defaults: APP_ENV=production tightens rate limiter + CORS
+_app_env = os.getenv("APP_ENV", "development").lower()
+_is_prod = _app_env == "production"
+
+# Rate limiter middleware — added before CORS. Default ON in production.
+if os.getenv("RATE_LIMIT_ENABLED", "true" if _is_prod else "false").lower() == "true":
     from src.api.middleware.rate_limiter import RateLimiterMiddleware
     app.add_middleware(RateLimiterMiddleware)
     logger.info(
@@ -780,12 +784,20 @@ app.add_middleware(AuthMiddleware)
 from src.api.middleware.security_headers import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(SecurityHeadersMiddleware)
 
-# CORSMiddleware MUST be added LAST (outermost = first to execute)
-cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+# CORSMiddleware MUST be added LAST (outermost = first to execute).
+# In production, CORS_ORIGINS must be explicitly set (no wildcard).
+_cors_default = "" if _is_prod else "*"
+cors_origins = os.getenv("CORS_ORIGINS", _cors_default).split(",")
+cors_origins = [o.strip() for o in cors_origins if o.strip()]
+if _is_prod and (not cors_origins or "*" in cors_origins):
+    raise RuntimeError(
+        "APP_ENV=production requires explicit CORS_ORIGINS (comma-separated, no wildcard). "
+        "Example: CORS_ORIGINS=https://app.example.com,https://admin.example.com"
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True if cors_origins != ["*"] else False,
+    allow_origins=cors_origins or ["*"],
+    allow_credentials=True if cors_origins and "*" not in cors_origins else False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Requested-With"],
 )

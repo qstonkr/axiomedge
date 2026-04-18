@@ -127,11 +127,19 @@ def create_app(mode: str = "api") -> FastAPI:
         from src.auth.middleware import AuthMiddleware
         application.add_middleware(AuthMiddleware)
 
-    cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+    # Production-safe CORS — APP_ENV=production requires explicit origins
+    _is_prod = os.getenv("APP_ENV", "development").lower() == "production"
+    _cors_default = "" if _is_prod else "*"
+    cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", _cors_default).split(",") if o.strip()]
+    if _is_prod and (not cors_origins or "*" in cors_origins):
+        raise RuntimeError(
+            "APP_ENV=production requires explicit CORS_ORIGINS (no wildcard). "
+            "Example: CORS_ORIGINS=https://app.example.com"
+        )
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=True if cors_origins != ["*"] else False,
+        allow_origins=cors_origins or ["*"],
+        allow_credentials=True if cors_origins and "*" not in cors_origins else False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
