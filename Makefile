@@ -185,3 +185,7 @@ eval-update-baseline:
 	@if [ ! -f eval/last_run.json ]; then echo "ERROR: run 'make eval-quality' first to generate eval/last_run.json"; exit 1; fi
 	cp eval/last_run.json eval/baseline.json
 	@echo "✓ Baseline updated from eval/last_run.json"
+
+db-check:
+	@if [ -z "$(FILE)" ]; then echo "Usage: make db-check FILE=migrations/versions/XXXX_YY.py"; exit 1; fi
+	uv run python scripts/db_migration_check.py $(FILE)

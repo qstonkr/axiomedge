@@ -5,6 +5,9 @@ DB 스키마 변경, 데이터 마이그레이션, 환경 전환 절차.
 **Alembic 적용 (2026-04 ~)** — 신규 변경은 `alembic revision` 으로 관리.
 기존 DB 는 baseline (`0001_baseline`) 으로 stamp 됨 (`init_db.py` 가 자동 처리).
 
+> **Production 운영 시 가장 중요한 것**: zero-downtime — `migrations/PATTERNS.md` 의
+> "위험 변경 → 2-step 분리" 패턴을 반드시 따르세요.
+
 ---
 
 ## 빠른 명령
@@ -15,6 +18,7 @@ make db-upgrade                           # 최신 head 까지 적용
 make db-revision MSG="add user_prefs"     # autogenerate 새 migration
 make db-history                           # migration 히스토리
 make db-current                           # 현재 적용된 revision
+make db-check FILE=migrations/versions/0002_xxx.py  # zero-downtime 안전성 사전 검사
 ```
 
 ---
