@@ -71,6 +71,7 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.41.0",
     "opentelemetry-instrumentation-fastapi>=0.62b0",
     "opentelemetry-instrumentation-httpx>=0.62b0",
+    "arq>=0.28.0",
 ]
 
 [project.optional-dependencies]

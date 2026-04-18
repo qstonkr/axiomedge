@@ -189,3 +189,7 @@ eval-update-baseline:
 db-check:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make db-check FILE=migrations/versions/XXXX_YY.py"; exit 1; fi
 	uv run python scripts/db_migration_check.py $(FILE)
+
+# === Background Job Worker (Arq) ===
+worker:
+	uv run arq src.jobs.worker.WorkerSettings
