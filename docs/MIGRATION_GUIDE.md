@@ -158,6 +158,83 @@ Qdrant 는 rename 미지원. 새 collection 생성 → 데이터 복사 → 구 
 
 ---
 
+## B-0: Multi-tenant + RBAC 마이그레이션
+
+자세한 모델 + 매트릭스는 `docs/RBAC.md`. 여기서는 기존 환경 → B-0 전환
+체크리스트만.
+
+### 사전 조건
+
+1. `make stop && make start` — Postgres / Qdrant / Neo4j / Redis 기동
+2. 백업 (point-of-no-return 가드)
+   ```bash
+   docker exec knowledge-local-postgres-1 \
+     pg_dump -U knowledge knowledge_db > backup-pre-b0.sql
+   ```
+
+### 적용 순서
+
+```bash
+# 1. 스키마 — alembic 0002 → 0003 → 0004 순차
+uv run alembic upgrade head
+
+# 2. KB 백필 (idempotent, dry-run 기본)
+uv run python scripts/backfill_org_id.py            # 카운트 표시
+uv run python scripts/backfill_org_id.py --apply    # 실제 update
+
+# 3. 앱 기동 — startup 시 seed_defaults() 가 자동 실행:
+#    - canonical role 4개 + legacy role 5개 (is_legacy=True) 시드
+#    - 모든 active user 를 default-org 멤버로 등록
+make api
+```
+
+### Role 매핑 (legacy → canonical)
+
+| Legacy role | 자동 매핑 | 비고 |
+|---|---|---|
+| `admin` | `ADMIN` | DB 시드만 유지, 신규 부여 X |
+| `kb_manager` | `ADMIN` (또는 KB-scoped `MEMBER`) | scope 필요시 명시 |
+| `editor` | `MEMBER` | document/glossary write 동일 |
+| `contributor` | `MEMBER` | |
+| `viewer` | `VIEWER` | 동일 |
+
+자동 reassign 스크립트는 제공하지 않음 — admin user 가 신규 user 부여 시
+canonical role 사용. 기존 legacy 부여는 작동 유지 (RBAC engine 이 호환).
+
+### Org switcher 활성화 (선택)
+
+다중 org 멤버 user 를 위한 `POST /api/v1/auth/switch-org` 또는
+`X-Organization-Id` 헤더는 백엔드 측 구현 완료. 프론트는 B-1 이후 노출.
+
+### 롤백 절차
+
+```bash
+uv run alembic downgrade 0003_rbac_b0   # FK + NOT NULL 제거 (0004 → 0003)
+# 또는 더 위로:
+uv run alembic downgrade 0001_baseline  # auth_roles.is_legacy + organizations 제거
+```
+
+DB dump 가 있다면 `psql -U knowledge knowledge_db < backup-pre-b0.sql`.
+
+### 검증
+
+```bash
+# 1. 모든 KB 가 default-org 에 매핑
+docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db -tAc \
+  "SELECT count(*) FROM kb_configs WHERE organization_id IS NULL;"
+# → 0
+
+# 2. role 시드 9개
+docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db -tAc \
+  "SELECT count(*) FROM auth_roles;"
+# → 9 (4 canonical + 5 legacy)
+
+# 3. cross-tenant 테스트
+uv run pytest tests/unit/test_cross_tenant_unit.py -v --no-cov
+```
+
+---
+
 ## 참고
 
 - 데이터 모델: `docs/DATA_MODEL.md`
@@ -165,3 +242,4 @@ Qdrant 는 rename 미지원. 새 collection 생성 → 데이터 복사 → 구 
 - 설정 변수: `docs/CONFIGURATION.md`
 - Distill 모델: `src/distill/models.py`
 - Core 모델: `src/database/models.py`
+- RBAC 가이드: `docs/RBAC.md`

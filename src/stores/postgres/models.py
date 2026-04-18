@@ -736,7 +736,15 @@ class KBConfigModel(RegistryBase):
     # 3-Tier hierarchy
     tier = Column(String(20), nullable=False, default="team", index=True)
     parent_kb_id = Column(String(100), nullable=True, index=True)
-    organization_id = Column(String(100), nullable=True, index=True)
+    # B-0 Day 5: NOT NULL + FK enforced by alembic 0004_kb_org_required.
+    # Stays declared nullable=False here so SQLAlchemy create_all (used by
+    # tests) matches the migrated production schema.
+    organization_id = Column(
+        String(100),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     department_id = Column(String(100), nullable=True, index=True)
     owner_id = Column(String(100), nullable=True, index=True)
     data_classification = Column(String(20), nullable=False, default="internal", index=True)
