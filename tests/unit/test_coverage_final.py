@@ -1445,6 +1445,24 @@ class TestAuthDependencies:
             _run(check_fn(request, user))
         assert exc_info.value.status_code == 403
 
+    @staticmethod
+    def _org():
+        from src.auth.dependencies import OrgContext
+        return OrgContext(id="org-1", user_role_in_org="OWNER")
+
+    @staticmethod
+    def _kb_registry_for_org(org_id: str = "org-1"):
+        """Stub registry whose get_kb returns a row only for the right org."""
+        reg = AsyncMock()
+
+        async def _get_kb(kb_id, organization_id=None):
+            if organization_id == org_id:
+                return {"id": kb_id, "kb_id": kb_id, "organization_id": org_id}
+            return None
+
+        reg.get_kb = AsyncMock(side_effect=_get_kb)
+        return reg
+
     @patch("src.auth.dependencies.AUTH_ENABLED", True)
     def test_require_kb_access_admin_bypass(self):
         from src.auth.dependencies import require_kb_access
@@ -1459,6 +1477,7 @@ class TestAuthDependencies:
         app_state = {
             "auth_provider": AsyncMock(), "auth_service": auth_service,
             "rbac_engine": rbac,
+            "kb_registry": self._kb_registry_for_org(),
         }
         request = self._make_request(
             headers={"Authorization": "Bearer tok"},
@@ -1466,7 +1485,7 @@ class TestAuthDependencies:
             app_state=app_state,
         )
         check_fn = require_kb_access("contributor")
-        result = _run(check_fn(request, user))
+        result = _run(check_fn(request, user, self._org()))
         assert result.sub == "u-1"
 
     @patch("src.auth.dependencies.AUTH_ENABLED", True)
@@ -1484,6 +1503,7 @@ class TestAuthDependencies:
         app_state = {
             "auth_provider": AsyncMock(), "auth_service": auth_service,
             "rbac_engine": rbac, "abac_engine": None,
+            "kb_registry": self._kb_registry_for_org(),
         }
         request = self._make_request(
             headers={"Authorization": "Bearer tok"},
@@ -1491,7 +1511,7 @@ class TestAuthDependencies:
             app_state=app_state,
         )
         check_fn = require_kb_access("contributor")
-        result = _run(check_fn(request, user))
+        result = _run(check_fn(request, user, self._org()))
         assert result.sub == "u-1"
 
     @patch("src.auth.dependencies.AUTH_ENABLED", True)
@@ -1510,6 +1530,7 @@ class TestAuthDependencies:
         app_state = {
             "auth_provider": AsyncMock(), "auth_service": auth_service,
             "rbac_engine": rbac, "abac_engine": None,
+            "kb_registry": self._kb_registry_for_org(),
         }
         request = self._make_request(
             headers={"Authorization": "Bearer tok"},
@@ -1518,7 +1539,7 @@ class TestAuthDependencies:
         )
         check_fn = require_kb_access("manager")
         with pytest.raises(HTTPException) as exc_info:
-            _run(check_fn(request, user))
+            _run(check_fn(request, user, self._org()))
         assert exc_info.value.status_code == 403
 
     @patch("src.auth.dependencies.AUTH_ENABLED", True)
@@ -1533,7 +1554,7 @@ class TestAuthDependencies:
             app_state=app_state,
         )
         check_fn = require_kb_access("reader")
-        result = _run(check_fn(request, user))
+        result = _run(check_fn(request, user, self._org()))
         assert result.sub == "u-1"
 
 

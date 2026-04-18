@@ -22,6 +22,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from src.auth.dependencies import AUTH_ENABLED, _ANONYMOUS_USER
+from src.auth.permission_matrix import find_required_permission
 from src.auth.providers import AuthenticationError
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         request.state.auth_user = user
 
+        # Permission matrix check (B-0 Day 4). Auth alone is not enough — the
+        # matrix maps method+path to (resource, action) and rejects requests
+        # whose role lacks that grant. Routes don't need their own
+        # require_permission() Depends; this is the SSOT.
+        perm_error = await self._check_permission(request, user)
+        if perm_error is not None:
+            return perm_error
+
         start = time.monotonic()
         response = await call_next(request)
         duration_ms = (time.monotonic() - start) * 1000
@@ -98,6 +107,35 @@ class AuthMiddleware(BaseHTTPMiddleware):
             await self._maybe_log_activity(request, path, duration_ms)
 
         return response
+
+    async def _check_permission(self, request: Request, user) -> JSONResponse | None:
+        """Enforce the permission matrix; return a 403 response on denial."""
+        required = find_required_permission(request.method, request.url.path)
+        if required is None:
+            return None  # No matrix rule → auth alone is sufficient.
+
+        resource, action = required
+        state = getattr(request.app.state, "_app_state", None)
+        if state is None:
+            return None  # State not wired (test/script) — let it through.
+
+        rbac = state.get("rbac_engine")
+        if rbac is None:
+            return None  # No RBAC engine configured — degrade open.
+
+        auth_service = state.get("auth_service")
+        if auth_service is not None:
+            user_roles = await auth_service.get_user_roles(user.sub)
+        else:
+            user_roles = [{"role": r} for r in user.roles]
+
+        decision = rbac.check_permission(user_roles, resource, action)
+        if decision.allowed:
+            return None
+        return JSONResponse(
+            {"detail": f"Permission denied: {resource}:{action} - {decision.reason}"},
+            status_code=403,
+        )
 
     async def _verify_request(self, request: Request):
         """Extract and verify the bearer token, returning the AuthUser or None.

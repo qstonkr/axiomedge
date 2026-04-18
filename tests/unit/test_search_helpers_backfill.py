@@ -107,7 +107,8 @@ class TestGetActiveKbIds:
         ]
         await get_active_kb_ids(registry)
 
-        key = str(id(registry))
+        # Day 3: cache key is (registry id, organization_id) — both legs.
+        key = (str(id(registry)), None)
         ts, ids = search_helpers._kb_registry_cache[key]
         search_helpers._kb_registry_cache[key] = (ts - 120.0, ids)
 
