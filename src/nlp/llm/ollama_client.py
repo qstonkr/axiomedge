@@ -328,6 +328,8 @@ class OllamaClient:
         answer = result.get("response", "").strip()
         duration_ms = (time.perf_counter() - start_time) * 1000
 
+        input_tokens = self._estimate_token_count(prompt)
+        output_tokens = self._estimate_token_count(answer)
         logger.info(
             "Ollama response generated",
             extra={
@@ -337,10 +339,18 @@ class OllamaClient:
                 "context_count": context_count,
                 "answer_length": len(answer),
                 "duration_ms": round(duration_ms, 1),
-                "input_tokens": self._estimate_token_count(prompt),
-                "output_tokens": self._estimate_token_count(answer),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             },
         )
+        try:
+            from src.api.routes.metrics import observe_llm_tokens
+            observe_llm_tokens(
+                kb_id=None, model=self._config.model,
+                prompt_tokens=input_tokens, completion_tokens=output_tokens,
+            )
+        except (ImportError, RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+            pass
         return answer
 
     async def check_health(self) -> dict:

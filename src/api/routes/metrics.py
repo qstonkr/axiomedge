@@ -44,6 +44,21 @@ _search_duration_buckets: dict[float, int] = dict.fromkeys(_DURATION_BUCKETS, 0)
 _search_duration_sum: float = 0.0
 _search_duration_count: int = 0
 
+# LLM token usage — keyed by (kb_id, model) to control cardinality
+# kb_id is bounded (<100), model is bounded (<10) — total <1000 series
+_llm_prompt_tokens: dict[tuple[str, str], int] = {}
+_llm_completion_tokens: dict[tuple[str, str], int] = {}
+_llm_estimated_cost_usd: dict[tuple[str, str], float] = {}
+_llm_request_count: dict[tuple[str, str], int] = {}
+
+# Per-model USD pricing (input, output) per 1K tokens.
+# Conservative defaults; override by setting LLM_PRICING_OVERRIDE env (JSON).
+_LLM_PRICING_PER_1K: dict[str, tuple[float, float]] = {
+    "sagemaker-exaone": (0.0010, 0.0030),
+    "exaone3.5": (0.0, 0.0),  # local
+    "ollama": (0.0, 0.0),
+}
+
 # Gauge
 _active_connections: int = 0
 
@@ -87,6 +102,30 @@ def observe_search_duration(duration: float) -> None:
         for bucket in _DURATION_BUCKETS:
             if duration <= bucket:
                 _search_duration_buckets[bucket] += 1
+
+
+def observe_llm_tokens(
+    kb_id: str | None,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+) -> None:
+    """Record LLM token usage with USD cost estimate.
+
+    Cardinality: kb_id and model must be bounded sets. Pass "" for kb_id
+    when called outside KB context (e.g., classification, GraphRAG extraction).
+    Unknown models attribute zero cost — extend ``_LLM_PRICING_PER_1K``.
+    """
+    safe_kb_id = (kb_id or "_unknown")[:64]
+    safe_model = (model or "unknown")[:64]
+    key = (safe_kb_id, safe_model)
+    pricing = _LLM_PRICING_PER_1K.get(safe_model, (0.0, 0.0))
+    cost = (prompt_tokens / 1000.0) * pricing[0] + (completion_tokens / 1000.0) * pricing[1]
+    with _lock:
+        _llm_prompt_tokens[key] = _llm_prompt_tokens.get(key, 0) + prompt_tokens
+        _llm_completion_tokens[key] = _llm_completion_tokens.get(key, 0) + completion_tokens
+        _llm_estimated_cost_usd[key] = _llm_estimated_cost_usd.get(key, 0.0) + cost
+        _llm_request_count[key] = _llm_request_count.get(key, 0) + 1
 
 
 def set_info(key: str, value: str) -> None:
@@ -212,6 +251,33 @@ def _render_prometheus() -> str:
             )
         lines.append(f"search_duration_seconds_sum {_search_duration_sum:.4f}")
         lines.append(f"search_duration_seconds_count {_search_duration_count}")
+
+        # -- LLM token usage by (kb_id, model) --
+        if _llm_prompt_tokens:
+            lines.append("# HELP llm_prompt_tokens_total LLM input tokens consumed")
+            lines.append("# TYPE llm_prompt_tokens_total counter")
+            for (kb_id, model), val in sorted(_llm_prompt_tokens.items()):
+                lines.append(
+                    f'llm_prompt_tokens_total{{kb_id="{kb_id}",model="{model}"}} {val}'
+                )
+            lines.append("# HELP llm_completion_tokens_total LLM output tokens generated")
+            lines.append("# TYPE llm_completion_tokens_total counter")
+            for (kb_id, model), val in sorted(_llm_completion_tokens.items()):
+                lines.append(
+                    f'llm_completion_tokens_total{{kb_id="{kb_id}",model="{model}"}} {val}'
+                )
+            lines.append("# HELP llm_estimated_cost_usd_total Estimated USD cost (rough)")
+            lines.append("# TYPE llm_estimated_cost_usd_total counter")
+            for (kb_id, model), cost in sorted(_llm_estimated_cost_usd.items()):
+                lines.append(
+                    f'llm_estimated_cost_usd_total{{kb_id="{kb_id}",model="{model}"}} {cost:.6f}'
+                )
+            lines.append("# HELP llm_request_count_total LLM generation requests")
+            lines.append("# TYPE llm_request_count_total counter")
+            for (kb_id, model), n in sorted(_llm_request_count.items()):
+                lines.append(
+                    f'llm_request_count_total{{kb_id="{kb_id}",model="{model}"}} {n}'
+                )
 
         # -- Gauges --
         lines.append("# HELP active_connections Current active connections")

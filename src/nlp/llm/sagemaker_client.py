@@ -104,9 +104,22 @@ class SageMakerLLMClient:
         temperature: float | None = None,
     ) -> str:
         """Async wrapper around synchronous boto3 call. Retries transient errors."""
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             self._invoke_sync, messages, max_tokens, temperature
         )
+        # Token usage attribution (best-effort estimation — boto3 doesn't return token counts)
+        try:
+            from src.api.routes.metrics import observe_llm_tokens
+            prompt_text = "\n".join(m.get("content", "") for m in messages)
+            prompt_tokens = _estimate_token_count_fn(prompt_text)
+            completion_tokens = _estimate_token_count_fn(result)
+            observe_llm_tokens(
+                kb_id=None, model=self._config.model,
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+            )
+        except (ImportError, RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+            pass  # metrics never block actual LLM call
+        return result
 
     @staticmethod
     def _estimate_token_count(value: str) -> int:
