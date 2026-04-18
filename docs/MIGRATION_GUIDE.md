@@ -1,29 +1,47 @@
 # Migration Guide
 
 DB 스키마 변경, 데이터 마이그레이션, 환경 전환 절차.
-**Alembic 미사용** — `create_all()` + 수동 SQL 패턴.
+
+**Alembic 적용 (2026-04 ~)** — 신규 변경은 `alembic revision` 으로 관리.
+기존 DB 는 baseline (`0001_baseline`) 으로 stamp 됨 (`init_db.py` 가 자동 처리).
+
+---
+
+## 빠른 명령
+
+```bash
+make db-init                              # 신규 DB: create_all + alembic stamp head
+make db-upgrade                           # 최신 head 까지 적용
+make db-revision MSG="add user_prefs"     # autogenerate 새 migration
+make db-history                           # migration 히스토리
+make db-current                           # 현재 적용된 revision
+```
 
 ---
 
 ## 스키마 변경 절차
 
-### 새 Column 추가
+### 권장: Alembic migration
 
 ```bash
-# 1. Model 수정 (반드시 nullable=True 또는 default)
-# src/database/models.py 또는 src/distill/models.py
+# 1. Model 수정 (nullable=True 또는 default 권장)
+# src/stores/postgres/models.py 또는 src/distill/models.py
 new_field = Column(String(100), nullable=True)
 
-# 2. 수동 ALTER TABLE (현재 DB 에 즉시 반영)
-docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db \
-  -c "ALTER TABLE my_table ADD COLUMN new_field VARCHAR(100);"
+# 2. autogenerate (metadata diff 로 새 migration 파일 생성)
+make db-revision MSG="add new_field to my_table"
 
-# 3. 앱 재시작 (create_all() 이 column 인식 — 이미 있으면 skip)
+# 3. 생성된 migrations/versions/XXXX_<msg>.py 검토
+#    - 데이터 손실 가능 변경(drop column/table) 은 특히 주의
+#    - 필요하면 backfill SQL 을 upgrade() 끝에 op.execute("UPDATE ...") 추가
 
-# 4. Backfill (필요 시)
-docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db \
-  -c "UPDATE my_table SET new_field = 'default_value' WHERE new_field IS NULL;"
+# 4. 적용
+make db-upgrade
 ```
+
+### Hotfix (Alembic 우회 — 비추천)
+
+`init_db.py` 의 `create_all()` 은 여전히 동작하므로 모델만 수정 후 앱 재시작해도 신규 컬럼/테이블은 만들어집니다. 단, **다른 환경 DB 와 schema drift 가 발생하므로 즉시 baseline migration 을 만들어 stamp 하세요**.
 
 ### 새 Table 추가
 

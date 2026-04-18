@@ -51,6 +51,21 @@ async def init_database(database_url: str | None = None) -> None:
             await conn.run_sync(DistillBase.metadata.create_all)
             logger.info("DistillBase tables created (%d tables)", len(DistillBase.metadata.tables))
 
+        # Stamp Alembic head so future schema changes flow through migrations
+        # (idempotent — re-stamping the same revision is a no-op).
+        try:
+            from alembic import command
+            from alembic.config import Config as AlembicConfig
+            from pathlib import Path
+            ini_path = Path(__file__).resolve().parents[3] / "alembic.ini"
+            if ini_path.exists():
+                cfg = AlembicConfig(str(ini_path))
+                cfg.set_main_option("sqlalchemy.url", url)
+                command.stamp(cfg, "head")
+                logger.info("Alembic head stamped — schema versioning ready")
+        except (ImportError, OSError, ValueError, RuntimeError) as e:
+            logger.warning("Alembic stamp skipped: %s", e)
+
         # Seed distill base model registry (idempotent upsert)
         # 대시보드 드롭다운 SSOT. 코드의 DEFAULT_BASE_MODELS 변경 시 앱 재시작
         # 하면 자동 반영. 사용자가 대시보드로 추가한 커스텀 행은 건드리지 않음.

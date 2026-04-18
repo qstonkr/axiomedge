@@ -124,3 +124,20 @@ test-integration:
 
 test-e2e:
 	uv run pytest tests/e2e/ -v --no-cov -m e2e
+
+# === DB Schema Migrations (Alembic) ===
+db-init:
+	uv run python -m src.stores.postgres.init_db
+
+db-upgrade:
+	uv run alembic upgrade head
+
+db-revision:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make db-revision MSG='add user_preferences'"; exit 1; fi
+	uv run alembic revision --autogenerate -m "$(MSG)"
+
+db-history:
+	uv run alembic history --verbose
+
+db-current:
+	uv run alembic current
