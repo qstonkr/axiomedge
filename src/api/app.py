@@ -717,6 +717,9 @@ async def _shutdown_services() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Sentry init early so any startup errors are captured
+    from src.core.observability.sentry import init_sentry
+    init_sentry()
     await _init_services()
     app.state._app_state = _state  # Expose for request.app.state access (no circular import)
     yield
