@@ -2,6 +2,12 @@
 
 Adds user context to request.state for downstream handlers.
 Logs user activities for "나의 활동" dashboard.
+
+**B-0 Day 2**: This middleware is now the SSOT for authentication enforcement.
+Every request to a non-public path is verified up front; downstream
+``Depends(get_current_user)`` reads the cached user from ``request.state``
+instead of re-parsing headers. Routes therefore cannot accidentally skip
+auth — opt-in via the public-path whitelist below.
 """
 
 from __future__ import annotations
@@ -11,14 +17,16 @@ import time
 from typing import Callable
 
 from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from src.auth.dependencies import AUTH_ENABLED, _ANONYMOUS_USER
+from src.auth.providers import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
-# Paths that skip auth entirely
+# Exact paths that skip auth entirely.
 _PUBLIC_PATHS = frozenset({
     "/health",
     "/ready",
@@ -26,10 +34,24 @@ _PUBLIC_PATHS = frozenset({
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/favicon.ico",
+    "/",
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
-    "/api/v1/auth/logout",
+    "/api/v1/auth/register",
 })
+
+# Path prefixes that skip auth (Swagger assets, static, etc.).
+_PUBLIC_PREFIXES: tuple[str, ...] = (
+    "/docs",
+    "/redoc",
+    "/static/",
+)
+
+
+def _is_public(path: str) -> bool:
+    """Return True if the path bypasses auth enforcement."""
+    return path in _PUBLIC_PATHS or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -42,24 +64,76 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Skip auth for public paths
-        if path in _PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+        if _is_public(path):
             return await call_next(request)
 
-        # Attach user to request.state (lightweight, no DB call)
-        if AUTH_ENABLED:
-            request.state.auth_user = None  # Will be resolved by Depends(get_current_user)
-        else:
+        # Dev shortcut — anonymous admin user. Streamlit + tests rely on this.
+        if not AUTH_ENABLED:
             request.state.auth_user = _ANONYMOUS_USER
+            start = time.monotonic()
+            response = await call_next(request)
+            return response
+
+        # Verify the token here so all downstream handlers can rely on
+        # request.state.auth_user being populated. A failure short-circuits
+        # the request — defense-in-depth for routes that forget Depends.
+        try:
+            user = await self._verify_request(request)
+        except AuthenticationError as e:
+            return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+
+        if user is None:
+            return JSONResponse(
+                {"detail": "Missing authentication token"}, status_code=401,
+            )
+
+        request.state.auth_user = user
 
         start = time.monotonic()
         response = await call_next(request)
         duration_ms = (time.monotonic() - start) * 1000
 
         # Activity logging for significant operations (async, non-blocking)
-        if AUTH_ENABLED and response.status_code < 400:
+        if response.status_code < 400:
             await self._maybe_log_activity(request, path, duration_ms)
 
         return response
+
+    async def _verify_request(self, request: Request):
+        """Extract and verify the bearer token, returning the AuthUser or None.
+
+        Falls back to None when no token is provided so the caller can return
+        a unified 401 with the correct detail (separate from "invalid token").
+        """
+        token = self._extract_token(request)
+        if not token:
+            return None
+
+        state = getattr(request.app.state, "_app_state", None)
+        if not state:
+            raise AuthenticationError(
+                "Application state not initialized", status_code=503,
+            )
+        auth_provider = state.get("auth_provider")
+        if not auth_provider:
+            raise AuthenticationError(
+                "Auth provider not initialized", status_code=503,
+            )
+
+        return await auth_provider.verify_token(token)
+
+    @staticmethod
+    def _extract_token(request: Request) -> str:
+        """Pull a token from Authorization header, X-API-Key, or HttpOnly cookie."""
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:]
+        if auth_header.startswith("ApiKey "):
+            return auth_header[7:]
+        api_key = request.headers.get("X-API-Key", "")
+        if api_key:
+            return api_key
+        return request.cookies.get("access_token", "")
 
     async def _maybe_log_activity(self, request: Request, path: str, duration_ms: float) -> None:
         """Log significant user activities."""

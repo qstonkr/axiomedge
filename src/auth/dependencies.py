@@ -70,16 +70,25 @@ def _get_app_state(request: Request) -> Any:
 
 
 async def get_current_user(request: Request) -> AuthUser:
-    """Extract and verify the current user from request.
+    """Return the current user.
 
-    When AUTH_ENABLED=false, returns an anonymous admin user.
-    When enabled, extracts Bearer token from Authorization header
-    and verifies via the configured auth provider.
+    Fast path: ``AuthMiddleware`` has already verified the token and populated
+    ``request.state.auth_user``. We just hand it back.
+
+    Fallback path (tests, scripts that bypass the middleware): re-extract and
+    verify the token here. Keeps the dependency self-sufficient.
+
+    When ``AUTH_ENABLED=false`` the dev anonymous admin user is returned
+    without any DB or token work.
     """
     if not AUTH_ENABLED:
         return _ANONYMOUS_USER
 
-    # Extract token from header or cookie
+    cached = getattr(request.state, "auth_user", None)
+    if isinstance(cached, AuthUser):
+        return cached
+
+    # Fallback — token verification path (TestClient that doesn't run middleware)
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
@@ -87,29 +96,22 @@ async def get_current_user(request: Request) -> AuthUser:
         token = auth_header[7:]
     else:
         token = request.headers.get("X-API-Key", "")
-
-    # Fall back to HttpOnly cookie
     if not token:
         token = request.cookies.get("access_token", "")
 
     if not token:
         raise HTTPException(status_code=401, detail="Missing authentication token")
 
-    # Get provider from app state (no circular import)
     state = _get_app_state(request)
     if not state:
         raise HTTPException(status_code=503, detail="Application state not initialized")
 
     auth_provider = state.get("auth_provider")
-
     if not auth_provider:
         raise HTTPException(status_code=503, detail="Auth provider not initialized")
 
     try:
         user = await auth_provider.verify_token(token)
-
-        # Sync user to local DB (fire-and-forget) — skip for internal provider
-        # (internal users already exist in DB; sync would create orphan records)
         if user.provider != "internal":
             auth_service = state.get("auth_service")
             if auth_service:
@@ -117,9 +119,8 @@ async def get_current_user(request: Request) -> AuthUser:
                     await auth_service.sync_user_from_idp(user)
                 except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                     logger.debug("User sync failed (non-blocking): %s", e)
-
+        request.state.auth_user = user
         return user
-
     except AuthenticationError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 

@@ -380,23 +380,42 @@ class TestAuthMiddlewareDispatch:
             assert result is resp
             assert req.state.auth_user is _ANONYMOUS_USER
 
+    def _make_authed_request(self, path: str, method: str = "GET"):
+        """Request stub with a valid Bearer token + auth_provider hooked up."""
+        from src.auth.providers import AuthUser
+
+        req = self._make_request(path, method)
+        req.headers = {"user-agent": "test-agent", "Authorization": "Bearer good"}
+        req.cookies = {}
+        fake_user = AuthUser(
+            sub="user-x", email="x@test", display_name="X",
+            provider="internal", roles=["MEMBER"],
+        )
+        provider = MagicMock()
+        provider.verify_token = AsyncMock(return_value=fake_user)
+        app_state = {"auth_provider": provider, "auth_service": None}
+        req.app.state._app_state = app_state
+        return req, fake_user
+
     def test_dispatch_auth_enabled_no_log_on_error_status(self):
         """When auth enabled + response 4xx, skip activity logging."""
         mw = _make_auth_middleware()
-        req = self._make_request("/api/v1/search", "POST")
+        mw._maybe_log_activity = AsyncMock()
+        req, fake_user = self._make_authed_request("/api/v1/search", "POST")
         resp = MagicMock(status_code=401)
         call_next = AsyncMock(return_value=resp)
 
         with patch("src.auth.middleware.AUTH_ENABLED", True):
             result = _run(mw.dispatch(req, call_next))
             assert result is resp
-            assert req.state.auth_user is None
+            assert req.state.auth_user is fake_user
+            mw._maybe_log_activity.assert_not_awaited()
 
     def test_dispatch_auth_enabled_logs_activity(self):
         """When auth enabled + 2xx, calls _maybe_log_activity."""
         mw = _make_auth_middleware()
         mw._maybe_log_activity = AsyncMock()
-        req = self._make_request("/api/v1/search", "POST")
+        req, _ = self._make_authed_request("/api/v1/search", "POST")
         resp = MagicMock(status_code=200)
         call_next = AsyncMock(return_value=resp)
 
