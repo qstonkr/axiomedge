@@ -4,6 +4,8 @@ Uses pure Starlette middleware (not BaseHTTPMiddleware) to avoid asyncio conflic
 Configurable via environment variables:
   - RATE_LIMIT_REQUESTS: max requests per window (default 100)
   - RATE_LIMIT_WINDOW_SECONDS: window size in seconds (default 60)
+  - TRUST_PROXY_HEADERS: "true" to honor X-Forwarded-For / X-Real-IP / CF-Connecting-IP
+    (only enable when actually behind a trusted proxy — clients can otherwise spoof IPs)
 """
 
 from __future__ import annotations
@@ -21,6 +23,30 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/ready", "/metrics"})
 
 
+def _extract_client_ip(request: Request, trust_proxy: bool) -> str:
+    """Extract client IP, honoring proxy headers only when explicitly trusted.
+
+    Order when trust_proxy=True:
+      1. CF-Connecting-IP (Cloudflare — single IP, not spoofable past CF)
+      2. X-Real-IP (nginx single IP)
+      3. X-Forwarded-For (first IP in comma-separated chain — original client)
+      4. Fall back to direct connection
+    """
+    if trust_proxy:
+        cf_ip = request.headers.get("cf-connecting-ip", "").strip()
+        if cf_ip:
+            return cf_ip
+        real_ip = request.headers.get("x-real-ip", "").strip()
+        if real_ip:
+            return real_ip
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+    return request.client.host if request.client else "unknown"
+
+
 class RateLimiterMiddleware:
     """Sliding window rate limiter implemented as raw ASGI middleware."""
 
@@ -28,6 +54,7 @@ class RateLimiterMiddleware:
         self.app = app
         self.max_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
         self.window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+        self.trust_proxy = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true"
         # client_ip -> list of request timestamps
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._lock = Lock()
@@ -42,9 +69,9 @@ class RateLimiterMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract client IP
+        # Extract client IP (proxy-aware when TRUST_PROXY_HEADERS=true)
         request = Request(scope)
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = _extract_client_ip(request, self.trust_proxy)
 
         now = time.monotonic()
         window_start = now - self.window_seconds
