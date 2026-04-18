@@ -15,6 +15,9 @@ build/
 # ===========================
 .env
 .env.*
+# Exception: SOPS-encrypted files SHOULD be committed
+!.env.encrypted
+!.env.example
 
 # ===========================
 # OS
