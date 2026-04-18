@@ -807,6 +807,74 @@ class KnowledgeCategoryModel(RegistryBase):
 # =============================================================================
 
 
+class OrganizationModel(RegistryBase):
+    """Organization (tenant) — top-level grouping for users + KBs.
+
+    SAML / SSO 통합 시 IdP 의 organization 또는 tenant 와 매핑.
+    현재는 데이터 모델만 prep 상태 — 활성 사용은 Tenant + SAML 통합 후
+    (별도 PR). UserModel.organization_id / KBConfigModel.organization_id 가
+    여기 id 를 참조하도록 향후 FK 추가 가능.
+
+    PII / 격리 원칙: 같은 organization 안의 사용자들만 같은 KB 접근 가능.
+    Cross-tenant access 는 명시적 invite 또는 share 통해서만.
+    """
+
+    __tablename__ = "organizations"
+
+    id = Column(String(100), primary_key=True)
+    # URL-safe identifier — e.g., "acme-corp"
+    slug = Column(String(100), nullable=False, unique=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # SSO / SAML metadata (옵셔널 — 미통합 organization 도 허용)
+    sso_provider = Column(String(50), nullable=True)  # "saml" | "oidc" | None
+    sso_metadata = Column(JSONB, nullable=False, default=dict)  # IdP entityID, x509, etc.
+
+    # Quotas / billing (점진 도입)
+    max_users = Column(Integer, nullable=True)
+    max_kbs = Column(Integer, nullable=True)
+    max_storage_gb = Column(Integer, nullable=True)
+
+    # Status — active / suspended / trial 등
+    status = Column(String(20), nullable=False, default="active", index=True)
+    settings = Column(JSONB, nullable=False, default=dict)
+
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+    updated_at = Column(DateTime, nullable=False, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (
+        Index("idx_organizations_status", "status"),
+    )
+
+
+class OrgMembershipModel(RegistryBase):
+    """User ↔ Organization membership with role.
+
+    한 사용자가 여러 organization 에 속할 수 있음 (consultant, multi-tenant scenarios).
+    UserModel.organization_id 는 "기본 organization" 을 가리키고, 이 테이블은
+    실제 권한 격리의 SSOT.
+    """
+
+    __tablename__ = "org_memberships"
+
+    id = Column(String(36), primary_key=True)  # uuid
+    user_id = Column(String(100), nullable=False, index=True)
+    organization_id = Column(String(100), nullable=False, index=True)
+    # admin | member | viewer
+    role = Column(String(20), nullable=False, default="member")
+    invited_by = Column(String(100), nullable=True)
+    invited_at = Column(DateTime, nullable=False, default=_utc_now)
+    joined_at = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False, default="active")  # active|invited|removed
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "organization_id", name="uq_org_member_user_org"),
+        Index("idx_org_membership_user", "user_id"),
+        Index("idx_org_membership_org", "organization_id"),
+    )
+
+
 class KBSearchGroupModel(RegistryBase):
     """KB search groups for scoped cross-KB search.
 

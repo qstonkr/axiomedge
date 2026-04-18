@@ -79,30 +79,50 @@ def _has_fk_without_not_valid(text: str) -> list[int]:
     return line_nos
 
 
+def _extract_upgrade_block(text: str) -> str:
+    """Return only the body of the ``upgrade()`` function — destructive ops in
+    ``downgrade()`` are intentional (rollback) and must not be flagged.
+
+    Heuristic: from ``def upgrade(`` to next top-level ``def`` (or EOF).
+    """
+    m = re.search(r"def\s+upgrade\s*\(", text)
+    if not m:
+        return text  # no upgrade fn — fall back to whole file
+    start = m.start()
+    next_def = re.search(r"\ndef\s+\w+\s*\(", text[start + 1 :])
+    end = start + 1 + next_def.start() if next_def else len(text)
+    return text[start:end]
+
+
 def check_file(path: Path) -> int:
     if not path.exists():
         logger.error("File not found: %s", path)
         return 2
 
-    text = path.read_text()
+    raw_text = path.read_text()
+    text = _extract_upgrade_block(raw_text)
+    # Compute line offset so reported lines match the original file
+    offset = raw_text.find(text) if text != raw_text else 0
+    line_offset = raw_text[:offset].count("\n")
+
     issues: list[tuple[str, str, int]] = []  # (severity, hint, line_no)
 
     for pattern, severity, hint in _DANGEROUS_PATTERNS:
         for m in re.finditer(pattern, text):
-            line_no = text[: m.start()].count("\n") + 1
+            line_no = text[: m.start()].count("\n") + 1 + line_offset
             issues.append((severity, hint, line_no))
 
     for ln in _has_create_index_without_concurrent(text):
         issues.append((
             "WARN",
             "CREATE INDEX without CONCURRENTLY — locks writes on large tables. PATTERNS.md §4",
-            ln,
+            ln + line_offset,
         ))
     for ln in _has_fk_without_not_valid(text):
         issues.append((
             "WARN",
             "FK constraint without NOT VALID — full table scan. PATTERNS.md §6",
-            ln,
+            ln + line_offset,
         ))
 
     dangerous_count = sum(1 for sev, _, _ in issues if sev == "DANGEROUS")
