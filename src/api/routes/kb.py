@@ -137,7 +137,7 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
 # Original /api/v1/kb/* routes
 # ============================================================================
 
-@router.post("/create", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
+@router.post("/create", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
 async def create_kb(request: KBCreateRequest) -> dict[str, Any]:
     """Create a new knowledge base (Qdrant collection)."""
     state = _get_state()
@@ -158,7 +158,7 @@ async def list_kbs() -> dict[str, Any]:
     return await _list_kbs_impl()
 
 
-@router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
+@router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
 async def delete_kb(kb_id: str) -> dict[str, Any]:
     """Delete a knowledge base."""
     state = _get_state()
@@ -195,7 +195,7 @@ async def admin_list_kbs(
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/kb
 # ---------------------------------------------------------------------------
-@admin_router.post("", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
+@admin_router.post("", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
 async def admin_create_kb(body: dict[str, Any]) -> dict[str, Any]:
     """Create a KB (admin)."""
     state = _get_state()
@@ -375,7 +375,7 @@ async def admin_update_kb(kb_id: str, body: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/kb/{kb_id}
 # ---------------------------------------------------------------------------
-@admin_router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
+@admin_router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
 async def admin_delete_kb(kb_id: str) -> dict[str, Any]:
     """Delete KB (admin)."""
     state = _get_state()

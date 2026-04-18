@@ -304,7 +304,7 @@ Respond in JSON format:
 }}
 
 Only report actual conflicts, not minor differences in wording.
-Focus on information that could cause confusion or errors if both documents are used."""
+Focus on information that could cause confusion or errors if both documents are used."""  # noqa: E501
 
     def __init__(
         self,

@@ -123,7 +123,7 @@ exclude_lines = [
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
 # Phase C 품질 규칙.
@@ -137,8 +137,22 @@ line-length = 100
 select = ["E", "F", "W", "BLE001"]
 
 [tool.ruff.lint.per-file-ignores]
-# Streamlit pages: module-level st.set_page_config() 이 다른 import 앞에 와야 함
-"src/apps/dashboard/pages/*.py" = ["E402"]
+# Streamlit pages + entry: module-level st.set_page_config()/init_logging() 이 다른 import 앞에 와야 함
+"src/apps/dashboard/pages/*.py" = ["E402", "E501"]
+"src/apps/dashboard/app.py" = ["E402"]
+"src/apps/dashboard/components/*.py" = ["E501"]
+# Admin route facade modules: late re-export pattern (테스트 patch 대응)
+"src/api/routes/_admin_*.py" = ["E402"]
+# LLM prompt 파일: 자연어 프롬프트 문자열은 줄바꿈하면 가독성 떨어짐
+"src/nlp/llm/prompts.py" = ["E501"]
+"src/pipelines/graphrag/prompts.py" = ["E501"]
+"src/search/tiered_response.py" = ["E501"]
+"src/distill/data_gen/test_data_templates.py" = ["E501"]
+# SQLAlchemy ORM 모델: 컬럼 정의 + 관계 선언 라인이 길어짐
+"src/stores/postgres/models.py" = ["E501"]
+"src/auth/models.py" = ["E501"]
+# Utility scripts (backfill, crawl, ops): 일회성/배치 도구 — 엄격 lint 면제
+"scripts/**/*.py" = ["BLE001", "E501", "E701", "E731", "E741", "E402"]
 
 # ---------------------------------------------------------------------------
 # Type checking (pyright)

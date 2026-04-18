@@ -66,7 +66,7 @@ async def create_group(request: CreateGroupRequest) -> Any:
     return group
 
 
-@router.get("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
+@router.get("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})  # noqa: E501
 async def get_group(group_id: str) -> Any:
     """검색 그룹 상세 조회."""
     repo = _get_state().get("search_group_repo")
@@ -79,7 +79,7 @@ async def get_group(group_id: str) -> Any:
     return group
 
 
-@router.put("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})
+@router.put("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})  # noqa: E501
 async def update_group(group_id: str, request: UpdateGroupRequest) -> Any:
     """검색 그룹 수정 (KB 추가/제거)."""
     repo = _get_state().get("search_group_repo")
@@ -101,7 +101,7 @@ async def update_group(group_id: str, request: UpdateGroupRequest) -> Any:
     return group
 
 
-@router.delete("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})
+@router.delete("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})  # noqa: E501
 async def delete_group(group_id: str) -> dict:
     """검색 그룹 삭제."""
     repo = _get_state().get("search_group_repo")

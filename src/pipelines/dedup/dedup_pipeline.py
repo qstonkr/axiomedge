@@ -258,7 +258,7 @@ class DedupPipeline:
             _cfg_semantic = self._FALLBACK_SEMANTIC
             _cfg_skip = self._FALLBACK_SKIP
         self._near_threshold = near_duplicate_threshold if near_duplicate_threshold is not None else _cfg_near
-        self._semantic_threshold = semantic_duplicate_threshold if semantic_duplicate_threshold is not None else _cfg_semantic
+        self._semantic_threshold = semantic_duplicate_threshold if semantic_duplicate_threshold is not None else _cfg_semantic  # noqa: E501
         self._skip_threshold = stage3_skip_threshold if stage3_skip_threshold is not None else _cfg_skip
 
         self._bloom = bloom_filter or BloomFilter()

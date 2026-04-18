@@ -258,7 +258,7 @@ class GraphIntegrityChecker:
                         issue_type="missing_relationship",
                         node_id=str(record.get("id", "")),
                         node_type="Document",
-                        message=f"Document missing BELONGS_TO KnowledgeBase: {record.get('name', record.get('id', ''))}",
+                        message=f"Document missing BELONGS_TO KnowledgeBase: {record.get('name', record.get('id', ''))}",  # noqa: E501
                         severity="warning",
                     )
                 )

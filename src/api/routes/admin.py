@@ -84,7 +84,7 @@ async def list_collections() -> dict:
         return {"collections": [], "error": str(e)}
 
 
-@router.get("/qdrant/collection/{name}/stats", responses={503: {"description": "Store not initialized"}, 500: {"description": "Internal error"}})
+@router.get("/qdrant/collection/{name}/stats", responses={503: {"description": "Store not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
 async def collection_stats(name: str) -> dict:
     """Get collection statistics."""
     state = _get_state()

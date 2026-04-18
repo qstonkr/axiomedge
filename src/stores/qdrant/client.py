@@ -132,10 +132,10 @@ class QdrantConfig:
             retrieval_projection_enabled=(
                 os.getenv("RETRIEVAL_PROJECTION_ENABLED", "true").lower() == "true"
             ),
-            hybrid_prefetch_multiplier=int(os.getenv("QDRANT_HYBRID_PREFETCH_MULTIPLIER", str(_w.hybrid_search.prefetch_multiplier))),
+            hybrid_prefetch_multiplier=int(os.getenv("QDRANT_HYBRID_PREFETCH_MULTIPLIER", str(_w.hybrid_search.prefetch_multiplier))),  # noqa: E501
             hybrid_prefetch_max=int(os.getenv("QDRANT_HYBRID_PREFETCH_MAX", str(_w.hybrid_search.prefetch_max))),
             colbert_rerank_candidate_multiplier=int(
-                os.getenv("QDRANT_COLBERT_RERANK_CANDIDATE_MULTIPLIER", str(_w.hybrid_search.colbert_rerank_candidate_multiplier))
+                os.getenv("QDRANT_COLBERT_RERANK_CANDIDATE_MULTIPLIER", str(_w.hybrid_search.colbert_rerank_candidate_multiplier))  # noqa: E501
             ),
         )
 

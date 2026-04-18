@@ -131,7 +131,7 @@ async def update_abac_policy(
         if not policy:
             raise HTTPException(status_code=404, detail="Policy not found")
 
-        for field in ("name", "description", "resource_type", "action", "conditions", "effect", "priority", "is_active"):
+        for field in ("name", "description", "resource_type", "action", "conditions", "effect", "priority", "is_active"):  # noqa: E501
             if field in body:
                 setattr(policy, field, body[field])
 

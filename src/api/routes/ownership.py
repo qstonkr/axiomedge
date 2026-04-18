@@ -83,7 +83,7 @@ async def assign_document_owner(body: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/ownership/documents/{document_id}/transfer
 # ---------------------------------------------------------------------------
-@admin_router.post("/documents/{document_id}/transfer", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to transfer ownership"}})
+@admin_router.post("/documents/{document_id}/transfer", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to transfer ownership"}})  # noqa: E501
 async def transfer_ownership(document_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Transfer document ownership."""
     state = _get_state()
@@ -114,7 +114,7 @@ async def transfer_ownership(document_id: str, body: dict[str, Any]) -> dict[str
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/ownership/documents/{document_id}/verify
 # ---------------------------------------------------------------------------
-@admin_router.post("/documents/{document_id}/verify", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to verify owner"}})
+@admin_router.post("/documents/{document_id}/verify", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to verify owner"}})  # noqa: E501
 async def verify_document_owner(document_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Verify document owner."""
     state = _get_state()

@@ -93,7 +93,7 @@ def add_synonym_to_standard(standard_term_id: str, synonym: str, delete_pending_
 
 
 def check_pending_similarity(threshold: float = 0.7, page: int = 1, page_size: int = 50) -> dict:
-    return _request("POST", f"/api/v1/admin/glossary/similarity-check?threshold={threshold}&page={page}&page_size={page_size}",
+    return _request("POST", f"/api/v1/admin/glossary/similarity-check?threshold={threshold}&page={page}&page_size={page_size}",  # noqa: E501
                     json_body={}, timeout=120)
 
 

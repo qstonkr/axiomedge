@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import page_to_dict
+from .models import AttachmentContent, page_to_dict
 
 logger = logging.getLogger(__name__)
 

@@ -149,7 +149,7 @@ class DenseTermIndex:
         return [(self._term_indices[i], float(scores[i])) for i in top_indices]
 
     def search_batch(
-        self, query_texts: list[str], top_k: int = _w.search.term_search_top_k, batch_size: int = _w.search.term_build_batch_size
+        self, query_texts: list[str], top_k: int = _w.search.term_search_top_k, batch_size: int = _w.search.term_build_batch_size  # noqa: E501
     ) -> list[list[tuple[int, float]]]:
         """배치 코사인 유사도 검색.
 

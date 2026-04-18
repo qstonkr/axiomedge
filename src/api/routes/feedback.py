@@ -129,7 +129,7 @@ async def get_feedback_stats() -> dict[str, Any]:
             negative = await repo.count(feedback_type=FeedbackType.DOWNVOTE)
             neutral = max(0, total - positive - negative)
             by_type = {"upvote": positive, "downvote": negative, "other": neutral}
-            return {"total": total, "pending": pending, "positive": positive, "negative": negative, "neutral": neutral, "by_type": by_type}
+            return {"total": total, "pending": pending, "positive": positive, "negative": negative, "neutral": neutral, "by_type": by_type}  # noqa: E501
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Feedback stats query failed: %s", e)
     return {"total": 0, "positive": 0, "negative": 0, "neutral": 0, "by_type": {}}
@@ -256,7 +256,7 @@ async def create_error_report(body: dict[str, Any]) -> dict[str, Any]:
                 "kb_id": body.get("kb_id", body.get("kb", "default")),
                 "error_type": body.get("error_type", body.get("type", "incorrect_answer")),
                 "description": body.get("description", body.get("title", body.get("content", ""))),
-                "reporter_user_id": body.get("reporter_user_id", body.get("reporter", body.get("session_id", "anonymous"))),
+                "reporter_user_id": body.get("reporter_user_id", body.get("reporter", body.get("session_id", "anonymous"))),  # noqa: E501
                 "status": body.get("status", "pending"),
                 "priority": body.get("priority", "medium"),
             }

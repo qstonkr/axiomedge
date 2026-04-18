@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from .models import ExtractionResult, GraphNode, GraphRelationship
+from .models import ExtractionResult, GraphRelationship
 from .prompts import HISTORY_RELATIONSHIP_MAP, _is_safe_cypher_label
 
 logger = logging.getLogger(__name__)

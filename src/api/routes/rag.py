@@ -336,7 +336,7 @@ async def _ensure_qdrant_collection(state, kb_id: str) -> None:
 async def _create_collection_via_rest(collections, kb_id: str) -> None:
     """Create Qdrant collection via REST API as SDK fallback."""
     import httpx as _httpx
-    from src.stores.qdrant.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name
+    from src.stores.qdrant.client import DEFAULT_DENSE_VECTOR_NAME as _dense_name, DEFAULT_SPARSE_VECTOR_NAME as _sparse_name  # noqa: E501
     from src.config.weights import weights as _cw
 
     _embed_dim = _cw.embedding.dimension
@@ -350,7 +350,7 @@ async def _create_collection_via_rest(collections, kb_id: str) -> None:
                 "vectors": {_dense_name: {"size": _embed_dim, "distance": "Cosine"}},
                 "sparse_vectors": {_sparse_name: {}},
             },
-            timeout=_w.timeouts.httpx_rag,
+            timeout=_cw.timeouts.httpx_rag,
         )
         if resp.status_code in (200, 409):
             logger.info("Collection %s created via REST API", coll_name)
@@ -381,7 +381,7 @@ async def _auto_register_kb(
 # ---------------------------------------------------------------------------
 # POST /api/v1/knowledge/file-upload-ingest
 # ---------------------------------------------------------------------------
-@knowledge_router.post("/file-upload-ingest", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "No files provided"}})
+@knowledge_router.post("/file-upload-ingest", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "No files provided"}})  # noqa: E501
 async def upload_and_ingest(
     file: Annotated[UploadFile | None, File()] = None,
     files: Annotated[list[UploadFile] | None, File()] = None,
@@ -542,7 +542,7 @@ def _attach_reingest_callbacks(task, job_id: str, kb_id: str, state) -> None:
     task.add_done_callback(bg_tasks.discard)
 
 
-@knowledge_router.post("/reingest-from-jsonl", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Invalid JSONL path"}, 404: {"description": "No records in JSONL"}})
+@knowledge_router.post("/reingest-from-jsonl", responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Invalid JSONL path"}, 404: {"description": "No records in JSONL"}})  # noqa: E501
 async def reingest_from_jsonl(
     kb_id: Annotated[str, Form()],
     jsonl_path: Annotated[str | None, Form()] = None,

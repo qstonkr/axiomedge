@@ -61,7 +61,7 @@ Normalize to the following JSON format:
   "tags": ["..."]
 }}
 
-Output JSON only."""
+Output JSON only."""  # noqa: E501
 
 # OCR_PRIMARY: OCR coordinate layout only (no shapes/edges)
 _PROMPT_OCR_PRIMARY = """Below is text and coordinate data extracted from an image using OCR.
@@ -91,7 +91,7 @@ Normalize to the following JSON format:
   "tags": ["..."]
 }}
 
-Output JSON only."""
+Output JSON only."""  # noqa: E501
 
 # SHAPE_PRIMARY: Shape/edge centric
 _PROMPT_SHAPE_PRIMARY = """Below is shape and connection line data extracted from an image using computer vision.
@@ -124,7 +124,7 @@ Normalize to the following JSON format:
   "tags": ["..."]
 }}
 
-Output JSON only."""
+Output JSON only."""  # noqa: E501
 
 
 class GraphNormalizer:

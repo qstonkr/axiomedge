@@ -293,7 +293,7 @@ class _OllamaLLMClient:
 # =============================================================================
 # GraphRAG Extractor
 # =============================================================================
-from ._neo4j_persistence import Neo4jPersistenceMixin
+from ._neo4j_persistence import Neo4jPersistenceMixin  # noqa: E402
 
 
 class GraphRAGExtractor(Neo4jPersistenceMixin):

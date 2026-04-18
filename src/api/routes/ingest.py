@@ -92,7 +92,7 @@ async def _update_kb_counts(state: AppState, kb_id: str, docs: int, chunks: int)
         logger.warning("KB count update failed: %s", _e)
 
 
-@router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})
+@router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})  # noqa: E501
 async def ingest_directory(request: IngestRequest) -> tuple:
     """Ingest documents from a directory."""
     state = _get_state()
@@ -180,7 +180,7 @@ async def ingest_directory(request: IngestRequest) -> tuple:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/upload", responses={503: {"description": "Ingestion services not initialized"}, 500: {"description": "Upload ingestion failed"}})
+@router.post("/upload", responses={503: {"description": "Ingestion services not initialized"}, 500: {"description": "Upload ingestion failed"}})  # noqa: E501
 async def upload_file(
     file: Annotated[UploadFile, File()],
     kb_id: Annotated[str, Form()] = "knowledge",

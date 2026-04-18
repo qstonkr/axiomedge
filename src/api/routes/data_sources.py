@@ -78,7 +78,7 @@ async def get_data_source(source_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # PUT /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
-@router.put("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to update data source"}})
+@router.put("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to update data source"}})  # noqa: E501
 async def update_data_source(source_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update data source."""
     state = _get_state()
@@ -104,7 +104,7 @@ async def update_data_source(source_id: str, body: dict[str, Any]) -> dict[str, 
 # ---------------------------------------------------------------------------
 # DELETE /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
-@router.delete("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to delete data source"}})
+@router.delete("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to delete data source"}})  # noqa: E501
 async def delete_data_source(source_id: str) -> dict[str, bool | str]:
     """Delete data source."""
     state = _get_state()
@@ -126,7 +126,7 @@ async def delete_data_source(source_id: str) -> dict[str, bool | str]:
 # ---------------------------------------------------------------------------
 # POST /api/v1/admin/data-sources/{source_id}/trigger
 # ---------------------------------------------------------------------------
-@router.post("/{source_id}/trigger", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to trigger sync"}})
+@router.post("/{source_id}/trigger", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to trigger sync"}})  # noqa: E501
 async def trigger_data_source_sync(
     source_id: str,
     sync_mode: Annotated[str, Query()] = "resume",

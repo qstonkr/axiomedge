@@ -258,7 +258,7 @@ async def _check_abac_kb_access(
             "kb_id": kb_id,
             "tier": kb_info.get("tier", "team") if isinstance(kb_info, dict) else "team",
             "organization_id": kb_info.get("organization_id") if isinstance(kb_info, dict) else None,
-            "data_classification": kb_info.get("data_classification", "internal") if isinstance(kb_info, dict) else "internal",
+            "data_classification": kb_info.get("data_classification", "internal") if isinstance(kb_info, dict) else "internal",  # noqa: E501
         },
         action="read" if min_level == "reader" else "write",
     )

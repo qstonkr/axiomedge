@@ -330,6 +330,7 @@ def _try_libreoffice_ppt_convert(
                         "[PPT] Converted %s -> %s",
                         file_path.name, pptx_files[0].name,
                     )
+                    from .attachment_parser import AttachmentParser  # late import — avoids circular
                     return AttachmentParser.parse_ppt(
                         pptx_files[0], heartbeat_fn=heartbeat_fn,
                     )

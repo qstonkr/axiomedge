@@ -330,7 +330,7 @@ def _determine_quality_tier(metrics: QualityMetrics) -> QualityTier:
     # SILVER: 500자 이상이거나, 구조화 요소 있음
     if length >= _w.quality.silver_min_chars:
         return QualityTier.SILVER
-    if length >= _w.quality.silver_structured_min_chars and (metrics.has_tables or metrics.has_code_blocks or metrics.has_headers):
+    if length >= _w.quality.silver_structured_min_chars and (metrics.has_tables or metrics.has_code_blocks or metrics.has_headers):  # noqa: E501
         return QualityTier.SILVER
 
     # BRONZE: 50자 이상

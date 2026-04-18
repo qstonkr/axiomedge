@@ -159,17 +159,17 @@ def _resolve_relative_time(query: str, llm_client=None) -> tuple[str, list[Query
     corrections: list[QueryCorrection] = []
 
     _TIME_MAP = {
-        "차주": lambda n: f"{(n + timedelta(weeks=1)).year}년 {(n + timedelta(weeks=1)).month}월 {((n + timedelta(weeks=1)).day - 1) // 7 + 1}주차",
-        "다음 주": lambda n: f"{(n + timedelta(weeks=1)).year}년 {(n + timedelta(weeks=1)).month}월 {((n + timedelta(weeks=1)).day - 1) // 7 + 1}주차",
+        "차주": lambda n: f"{(n + timedelta(weeks=1)).year}년 {(n + timedelta(weeks=1)).month}월 {((n + timedelta(weeks=1)).day - 1) // 7 + 1}주차",  # noqa: E501
+        "다음 주": lambda n: f"{(n + timedelta(weeks=1)).year}년 {(n + timedelta(weeks=1)).month}월 {((n + timedelta(weeks=1)).day - 1) // 7 + 1}주차",  # noqa: E501
         "이번 주": lambda n: f"{n.year}년 {n.month}월 {(n.day - 1) // 7 + 1}주차",
         "금주": lambda n: f"{n.year}년 {n.month}월 {(n.day - 1) // 7 + 1}주차",
-        "지난 주": lambda n: f"{(n - timedelta(weeks=1)).year}년 {(n - timedelta(weeks=1)).month}월 {((n - timedelta(weeks=1)).day - 1) // 7 + 1}주차",
-        "전주": lambda n: f"{(n - timedelta(weeks=1)).year}년 {(n - timedelta(weeks=1)).month}월 {((n - timedelta(weeks=1)).day - 1) // 7 + 1}주차",
+        "지난 주": lambda n: f"{(n - timedelta(weeks=1)).year}년 {(n - timedelta(weeks=1)).month}월 {((n - timedelta(weeks=1)).day - 1) // 7 + 1}주차",  # noqa: E501
+        "전주": lambda n: f"{(n - timedelta(weeks=1)).year}년 {(n - timedelta(weeks=1)).month}월 {((n - timedelta(weeks=1)).day - 1) // 7 + 1}주차",  # noqa: E501
         "이번 달": lambda n: f"{n.year}년 {n.month}월",
         "이번달": lambda n: f"{n.year}년 {n.month}월",
-        "지난 달": lambda n: f"{(n.replace(day=1) - timedelta(days=1)).year}년 {(n.replace(day=1) - timedelta(days=1)).month}월",
-        "지난달": lambda n: f"{(n.replace(day=1) - timedelta(days=1)).year}년 {(n.replace(day=1) - timedelta(days=1)).month}월",
-        "다음 달": lambda n: f"{(n.replace(day=28) + timedelta(days=4)).year}년 {(n.replace(day=28) + timedelta(days=4)).month}월",
+        "지난 달": lambda n: f"{(n.replace(day=1) - timedelta(days=1)).year}년 {(n.replace(day=1) - timedelta(days=1)).month}월",  # noqa: E501
+        "지난달": lambda n: f"{(n.replace(day=1) - timedelta(days=1)).year}년 {(n.replace(day=1) - timedelta(days=1)).month}월",  # noqa: E501
+        "다음 달": lambda n: f"{(n.replace(day=28) + timedelta(days=4)).year}년 {(n.replace(day=28) + timedelta(days=4)).month}월",  # noqa: E501
     }
 
     # Tier 1: Rule-based (instant)

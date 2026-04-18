@@ -27,7 +27,6 @@ Updated: 2026-02-05 - 첨부파일 파싱 완전 구현
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import json
 import os
@@ -2954,7 +2953,7 @@ class ConfluenceFullClient:
                 "email": data.get("email"),
                 "profile_picture": data.get("profilePicture", {}).get("path"),
             }
-        except Exception as e:
+        except Exception:
             # 사용자 조회 실패는 무시 (권한 문제 등)
             return None
 
@@ -4106,11 +4105,11 @@ async def crawl_space(
         # 증분 JSONL에서 이전 페이지 복원
         loaded = client.load_incremental(source_key)
         if client.load_checkpoint(source_key):
-            console.print(f"[green]✓ 이전 진행 상태에서 재개합니다.[/green]")
+            console.print("[green]✓ 이전 진행 상태에서 재개합니다.[/green]")
         elif loaded > 0:
             console.print(f"[green]✓ 증분 파일에서 {loaded}페이지 복원, 이어서 진행합니다.[/green]")
         else:
-            console.print(f"[yellow]⚠️ 체크포인트가 없습니다. 처음부터 시작합니다.[/yellow]")
+            console.print("[yellow]⚠️ 체크포인트가 없습니다. 처음부터 시작합니다.[/yellow]")
     else:
         # 새로 시작할 때 이전 체크포인트 + 증분 파일 삭제
         client.clear_checkpoint()

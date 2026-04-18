@@ -49,7 +49,7 @@ from .cache import CacheConfig, compute_cache_version
 
 # Backward compat alias (used by tests)
 _compute_cache_version = compute_cache_version
-from ._helpers import _env_float, _env_int, _coerce_value
+from ._helpers import _env_float, _env_int, _coerce_value  # noqa: E402
 
 __all__ = [
     "weights",

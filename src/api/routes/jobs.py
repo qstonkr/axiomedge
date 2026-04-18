@@ -154,7 +154,7 @@ async def get_job_status(job_id: str) -> dict:
     return job
 
 
-@router.post("/{job_id}/cancel", responses={404: {"description": "Job not found"}, 400: {"description": "Job is not in processing state"}})
+@router.post("/{job_id}/cancel", responses={404: {"description": "Job not found"}, 400: {"description": "Job is not in processing state"}})  # noqa: E501
 async def cancel_job(job_id: str) -> dict:
     """Cancel a running ingestion job."""
     job = await get_job(job_id)

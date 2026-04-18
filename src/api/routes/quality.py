@@ -91,7 +91,7 @@ async def get_document_versions(
                     if prov:
                         return {
                             "doc_id": doc_id,
-                            "versions": [{"content_hash": prov.get("content_hash"), "created_at": prov.get("created_at")}],
+                            "versions": [{"content_hash": prov.get("content_hash"), "created_at": prov.get("created_at")}],  # noqa: E501
                             "current_version": prov.get("content_hash"),
                         }
             else:
@@ -139,10 +139,10 @@ async def get_dedup_stats() -> dict[str, Any]:
         "total_resolved": tracker_stats.get("total_resolved", 0),
         "pending": tracker_stats.get("pending", 0),
         "stages": {
-            "bloom": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage1_filtered", 0)},
-            "lsh": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage2_flagged", 0)},
-            "semhash": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage3_confirmed", 0)},
-            "llm": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage4_conflicts", 0)},
+            "bloom": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage1_filtered", 0)},  # noqa: E501
+            "lsh": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage2_flagged", 0)},  # noqa: E501
+            "semhash": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage3_confirmed", 0)},  # noqa: E501
+            "llm": {"checked": pipeline_metrics.get("total_processed", 0), "flagged": pipeline_metrics.get("stage4_conflicts", 0)},  # noqa: E501
         },
         "pipeline_metrics": pipeline_metrics,
         "document_count": pipeline.document_count if pipeline else 0,
@@ -170,7 +170,7 @@ async def get_dedup_conflicts(
     }
 
 
-@router.post("/dedup/resolve", responses={400: {"description": "Missing required fields"}, 503: {"description": "Dedup tracker not initialized"}, 404: {"description": "Conflict not found"}, 500: {"description": "Failed to resolve conflict"}})
+@router.post("/dedup/resolve", responses={400: {"description": "Missing required fields"}, 503: {"description": "Dedup tracker not initialized"}, 404: {"description": "Conflict not found"}, 500: {"description": "Failed to resolve conflict"}})  # noqa: E501
 async def resolve_dedup_conflict(body: dict[str, Any]) -> dict[str, Any]:
     """Resolve a dedup conflict."""
     state = _get_state()
@@ -588,7 +588,7 @@ async def submit_verification_vote(doc_id: str, body: dict[str, Any]) -> dict[st
 # Version Management
 # ============================================================================
 
-@router.post("/documents/{doc_id}/rollback", responses={404: {"description": "No previous version to rollback to"}, 500: {"description": "Rollback failed"}, 503: {"description": "Lifecycle service not available"}})
+@router.post("/documents/{doc_id}/rollback", responses={404: {"description": "No previous version to rollback to"}, 500: {"description": "Rollback failed"}, 503: {"description": "Lifecycle service not available"}})  # noqa: E501
 async def rollback_document_version(doc_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Rollback document to previous version via lifecycle transition."""
     state = _get_state()
@@ -626,7 +626,7 @@ async def rollback_document_version(doc_id: str, body: dict[str, Any]) -> dict[s
     raise HTTPException(status_code=503, detail="Lifecycle service not available")
 
 
-@router.post("/documents/{doc_id}/approve", responses={503: {"description": "Lifecycle service not available"}, 500: {"description": "Approve failed"}})
+@router.post("/documents/{doc_id}/approve", responses={503: {"description": "Lifecycle service not available"}, 500: {"description": "Approve failed"}})  # noqa: E501
 async def approve_document_version(doc_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Approve document: lifecycle transition to 'published'."""
     state = _get_state()

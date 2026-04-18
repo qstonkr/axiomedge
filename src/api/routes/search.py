@@ -120,7 +120,7 @@ from src.api.routes._search_steps import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-@router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})
+@router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})  # noqa: E501
 async def hub_search(request: HubSearchRequest) -> dict:
     """Hub Search - unified knowledge search with full pipeline."""
     state = _get_state()

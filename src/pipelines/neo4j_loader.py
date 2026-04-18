@@ -139,7 +139,7 @@ class Neo4jKnowledgeLoader:
         return loaded
 
     async def load_nodes_batch(
-        self, nodes: list[dict], batch_size: int = _w.search.neo4j_upsert_batch_size, max_retries: int = _w.search.neo4j_max_retries
+        self, nodes: list[dict], batch_size: int = _w.search.neo4j_upsert_batch_size, max_retries: int = _w.search.neo4j_max_retries  # noqa: E501
     ) -> int:
         """노드 일괄 로드 (대량 데이터용, retry 포함).
 
@@ -181,7 +181,7 @@ class Neo4jKnowledgeLoader:
         return loaded
 
     async def load_edges_batch(
-        self, edges: list[dict], batch_size: int = _w.search.neo4j_upsert_batch_size, max_retries: int = _w.search.neo4j_max_retries
+        self, edges: list[dict], batch_size: int = _w.search.neo4j_upsert_batch_size, max_retries: int = _w.search.neo4j_max_retries  # noqa: E501
     ) -> int:
         """엣지 일괄 로드 (대량 데이터용, retry 포함).
 
@@ -266,7 +266,7 @@ class Neo4jKnowledgeLoader:
             WHERE b:Document OR b:Entity OR b:Topic OR b:Person OR b:System OR b:Term OR b:Team OR b:KB OR b:Attachment OR b:ProcessStep
             MERGE (a)-[r:{rel_type}]->(b)
             SET r += edge.properties
-            """
+            """  # noqa: E501
             await session.run(query, edges=type_edges)
 
     def _sanitize_label(self, label: str, allowed: frozenset[str], default: str) -> str:
