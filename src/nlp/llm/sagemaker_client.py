@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
 from src.config.weights import weights
+from src.core.resilience import with_resilience
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 
@@ -95,13 +96,14 @@ class SageMakerLLMClient:
         result = json.loads(resp["Body"].read())
         return result["choices"][0]["message"]["content"].strip()
 
+    @with_resilience("sagemaker", weights.resilience.sagemaker)
     async def _invoke(
         self,
         messages: list[dict[str, str]],
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> str:
-        """Async wrapper around synchronous boto3 call."""
+        """Async wrapper around synchronous boto3 call. Retries transient errors."""
         return await asyncio.to_thread(
             self._invoke_sync, messages, max_tokens, temperature
         )

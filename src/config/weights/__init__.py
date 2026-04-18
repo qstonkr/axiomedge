@@ -46,6 +46,7 @@ from .quality import QualityConfig, TrustScoreWeights
 from .pipeline import OCRConfig, ChunkingConfig, PipelineConfig, DedupConfig
 from .llm import LLMConfig, EmbeddingConfig, TimeoutConfig
 from .cache import CacheConfig, compute_cache_version
+from .resilience import ResilienceWeights
 
 # Backward compat alias (used by tests)
 _compute_cache_version = compute_cache_version
@@ -103,6 +104,7 @@ class Weights:
     trust_score: TrustScoreWeights
     dedup: DedupConfig
     cache: CacheConfig
+    resilience: ResilienceWeights
 
     _SECTION_CLASSES: dict[str, type] = {
         "reranker": RerankerWeights,
@@ -122,6 +124,7 @@ class Weights:
         "trust_score": TrustScoreWeights,
         "dedup": DedupConfig,
         "cache": CacheConfig,
+        "resilience": ResilienceWeights,
     }
 
     def __init__(self) -> None:

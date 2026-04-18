@@ -24,6 +24,7 @@ import httpx
 
 from src.config import DEFAULT_LLM_MODEL, get_settings
 from src.config.weights import weights
+from src.core.resilience import with_resilience
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 
@@ -304,6 +305,7 @@ class OllamaClient:
 
         return "\n---\n".join(formatted_parts)
 
+    @with_resilience("ollama", weights.resilience.ollama)
     async def _generate_via_ollama(self, *, query: str, prompt: str, context_count: int) -> str:
         start_time = time.perf_counter()
         client = await self._get_client()
