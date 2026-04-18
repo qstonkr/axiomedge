@@ -43,7 +43,13 @@ class KBListerTool(Tool):
         try:
             limit = int(args.get("limit", 50))
             tier_filter = args.get("tier")
-            kbs = await kb_registry.list_all(limit=limit)
+            # state["organization_id"] is populated by the agentic API route
+            # from get_current_org. None means cross-org (system path) — not
+            # something user-triggered agent runs should ever do.
+            organization_id = state.get("organization_id")
+            kbs = await kb_registry.list_all(
+                limit=limit, organization_id=organization_id,
+            )
             if tier_filter:
                 kbs = [k for k in kbs if k.get("tier") == tier_filter]
             # active only

@@ -241,7 +241,11 @@ class TestAdminListKBs:
                 async with AsyncClient(transport=transport, base_url="http://test") as ac:
                     resp = await ac.get("/api/v1/admin/kb", params={"status": "archived"})
                     assert resp.status_code == 200
-                    registry.list_by_status.assert_called_once_with("archived")
+                    # Day 3: dependency injection auto-fills organization_id
+                    # from get_current_org → AUTH_ENABLED=false routes to default-org.
+                    registry.list_by_status.assert_called_once_with(
+                        "archived", organization_id="default-org",
+                    )
 
             asyncio.run(_run())
 
@@ -261,7 +265,9 @@ class TestAdminListKBs:
                 async with AsyncClient(transport=transport, base_url="http://test") as ac:
                     resp = await ac.get("/api/v1/admin/kb", params={"tier": "team"})
                     assert resp.status_code == 200
-                    registry.list_by_tier.assert_called_once_with("team")
+                    registry.list_by_tier.assert_called_once_with(
+                        "team", organization_id="default-org",
+                    )
 
             asyncio.run(_run())
 

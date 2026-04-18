@@ -595,6 +595,8 @@ class TestAdminKbAggregation:
     def test_empty_state(self):
         from src.api.routes.kb import admin_kb_aggregation
 
+        from src.auth.dependencies import OrgContext
+
         state = _mock_state(
             kb_registry=None,
             qdrant_collections=None,
@@ -607,7 +609,9 @@ class TestAdminKbAggregation:
                 return_value="http://q:6333",
             ),
         ):
-            result = _run(admin_kb_aggregation())
+            result = _run(admin_kb_aggregation(
+                org=OrgContext(id="default-org", user_role_in_org="OWNER"),
+            ))
         assert result["total_kbs"] == 0
         assert result["total_chunks"] == 0
         assert result["avg_quality_score"] == 0.0
@@ -652,6 +656,10 @@ class TestClearSearchCache:
 # admin_get_kb
 # ---------------------------------------------------------------------------
 class TestAdminGetKb:
+    def _org(self):
+        from src.auth.dependencies import OrgContext
+        return OrgContext(id="default-org", user_role_in_org="OWNER")
+
     def test_from_registry(self):
         from src.api.routes.kb import admin_get_kb
 
@@ -661,11 +669,15 @@ class TestAdminGetKb:
         )
         state = _mock_state(kb_registry=reg, qdrant_store=None)
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_get_kb("kb1"))
+            result = _run(admin_get_kb("kb1", org=self._org()))
         assert result["name"] == "Test"
 
-    def test_registry_returns_none_fallback(self):
+    def test_registry_returns_none_404(self):
+        """B-0 Day 3: registry returning None for the caller's org now means
+        404 (not Qdrant fallback) — existence of foreign KBs is not leaked.
+        """
         from src.api.routes.kb import admin_get_kb
+        from fastapi import HTTPException
 
         reg = AsyncMock()
         reg.get_kb = AsyncMock(return_value=None)
@@ -673,9 +685,9 @@ class TestAdminGetKb:
         store.count = AsyncMock(return_value=99)
         state = _mock_state(kb_registry=reg, qdrant_store=store)
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_get_kb("missing"))
-        assert result["kb_id"] == "missing"
-        assert result["chunk_count"] == 99
+            with pytest.raises(HTTPException) as exc_info:
+                _run(admin_get_kb("missing", org=self._org()))
+        assert exc_info.value.status_code == 404
 
     def test_registry_exception_fallback(self):
         from src.api.routes.kb import admin_get_kb
@@ -684,7 +696,7 @@ class TestAdminGetKb:
         reg.get_kb = AsyncMock(side_effect=RuntimeError("db err"))
         state = _mock_state(kb_registry=reg, qdrant_store=None)
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_get_kb("broken"))
+            result = _run(admin_get_kb("broken", org=self._org()))
         assert result["kb_id"] == "broken"
         assert result["chunk_count"] == 0
 
@@ -693,21 +705,24 @@ class TestAdminGetKb:
 
         state = _mock_state(kb_registry=None, qdrant_store=None)
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_get_kb("kb2"))
+            result = _run(admin_get_kb("kb2", org=self._org()))
         assert result["kb_id"] == "kb2"
         assert result["chunk_count"] == 0
         assert result["status"] == "active"
 
     def test_store_count_error_fallback(self):
+        """When registry is unavailable (raises), Qdrant fallback runs even if
+        store.count fails. Registry-returns-None vs raises is the difference
+        between 404 (foreign tenant) and graceful fallback (registry down)."""
         from src.api.routes.kb import admin_get_kb
 
         reg = AsyncMock()
-        reg.get_kb = AsyncMock(return_value=None)
+        reg.get_kb = AsyncMock(side_effect=RuntimeError("db err"))
         store = AsyncMock()
         store.count = AsyncMock(side_effect=RuntimeError("timeout"))
         state = _mock_state(kb_registry=reg, qdrant_store=store)
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_get_kb("kb3"))
+            result = _run(admin_get_kb("kb3", org=self._org()))
         assert result["chunk_count"] == 0
 
 
@@ -1189,6 +1204,14 @@ class TestStaticEndpoints:
 # ---------------------------------------------------------------------------
 # admin_list_kbs (admin route delegates to _list_kbs_impl)
 # ---------------------------------------------------------------------------
+# Direct route-handler tests bypass FastAPI's dependency injection, so an
+# explicit OrgContext stand-in is supplied wherever Depends(get_current_org)
+# would otherwise arrive at runtime.
+def _org(org_id: str = "default-org") -> "OrgContext":
+    from src.auth.dependencies import OrgContext
+    return OrgContext(id=org_id, user_role_in_org="OWNER")
+
+
 class TestAdminListKbs:
     def test_delegates_with_params(self):
         from src.api.routes.kb import admin_list_kbs
@@ -1197,7 +1220,7 @@ class TestAdminListKbs:
             kb_registry=None, qdrant_store=None, qdrant_collections=None
         )
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_list_kbs(tier="dept", status=None))
+            result = _run(admin_list_kbs(tier="dept", status=None, org=_org()))
         assert result == {"kbs": []}
 
     def test_delegates_with_status(self):
@@ -1211,7 +1234,7 @@ class TestAdminListKbs:
             kb_registry=reg, qdrant_store=None, qdrant_collections=None
         )
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(admin_list_kbs(tier=None, status="active"))
+            result = _run(admin_list_kbs(tier=None, status="active", org=_org()))
         assert len(result["kbs"]) == 1
 
 
@@ -1226,5 +1249,5 @@ class TestListKbs:
             kb_registry=None, qdrant_store=None, qdrant_collections=None
         )
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(list_kbs())
+            result = _run(list_kbs(org=_org()))
         assert result == {"kbs": []}

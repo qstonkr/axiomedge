@@ -64,14 +64,22 @@ async def _resolve_collections_from_qdrant(state: dict[str, Any]) -> list[str]:
 
 async def _filter_by_kb_registry(
     collections: list[str], state: dict[str, Any],
+    organization_id: str | None = None,
 ) -> list[str]:
-    """Filter collections by KB registry active status (cached)."""
+    """Filter collections by KB registry active status (cached).
+
+    ``organization_id`` narrows the active-KB set to the caller's tenant so
+    cross-tenant collection names in the Qdrant listing are dropped even if
+    they leaked in.
+    """
     from src.api.routes.search_helpers import get_active_kb_ids
     kb_registry = state.get("kb_registry")
     if not kb_registry or collections == ["knowledge"]:
         return collections
     try:
-        active_kb_ids = await get_active_kb_ids(kb_registry)
+        active_kb_ids = await get_active_kb_ids(
+            kb_registry, organization_id=organization_id,
+        )
         filtered = [c for c in collections if c in active_kb_ids]
         return filtered if filtered else collections
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
@@ -82,8 +90,13 @@ async def _filter_by_kb_registry(
 async def _step_resolve_collections(
     request: Any,
     state: dict[str, Any],
+    organization_id: str | None = None,
 ) -> list[str]:
-    """Step 1: Resolve KB collections from request params."""
+    """Step 1: Resolve KB collections from request params.
+
+    ``organization_id`` is forwarded to the KB-registry filter so the search
+    pipeline only ever sees collections that belong to the caller's tenant.
+    """
     collections = request.kb_ids or []
     if not collections and request.kb_filter and request.kb_filter.kb_ids:
         collections = request.kb_filter.kb_ids
@@ -99,7 +112,9 @@ async def _step_resolve_collections(
     if not collections:
         collections = await _resolve_collections_from_qdrant(state)
 
-    collections = await _filter_by_kb_registry(collections, state)
+    collections = await _filter_by_kb_registry(
+        collections, state, organization_id=organization_id,
+    )
     return collections
 
 

@@ -8,10 +8,11 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
+from src.auth.dependencies import OrgContext, get_current_org
 from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
@@ -74,16 +75,22 @@ async def _enrich_kb_counts(kbs: list[dict], store) -> None:
 
 
 async def _list_kbs_from_registry(
-    kb_registry, store, *, tier: str | None, status: str | None
+    kb_registry, store, *, tier: str | None, status: str | None,
+    organization_id: str | None = None,
 ) -> dict | None:
-    """Try listing KBs from registry. Returns None on failure."""
+    """Try listing KBs from registry. Returns None on failure.
+
+    ``organization_id`` scopes the query to one tenant; pass None only from
+    system code (background sync, health checks) that legitimately needs a
+    cross-org view.
+    """
     try:
         if status:
-            kbs = await kb_registry.list_by_status(status)
+            kbs = await kb_registry.list_by_status(status, organization_id=organization_id)
         elif tier:
-            kbs = await kb_registry.list_by_tier(tier)
+            kbs = await kb_registry.list_by_tier(tier, organization_id=organization_id)
         else:
-            kbs = await kb_registry.list_all()
+            kbs = await kb_registry.list_all(organization_id=organization_id)
         await _enrich_kb_counts(kbs, store)
         return {"kbs": kbs}
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
@@ -115,18 +122,30 @@ async def _list_kbs_from_qdrant(collections, store) -> dict[str, Any]:
         return {"kbs": [], "error": str(e)}
 
 
-async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> dict[str, Any]:
-    """Shared implementation for listing KBs."""
+async def _list_kbs_impl(
+    tier: str | None = None, status: str | None = None,
+    organization_id: str | None = None,
+) -> dict[str, Any]:
+    """Shared implementation for listing KBs.
+
+    The Qdrant fallback path returns whatever collections exist on the cluster
+    — it is NOT org-scoped. Today that is fine because each KB lives in its
+    own collection and a cross-tenant client never gets the registry rows that
+    would tell it the right collection name; tightening this further (e.g.
+    payload-level org filter) is a separate hardening pass.
+    """
     state = _get_state()
     kb_registry = state.get("kb_registry")
     store = state.get("qdrant_store")
 
     if kb_registry:
-        result = await _list_kbs_from_registry(kb_registry, store, tier=tier, status=status)
+        result = await _list_kbs_from_registry(
+            kb_registry, store, tier=tier, status=status,
+            organization_id=organization_id,
+        )
         if result is not None:
             return result
 
-    # Fallback to Qdrant collections
     collections = state.get("qdrant_collections")
     if not collections:
         return {"kbs": []}
@@ -153,9 +172,11 @@ async def create_kb(request: KBCreateRequest) -> dict[str, Any]:
 
 
 @router.get("/list")
-async def list_kbs() -> dict[str, Any]:
-    """List all knowledge bases."""
-    return await _list_kbs_impl()
+async def list_kbs(
+    org: OrgContext = Depends(get_current_org),
+) -> dict[str, Any]:
+    """List knowledge bases the caller's organization can see."""
+    return await _list_kbs_impl(organization_id=org.id)
 
 
 @router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
@@ -187,9 +208,10 @@ async def delete_kb(kb_id: str) -> dict[str, Any]:
 async def admin_list_kbs(
     tier: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
+    org: OrgContext = Depends(get_current_org),
 ) -> dict[str, Any]:
-    """List KBs (admin)."""
-    return await _list_kbs_impl(tier=tier, status=status)
+    """List KBs (admin) — scoped to caller's organization."""
+    return await _list_kbs_impl(tier=tier, status=status, organization_id=org.id)
 
 
 # ---------------------------------------------------------------------------
@@ -214,12 +236,14 @@ async def admin_create_kb(body: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/kb/stats  (aggregation - MUST be before {kb_id})
 # ---------------------------------------------------------------------------
-async def _get_registry_counts(kb_registry: Any) -> tuple[int, int]:
-    """Get KB and document counts from registry. Returns (total_kbs, total_documents)."""
+async def _get_registry_counts(
+    kb_registry: Any, organization_id: str | None = None,
+) -> tuple[int, int]:
+    """Get KB and document counts from registry, scoped to one org if given."""
     if not kb_registry:
         return 0, 0
     try:
-        kbs = await kb_registry.list_all()
+        kbs = await kb_registry.list_all(organization_id=organization_id)
         return len(kbs), sum(kb.get("document_count", 0) for kb in kbs)
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Failed to get KB registry stats: %s", e)
@@ -279,13 +303,17 @@ async def _get_avg_quality_score(
 
 
 @admin_router.get("/stats")
-async def admin_kb_aggregation() -> dict[str, Any]:
-    """Get KB aggregation stats."""
+async def admin_kb_aggregation(
+    org: OrgContext = Depends(get_current_org),
+) -> dict[str, Any]:
+    """Get KB aggregation stats — scoped to caller's organization."""
     state = _get_state()
     collections = state.get("qdrant_collections")
     store = state.get("qdrant_store")
 
-    total_kbs, total_documents = await _get_registry_counts(state.get("kb_registry"))
+    total_kbs, total_documents = await _get_registry_counts(
+        state.get("kb_registry"), organization_id=org.id,
+    )
     total_chunks, total_kbs = await _get_qdrant_chunk_counts(collections, store, total_kbs)
     qdrant_url = state.get("qdrant_url", _default_qdrant_url())
     avg_quality_score = await _get_avg_quality_score(collections, store, qdrant_url)
@@ -328,19 +356,28 @@ async def clear_search_cache() -> dict[str, Any]:
 # GET /api/v1/admin/kb/{kb_id}
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}")
-async def admin_get_kb(kb_id: str) -> dict[str, Any]:
-    """Get single KB."""
+async def admin_get_kb(
+    kb_id: str,
+    org: OrgContext = Depends(get_current_org),
+) -> dict[str, Any]:
+    """Get single KB. Returns 404 when the KB belongs to another organization."""
     state = _get_state()
     kb_registry = state.get("kb_registry")
 
     if kb_registry:
         try:
-            kb = await kb_registry.get_kb(kb_id)
+            kb = await kb_registry.get_kb(kb_id, organization_id=org.id)
             if kb:
                 return kb
+            # Distinguishing "not found" from "wrong tenant" leaks existence;
+            # both surface as 404.
+            raise HTTPException(status_code=404, detail=f"KB '{kb_id}' not found")
+        except HTTPException:
+            raise
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("KB registry get failed: %s", e)
 
+    # Registry unavailable — opaque fallback (no org filter possible).
     store = state.get("qdrant_store")
     chunk_count = 0
     if store:

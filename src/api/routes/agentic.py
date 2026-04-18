@@ -12,11 +12,12 @@ import logging
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.agentic.agent import Agent
 from src.agentic.protocols import AgentTrace
+from src.auth.dependencies import OrgContext, get_current_org
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +77,17 @@ def _cache_trace(trace_id: str, trace_dict: dict[str, Any]) -> None:
 
 
 @router.post("/ask", response_model=AgenticAskResponse)
-async def agentic_ask(request: AgenticAskRequest) -> AgenticAskResponse:
+async def agentic_ask(
+    request: AgenticAskRequest,
+    org: OrgContext = Depends(get_current_org),
+) -> AgenticAskResponse:
     """Agentic RAG — plan → execute tools → reflect → (retry).
 
     기존 /search/hub 와 별도 — Korean planner + GraphRAG routing + Tiered planning +
     OCR re-search + Edge ↔ HQ LLM routing 5축 차별화 활용.
+
+    org context 는 agent state 에 ``organization_id`` 로 주입돼 모든
+    KB-touching tool (kb_list, qdrant_search 등) 에 자동 전파.
     """
     state = _get_state()
     if state is None:
@@ -88,7 +95,9 @@ async def agentic_ask(request: AgenticAskRequest) -> AgenticAskResponse:
 
     try:
         agent = Agent()  # env-driven LLM provider + default tool registry
-        trace = await agent.run(request.query, state=dict(state))
+        agent_state = dict(state)
+        agent_state["organization_id"] = org.id
+        trace = await agent.run(request.query, state=agent_state)
     except Exception as e:  # noqa: BLE001 — surface as 500 with detail
         logger.exception("Agentic ask failed")
         raise HTTPException(status_code=500, detail=f"agentic ask failed: {e}") from e

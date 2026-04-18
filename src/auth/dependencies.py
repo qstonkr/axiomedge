@@ -337,13 +337,20 @@ async def _check_abac_kb_access(
     return abac.evaluate(ctx).allowed
 
 
-async def _fetch_kb_info(state: AppState, kb_id: str) -> dict:
-    """Fetch KB info from registry, returning empty dict on failure."""
+async def _fetch_kb_info(
+    state: AppState, kb_id: str, organization_id: str | None = None,
+) -> dict:
+    """Fetch KB info from registry, returning empty dict on failure.
+
+    ``organization_id`` scopes the lookup so this helper cannot leak rows
+    from other tenants. Pass None only when the caller legitimately needs
+    a cross-org view (e.g. ABAC's data-classification-only policy).
+    """
     kb_registry = state.get("kb_registry")
     if not kb_registry:
         return {}
     try:
-        return await kb_registry.get_kb(kb_id) or {}
+        return await kb_registry.get_kb(kb_id, organization_id=organization_id) or {}
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.debug("Failed to fetch KB info for ABAC check: %s", e)
         return {}
@@ -356,6 +363,10 @@ def require_kb_access(min_level: str = "reader") -> Callable:
 
     The kb_id is extracted from path parameter.
 
+    **B-0 Day 3**: Before any role/level/ABAC check we verify the KB belongs
+    to the caller's active organization. Cross-tenant attempts are surfaced
+    as 404 (not 403) so the existence of foreign KBs is not leaked.
+
     Usage:
         @router.post("/kb/{kb_id}/ingest")
         async def ingest(kb_id: str, user: AuthUser = Depends(require_kb_access("contributor"))):
@@ -365,6 +376,7 @@ def require_kb_access(min_level: str = "reader") -> Callable:
     async def _check(
         request: Request,
         user: AuthUser = Depends(get_current_user),
+        org: OrgContext = Depends(get_current_org),
     ) -> AuthUser:
         if not AUTH_ENABLED:
             return user
@@ -376,6 +388,11 @@ def require_kb_access(min_level: str = "reader") -> Callable:
         state = _get_app_state(request)
         if not state:
             return user  # No state = allow (graceful degradation)
+
+        # Tenant gate: KB must exist within the caller's active org.
+        kb_info = await _fetch_kb_info(state, kb_id, organization_id=org.id)
+        if not kb_info:
+            raise HTTPException(status_code=404, detail=f"KB '{kb_id}' not found")
 
         if await _check_rbac_admin(state, user):
             return user

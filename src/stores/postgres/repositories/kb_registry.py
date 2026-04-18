@@ -117,33 +117,52 @@ class KBRegistryRepository:
                 await session.rollback()
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def get_kb(self, kb_id: str) -> dict[str, Any] | None:
-        """Get KB by ID."""
+    async def get_kb(
+        self, kb_id: str, organization_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Get KB by ID, optionally scoped to an organization.
+
+        ``organization_id`` is the multi-tenant gate (B-0 Day 3): when set,
+        rows from other orgs return None (the route maps that to a 404 so
+        the existence of foreign KBs is not leaked). System code (background
+        sync, health checks) may pass None to read across orgs — use sparingly.
+        """
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel).where(KBConfigModel.id == kb_id)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
                 result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
                 return self._model_to_dict(model) if model else None
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def get_kb_by_name(self, name: str) -> dict[str, Any] | None:
-        """Get KB by name."""
+    async def get_kb_by_name(
+        self, name: str, organization_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Get KB by name, optionally scoped to an organization."""
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel).where(KBConfigModel.name == name)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
                 result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
                 return self._model_to_dict(model) if model else None
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def update_kb(self, kb_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        """Update KB configuration."""
+    async def update_kb(
+        self, kb_id: str, data: dict[str, Any],
+        organization_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Update KB configuration, optionally scoped to an organization."""
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel).where(KBConfigModel.id == kb_id)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
                 result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
                 if not model:
@@ -161,11 +180,15 @@ class KBRegistryRepository:
                 await session.rollback()
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def delete_kb(self, kb_id: str) -> bool:
-        """Delete KB configuration."""
+    async def delete_kb(
+        self, kb_id: str, organization_id: str | None = None,
+    ) -> bool:
+        """Delete KB configuration, optionally scoped to an organization."""
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel).where(KBConfigModel.id == kb_id)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
                 result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
                 if not model:
@@ -179,13 +202,18 @@ class KBRegistryRepository:
                 await session.rollback()
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def list_all(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
-        """List all KB configurations."""
+    async def list_all(
+        self, limit: int = 100, offset: int = 0,
+        organization_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List KB configurations, optionally scoped to an organization."""
         async with await self._get_session() as session:
             try:
+                stmt = select(KBConfigModel)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
                 stmt = (
-                    select(KBConfigModel)
-                    .order_by(KBConfigModel.tier, KBConfigModel.name)
+                    stmt.order_by(KBConfigModel.tier, KBConfigModel.name)
                     .limit(limit)
                     .offset(offset)
                 )
@@ -195,32 +223,33 @@ class KBRegistryRepository:
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def list_by_tier(self, tier: str) -> list[dict[str, Any]]:
-        """List KB by tier."""
+    async def list_by_tier(
+        self, tier: str, organization_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List KB by tier, optionally scoped to an organization."""
         async with await self._get_session() as session:
             try:
-                stmt = (
-                    select(KBConfigModel)
-                    .where(KBConfigModel.tier == tier)
-                    .order_by(KBConfigModel.name)
-                    .limit(500)
-                )
+                stmt = select(KBConfigModel).where(KBConfigModel.tier == tier)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
+                stmt = stmt.order_by(KBConfigModel.name).limit(500)
                 result = await session.execute(stmt)
                 models = result.scalars().all()
                 return [self._model_to_dict(m) for m in models]
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def list_by_status(self, status: str, limit: int = 500) -> list[dict[str, Any]]:
-        """List KB by status."""
+    async def list_by_status(
+        self, status: str, limit: int = 500,
+        organization_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List KB by status, optionally scoped to an organization."""
         async with await self._get_session() as session:
             try:
-                stmt = (
-                    select(KBConfigModel)
-                    .where(KBConfigModel.status == status)
-                    .order_by(KBConfigModel.name)
-                    .limit(limit)
-                )
+                stmt = select(KBConfigModel).where(KBConfigModel.status == status)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
+                stmt = stmt.order_by(KBConfigModel.name).limit(limit)
                 result = await session.execute(stmt)
                 models = result.scalars().all()
                 return [self._model_to_dict(m) for m in models]
