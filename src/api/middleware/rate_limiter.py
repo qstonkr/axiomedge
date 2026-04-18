@@ -1,18 +1,28 @@
 """In-memory sliding window rate limiter middleware.
 
-Uses pure Starlette middleware (not BaseHTTPMiddleware) to avoid asyncio conflicts.
+Per-tenant scope (per-user or per-IP) supported.
+
 Configurable via environment variables:
-  - RATE_LIMIT_REQUESTS: max requests per window (default 100)
+  - RATE_LIMIT_REQUESTS: max requests per window per-key (default 100)
   - RATE_LIMIT_WINDOW_SECONDS: window size in seconds (default 60)
+  - RATE_LIMIT_SCOPE: "ip" (default) | "user" | "user_or_ip"
+      ip          — quota by client IP (current behavior)
+      user        — quota by authenticated user.sub (anonymous shares one bucket)
+      user_or_ip  — user.sub when authenticated, IP fallback (recommended for prod)
   - TRUST_PROXY_HEADERS: "true" to honor X-Forwarded-For / X-Real-IP / CF-Connecting-IP
-    (only enable when actually behind a trusted proxy — clients can otherwise spoof IPs)
+  - RATE_LIMIT_MAX_KEYS: cap distinct buckets to prevent memory exhaustion
+      (LRU eviction; default 50000)
+
+Production note: in-memory state is per-process. For multi-replica deployments
+without sticky sessions, use a Redis-backed limiter (planned follow-up).
+Per-instance limit acts as a safety floor in the meantime.
 """
 
 from __future__ import annotations
 
 import os
 import time
-from collections import defaultdict
+from collections import OrderedDict
 from threading import Lock
 
 from starlette.requests import Request
@@ -21,6 +31,8 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 # Paths exempt from rate limiting
 _EXEMPT_PATHS: frozenset[str] = frozenset({"/health", "/ready", "/metrics"})
+
+_VALID_SCOPES: frozenset[str] = frozenset({"ip", "user", "user_or_ip"})
 
 
 def _extract_client_ip(request: Request, trust_proxy: bool) -> str:
@@ -47,16 +59,35 @@ def _extract_client_ip(request: Request, trust_proxy: bool) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _compute_rate_key(request: Request, scope_mode: str, trust_proxy: bool) -> str:
+    """Compute the bucket key based on configured scope.
+
+    Returns a prefix-tagged string so different scopes can coexist:
+      "ip:1.2.3.4", "user:abc-123", etc.
+    """
+    if scope_mode in ("user", "user_or_ip"):
+        user = getattr(request.state, "auth_user", None)
+        sub = getattr(user, "sub", None) if user else None
+        if sub and sub != "anonymous":
+            return f"user:{sub}"
+        if scope_mode == "user":
+            return "user:anonymous"
+    return f"ip:{_extract_client_ip(request, trust_proxy)}"
+
+
 class RateLimiterMiddleware:
-    """Sliding window rate limiter implemented as raw ASGI middleware."""
+    """Per-tenant sliding window rate limiter (in-memory, single-process)."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
         self.max_requests = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
         self.window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
         self.trust_proxy = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true"
-        # client_ip -> list of request timestamps
-        self._requests: dict[str, list[float]] = defaultdict(list)
+        scope_mode = os.getenv("RATE_LIMIT_SCOPE", "ip").lower()
+        self.scope_mode = scope_mode if scope_mode in _VALID_SCOPES else "ip"
+        self.max_keys = int(os.getenv("RATE_LIMIT_MAX_KEYS", "50000"))
+        # OrderedDict for LRU bucket eviction (most-recently-used moved to end)
+        self._requests: OrderedDict[str, list[float]] = OrderedDict()
         self._lock = Lock()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -69,30 +100,32 @@ class RateLimiterMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Extract client IP (proxy-aware when TRUST_PROXY_HEADERS=true)
         request = Request(scope)
-        client_ip = _extract_client_ip(request, self.trust_proxy)
+        rate_key = _compute_rate_key(request, self.scope_mode, self.trust_proxy)
 
         now = time.monotonic()
         window_start = now - self.window_seconds
 
         with self._lock:
-            # Prune expired timestamps
-            timestamps = self._requests[client_ip]
-            self._requests[client_ip] = [t for t in timestamps if t > window_start]
-            timestamps = self._requests[client_ip]
+            # LRU eviction: cap distinct keys to bound memory
+            if rate_key in self._requests:
+                self._requests.move_to_end(rate_key)
+            elif len(self._requests) >= self.max_keys:
+                self._requests.popitem(last=False)
+            timestamps = self._requests.get(rate_key, [])
+            timestamps = [t for t in timestamps if t > window_start]
+            self._requests[rate_key] = timestamps
 
             if len(timestamps) >= self.max_requests:
-                # Calculate Retry-After from the oldest request in the window
                 oldest = timestamps[0]
-                retry_after = int(oldest - window_start) + 1
-                if retry_after < 1:
-                    retry_after = 1
-
+                retry_after = max(int(oldest - window_start) + 1, 1)
                 response = JSONResponse(
                     status_code=429,
                     content={"detail": "Too Many Requests"},
-                    headers={"Retry-After": str(retry_after)},
+                    headers={
+                        "Retry-After": str(retry_after),
+                        "X-RateLimit-Scope": self.scope_mode,
+                    },
                 )
                 await response(scope, receive, send)
                 return
