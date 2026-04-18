@@ -59,6 +59,18 @@ _LLM_PRICING_PER_1K: dict[str, tuple[float, float]] = {
     "ollama": (0.0, 0.0),
 }
 
+# Cache hit/miss by layer (l1, l2) — bounded cardinality
+_cache_hits: dict[str, int] = {}
+_cache_misses: dict[str, int] = {}
+
+# Per-KB request status — bounded by KB count (<100) × status set (success|client_error|server_error)
+_kb_request_count: dict[tuple[str, str], int] = {}
+
+# RAG pipeline stage duration — keyed by stage name (bounded ~12 stages)
+_rag_stage_duration_buckets: dict[tuple[str, float], int] = {}
+_rag_stage_duration_sum: dict[str, float] = {}
+_rag_stage_duration_count: dict[str, int] = {}
+
 # Gauge
 _active_connections: int = 0
 
@@ -102,6 +114,54 @@ def observe_search_duration(duration: float) -> None:
         for bucket in _DURATION_BUCKETS:
             if duration <= bucket:
                 _search_duration_buckets[bucket] += 1
+
+
+def observe_cache(layer: str, hit: bool) -> None:
+    """Record a cache lookup outcome. ``layer`` should be 'l1' or 'l2'."""
+    safe_layer = (layer or "unknown")[:16]
+    with _lock:
+        if hit:
+            _cache_hits[safe_layer] = _cache_hits.get(safe_layer, 0) + 1
+        else:
+            _cache_misses[safe_layer] = _cache_misses.get(safe_layer, 0) + 1
+
+
+def observe_kb_request(kb_id: str | None, status_code: int) -> None:
+    """Record a KB-scoped request outcome (for per-KB error rate dashboards).
+
+    Cardinality control:
+      - kb_id truncated to 64 chars
+      - status_code bucketed to {success | client_error | server_error}
+    """
+    safe_kb_id = (kb_id or "_unknown")[:64]
+    if status_code < 400:
+        bucket = "success"
+    elif status_code < 500:
+        bucket = "client_error"
+    else:
+        bucket = "server_error"
+    key = (safe_kb_id, bucket)
+    with _lock:
+        _kb_request_count[key] = _kb_request_count.get(key, 0) + 1
+
+
+def observe_rag_stage(stage: str, duration_seconds: float) -> None:
+    """Record duration of one RAG pipeline stage.
+
+    Stages should be a small bounded set (cache_check, preprocess, expand, classify,
+    embed, qdrant_search, cross_encoder_rerank, composite_rerank, graph_expand,
+    crag_evaluate, generate_answer). Truncated to 32 chars.
+    """
+    safe_stage = (stage or "unknown")[:32]
+    with _lock:
+        _rag_stage_duration_sum[safe_stage] = _rag_stage_duration_sum.get(safe_stage, 0.0) + duration_seconds
+        _rag_stage_duration_count[safe_stage] = _rag_stage_duration_count.get(safe_stage, 0) + 1
+        for bucket in _DURATION_BUCKETS:
+            bkey = (safe_stage, bucket)
+            if bkey not in _rag_stage_duration_buckets:
+                _rag_stage_duration_buckets[bkey] = 0
+            if duration_seconds <= bucket:
+                _rag_stage_duration_buckets[bkey] += 1
 
 
 def observe_llm_tokens(
@@ -251,6 +311,45 @@ def _render_prometheus() -> str:
             )
         lines.append(f"search_duration_seconds_sum {_search_duration_sum:.4f}")
         lines.append(f"search_duration_seconds_count {_search_duration_count}")
+
+        # -- Cache hit/miss by layer --
+        if _cache_hits or _cache_misses:
+            lines.append("# HELP cache_hits_total Cache hits by layer")
+            lines.append("# TYPE cache_hits_total counter")
+            for layer, val in sorted(_cache_hits.items()):
+                lines.append(f'cache_hits_total{{layer="{layer}"}} {val}')
+            lines.append("# HELP cache_misses_total Cache misses by layer")
+            lines.append("# TYPE cache_misses_total counter")
+            for layer, val in sorted(_cache_misses.items()):
+                lines.append(f'cache_misses_total{{layer="{layer}"}} {val}')
+
+        # -- Per-KB request count by status bucket (success / client_error / server_error) --
+        if _kb_request_count:
+            lines.append("# HELP kb_request_total Requests by KB and status bucket")
+            lines.append("# TYPE kb_request_total counter")
+            for (kb_id, bucket), val in sorted(_kb_request_count.items()):
+                lines.append(
+                    f'kb_request_total{{kb_id="{kb_id}",status="{bucket}"}} {val}'
+                )
+
+        # -- RAG stage latency histogram --
+        if _rag_stage_duration_count:
+            lines.append("# HELP rag_stage_duration_seconds RAG pipeline stage latency")
+            lines.append("# TYPE rag_stage_duration_seconds histogram")
+            for stage, total in sorted(_rag_stage_duration_count.items()):
+                for bucket in _DURATION_BUCKETS:
+                    le = "+Inf" if bucket == float("inf") else str(bucket)
+                    val = _rag_stage_duration_buckets.get((stage, bucket), 0)
+                    lines.append(
+                        f'rag_stage_duration_seconds_bucket{{stage="{stage}",le="{le}"}} {val}'
+                    )
+                lines.append(
+                    f'rag_stage_duration_seconds_sum{{stage="{stage}"}} '
+                    f"{_rag_stage_duration_sum.get(stage, 0.0):.4f}"
+                )
+                lines.append(
+                    f'rag_stage_duration_seconds_count{{stage="{stage}"}} {total}'
+                )
 
         # -- LLM token usage by (kb_id, model) --
         if _llm_prompt_tokens:

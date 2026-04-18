@@ -128,6 +128,7 @@ async def _check_multi_layer_cache(
     start: float,
 ) -> Any | None:
     """Try multi-layer cache lookup."""
+    from src.api.routes.metrics import observe_cache
     try:
         from src.stores.redis.cache_types import CacheDomain
         cache_entry = await multi_cache.get(
@@ -138,14 +139,17 @@ async def _check_multi_layer_cache(
             cache_version=expected_version,
         )
         if not (cache_entry and cache_entry.response):
+            observe_cache("multi_layer", hit=False)
             return None
         cached = cache_entry.response
         if isinstance(cached, dict) and _is_valid_cache(
             cached, expected_version,
         ):
+            observe_cache("multi_layer", hit=True)
             return _try_deserialize_cache(
                 cached, start, "multi_layer",
             )
+        observe_cache("multi_layer", hit=False)
     except (
         RuntimeError, OSError, ValueError, TypeError,
         KeyError, AttributeError,
@@ -163,6 +167,7 @@ async def _check_legacy_cache(
     start: float,
 ) -> Any | None:
     """Try legacy search cache lookup."""
+    from src.api.routes.metrics import observe_cache
     try:
         cached = await search_cache.get(
             query, cache_collections, top_k,
@@ -172,7 +177,9 @@ async def _check_legacy_cache(
             and isinstance(cached, dict)
             and _is_valid_cache(cached, expected_version)
         ):
+            observe_cache("legacy", hit=True)
             return _try_deserialize_cache(cached, start, "")
+        observe_cache("legacy", hit=False)
     except (
         RuntimeError, OSError, ValueError, TypeError,
         KeyError, AttributeError,

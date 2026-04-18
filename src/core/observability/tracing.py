@@ -10,9 +10,14 @@ Env vars:
   - OTEL_TRACES_SAMPLER_ARG: ratio when sampler=traceidratio (e.g., "0.1")
 
 Usage in code:
-    from src.core.observability.tracing import tracer
+    from src.core.observability.tracing import tracer, trace_rag_stage
 
+    # Plain span (only for ad-hoc instrumentation):
     with tracer.start_as_current_span("rag.embed", attributes={"kb_id": kb_id}):
+        ...
+
+    # RAG stage — trace + Prometheus histogram in one call (preferred):
+    with trace_rag_stage("embed", kb_id=kb_id):
         ...
 
 Tracer is always usable; when OTel disabled, span is no-op (zero overhead).
@@ -22,7 +27,9 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+import time
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from opentelemetry import trace
 
@@ -31,6 +38,28 @@ logger = logging.getLogger(__name__)
 
 # Module-level tracer — usable from anywhere. Becomes no-op when SDK not initialized.
 tracer = trace.get_tracer("axiomedge")
+
+
+@contextmanager
+def trace_rag_stage(stage: str, **attributes: Any) -> Iterator[None]:
+    """Wrap a RAG pipeline stage with both an OTel span AND a Prometheus histogram.
+
+    Use this instead of bare ``tracer.start_as_current_span`` for RAG stages so
+    latency p95/p99 shows up in Prometheus too (Grafana alerting friendly).
+
+    Stage names are bounded set: cache_check, preprocess, expand, classify, embed,
+    qdrant_search, cross_encoder_rerank, composite_rerank, graph_expand,
+    crag_evaluate, generate_answer.
+    """
+    # Local import to avoid circular dependency at module load time
+    from src.api.routes.metrics import observe_rag_stage
+
+    started = time.perf_counter()
+    with tracer.start_as_current_span(f"rag.{stage}", attributes=attributes):
+        try:
+            yield
+        finally:
+            observe_rag_stage(stage, time.perf_counter() - started)
 
 
 _initialized = False

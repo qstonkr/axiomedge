@@ -124,7 +124,7 @@ from src.api.routes._search_steps import (  # noqa: E402
 @router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})  # noqa: E501
 async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
     """Hub Search - unified knowledge search with full pipeline."""
-    from src.core.observability.tracing import tracer
+    from src.core.observability.tracing import trace_rag_stage
 
     state = _get_state()
     search_engine = state.get("qdrant_search")
@@ -142,7 +142,7 @@ async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
     if not cache_collections:
         cache_collections = ["knowledge"]
 
-    with tracer.start_as_current_span("rag.cache_check"):
+    with trace_rag_stage("cache_check"):
         cached = await _step_cache_check(query, state, cache_collections, request.top_k, start)
     if cached:
         return cached
@@ -152,31 +152,28 @@ async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
     collections = await _step_resolve_collections(request, state)
 
     # 2. Preprocess query
-    with tracer.start_as_current_span("rag.preprocess"):
+    with trace_rag_stage("preprocess"):
         corrected_query, preprocess_info = _step_preprocess(query, state)
 
     # 2b. Query expansion
-    with tracer.start_as_current_span("rag.expand"):
+    with trace_rag_stage("expand"):
         search_query, display_query, expanded_terms = await _step_expand_query(
             corrected_query, collections, state,
         )
 
     # 2.5. Query classification
-    with tracer.start_as_current_span("rag.classify"):
+    with trace_rag_stage("classify"):
         effective_top_k, _dense_w, _sparse_w = _step_classify_query(
             display_query, request.top_k, state,
         )
 
     # 3. Embed query
-    with tracer.start_as_current_span("rag.embed"):
+    with trace_rag_stage("embed"):
         dense_vector, sparse_vector, colbert_vectors = await _step_embed(search_query, state)
 
     # 4. Search collections
     _qdrant_top_k = effective_top_k * weights.search.rerank_pool_multiplier
-    with tracer.start_as_current_span(
-        "rag.qdrant_search",
-        attributes={"collections.count": len(collections), "top_k": _qdrant_top_k},
-    ):
+    with trace_rag_stage("qdrant_search", **{"collections.count": len(collections), "top_k": _qdrant_top_k}):
         all_chunks, searched_kbs = await _step_search_collections(
             search_engine, collections, dense_vector, sparse_vector,
             colbert_vectors, _qdrant_top_k, request.document_filter,
@@ -194,7 +191,7 @@ async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
 
     # 4.5-4.6. Passage cleaning + cross-encoder reranking
     all_chunks = clean_chunks(all_chunks)
-    with tracer.start_as_current_span("rag.cross_encoder_rerank"):
+    with trace_rag_stage("cross_encoder_rerank"):
         try:
             all_chunks = await async_rerank_with_cross_encoder(
                 query=search_query, chunks=all_chunks,
@@ -204,7 +201,7 @@ async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
             logger.warning("Cross-encoder reranking skipped: %s", ce_err)
 
     # 5. Composite reranking + week-match guarantee
-    with tracer.start_as_current_span("rag.composite_rerank"):
+    with trace_rag_stage("composite_rerank"):
         all_chunks, rerank_applied, search_chunks = _step_composite_rerank(
             search_query, all_chunks, effective_top_k, state,
         )
@@ -220,15 +217,15 @@ async def hub_search(request: HubSearchRequest) -> HubSearchResponse:
     all_chunks = _step_apply_trust_and_freshness(all_chunks, state)
 
     # 6. Graph expansion
-    with tracer.start_as_current_span("rag.graph_expand"):
+    with trace_rag_stage("graph_expand"):
         all_chunks = await _step_graph_expand(
             display_query, all_chunks, collections, state, _qdrant_url,
         )
 
     # 7-9. CRAG + answer + guard + conflicts + follow-ups + transparency
-    with tracer.start_as_current_span("rag.crag_evaluate"):
+    with trace_rag_stage("crag_evaluate"):
         crag_evaluation = await _step_crag_evaluate(display_query, all_chunks, start, state)
-    with tracer.start_as_current_span("rag.generate_answer"):
+    with trace_rag_stage("generate_answer"):
         answer, query_type, confidence = await _step_generate_answer(
             display_query, all_chunks, crag_evaluation, request.include_answer, state,
         )
