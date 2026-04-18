@@ -94,6 +94,32 @@ class TestJWTService:
         assert pair.access_token != pair.refresh_token
         assert pair.token_type == "Bearer"
 
+    def test_create_token_pair_embeds_active_org_id(self) -> None:
+        """active_org_id should land in both access and refresh claims (B-0)."""
+        pair = self.service.create_token_pair(
+            user_id="user-abc",
+            email="abc@test",
+            roles=["MEMBER"],
+            permissions=["kb:read"],
+            active_org_id="org-99",
+        )
+        access = self.service.verify_access_token(pair.access_token)
+        refresh = self.service.decode_refresh_token(pair.refresh_token)
+        assert access["active_org_id"] == "org-99"
+        assert refresh["active_org_id"] == "org-99"
+
+    def test_create_token_pair_active_org_id_defaults_to_none(self) -> None:
+        """When no org context, claim is present as None (not missing)."""
+        pair = self.service.create_token_pair(
+            user_id="user-noorg",
+            email="noorg@test",
+            roles=["MEMBER"],
+            permissions=[],
+        )
+        access = self.service.verify_access_token(pair.access_token)
+        assert "active_org_id" in access
+        assert access["active_org_id"] is None
+
     def test_verify_access_token(self) -> None:
         """Access token should decode with correct claims."""
         pair = self.service.create_token_pair(

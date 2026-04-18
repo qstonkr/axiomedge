@@ -25,7 +25,12 @@ class AuthUser:
     roles: list[str] = field(default_factory=list)
     groups: list[str] = field(default_factory=list)
     department: str | None = None
+    # Default/home organization per IdP claim. May be different from active_org_id
+    # when a user belongs to multiple orgs (consultants, switching contexts).
     organization_id: str | None = None
+    # Currently selected organization for this token's session — set by JWT claim.
+    # All multi-tenant scoping should use this, not organization_id.
+    active_org_id: str | None = None
     raw_claims: dict[str, Any] = field(default_factory=dict)
 
 
@@ -281,6 +286,7 @@ class InternalAuthProvider(AuthProviderBase):
             display_name=claims.get("display_name", claims.get("email", "")),
             provider="internal",
             roles=claims.get("roles", []),
+            active_org_id=claims.get("active_org_id"),
             raw_claims=claims,
         )
 

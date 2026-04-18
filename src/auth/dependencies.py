@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request
@@ -36,14 +37,31 @@ logger = logging.getLogger(__name__)
 # Auth can be disabled for development
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
 
+# Anonymous org used when AUTH_ENABLED=false (dev). Matches the organizations.id
+# row seeded by migration 0003_rbac_b0 so org-scoped queries don't 404.
+ANONYMOUS_ORG_ID = "default-org"
+
 # Anonymous user for when auth is disabled
 _ANONYMOUS_USER = AuthUser(
     sub="anonymous",
     email="anonymous@local",
     display_name="Anonymous",
     provider="local",
-    roles=["admin"],  # Full access when auth is off
+    roles=["OWNER", "admin"],  # Full access when auth is off (canonical + legacy)
+    active_org_id=ANONYMOUS_ORG_ID,
 )
+
+
+@dataclass(frozen=True)
+class OrgContext:
+    """Resolved organization context for the current request.
+
+    Returned by ``get_current_org``. Carries just enough info that handlers
+    don't need to hit the DB again for tenant scoping decisions.
+    """
+
+    id: str
+    user_role_in_org: str  # "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" or legacy alias
 
 
 def _get_app_state(request: Request) -> Any:
@@ -115,6 +133,59 @@ async def get_optional_user(request: Request) -> AuthUser | None:
         return await get_current_user(request)
     except HTTPException:
         return None
+
+
+async def get_current_org(
+    request: Request,
+    user: AuthUser = Depends(get_current_user),
+) -> OrgContext:
+    """Resolve the active organization for this request.
+
+    Resolution priority:
+      1. ``X-Organization-Id`` header (org switcher) — must be a member.
+      2. ``user.active_org_id`` from the JWT — must be a current member.
+      3. Single-membership auto-resolution.
+      4. 403 — caller must select an org via /auth/switch-org.
+
+    When ``AUTH_ENABLED=false`` the dev anonymous org is returned without DB
+    lookup so local Streamlit + tests keep working.
+    """
+    if not AUTH_ENABLED:
+        return OrgContext(id=ANONYMOUS_ORG_ID, user_role_in_org="OWNER")
+
+    state = _get_app_state(request)
+    if not state:
+        raise HTTPException(status_code=503, detail="Application state not initialized")
+
+    auth_service = state.get("auth_service")
+    if not auth_service:
+        raise HTTPException(status_code=503, detail="Auth service not initialized")
+
+    requested = request.headers.get("X-Organization-Id") or user.active_org_id
+    org_id = await auth_service.resolve_active_org_id(user.sub, requested)
+
+    if not org_id:
+        memberships = await auth_service.list_user_memberships(user.sub)
+        if not memberships:
+            raise HTTPException(
+                status_code=403,
+                detail="User has no active organization membership",
+            )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Multiple organizations available — supply X-Organization-Id header "
+                "or call /auth/switch-org to select one."
+            ),
+        )
+
+    role_in_org = "MEMBER"
+    for m in await auth_service.list_user_memberships(user.sub):
+        if m["organization_id"] == org_id:
+            role_in_org = m.get("role") or "MEMBER"
+            break
+
+    return OrgContext(id=org_id, user_role_in_org=role_in_org)
 
 
 async def _check_rbac_roles(

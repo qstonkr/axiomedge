@@ -61,8 +61,14 @@ class JWTService:
         family_id: str | None = None,
         rotation_count: int = 0,
         display_name: str = "",
+        active_org_id: str | None = None,
     ) -> TokenPair:
-        """Create access + refresh tokens."""
+        """Create access + refresh tokens.
+
+        ``active_org_id`` — the organization this token's session is scoped to.
+        Embedded in the access token so every request is tenant-aware without
+        a DB lookup. Refresh tokens carry it too so rotation preserves scope.
+        """
         now = datetime.now(timezone.utc)
         access_jti = str(uuid.uuid4())
         refresh_jti = str(uuid.uuid4())
@@ -74,6 +80,7 @@ class JWTService:
             "display_name": display_name or email,
             "roles": roles,
             "permissions": permissions,
+            "active_org_id": active_org_id,
             "jti": access_jti,
             "iss": self._issuer,
             "iat": now,
@@ -86,6 +93,7 @@ class JWTService:
             "jti": refresh_jti,
             "family_id": family_id,
             "rotation_count": rotation_count,
+            "active_org_id": active_org_id,
             "iss": self._issuer,
             "iat": now,
             "exp": now + self._refresh_expire,

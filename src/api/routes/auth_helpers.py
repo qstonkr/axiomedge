@@ -114,14 +114,21 @@ async def build_login_tokens(
     user: dict[str, Any],
     ip_address: str | None,
     user_agent: str,
+    requested_org_id: str | None = None,
 ) -> dict[str, Any]:
     """Build JWT token pair and store refresh token for login.
 
-    Returns dict with token_pair, role_names, and permissions.
+    Returns dict with token_pair, role_names, permissions, and active_org_id.
+
+    ``requested_org_id`` lets the caller (login endpoint) pre-select an org
+    when the user is multi-tenant. None falls back to single-membership
+    auto-resolution.
     """
     roles_list = await auth_service.get_user_roles(user["id"])
     role_names = [r["role"] for r in roles_list]
     permissions = sorted(rbac.get_effective_permissions(roles_list)) if rbac else []
+
+    active_org_id = await auth_service.resolve_active_org_id(user["id"], requested_org_id)
 
     token_pair = jwt_service.create_token_pair(
         user_id=user["id"],
@@ -129,6 +136,7 @@ async def build_login_tokens(
         roles=role_names,
         permissions=permissions,
         display_name=user.get("display_name", ""),
+        active_org_id=active_org_id,
     )
 
     if token_store:
@@ -148,6 +156,7 @@ async def build_login_tokens(
         "token_pair": token_pair,
         "role_names": role_names,
         "permissions": permissions,
+        "active_org_id": active_org_id,
     }
 
 
@@ -171,6 +180,12 @@ async def rotate_refresh_token(
     email = user_info.get("email", "") if user_info else ""
     display_name = user_info.get("display_name", "") if user_info else ""
 
+    # Preserve session's org scope across refresh — fall back to single-membership
+    # auto-resolution if the old token was issued before active_org_id existed.
+    active_org_id = claims.get("active_org_id")
+    if active_org_id is None and auth_service is not None:
+        active_org_id = await auth_service.resolve_active_org_id(user_id)
+
     new_pair = jwt_service.create_token_pair(
         user_id=user_id,
         email=email,
@@ -179,6 +194,7 @@ async def rotate_refresh_token(
         family_id=claims["family_id"],
         rotation_count=claims.get("rotation_count", 0) + 1,
         display_name=display_name,
+        active_org_id=active_org_id,
     )
 
     if token_store:

@@ -116,6 +116,7 @@ class RoleModel(KnowledgeBase):
     description = Column(Text, nullable=True)
     weight = Column(Integer, nullable=False, default=0)  # Higher = more authority
     is_system = Column(Boolean, nullable=False, default=False)  # Cannot be deleted
+    is_legacy = Column(Boolean, nullable=False, default=False)  # Deprecated v1 role
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from src.auth.rbac import AccessDecision, DEFAULT_ROLES, RBACEngine
+from src.auth.rbac import (
+    CANONICAL_ROLES,
+    DEFAULT_ROLES,
+    LEGACY_ROLES,
+    LEGACY_TO_CANONICAL,
+    AccessDecision,
+    RBACEngine,
+)
 
 
 class TestAccessDecision:
@@ -328,8 +335,8 @@ class TestDefaultRolesIntegrity:
             assert "weight" in role_def, f"{name} missing weight"
             assert "permissions" in role_def, f"{name} missing permissions"
 
-    def test_role_weights_are_ordered(self) -> None:
-        """Weights should increase: viewer < contributor < editor < kb_manager < admin."""
+    def test_legacy_role_weights_are_ordered(self) -> None:
+        """Legacy weights should increase: viewer < contributor < editor < kb_manager < admin."""
         ordered = ["viewer", "contributor", "editor", "kb_manager", "admin"]
         for i in range(len(ordered) - 1):
             w1 = DEFAULT_ROLES[ordered[i]]["weight"]
@@ -341,7 +348,130 @@ class TestDefaultRolesIntegrity:
         assert "*:*" in DEFAULT_ROLES["admin"]["permissions"]
 
     def test_permission_format(self) -> None:
-        """All permissions should be 'resource:action' or '*:*'."""
+        """All permissions should be 'resource:action' or '*:*' or three-segment 'resource:sub:action'."""
         for name, role_def in DEFAULT_ROLES.items():
             for perm in role_def["permissions"]:
                 assert ":" in perm, f"Invalid permission format '{perm}' in role '{name}'"
+
+
+# =============================================================================
+# B-0: Canonical OWNER/ADMIN/MEMBER/VIEWER role coverage
+# =============================================================================
+
+
+class TestCanonicalRoleStructure:
+    """Verify canonical role set is complete and well-formed."""
+
+    def test_canonical_set_has_four_roles(self) -> None:
+        assert set(CANONICAL_ROLES.keys()) == {"OWNER", "ADMIN", "MEMBER", "VIEWER"}
+
+    def test_canonical_weights_strictly_descend(self) -> None:
+        ordered = ["OWNER", "ADMIN", "MEMBER", "VIEWER"]
+        weights = [CANONICAL_ROLES[r]["weight"] for r in ordered]
+        assert weights == sorted(weights, reverse=True), weights
+
+    def test_canonical_outranks_legacy(self) -> None:
+        """Even VIEWER outranks all legacy roles by weight to enforce canonical priority."""
+        legacy_max = max(r["weight"] for r in LEGACY_ROLES.values())
+        canonical_min = min(r["weight"] for r in CANONICAL_ROLES.values())
+        assert canonical_min > legacy_max
+
+    def test_all_canonical_marked_non_legacy(self) -> None:
+        for name, role_def in CANONICAL_ROLES.items():
+            assert role_def.get("is_legacy") is False, f"{name} must not be flagged legacy"
+
+    def test_all_legacy_marked_legacy(self) -> None:
+        for name, role_def in LEGACY_ROLES.items():
+            assert role_def.get("is_legacy") is True, f"{name} must be flagged legacy"
+
+    def test_legacy_to_canonical_covers_all_legacy(self) -> None:
+        assert set(LEGACY_TO_CANONICAL.keys()) == set(LEGACY_ROLES.keys())
+
+    def test_legacy_targets_are_canonical(self) -> None:
+        for legacy, canonical in LEGACY_TO_CANONICAL.items():
+            assert canonical in CANONICAL_ROLES, f"{legacy}→{canonical} maps to non-canonical"
+
+
+class TestCanonicalRolePermissions:
+    """Permission matrix expectations from docs/RBAC.md (B-0 Day 5 source)."""
+
+    def setup_method(self) -> None:
+        self.engine = RBACEngine()
+
+    @pytest.mark.parametrize("resource,action", [
+        ("org", "manage"),
+        ("kb", "create"),
+        ("kb", "delete"),
+        ("kb", "read"),
+        ("data_source", "manage"),
+        ("audit_log", "read"),
+    ])
+    def test_owner_has_everything(self, resource: str, action: str) -> None:
+        result = self.engine.check_permission([{"role": "OWNER"}], resource, action)
+        assert result.allowed is True
+
+    def test_admin_can_manage_kb_lifecycle(self) -> None:
+        for action in ("create", "delete", "read", "write"):
+            assert self.engine.check_permission(
+                [{"role": "ADMIN"}], "kb", action,
+            ).allowed is True
+
+    def test_admin_cannot_manage_org_billing(self) -> None:
+        """ADMIN excludes the org:manage scope (OWNER-only)."""
+        assert self.engine.check_permission(
+            [{"role": "ADMIN"}], "org", "manage",
+        ).allowed is False
+
+    def test_admin_can_manage_org_users(self) -> None:
+        decision = self.engine.check_permission(
+            [{"role": "ADMIN"}], "org:user", "manage",
+        )
+        assert decision.allowed is True
+
+    def test_member_can_read_and_write_documents(self) -> None:
+        for action in ("read", "write", "search"):
+            assert self.engine.check_permission(
+                [{"role": "MEMBER"}], "document", action,
+            ).allowed is True
+
+    def test_member_cannot_create_or_delete_kb(self) -> None:
+        assert self.engine.check_permission(
+            [{"role": "MEMBER"}], "kb", "create",
+        ).allowed is False
+        assert self.engine.check_permission(
+            [{"role": "MEMBER"}], "kb", "delete",
+        ).allowed is False
+
+    def test_member_cannot_manage_data_sources(self) -> None:
+        assert self.engine.check_permission(
+            [{"role": "MEMBER"}], "data_source", "manage",
+        ).allowed is False
+
+    def test_viewer_read_only(self) -> None:
+        for resource, action in (
+            ("kb", "read"),
+            ("document", "read"),
+            ("glossary", "read"),
+            ("agentic", "ask"),
+        ):
+            assert self.engine.check_permission(
+                [{"role": "VIEWER"}], resource, action,
+            ).allowed is True, f"VIEWER must allow {resource}:{action}"
+
+    @pytest.mark.parametrize("resource,action", [
+        ("document", "write"),
+        ("glossary", "write"),
+        ("kb", "write"),
+        ("quality", "write"),
+        ("data_source", "manage"),
+    ])
+    def test_viewer_denies_writes(self, resource: str, action: str) -> None:
+        assert self.engine.check_permission(
+            [{"role": "VIEWER"}], resource, action,
+        ).allowed is False
+
+    def test_canonical_outranks_legacy_in_get_highest_role(self) -> None:
+        """A user with both legacy admin + canonical VIEWER should report VIEWER (higher weight)."""
+        # NOTE: get_highest_role returns the highest-WEIGHT role; canonical weights are higher.
+        roles = [{"role": "admin"}, {"role": "VIEWER"}]
+        assert self.engine.get_highest_role(roles) == "VIEWER"

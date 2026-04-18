@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from src.auth.activity_logger import ActivityLogger
 from src.auth.authenticator import Authenticator
+from src.auth.org_service import DEFAULT_ORG_ID, OrgService
 from src.auth.providers import AuthUser
 from src.auth.role_service import RoleService
 from src.auth.user_crud import UserCRUD
@@ -38,6 +39,7 @@ class AuthService:
         self._users = UserCRUD(self._session_factory)
         self._auth = Authenticator(self._session_factory, self._users)
         self._roles = RoleService(self._session_factory)
+        self._orgs = OrgService(self._session_factory)
         self._activity = ActivityLogger(self._session_factory)
 
     async def close(self) -> None:
@@ -100,6 +102,25 @@ class AuthService:
     async def remove_kb_permission(self, user_id: str, kb_id: str) -> bool:
         return await self._roles.remove_kb_permission(user_id, kb_id)
 
+    # ── Organizations & Membership (delegates to OrgService) ──
+
+    async def list_user_memberships(self, user_id: str) -> list[dict]:
+        return await self._orgs.list_user_memberships(user_id)
+
+    async def is_org_member(self, user_id: str, organization_id: str) -> bool:
+        return await self._orgs.is_member(user_id, organization_id)
+
+    async def add_org_member(
+        self, user_id: str, organization_id: str,
+        role: str = "MEMBER", invited_by: str | None = None,
+    ) -> dict:
+        return await self._orgs.add_member(user_id, organization_id, role, invited_by)
+
+    async def resolve_active_org_id(
+        self, user_id: str, requested_org_id: str | None = None,
+    ) -> str | None:
+        return await self._orgs.resolve_active_org_id(user_id, requested_org_id)
+
     # ── Activity Logging (delegates to ActivityLogger) ──
 
     async def log_activity(self, user_id: str, activity_type: str, resource_type: str, **kwargs) -> None:
@@ -114,10 +135,18 @@ class AuthService:
     # ── Seeding ──
 
     async def seed_defaults(self) -> None:
-        """Create default roles and permissions if they don't exist."""
+        """Create default roles, permissions, and tenancy primitives.
+
+        Idempotent — safe to run on every app startup.
+        - Inserts canonical (OWNER/ADMIN/MEMBER/VIEWER) + legacy roles.
+        - Flips ``is_legacy`` on existing legacy role rows so older DBs
+          align with the canonical/legacy split introduced in B-0.
+        - Backfills ``default-org`` membership for any user who doesn't have
+          one yet (single-org dev environment).
+        """
         from sqlalchemy import select
         from src.auth.models import RoleModel, PermissionModel, RolePermissionModel
-        from src.auth.rbac import DEFAULT_ROLES
+        from src.auth.rbac import DEFAULT_ROLES, LEGACY_ROLES
         import uuid
 
         async with self._session_factory() as session:
@@ -125,7 +154,12 @@ class AuthService:
                 result = await session.execute(
                     select(RoleModel).where(RoleModel.name == role_name)
                 )
-                if result.scalar_one_or_none():
+                role = result.scalar_one_or_none()
+                # Update legacy flag on existing rows (cheap, runs once per startup)
+                if role is not None:
+                    desired_legacy = bool(role_def.get("is_legacy", False))
+                    if bool(role.is_legacy) != desired_legacy:
+                        setattr(role, "is_legacy", desired_legacy)
                     continue
 
                 role = RoleModel(
@@ -134,6 +168,7 @@ class AuthService:
                     display_name=role_def["display_name"],
                     weight=role_def["weight"],
                     is_system=True,
+                    is_legacy=bool(role_def.get("is_legacy", False)),
                 )
                 session.add(role)
                 await session.flush()
@@ -169,9 +204,61 @@ class AuthService:
                     ))
 
             await session.commit()
-            logger.info("Default roles and permissions seeded")
+            logger.info(
+                "Roles seeded: %d canonical, %d legacy",
+                len(DEFAULT_ROLES) - len(LEGACY_ROLES), len(LEGACY_ROLES),
+            )
 
         await self._seed_internal_admin()
+        await self._backfill_default_org_membership()
+
+    async def _backfill_default_org_membership(self) -> None:
+        """Ensure every active user is a member of default-org.
+
+        Single-tenant dev environments rely on this — without a membership the
+        ``get_current_org`` dependency would 403 every authenticated request.
+        Multi-tenant production replaces this with explicit invites.
+        """
+        from sqlalchemy import select
+        from src.auth.models import UserModel
+        from src.stores.postgres.models import OrgMembershipModel, OrganizationModel
+
+        async with self._session_factory() as session:
+            org_exists = await session.execute(
+                select(OrganizationModel.id).where(OrganizationModel.id == DEFAULT_ORG_ID)
+            )
+            if org_exists.first() is None:
+                logger.warning(
+                    "default-org not present — skipping membership backfill. "
+                    "Run alembic upgrade to apply migration 0003_rbac_b0.",
+                )
+                return
+
+            users_result = await session.execute(
+                select(UserModel.id).where(UserModel.is_active.is_(True))
+            )
+            user_ids = [row[0] for row in users_result.all()]
+
+            if not user_ids:
+                return
+
+            existing_result = await session.execute(
+                select(OrgMembershipModel.user_id).where(
+                    OrgMembershipModel.organization_id == DEFAULT_ORG_ID,
+                    OrgMembershipModel.user_id.in_(user_ids),
+                )
+            )
+            existing_user_ids = {row[0] for row in existing_result.all()}
+
+            added = 0
+            for user_id in user_ids:
+                if user_id in existing_user_ids:
+                    continue
+                await self._orgs.add_member(user_id, DEFAULT_ORG_ID, role="MEMBER")
+                added += 1
+
+            if added:
+                logger.info("Backfilled %d users into default-org", added)
 
     async def _seed_internal_admin(self) -> None:
         """Create default admin user if AUTH_PROVIDER=internal and password is set."""
