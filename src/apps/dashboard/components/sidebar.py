@@ -68,6 +68,7 @@ def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
             with st.expander("외부 연동", expanded=False):
                 st.page_link("pages/data_sources.py", label="📁 데이터 소스")
                 st.page_link("pages/edge_models.py", label="🤖 엣지 모델")
+                st.page_link("pages/agent_trace.py", label="🧠 Agent Trace")
 
         # -- Group 5: 시스템 운영 --
         if ff.operations_enabled:
