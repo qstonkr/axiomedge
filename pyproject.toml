@@ -66,6 +66,11 @@ dependencies = [
     "umap-learn>=0.5.12",
     "tenacity>=9.1.4",
     "sentry-sdk[fastapi]>=2.58.0",
+    "opentelemetry-api>=1.41.0",
+    "opentelemetry-sdk>=1.41.0",
+    "opentelemetry-exporter-otlp>=1.41.0",
+    "opentelemetry-instrumentation-fastapi>=0.62b0",
+    "opentelemetry-instrumentation-httpx>=0.62b0",
 ]
 
 [project.optional-dependencies]
