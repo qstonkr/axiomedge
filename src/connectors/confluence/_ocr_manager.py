@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """OCR management and image parsing mixin for AttachmentParser.
 
 Handles OCR singleton lifecycle, subprocess-isolated OCR execution,

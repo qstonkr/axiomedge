@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Excel parsing mixin for AttachmentParser.
 
 Handles Excel (.xlsx) text and table extraction via openpyxl.

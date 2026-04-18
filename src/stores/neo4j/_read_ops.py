@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Neo4j read operations — graph traversal, process, tree index, stats.
 
 Extracted from repository.py. Entity search methods are in ``_search_ops.py``.

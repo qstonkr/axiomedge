@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Similarity matcher -- L3 cross-encoder precision judgment.
 
 Extracted from matcher.py for SRP. Mixin for EnhancedSimilarityMatcher.

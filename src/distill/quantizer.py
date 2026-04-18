@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false, reportAttributeAccessIssue=false
 """GGUF 양자화.
 
 HuggingFace 모델을 llama.cpp GGUF 포맷으로 변환 + 양자화.

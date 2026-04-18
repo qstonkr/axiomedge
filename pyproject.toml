@@ -164,6 +164,14 @@ reportMissingReturnType = "warning"
 reportUnknownMemberType = false
 include = ["src"]
 exclude = ["src/apps/dashboard", "scripts"]
+# Optional/None flow analysis 가 stateful object/Redis guard 패턴에서 false positive 다수 →
+# 점진적으로 error 로 승격 목표. 지금은 warning 으로 가시화.
+reportOptionalMemberAccess = "warning"
+reportOptionalSubscript = "warning"
+reportOptionalCall = "warning"
+reportOptionalIterable = "warning"
+# AppState 가 dict 인터페이스를 일부만 구현 — 점진적 migration 중
+reportArgumentType = "warning"
 
 [dependency-groups]
 dev = [

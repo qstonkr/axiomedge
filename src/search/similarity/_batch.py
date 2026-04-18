@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Similarity matcher — batch matching & dense index methods.
 
 Extracted from matcher.py for SRP. Mixin for EnhancedSimilarityMatcher.

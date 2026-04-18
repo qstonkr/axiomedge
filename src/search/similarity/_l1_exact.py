@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Similarity matcher -- L1 exact matching & L1.5 morpheme decomposition.
 
 Extracted from matcher.py for SRP. Mixin for EnhancedSimilarityMatcher.

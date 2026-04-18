@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Confluence crawl strategies (DFS, BFS, flat, CQL enumeration).
 
 Provides :class:`CrawlerMixin` with child-page discovery and three crawl

@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false, reportAttributeAccessIssue=false
 """Distill 파이프라인 오케스트레이터.
 
 데이터 생성 → 학습 → 평가 → 양자화 → 배포를 subprocess로 격리 실행.

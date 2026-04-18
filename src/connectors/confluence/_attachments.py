@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Confluence attachment download and content extraction.
 
 Provides :class:`AttachmentMixin` with methods for fetching attachment

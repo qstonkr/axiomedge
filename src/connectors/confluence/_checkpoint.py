@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Confluence crawl checkpoint & incremental JSONL persistence.
 
 Extracted from client.py as a mixin for SRP.

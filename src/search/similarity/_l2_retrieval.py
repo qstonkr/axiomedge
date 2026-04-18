@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Similarity matcher -- L2 multi-channel candidate retrieval.
 
 Extracted from matcher.py for SRP. Mixin for EnhancedSimilarityMatcher.

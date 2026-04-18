@@ -84,6 +84,26 @@ class Weights:
     and ``reset``.
     """
 
+    # Explicit attribute declarations so pyright can resolve `weights.search.foo` etc.
+    # Values are populated dynamically in ``_init_defaults`` via ``object.__setattr__``.
+    reranker: RerankerWeights
+    hybrid_search: HybridSearchWeights
+    similarity: SimilarityThresholds
+    preprocessor: PreprocessorConfig
+    confidence: ConfidenceConfig
+    response: ResponseConfig
+    quality: QualityConfig
+    ocr: OCRConfig
+    llm: LLMConfig
+    embedding: EmbeddingConfig
+    chunking: ChunkingConfig
+    pipeline: PipelineConfig
+    timeouts: TimeoutConfig
+    search: SearchDefaults
+    trust_score: TrustScoreWeights
+    dedup: DedupConfig
+    cache: CacheConfig
+
     _SECTION_CLASSES: dict[str, type] = {
         "reranker": RerankerWeights,
         "hybrid_search": HybridSearchWeights,

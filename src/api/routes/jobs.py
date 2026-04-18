@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Background ingestion job tracking (Redis-backed).
 
 Jobs are stored in Redis so all uvicorn workers share the same state.

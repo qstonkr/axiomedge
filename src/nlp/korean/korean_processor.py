@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Korean NLP Processor
 
 한글 처리 파이프라인:

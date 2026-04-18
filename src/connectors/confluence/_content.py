@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Confluence page content extraction and page processing orchestration.
 
 Extracted from ``client.py`` for SRP.

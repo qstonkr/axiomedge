@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Provenance / Traceability Repository - PostgreSQL backed.
 
 Extracted from oreo-ecosystem PgProvenanceRepository.

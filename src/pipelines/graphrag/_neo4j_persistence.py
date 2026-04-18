@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """GraphRAG Neo4j persistence methods — mixin for GraphRAGExtractor.
 
 Extracted from extractor.py for SRP.

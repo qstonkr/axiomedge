@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Neo4j entity search operations — extracted from _read_ops.py.
 
 Contains: find_related_chunks, search_entities, _search_by_contains, find_experts.

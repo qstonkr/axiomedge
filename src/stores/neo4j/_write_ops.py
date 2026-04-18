@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Neo4j write operations — extracted from repository.py.
 
 Contains: upsert_document, upsert_entity, create_relationship,

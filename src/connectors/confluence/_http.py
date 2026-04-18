@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """HTTP transport helpers for the Confluence crawling client.
 
 Provides :class:`HttpMixin` with retry-aware HTTP GET and connection

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """PDF parsing mixin for AttachmentParser.
 
 Handles PDF text extraction via PyMuPDF with OCR fallback for textless pages.

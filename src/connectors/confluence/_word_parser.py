@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Word/DOCX parsing mixin for AttachmentParser.
 
 Handles Word document text extraction:

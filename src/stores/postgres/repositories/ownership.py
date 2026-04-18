@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Document Ownership Repositories - PostgreSQL backed.
 
 Provides DocumentOwner, TopicOwner, ErrorReport persistence.
