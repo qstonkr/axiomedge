@@ -1,5 +1,9 @@
 .PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-unit-fast test-integration test-e2e test-coverage-gate tei-refresh
 
+# Pin Compose project name so existing knowledge-local_* volumes are reused
+# regardless of the working directory or compose file location.
+export COMPOSE_PROJECT_NAME = knowledge-local
+
 # === Setup ===
 setup:
 	uv sync
@@ -26,11 +30,13 @@ stop:
 	docker compose -f deploy/docker-compose.yml down
 
 # === Services ===
-api: tei-refresh
+# `tei-refresh` 는 AWS 사용 시에만 필요. AWS 접근 가능한 환경이면 수동 호출:
+#   make tei-refresh && make api
+api:
 	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --workers 2 --timeout-keep-alive 300
 
 # Sync current egress IP to the TEI/PaddleOCR security group (jbkim-auto-* rules).
-# Idempotent — safe to run before any service that needs BGE/Reranker/PaddleOCR.
+# AWS 자격증명 필요 — 로컬 dev (Ollama+ONNX) 에서는 호출 불필요.
 tei-refresh:
 	@uv run python scripts/refresh_tei_access.py
 
