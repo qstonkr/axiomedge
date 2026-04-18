@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query
 from src.api.routes.admin_helpers import _GRAPH_INTEGRITY_FAILED
 
 
-def _get_state():
+def _get_state() -> dict[str, Any]:
     """Late-bound accessor — keeps ``patch.object(admin, '_get_state')`` in tests working.
 
     Uses the parent ``admin`` module's binding so unit tests that
@@ -40,7 +40,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 # ============================================================================
 
 @router.get("/graph/stats")
-async def graph_stats():
+async def graph_stats() -> dict[str, Any]:
     """Get knowledge graph statistics."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -60,7 +60,7 @@ async def graph_stats():
 # ============================================================================
 
 @router.post("/graph/search")
-async def graph_search(body: dict[str, Any]):
+async def graph_search(body: dict[str, Any]) -> dict[str, Any]:
     """Search the knowledge graph."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -115,7 +115,7 @@ async def graph_search(body: dict[str, Any]):
 async def find_experts(
     topic: Annotated[str, Query()] = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
-):
+) -> dict[str, Any]:
     """Find experts for a topic."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -136,7 +136,7 @@ async def find_experts(
 # ============================================================================
 
 @router.post("/graph/expand")
-async def graph_expand(body: dict[str, Any]):
+async def graph_expand(body: dict[str, Any]) -> dict[str, Any]:
     """Expand a graph node to show neighbors."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -162,7 +162,7 @@ async def graph_expand(body: dict[str, Any]):
 # ============================================================================
 
 @router.post("/graph/integrity/check")
-async def graph_integrity_check():
+async def graph_integrity_check() -> dict[str, Any]:
     """Check graph data integrity: orphan nodes, missing relationships, inconsistencies."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -265,7 +265,7 @@ async def graph_integrity_check():
 # ============================================================================
 
 @router.post("/graph/path")
-async def graph_path(body: dict[str, Any]):
+async def graph_path(body: dict[str, Any]) -> dict[str, Any]:
     """Find shortest path between two nodes."""
     from_id = body.get("from_node_id", "")
     to_id = body.get("to_node_id", "")
@@ -290,7 +290,7 @@ async def graph_path(body: dict[str, Any]):
 # ============================================================================
 
 @router.get("/graph/communities")
-async def graph_communities():
+async def graph_communities() -> dict[str, Any]:
     """Get graph communities."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -313,7 +313,7 @@ async def graph_communities():
 # ============================================================================
 
 @router.get("/graph/integrity")
-async def graph_integrity():
+async def graph_integrity() -> dict[str, Any]:
     """Get graph integrity report."""
     state = _get_state()
     checker = state.get("graph_integrity")
@@ -348,7 +348,7 @@ async def graph_integrity():
 
 
 @router.post("/graph/integrity/run")
-async def run_graph_integrity_check(body: dict[str, Any] | None = None):
+async def run_graph_integrity_check(body: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run a graph integrity check with optional KB scope."""
     state = _get_state()
     checker = state.get("graph_integrity")
@@ -389,7 +389,7 @@ async def run_graph_integrity_check(body: dict[str, Any] | None = None):
 # ============================================================================
 
 @router.post("/graph/impact")
-async def graph_impact(body: dict[str, Any]):
+async def graph_impact(body: dict[str, Any]) -> dict[str, Any]:
     """Analyze impact of a node using multi-hop search."""
     node_id = body.get("node_id", "")
     max_hops = body.get("max_hops", 2)
@@ -443,7 +443,7 @@ async def graph_impact(body: dict[str, Any]):
 # ============================================================================
 
 @router.get("/graph/health")
-async def graph_health():
+async def graph_health() -> dict[str, Any]:
     """Get graph health."""
     state = _get_state()
     graph = state.get("graph_repo")
@@ -469,7 +469,7 @@ async def graph_health():
 # ============================================================================
 
 @router.post("/graph/timeline")
-async def graph_timeline(body: dict[str, Any]):
+async def graph_timeline(body: dict[str, Any]) -> dict[str, Any]:
     """Get timeline for a node."""
     node_id = body.get("node_id", "")
     return {

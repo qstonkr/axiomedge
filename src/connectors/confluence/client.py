@@ -57,7 +57,7 @@ class ConfluenceFullClient(
         output_dir: Path | None = None,
         max_concurrent: int = 1,
         kb_id: str = "",
-    ):
+    ) -> None:
         from src.config import get_settings
 
         self.base_url = (

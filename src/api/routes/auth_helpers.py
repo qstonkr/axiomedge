@@ -30,12 +30,12 @@ _USER_NOT_FOUND = "User not found"
 # ── Service accessors ────────────────────────────────────────────────────────
 
 
-def _get_auth_service():
+def _get_auth_service() -> Any:
     from src.api.app import _get_state
     return _get_state().get("auth_service")
 
 
-def _get_state():
+def _get_state() -> Any:
     from src.api.app import _get_state
     return _get_state()
 

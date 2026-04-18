@@ -41,7 +41,7 @@ def cleanup_answer_text(answer: str) -> str:
 class QualityFilter:
     """QA 쌍 품질 필터링 및 변환."""
 
-    def __init__(self, llm_helper: LLMHelper, embedder, profile: DistillProfile):
+    def __init__(self, llm_helper: LLMHelper, embedder, profile: DistillProfile) -> None:
         self.llm = llm_helper
         self.embedder = embedder
         self.profile = profile

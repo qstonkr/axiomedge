@@ -12,6 +12,7 @@ KB를 그룹으로 묶어 스코프 검색을 지원.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -40,7 +41,7 @@ class UpdateGroupRequest(BaseModel):
 
 
 @router.get("")
-async def list_groups():
+async def list_groups() -> dict:
     """모든 검색 그룹 조회."""
     repo = _get_state().get("search_group_repo")
     if not repo:
@@ -50,7 +51,7 @@ async def list_groups():
 
 
 @router.post("", responses={503: {"description": "Database not initialized"}})
-async def create_group(request: CreateGroupRequest):
+async def create_group(request: CreateGroupRequest) -> Any:
     """검색 그룹 생성."""
     repo = _get_state().get("search_group_repo")
     if not repo:
@@ -66,7 +67,7 @@ async def create_group(request: CreateGroupRequest):
 
 
 @router.get("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}})
-async def get_group(group_id: str):
+async def get_group(group_id: str) -> Any:
     """검색 그룹 상세 조회."""
     repo = _get_state().get("search_group_repo")
     if not repo:
@@ -79,7 +80,7 @@ async def get_group(group_id: str):
 
 
 @router.put("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})
-async def update_group(group_id: str, request: UpdateGroupRequest):
+async def update_group(group_id: str, request: UpdateGroupRequest) -> Any:
     """검색 그룹 수정 (KB 추가/제거)."""
     repo = _get_state().get("search_group_repo")
     if not repo:
@@ -101,7 +102,7 @@ async def update_group(group_id: str, request: UpdateGroupRequest):
 
 
 @router.delete("/{group_id}", responses={503: {"description": "Database not initialized"}, 404: {"description": "Group not found"}, 400: {"description": "Invalid group ID"}})
-async def delete_group(group_id: str):
+async def delete_group(group_id: str) -> dict:
     """검색 그룹 삭제."""
     repo = _get_state().get("search_group_repo")
     if not repo:
@@ -117,7 +118,7 @@ async def delete_group(group_id: str):
 
 
 @router.get("/{group_id}/kbs", responses={503: {"description": "Database not initialized"}})
-async def get_group_kbs(group_id: str):
+async def get_group_kbs(group_id: str) -> dict:
     """그룹에 속한 KB 목록 조회."""
     repo = _get_state().get("search_group_repo")
     if not repo:

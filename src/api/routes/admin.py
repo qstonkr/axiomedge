@@ -70,7 +70,7 @@ for route in _graph_router.routes:
 # ============================================================================
 
 @router.get("/qdrant/collections")
-async def list_collections():
+async def list_collections() -> dict:
     """List Qdrant collections."""
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -85,7 +85,7 @@ async def list_collections():
 
 
 @router.get("/qdrant/collection/{name}/stats", responses={503: {"description": "Store not initialized"}, 500: {"description": "Internal error"}})
-async def collection_stats(name: str):
+async def collection_stats(name: str) -> dict:
     """Get collection statistics."""
     state = _get_state()
     store = state.get("qdrant_store")
@@ -104,13 +104,13 @@ async def collection_stats(name: str):
 # ============================================================================
 
 @router.post("/config/weights")
-async def get_config_weights():
+async def get_config_weights() -> dict:
     """Return current config weights."""
     return weights.to_dict()
 
 
 @router.put("/config/weights", responses={400: {"description": "Empty body or no valid weight fields matched"}})
-async def update_config_weights(body: dict[str, Any]):
+async def update_config_weights(body: dict[str, Any]) -> dict:
     """Update specific weight values (partial update).
 
     Accepts either flat keys ``{"section.field": value}``
@@ -130,7 +130,7 @@ async def update_config_weights(body: dict[str, Any]):
 
 
 @router.post("/config/weights/reset")
-async def reset_config_weights():
+async def reset_config_weights() -> dict:
     """Reset all config weights to their defaults."""
     weights.reset()
     logger.info("Config weights reset to defaults")

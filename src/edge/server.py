@@ -19,7 +19,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.responses import HTMLResponse
@@ -51,7 +51,7 @@ LOG_FILE = LOG_DIR / "queries.jsonl"
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(key: Optional[str] = Security(api_key_header)):
+async def verify_api_key(key: Optional[str] = Security(api_key_header)) -> None:
     if not EDGE_API_KEY:
         return
     if key != EDGE_API_KEY:
@@ -71,7 +71,7 @@ _success_count: int = 0
 _recent_latencies: deque[int] = deque(maxlen=100)
 
 
-def _get_llm():
+def _get_llm() -> Any:
     if _llm is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     return _llm
@@ -123,7 +123,7 @@ async def _log_query(query: str, answer: str, latency_ms: int, success: bool) ->
 
 
 @app.on_event("startup")
-def load_model():
+def load_model() -> None:
     global _llm, _startup_time
     t0 = time.monotonic()
     model_path = Path(MODEL_PATH)
@@ -173,7 +173,7 @@ class ReloadResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.post("/ask", response_model=AskResponse)
-async def ask(request: AskRequest, _: None = Depends(verify_api_key)):
+async def ask(request: AskRequest, _: None = Depends(verify_api_key)) -> AskResponse:
     llm = _get_llm()
     t0 = time.monotonic()
     try:
@@ -207,7 +207,7 @@ async def ask(request: AskRequest, _: None = Depends(verify_api_key)):
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health() -> HealthResponse:
     return HealthResponse(
         status="ok" if _llm is not None else "no_model",
         store_id=STORE_ID, model_version=_read_version(),
@@ -217,7 +217,7 @@ async def health():
 
 
 @app.get("/heartbeat")
-async def heartbeat():
+async def heartbeat() -> dict:
     """sync.py가 호출하여 중앙에 push할 상태 정보 수집."""
     import platform
 
@@ -275,7 +275,7 @@ def _get_disk_free() -> Optional[int]:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def test_ui():
+async def test_ui() -> str:
     """브라우저 테스트 + 관리 페이지."""
     version = _get_cached_version()
     status = "online" if _llm else "no_model"
@@ -312,7 +312,7 @@ async def test_ui():
 
 
 @app.post("/reload", response_model=ReloadResponse, dependencies=[Depends(verify_api_key)])
-async def reload_model():
+async def reload_model() -> ReloadResponse:
     global _llm
     model_path = Path(MODEL_PATH)
     if not model_path.exists():

@@ -18,7 +18,7 @@ class _PdfParserMixin:
     """PDF parsing methods for AttachmentParser."""
 
     @classmethod
-    def _ocr_pdf_page(cls, page, page_num: int, total_pages: int, policy, heartbeat_fn):
+    def _ocr_pdf_page(cls, page, page_num: int, total_pages: int, policy, heartbeat_fn) -> tuple:
         """OCR a single textless PDF page via image rendering.
 
         Returns (ocr_text, success_bool).
@@ -186,7 +186,7 @@ class _PdfParserMixin:
     def _process_textless_pdf_page(
         cls, page, page_num, total_pages, policy, heartbeat_fn,
         text_parts, ocr_counters,
-    ):
+    ) -> None:
         """Handle a textless PDF page -- apply OCR if allowed by policy.
 
         Note: This mutates text_parts and ocr_counters in place.

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class RoleService:
     """Role assignment and KB-level permission management."""
 
-    def __init__(self, session_factory: async_sessionmaker):
+    def __init__(self, session_factory: async_sessionmaker) -> None:
         self._session = session_factory
 
     # ── Roles ──

@@ -37,7 +37,7 @@ class JWTService:
         access_token_expire_minutes: int = 60,
         refresh_token_expire_hours: int = 8,
         issuer: str = "oreo-internal-api",
-    ):
+    ) -> None:
         self._secret = secret_key
         self._algorithm = algorithm
         self._access_expire = timedelta(minutes=access_token_expire_minutes)

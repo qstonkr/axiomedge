@@ -66,7 +66,7 @@ class OnnxBgeEmbeddingProvider:
         use_sparse: bool = True,
         max_length: int = weights.embedding.onnx_max_length,
         onnx_file_name: str = os.getenv("KNOWLEDGE_BGE_ONNX_FILE_NAME", "model.onnx"),
-    ):
+    ) -> None:
         from src.config import DEFAULT_EMBEDDING_MODEL_HF
 
         self._model_name = model_name or DEFAULT_EMBEDDING_MODEL_HF

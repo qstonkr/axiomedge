@@ -197,7 +197,7 @@ class _SageMakerLLMClient:
         self._profile = os.getenv("AWS_PROFILE", "jeongbeomkim")
         self._client = None
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         # SSO token renewal workaround: recreate client each call
         # until IAM key migration, then switch to cached client
         # return self._client
@@ -233,7 +233,7 @@ class _OllamaLLMClient:
         self._model = model
         self._client = None
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         if self._client is None:
             from ...llm.ollama_client import OllamaClient, OllamaConfig
             self._client = OllamaClient(
@@ -280,7 +280,7 @@ class _OllamaLLMClient:
             )
 
     @staticmethod
-    def _run_in_new_loop(coro):
+    def _run_in_new_loop(coro) -> Any:
         """Run a coroutine in a fresh event loop (avoids 'Event loop is closed')."""
         import asyncio
         loop = asyncio.new_event_loop()
@@ -327,7 +327,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
         self._llm = llm_client
         self._neo4j_driver = neo4j_driver
 
-    def _get_llm(self):
+    def _get_llm(self) -> Any:
         """LLM client 가져오기 (lazy loading).
 
         GRAPHRAG_USE_SAGEMAKER=true 이면 SageMaker 엔드포인트 사용,
@@ -346,7 +346,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
                 logger.info("GraphRAG LLM: Ollama (%s)", self.ollama_model)
         return self._llm
 
-    def _get_neo4j_driver(self):
+    def _get_neo4j_driver(self) -> Any:
         """Neo4j driver 가져오기 (lazy loading)."""
         if self._neo4j_driver is None:
             from neo4j import GraphDatabase
@@ -587,7 +587,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
 class GraphRAGBatchProcessor:
     """배치 처리기 - 여러 문서를 순차적으로 처리"""
 
-    def __init__(self, extractor: GraphRAGExtractor | None = None):
+    def __init__(self, extractor: GraphRAGExtractor | None = None) -> None:
         self.extractor = extractor or GraphRAGExtractor()
         self.results: list[ExtractionResult] = []
 

@@ -64,7 +64,7 @@ class DualEmbeddingProvider:
         use_colbert: bool = False,
         batch_size: int = 32,
         max_text_chars: int = 4000,
-    ):
+    ) -> None:
         """Initialize DualEmbeddingProvider.
 
         Args:

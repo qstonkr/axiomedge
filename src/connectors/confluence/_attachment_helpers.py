@@ -378,7 +378,7 @@ def _should_ocr_ppt(policy: AttachmentOCRPolicy, native_text_chars: int) -> bool
     return native_text_chars < policy.ocr_min_text_chars
 
 
-def _preprocess_shape_image(img, ocr_preprocess: bool):
+def _preprocess_shape_image(img, ocr_preprocess: bool) -> Any:
     """Apply OCR preprocessing to a shape image."""
     if ocr_preprocess:
         try:
@@ -417,7 +417,7 @@ def _apply_ocr_postprocess(ocr_text: str, ocr_conf: float) -> tuple[str, float]:
     return ocr_text, ocr_conf
 
 
-def _preprocess_slide_image(img, slide_num: int):
+def _preprocess_slide_image(img, slide_num: int) -> Any:
     """Apply preprocessing to a slide image for OCR."""
     try:
         from scripts.ocr_preprocessor import preprocess_for_ocr
@@ -458,7 +458,7 @@ def _postprocess_slide_text(ocr_text: str, slide_num: int) -> str:
     return ocr_text
 
 
-def _downscale_image(img, width: int, height: int, max_size: int):
+def _downscale_image(img, width: int, height: int, max_size: int) -> Any:
     """Downscale an image to fit within max_size, returning None if result too small."""
     ratio = min(max_size / width, max_size / height)
     new_size = (int(width * ratio), int(height * ratio))
@@ -481,7 +481,7 @@ def _downscale_image(img, width: int, height: int, max_size: int):
     return img
 
 
-def _pad_extreme_aspect_ratio(img):
+def _pad_extreme_aspect_ratio(img) -> Any:
     """Add white padding to correct extreme aspect ratios (>8:1)."""
     w, h = img.size
     aspect = max(w, h) / max(min(w, h), 1)

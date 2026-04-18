@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class LLMHelper:
     """Teacher LLM 호출 + Qdrant 청크 조회."""
 
-    def __init__(self, llm_client, qdrant_url: str, concurrency: int, timeout_sec: int):
+    def __init__(self, llm_client, qdrant_url: str, concurrency: int, timeout_sec: int) -> None:
         self.llm = llm_client
         self.qdrant_url = qdrant_url
         self._semaphore = asyncio.Semaphore(concurrency)

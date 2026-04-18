@@ -45,7 +45,7 @@ _use_cloud_reranker = (
 _tei_client = None
 
 
-def _get_tei_client():
+def _get_tei_client() -> Any:
     """Lazy-init httpx client for TEI reranker."""
     global _tei_client
     if _tei_client is None:
@@ -55,7 +55,7 @@ def _get_tei_client():
     return _tei_client
 
 
-def _load_model_sync():
+def _load_model_sync() -> None:
     """Load cross-encoder model. Called only from background thread."""
     global _model, _loading, _load_attempted
 
@@ -86,11 +86,11 @@ def _load_model_sync():
         _orig_get = requests.Session.get
         _orig_post = requests.Session.post
 
-        def _get_no_verify(self, *a, **kw):
+        def _get_no_verify(self, *a, **kw) -> Any:
             kw.setdefault("verify", False)
             return _orig_get(self, *a, **kw)
 
-        def _post_no_verify(self, *a, **kw):
+        def _post_no_verify(self, *a, **kw) -> Any:
             kw.setdefault("verify", False)
             return _orig_post(self, *a, **kw)
 
@@ -211,7 +211,7 @@ async def async_rerank_with_cross_encoder(
     )
 
 
-def warmup():
+def warmup() -> None:
     """Pre-load model in background thread. Never blocks the caller."""
     if _load_attempted or _loading:
         return

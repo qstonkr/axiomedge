@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class TokenStore:
     """Refresh token lifecycle management backed by PostgreSQL."""
 
-    def __init__(self, session_factory: async_sessionmaker):
+    def __init__(self, session_factory: async_sessionmaker) -> None:
         self._session = session_factory
 
     async def store_refresh_token(

@@ -64,7 +64,7 @@ class MinHasher:
         num_hashes: int = 128,
         shingle_size: int = 3,
         seed: int = 42,
-    ):
+    ) -> None:
         """Initialize.
 
         Args:
@@ -161,7 +161,7 @@ class LSHBloom:
         bands: int = 16,
         shingle_size: int = 3,
         seed: int = 42,
-    ):
+    ) -> None:
         self._num_hashes = num_hashes
         self._bands = bands
         self._rows_per_band = num_hashes // bands

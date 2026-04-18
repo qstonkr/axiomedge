@@ -64,7 +64,7 @@ class KoreanProcessor:
         chunk_overlap_sentences: int = 1,
         avg_chars_per_token: float = 2.5,
         use_kss_sentence_splitter: bool | None = None,
-    ):
+    ) -> None:
         """Initialize KoreanProcessor
 
         Args:

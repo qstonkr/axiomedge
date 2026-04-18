@@ -196,7 +196,9 @@ class IngestionPipeline:
                 else:
                     raise
 
-    async def _embed_sparse_with_retry(self, texts: list[str]):
+    async def _embed_sparse_with_retry(
+        self, texts: list[str],
+    ) -> list[dict[str, list]]:
         """Embed sparse vectors with retry logic."""
         for attempt in range(1, self._EMBED_MAX_RETRIES + 1):
             try:
@@ -214,7 +216,7 @@ class IngestionPipeline:
     # -- Backward-compat delegation methods --
 
     @staticmethod
-    def _try_binary_parse(raw):
+    def _try_binary_parse(raw: RawDocument) -> ParseResult | None:
         """Attempt enhanced binary parsing for known extensions."""
         filename = raw.metadata.get("filename", "")
         filename_lower = filename.lower() if filename else ""
@@ -238,47 +240,78 @@ class IngestionPipeline:
         return None
 
     @staticmethod
-    def _build_body_chunks(chunk_result, heading_map):
+    def _build_body_chunks(
+        chunk_result: list[str], heading_map: dict[int, str],
+    ) -> list[tuple[str, str]]:
         from src.pipelines.ingestion_chunks import build_body_chunks
         return build_body_chunks(chunk_result, heading_map)
 
     @staticmethod
-    def _append_table_chunks(typed_chunks, parse_result):
+    def _append_table_chunks(
+        typed_chunks: list[tuple[str, str]],
+        parse_result: ParseResult | None,
+    ) -> list[tuple[str, str]]:
         from src.pipelines.ingestion_chunks import append_table_chunks
         return append_table_chunks(typed_chunks, parse_result)
 
     @staticmethod
-    def _extract_morphemes(typed_chunks):
+    def _extract_morphemes(
+        typed_chunks: list[tuple[str, str]],
+    ) -> list[str]:
         return extract_morphemes(typed_chunks)
 
     @staticmethod
-    def _append_date_author_tokens(chunk_morphemes, title, author):
+    def _append_date_author_tokens(
+        chunk_morphemes: list[str], title: str, author: str,
+    ) -> list[str]:
         return append_date_author_tokens(chunk_morphemes, title, author)
 
     @staticmethod
-    def _add_context_prefixes(raw, typed_chunks, doc_summary):
+    def _add_context_prefixes(
+        raw: RawDocument,
+        typed_chunks: list[tuple[str, str]],
+        doc_summary: str,
+    ) -> tuple[list[str], list[str], list[str]]:
         return add_context_prefixes(raw, typed_chunks, doc_summary)
 
     @staticmethod
     def _build_result_metadata(
-        ctx, chunker_strategy, items, heading_map, **kwargs,
-    ):
+        ctx: _ChunkContext,
+        chunker_strategy: str,
+        items: list[dict[str, Any]],
+        heading_map: dict[int, str],
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         return build_result_metadata(
             ctx, chunker_strategy, items, heading_map, **kwargs,
         )
 
     def _build_chunk_item(
-        self, idx, chunk_text, dense_vec, sparse_vec, *, ctx,
-    ):
+        self,
+        idx: int,
+        chunk_text: str,
+        dense_vec: list[float],
+        sparse_vec: dict[str, list],
+        *,
+        ctx: _ChunkContext,
+    ) -> dict[str, Any]:
         return build_chunk_item(
             idx, chunk_text, dense_vec, sparse_vec, ctx=ctx,
         )
 
     async def _build_title_item(
-        self, raw, collection_name, now_iso, quality_tier,
-        quality_score, doc_type, owner, l1_category,
-        content_flags, parse_result,
-    ):
+        self,
+        raw: RawDocument,
+        collection_name: str,
+        now_iso: str,
+        quality_tier: QualityTier,
+        quality_score: float,
+        doc_type: str,
+        owner: str,
+        l1_category: str,
+        content_flags: dict[str, bool],
+        parse_result: ParseResult | None,
+    ) -> dict[str, Any] | None:
         return await build_title_item(
             raw, collection_name, now_iso, quality_tier,
             quality_score, doc_type, owner, l1_category,
@@ -286,54 +319,81 @@ class IngestionPipeline:
             self._embed_dense, self.sparse_embedder,
         )
 
-    async def _build_typed_chunks(self, raw, parse_result):
+    async def _build_typed_chunks(
+        self,
+        raw: RawDocument,
+        parse_result: ParseResult | None,
+    ) -> (
+        tuple[list[tuple[str, str]], dict[int, str], str]
+        | IngestionResult
+    ):
         return await build_typed_chunks(
             raw, parse_result, self.chunker,
         )
 
-    async def _split_ocr_text(self, ocr_text):
+    async def _split_ocr_text(
+        self, ocr_text: str,
+    ) -> list[str]:
         from src.pipelines.ingestion_chunks import split_ocr_text
         return await split_ocr_text(ocr_text, self.chunker)
 
-    def _check_ingestion_gate(self, raw, collection_name):
+    def _check_ingestion_gate(
+        self,
+        raw: RawDocument,
+        collection_name: str,
+    ) -> IngestionResult | None:
         return check_ingestion_gate(
             raw, collection_name, self._ingestion_gate,
         )
 
-    def _check_quality(self, raw):
+    def _check_quality(
+        self, raw: RawDocument,
+    ) -> tuple[QualityTier, Any, IngestionResult | None]:
         return check_quality(
             raw, self.enable_quality_filter, self.min_quality_tier,
         )
 
-    async def _check_dedup(self, raw, collection_name, content_hash):
+    async def _check_dedup(
+        self,
+        raw: RawDocument,
+        collection_name: str,
+        content_hash: str,
+    ) -> tuple[IngestionResult | None, dict[str, Any] | None]:
         return await check_dedup(
             raw, collection_name, content_hash,
             self.dedup_pipeline, self.dedup_cache,
         )
 
     async def _run_term_extraction(
-        self, raw, typed_chunks, collection_name,
-    ):
+        self,
+        raw: RawDocument,
+        typed_chunks: list[tuple[str, str]],
+        collection_name: str,
+    ) -> dict[str, Any] | None:
         return await run_term_extraction(
             raw, typed_chunks, collection_name,
             self.enable_term_extraction, self.term_extractor,
         )
 
-    async def _run_synonym_discovery(self, raw, collection_name):
+    async def _run_synonym_discovery(
+        self, raw: RawDocument, collection_name: str,
+    ) -> dict[str, Any] | None:
         return await run_synonym_discovery(
             raw, collection_name,
             self.enable_term_extraction, self.term_extractor,
         )
 
-    async def _run_graphrag(self, raw, collection_name):
+    async def _run_graphrag(
+        self, raw: RawDocument, collection_name: str,
+    ) -> dict[str, Any] | None:
         return await run_graphrag(
             raw, collection_name, self.enable_graphrag,
             self.graphrag_extractor, self.legal_graph_extractor,
         )
 
     async def _run_legal_graph_extraction(
-        self, raw, collection_name,
-    ):
+        self, raw: RawDocument, collection_name: str,
+    ) -> dict[str, Any] | None:
         from src.pipelines.ingestion_graph import (
             _run_legal_graph_extraction as _impl,
         )
@@ -342,17 +402,27 @@ class IngestionPipeline:
         )
 
     async def _run_tree_index_builder(
-        self, raw, items, chunk_heading_paths, collection_name,
-    ):
+        self,
+        raw: RawDocument,
+        items: list[dict[str, Any]],
+        chunk_heading_paths: list[str],
+        collection_name: str,
+    ) -> None:
         return await run_tree_index_builder(
             raw, items, chunk_heading_paths,
             collection_name, self.graph_store,
         )
 
     async def _run_summary_tree_builder(
-        self, raw, items, dense_vectors, prefixed_chunks,
-        collection_name, chunk_heading_paths, now_iso,
-    ):
+        self,
+        raw: RawDocument,
+        items: list[dict[str, Any]],
+        dense_vectors: list[list[float]],
+        prefixed_chunks: list[str],
+        collection_name: str,
+        chunk_heading_paths: list[str],
+        now_iso: str,
+    ) -> None:
         return await run_summary_tree_builder(
             raw, items, dense_vectors, prefixed_chunks,
             collection_name, chunk_heading_paths, now_iso,
@@ -362,9 +432,13 @@ class IngestionPipeline:
         )
 
     async def _create_graph_edges(
-        self, raw, _collection_name,
-        *, owner="", l1_category="",
-    ):
+        self,
+        raw: RawDocument,
+        _collection_name: str,
+        *,
+        owner: str = "",
+        l1_category: str = "",
+    ) -> None:
         return await create_graph_edges(
             raw, _collection_name, self.graph_store,
             _extract_cross_references,

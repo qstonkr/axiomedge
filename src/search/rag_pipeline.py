@@ -78,7 +78,7 @@ class KnowledgeRAGPipeline:
         embedder: Any = None,
         query_preprocessor: Any = None,
         query_expander: Any = None,
-    ):
+    ) -> None:
         self._search = search_engine
         self._llm = llm_client
         self._graph = graph_client

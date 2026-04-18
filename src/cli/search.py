@@ -19,7 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger(__name__)
 
 
-async def search(query: str, kb_id: str, top_k: int, with_answer: bool):
+async def search(query: str, kb_id: str, top_k: int, with_answer: bool) -> None:
     from src.config import get_settings
     from src.stores.qdrant.client import QdrantConfig, QdrantClientProvider
     from src.stores.qdrant.collections import QdrantCollectionManager
@@ -84,7 +84,7 @@ async def search(query: str, kb_id: str, top_k: int, with_answer: bool):
     await provider.close()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Knowledge Search CLI")
     parser.add_argument("query", help="Search query")
     parser.add_argument("--kb-id", default="knowledge", help="Knowledge base ID")

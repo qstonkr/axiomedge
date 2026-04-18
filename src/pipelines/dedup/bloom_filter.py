@@ -35,7 +35,7 @@ class BloomFilter:
         fp_rate: False Positive rate (default: 0.01 = 1%)
     """
 
-    def __init__(self, expected_items: int = 100_000, fp_rate: float = 0.01):
+    def __init__(self, expected_items: int = 100_000, fp_rate: float = 0.01) -> None:
         self._expected_items = expected_items
         self._fp_rate = fp_rate
 
@@ -132,7 +132,7 @@ class ScalableBloomFilter:
         initial_capacity: int = 100_000,
         fp_rate: float = 0.01,
         growth_factor: float = 2.0,
-    ):
+    ) -> None:
         self._initial_capacity = initial_capacity
         self._fp_rate = fp_rate
         self._growth_factor = growth_factor

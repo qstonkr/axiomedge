@@ -35,7 +35,7 @@ _PUBLIC_PATHS = frozenset({
 class AuthMiddleware(BaseHTTPMiddleware):
     """Middleware that attaches user context and logs activities."""
 
-    def __init__(self, app: ASGIApp):
+    def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:

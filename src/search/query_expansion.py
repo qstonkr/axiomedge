@@ -170,7 +170,7 @@ class QueryExpansionService:
         enable_semantic_fallback: bool = True,
         llm_expander: Any | None = None,
         decomposition_service: Any | None = None,
-    ):
+    ) -> None:
         """Initialize.
 
         Args:

@@ -91,7 +91,7 @@ async def _list_kbs_from_registry(
         return None
 
 
-async def _list_kbs_from_qdrant(collections, store) -> dict:
+async def _list_kbs_from_qdrant(collections, store) -> dict[str, list]:
     """Fallback: list KBs from Qdrant collections."""
     try:
         raw_names = await collections.get_existing_collection_names()
@@ -115,7 +115,7 @@ async def _list_kbs_from_qdrant(collections, store) -> dict:
         return {"kbs": [], "error": str(e)}
 
 
-async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> dict:
+async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> dict[str, Any]:
     """Shared implementation for listing KBs."""
     state = _get_state()
     kb_registry = state.get("kb_registry")
@@ -138,7 +138,7 @@ async def _list_kbs_impl(tier: str | None = None, status: str | None = None) -> 
 # ============================================================================
 
 @router.post("/create", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
-async def create_kb(request: KBCreateRequest):
+async def create_kb(request: KBCreateRequest) -> dict[str, Any]:
     """Create a new knowledge base (Qdrant collection)."""
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -153,13 +153,13 @@ async def create_kb(request: KBCreateRequest):
 
 
 @router.get("/list")
-async def list_kbs():
+async def list_kbs() -> dict[str, Any]:
     """List all knowledge bases."""
     return await _list_kbs_impl()
 
 
 @router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
-async def delete_kb(kb_id: str):
+async def delete_kb(kb_id: str) -> dict[str, Any]:
     """Delete a knowledge base."""
     state = _get_state()
     provider = state.get("qdrant_provider")
@@ -187,7 +187,7 @@ async def delete_kb(kb_id: str):
 async def admin_list_kbs(
     tier: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
-):
+) -> dict[str, Any]:
     """List KBs (admin)."""
     return await _list_kbs_impl(tier=tier, status=status)
 
@@ -196,7 +196,7 @@ async def admin_list_kbs(
 # POST /api/v1/admin/kb
 # ---------------------------------------------------------------------------
 @admin_router.post("", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
-async def admin_create_kb(body: dict[str, Any]):
+async def admin_create_kb(body: dict[str, Any]) -> dict[str, Any]:
     """Create a KB (admin)."""
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -279,7 +279,7 @@ async def _get_avg_quality_score(
 
 
 @admin_router.get("/stats")
-async def admin_kb_aggregation():
+async def admin_kb_aggregation() -> dict[str, Any]:
     """Get KB aggregation stats."""
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -304,7 +304,7 @@ async def admin_kb_aggregation():
 # POST /api/v1/admin/kb/search-cache/clear
 # ---------------------------------------------------------------------------
 @admin_router.post("/search-cache/clear", responses={500: {"description": "Cache clear error"}})
-async def clear_search_cache():
+async def clear_search_cache() -> dict[str, Any]:
     """Clear search cache (Redis-backed)."""
     state = _get_state()
     search_cache = state.get("search_cache")
@@ -328,7 +328,7 @@ async def clear_search_cache():
 # GET /api/v1/admin/kb/{kb_id}
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}")
-async def admin_get_kb(kb_id: str):
+async def admin_get_kb(kb_id: str) -> dict[str, Any]:
     """Get single KB."""
     state = _get_state()
     kb_registry = state.get("kb_registry")
@@ -367,7 +367,7 @@ async def admin_get_kb(kb_id: str):
 # PUT /api/v1/admin/kb/{kb_id}
 # ---------------------------------------------------------------------------
 @admin_router.put("/{kb_id}")
-async def admin_update_kb(kb_id: str, body: dict[str, Any]):
+async def admin_update_kb(kb_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update KB."""
     return {"success": True, "kb_id": kb_id, "message": "KB updated"}
 
@@ -376,7 +376,7 @@ async def admin_update_kb(kb_id: str, body: dict[str, Any]):
 # DELETE /api/v1/admin/kb/{kb_id}
 # ---------------------------------------------------------------------------
 @admin_router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})
-async def admin_delete_kb(kb_id: str):
+async def admin_delete_kb(kb_id: str) -> dict[str, Any]:
     """Delete KB (admin)."""
     state = _get_state()
     provider = state.get("qdrant_provider")
@@ -397,7 +397,7 @@ async def admin_delete_kb(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/stats
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/stats")
-async def admin_kb_stats(kb_id: str):
+async def admin_kb_stats(kb_id: str) -> dict[str, Any]:
     """Get KB stats."""
     state = _get_state()
     store = state.get("qdrant_store")
@@ -478,7 +478,7 @@ async def admin_kb_documents(
     kb_id: str,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """List KB documents from Qdrant (unique doc_ids with metadata)."""
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -509,7 +509,7 @@ async def admin_kb_documents(
 # GET /api/v1/admin/kb/{kb_id}/categories
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/categories")
-async def admin_kb_categories(kb_id: str):
+async def admin_kb_categories(kb_id: str) -> dict[str, Any]:
     """Get KB category distribution from Qdrant chunk metadata."""
     import httpx
     from collections import Counter
@@ -559,7 +559,7 @@ async def admin_kb_categories(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/trust-scores
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/trust-scores")
-async def admin_kb_trust_scores(kb_id: str):
+async def admin_kb_trust_scores(kb_id: str) -> dict[str, Any]:
     """Get KB trust scores from PostgreSQL."""
     state = _get_state()
     repo = state.get("trust_score_repo")
@@ -577,7 +577,7 @@ async def admin_kb_trust_scores(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/trust-scores/distribution
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/trust-scores/distribution")
-async def admin_kb_trust_score_distribution(kb_id: str):
+async def admin_kb_trust_score_distribution(kb_id: str) -> dict[str, Any]:
     """Get KB trust score distribution."""
     state = _get_state()
     repo = state.get("trust_score_repo")
@@ -604,7 +604,7 @@ async def admin_kb_trust_score_distribution(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/lifecycle
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/lifecycle")
-async def admin_kb_lifecycle(kb_id: str):
+async def admin_kb_lifecycle(kb_id: str) -> dict[str, Any]:
     """Get KB lifecycle."""
     return {
         "kb_id": kb_id,
@@ -619,7 +619,7 @@ async def admin_kb_lifecycle(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/coverage-gaps
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/coverage-gaps")
-async def admin_kb_coverage_gaps(kb_id: str):
+async def admin_kb_coverage_gaps(kb_id: str) -> dict[str, Any]:
     """Get KB coverage gaps."""
     return {
         "kb_id": kb_id,
@@ -633,7 +633,7 @@ async def admin_kb_coverage_gaps(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/impact
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/impact")
-async def admin_kb_impact(kb_id: str):
+async def admin_kb_impact(kb_id: str) -> dict[str, Any]:
     """Get KB impact analysis."""
     return {
         "kb_id": kb_id,
@@ -647,7 +647,7 @@ async def admin_kb_impact(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/impact/rankings
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/impact/rankings")
-async def admin_kb_impact_rankings(kb_id: str):
+async def admin_kb_impact_rankings(kb_id: str) -> dict[str, Any]:
     """Get KB impact rankings."""
     return {
         "kb_id": kb_id,
@@ -659,7 +659,7 @@ async def admin_kb_impact_rankings(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/freshness
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/freshness")
-async def admin_kb_freshness(kb_id: str):
+async def admin_kb_freshness(kb_id: str) -> dict[str, Any]:
     """Get KB freshness."""
     return {
         "kb_id": kb_id,
@@ -675,7 +675,7 @@ async def admin_kb_freshness(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/value-tiers
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/value-tiers")
-async def admin_kb_value_tiers(kb_id: str):
+async def admin_kb_value_tiers(kb_id: str) -> dict[str, Any]:
     """Get KB value tiers."""
     return {
         "kb_id": kb_id,
@@ -687,7 +687,7 @@ async def admin_kb_value_tiers(kb_id: str):
 # GET /api/v1/admin/kb/{kb_id}/members
 # ---------------------------------------------------------------------------
 @admin_router.get("/{kb_id}/members")
-async def admin_kb_members(kb_id: str):
+async def admin_kb_members(kb_id: str) -> dict[str, Any]:
     """Get KB members."""
     return {
         "members": [],
@@ -700,7 +700,7 @@ async def admin_kb_members(kb_id: str):
 # POST /api/v1/admin/kb/{kb_id}/members
 # ---------------------------------------------------------------------------
 @admin_router.post("/{kb_id}/members")
-async def admin_add_kb_member(kb_id: str, body: dict[str, Any]):
+async def admin_add_kb_member(kb_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Add KB member."""
     return {"success": True, "kb_id": kb_id, "message": "Member added"}
 
@@ -709,6 +709,6 @@ async def admin_add_kb_member(kb_id: str, body: dict[str, Any]):
 # DELETE /api/v1/admin/kb/{kb_id}/members/{member_id}
 # ---------------------------------------------------------------------------
 @admin_router.delete("/{kb_id}/members/{member_id}")
-async def admin_remove_kb_member(kb_id: str, member_id: str):
+async def admin_remove_kb_member(kb_id: str, member_id: str) -> dict[str, Any]:
     """Remove KB member."""
     return {"success": True, "kb_id": kb_id, "member_id": member_id}

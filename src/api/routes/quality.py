@@ -28,7 +28,7 @@ _eval_runs: dict[str, dict[str, Any]] = {}
 # ============================================================================
 
 @router.get("/knowledge/{doc_id}/provenance")
-async def get_document_provenance(doc_id: str):
+async def get_document_provenance(doc_id: str) -> dict[str, Any]:
     """Get document provenance."""
     state = _get_state()
     repo = state.get("provenance_repo")
@@ -49,7 +49,7 @@ async def get_document_provenance(doc_id: str):
 
 
 @router.get("/knowledge/{doc_id}/lineage")
-async def get_document_lineage(doc_id: str):
+async def get_document_lineage(doc_id: str) -> dict[str, Any]:
     """Get document lineage."""
     state = _get_state()
     prov_repo = state.get("provenance_repo")
@@ -77,7 +77,7 @@ async def get_document_lineage(doc_id: str):
 async def get_document_versions(
     doc_id: str,
     kb_id: Annotated[str, Query()] = "",
-):
+) -> dict[str, Any]:
     """Get document versions."""
     state = _get_state()
     lifecycle_repo = state.get("lifecycle_repo")
@@ -111,7 +111,7 @@ async def get_document_versions(
 # ============================================================================
 
 @router.get("/dedup/stats")
-async def get_dedup_stats():
+async def get_dedup_stats() -> dict[str, Any]:
     """Get dedup stats from pipeline metrics + Redis tracker."""
     state = _get_state()
     pipeline = state.get("dedup_pipeline")
@@ -153,7 +153,7 @@ async def get_dedup_stats():
 async def get_dedup_conflicts(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """Get dedup conflicts from Redis tracker."""
     state = _get_state()
     tracker = state.get("dedup_result_tracker")
@@ -171,7 +171,7 @@ async def get_dedup_conflicts(
 
 
 @router.post("/dedup/resolve", responses={400: {"description": "Missing required fields"}, 503: {"description": "Dedup tracker not initialized"}, 404: {"description": "Conflict not found"}, 500: {"description": "Failed to resolve conflict"}})
-async def resolve_dedup_conflict(body: dict[str, Any]):
+async def resolve_dedup_conflict(body: dict[str, Any]) -> dict[str, Any]:
     """Resolve a dedup conflict."""
     state = _get_state()
     tracker = state.get("dedup_result_tracker")
@@ -208,7 +208,7 @@ async def resolve_dedup_conflict(body: dict[str, Any]):
 @router.post("/trust-scores/calculate", responses={503: {"description": "Trust score repo or Qdrant not available"}})
 async def calculate_trust_scores(
     kb_id: Annotated[str, Query(...)],
-):
+) -> dict[str, Any]:
     """Calculate KTS (Knowledge Trust Score) for all documents in a KB."""
     from src.api.services.trust_score_calculator import calculate_kb_trust_scores
 
@@ -235,7 +235,7 @@ async def calculate_trust_scores(
 # ============================================================================
 
 @router.post("/eval/trigger")
-async def trigger_evaluation(body: dict[str, Any]):
+async def trigger_evaluation(body: dict[str, Any]) -> dict[str, Any]:
     """Trigger ML evaluation. Tracks run in-memory."""
     eval_id = str(uuid.uuid4())
     kb_id = body.get("kb_id", "default")
@@ -271,7 +271,7 @@ async def trigger_evaluation(body: dict[str, Any]):
 
 
 @router.get("/eval/status")
-async def get_evaluation_status():
+async def get_evaluation_status() -> dict[str, Any]:
     """Get current evaluation status."""
     running = [e for e in _eval_runs.values() if e["status"] == "running"]
     if running:
@@ -292,7 +292,7 @@ async def get_evaluation_status():
 async def list_evaluation_history(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """Get evaluation history."""
     all_evals = sorted(
         _eval_runs.values(),
@@ -328,7 +328,7 @@ def _tally_doc_transparency(
 
 
 async def _scroll_collection_transparency(
-    client: Any,
+    client: object,
     qdrant_url: str,
     raw_name: str,
     counts: dict[str, int],
@@ -366,7 +366,7 @@ async def _scroll_collection_transparency(
 
 
 async def _count_qdrant_transparency(
-    collections: Any, qdrant_url: str,
+    collections: object, qdrant_url: str,
 ) -> dict[str, int]:
     """Scroll Qdrant collections and count transparency attributes per unique doc."""
     import httpx
@@ -383,7 +383,7 @@ async def _count_qdrant_transparency(
 
 
 @router.get("/transparency/stats")
-async def get_transparency_stats():
+async def get_transparency_stats() -> dict[str, Any]:
     """Get transparency stats from Qdrant metadata + PostgreSQL."""
     state = _get_state()
     collections = state.get("qdrant_collections")
@@ -426,7 +426,7 @@ async def get_transparency_stats():
 async def list_contributors(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """List contributors from contributor_reputations table."""
     state = _get_state()
     db_session_factory = state.get("db_session_factory")
@@ -490,7 +490,7 @@ async def list_contributors(
 async def get_verification_pending(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """Get documents pending verification (KTS below threshold)."""
     state = _get_state()
     trust_svc = state.get("trust_score_service")
@@ -536,7 +536,7 @@ async def get_verification_pending(
 
 
 @router.post("/verification/{doc_id}/vote")
-async def submit_verification_vote(doc_id: str, body: dict[str, Any]):
+async def submit_verification_vote(doc_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Submit verification vote. Updates trust score user_validation signal."""
     state = _get_state()
     vote_type = body.get("vote_type", "upvote")  # "upvote" or "downvote"
@@ -589,7 +589,7 @@ async def submit_verification_vote(doc_id: str, body: dict[str, Any]):
 # ============================================================================
 
 @router.post("/documents/{doc_id}/rollback", responses={404: {"description": "No previous version to rollback to"}, 500: {"description": "Rollback failed"}, 503: {"description": "Lifecycle service not available"}})
-async def rollback_document_version(doc_id: str, body: dict[str, Any]):
+async def rollback_document_version(doc_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Rollback document to previous version via lifecycle transition."""
     state = _get_state()
     kb_id = body.get("kb_id", "")
@@ -627,7 +627,7 @@ async def rollback_document_version(doc_id: str, body: dict[str, Any]):
 
 
 @router.post("/documents/{doc_id}/approve", responses={503: {"description": "Lifecycle service not available"}, 500: {"description": "Approve failed"}})
-async def approve_document_version(doc_id: str, body: dict[str, Any]):
+async def approve_document_version(doc_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Approve document: lifecycle transition to 'published'."""
     state = _get_state()
     kb_id = body.get("kb_id", "")
@@ -655,7 +655,7 @@ async def approve_document_version(doc_id: str, body: dict[str, Any]):
 # ============================================================================
 
 @router.get("/vectorstore/stats")
-async def get_vectorstore_stats():
+async def get_vectorstore_stats() -> dict[str, Any]:
     """Get vectorstore stats."""
     state = _get_state()
     store = state.get("qdrant_store")
@@ -684,7 +684,7 @@ async def get_vectorstore_stats():
 
 
 @router.get("/embedding/stats")
-async def get_embedding_stats():
+async def get_embedding_stats() -> dict[str, Any]:
     """Get embedding stats."""
     state = _get_state()
     embedder = state.get("embedder")
@@ -698,7 +698,7 @@ async def get_embedding_stats():
 
 
 @router.get("/cache/stats")
-async def get_cache_stats():
+async def get_cache_stats() -> dict[str, Any]:
     """Get cache stats from search_cache and dedup_cache."""
     state = _get_state()
     search_cache = state.get("search_cache")
@@ -745,7 +745,7 @@ async def list_golden_set(
     status: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
-):
+) -> dict[str, Any]:
     """List golden set Q&A pairs."""
     from src.api.routes.quality_helpers import query_golden_set
 
@@ -756,7 +756,7 @@ async def list_golden_set(
     "/golden-set/{item_id}",
     responses={400: {"description": "No valid fields to update"}},
 )
-async def update_golden_set_item(item_id: str, body: dict[str, Any]):
+async def update_golden_set_item(item_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update golden set item (status, question, expected_answer)."""
     from src.api.routes.quality_helpers import update_golden_set
 
@@ -767,7 +767,7 @@ async def update_golden_set_item(item_id: str, body: dict[str, Any]):
 
 
 @router.delete("/golden-set/{item_id}")
-async def delete_golden_set_item(item_id: str):
+async def delete_golden_set_item(item_id: str) -> dict[str, Any]:
     """Delete a golden set item."""
     from src.api.routes.quality_helpers import delete_golden_set
 
@@ -780,7 +780,7 @@ async def list_eval_results(
     kb_id: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
-):
+) -> dict[str, Any]:
     """List evaluation results."""
     from src.api.routes.quality_helpers import query_eval_results
 
@@ -788,7 +788,7 @@ async def list_eval_results(
 
 
 @router.get("/eval-results/summary")
-async def eval_results_summary():
+async def eval_results_summary() -> dict[str, Any]:
     """Get summary of all evaluation runs."""
     from src.api.routes.quality_helpers import query_eval_results_summary
 

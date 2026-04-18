@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class UserCRUD:
     """User management operations backed by PostgreSQL."""
 
-    def __init__(self, session_factory: async_sessionmaker):
+    def __init__(self, session_factory: async_sessionmaker) -> None:
         self._session = session_factory
 
     async def sync_user_from_idp(self, auth_user: AuthUser) -> dict:

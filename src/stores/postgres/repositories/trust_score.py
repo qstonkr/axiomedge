@@ -132,7 +132,7 @@ class TrustScoreRepository(BaseRepository):
                 raise
 
     @staticmethod
-    def _sort_expression(sort: str):
+    def _sort_expression(sort: str) -> Any:
         if sort == "top":
             return TrustScoreModel.kts_score.desc()
         if sort == "recent":

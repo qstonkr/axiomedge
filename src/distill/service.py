@@ -68,7 +68,7 @@ class DistillService:
         sagemaker_client=None,
         embedder=None,
         qdrant_url: str = "",
-    ):
+    ) -> None:
         from src.config import get_settings
         self.config = config
         self.session_factory = session_factory

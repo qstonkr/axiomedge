@@ -7,6 +7,7 @@ content extraction, and orchestrates OCR stages via _PptOcrMixin.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 from .models import AttachmentParseResult
@@ -102,7 +103,7 @@ class _PptParserMixin(_PptOcrMixin):
     # -----------------------------------------------------------------
 
     @classmethod
-    def _iter_shapes(cls, shapes):
+    def _iter_shapes(cls, shapes) -> Iterator:
         """GroupShape 포함 재귀 shape 탐색."""
         from pptx.enum.shapes import MSO_SHAPE_TYPE
 
@@ -112,7 +113,7 @@ class _PptParserMixin(_PptOcrMixin):
                 yield from cls._iter_shapes(shape.shapes)
 
     @classmethod
-    def _extract_ppt_slide_content(cls, slide, slide_num: int):
+    def _extract_ppt_slide_content(cls, slide, slide_num: int) -> tuple:
         """Extract text, tables, and image shapes from a slide.
 
         Returns (slide_texts, tables, image_shapes).
@@ -175,7 +176,7 @@ class _PptParserMixin(_PptOcrMixin):
     @staticmethod
     def _collect_image_shape(
         shape, slide_num: int, image_shapes: list,
-    ):
+    ) -> None:
         """Collect image bytes from a picture shape."""
         try:
             image_bytes = shape.image.blob

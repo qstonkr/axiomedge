@@ -92,7 +92,7 @@ def _determine_disclaimer(query_type: QueryType) -> str | None:
 class AnswerService:
     """Generate tiered LLM answers based on query type."""
 
-    def __init__(self, llm_client: Any = None, classifier: QueryClassifier | None = None):
+    def __init__(self, llm_client: Any = None, classifier: QueryClassifier | None = None) -> None:
         self._llm = llm_client
         self._classifier = classifier or QueryClassifier()
 

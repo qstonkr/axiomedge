@@ -100,7 +100,7 @@ class SemHash:
         self,
         embedding_provider: IEmbeddingProvider | None = None,
         threshold: float = DEFAULT_THRESHOLD,
-    ):
+    ) -> None:
         self._embedding_provider = embedding_provider or NoOpEmbeddingProvider()
         self._threshold = threshold
         self._expected_dim: int | None = None

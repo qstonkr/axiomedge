@@ -20,7 +20,7 @@ _DUMMY_BCRYPT_HASH = "$2b$12$LJ3m4ys3Lg7VGgHepMzL2OGOCISCgrMJwBdJmkGBo7MBJe.ys/C
 class Authenticator:
     """Email/password authentication for internal provider."""
 
-    def __init__(self, session_factory: async_sessionmaker, user_crud: UserCRUD):
+    def __init__(self, session_factory: async_sessionmaker, user_crud: UserCRUD) -> None:
         self._session = session_factory
         self._user_crud = user_crud
 

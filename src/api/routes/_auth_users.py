@@ -21,7 +21,7 @@ from src.api.routes.auth_helpers import (
 )
 
 
-def _get_auth_service():
+def _get_auth_service() -> Any:
     """Late-bound accessor through parent auth module for test patchability."""
     import src.api.routes.auth as _auth
     return _auth._get_auth_service()
@@ -41,7 +41,7 @@ async def list_users(
     limit: int = 50,
     offset: int = 0,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))] = None,
-):
+) -> dict[str, Any]:
     """List all users."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -60,7 +60,7 @@ async def list_users(
 async def create_user(
     body: CreateUserRequest,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
-):
+) -> dict[str, Any]:
     """Create a new local user."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -90,7 +90,7 @@ async def update_user(
     user_id: str,
     body: UpdateUserRequest,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
-):
+) -> dict[str, Any]:
     """Update user details."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -118,7 +118,7 @@ async def update_user(
 async def delete_user(
     user_id: str,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
-):
+) -> dict[str, bool]:
     """Delete a user."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -140,7 +140,7 @@ async def delete_user(
 async def get_user(
     user_id: str,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
-):
+) -> dict[str, Any]:
     """Get user details."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -158,7 +158,9 @@ async def get_user(
 
 
 @router.get("/roles")
-async def list_roles(user: Annotated[AuthUser, Depends(get_current_user)]):
+async def list_roles(
+    user: Annotated[AuthUser, Depends(get_current_user)],
+) -> dict[str, list[dict[str, Any]]]:
     """List all available roles."""
     from src.auth.rbac import DEFAULT_ROLES
     return {
@@ -186,7 +188,7 @@ async def assign_role(
     user_id: str,
     body: dict[str, Any],
     _user: Annotated[AuthUser, Depends(require_permission("admin", "roles"))],
-):
+) -> dict[str, Any]:
     """Assign a role to a user."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -222,7 +224,7 @@ async def revoke_role(
     scope_type: str | None = None,
     scope_id: str | None = None,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "roles"))] = None,
-):
+) -> dict[str, bool]:
     """Revoke a role from a user."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -243,7 +245,7 @@ async def revoke_role(
 async def list_kb_permissions(
     kb_id: str,
     user: Annotated[AuthUser, Depends(get_current_user)],
-):
+) -> dict[str, Any]:
     """List all user permissions for a KB."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -264,7 +266,7 @@ async def set_kb_permission(
     kb_id: str,
     body: dict[str, Any],
     current_user: Annotated[AuthUser, Depends(require_permission("kb", "manage"))],
-):
+) -> dict[str, Any]:
     """Set a user's permission level for a KB."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -301,7 +303,7 @@ async def remove_kb_permission(
     kb_id: str,
     user_id: str,
     _user: Annotated[AuthUser, Depends(require_permission("kb", "manage"))],
-):
+) -> dict[str, bool]:
     """Remove a user's KB permission."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -326,7 +328,7 @@ async def get_my_activities(
     limit: int = 50,
     offset: int = 0,
     user: Annotated[AuthUser, Depends(get_current_user)] = None,
-):
+) -> dict[str, list[Any]]:
     """Get current user's activity log."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -349,7 +351,7 @@ async def get_my_activities(
 async def get_my_activity_summary(
     days: int = 30,
     user: Annotated[AuthUser, Depends(get_current_user)] = None,
-):
+) -> dict[str, Any]:
     """Get activity summary for dashboard."""
     auth_service = _get_auth_service()
     if not auth_service:

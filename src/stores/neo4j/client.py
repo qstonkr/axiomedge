@@ -333,10 +333,10 @@ class NoOpSession:
 class NoOpResult:
     """NoOp Result (테스트용)"""
 
-    def __aiter__(self):
+    def __aiter__(self) -> NoOpResult:
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> None:
         raise StopAsyncIteration
 
     async def consume(self) -> "NoOpSummary":
@@ -360,10 +360,10 @@ class NoOpSummary:
 class NoOpTransaction:
     """NoOp Transaction (테스트용)"""
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> NoOpTransaction:
         return self
 
-    async def __aexit__(self, *args):
+    async def __aexit__(self, *args: object) -> None:
         await asyncio.sleep(0)
 
     async def run(self, _cypher: str, _params: dict | None = None) -> NoOpResult:

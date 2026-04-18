@@ -146,7 +146,7 @@ def _deserialize(raw: dict) -> dict:
 
 
 @router.get("/{job_id}", responses={404: {"description": "Job not found"}})
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str) -> dict:
     """Get status of an ingestion job."""
     job = await get_job(job_id)
     if not job:
@@ -155,7 +155,7 @@ async def get_job_status(job_id: str):
 
 
 @router.post("/{job_id}/cancel", responses={404: {"description": "Job not found"}, 400: {"description": "Job is not in processing state"}})
-async def cancel_job(job_id: str):
+async def cancel_job(job_id: str) -> dict:
     """Cancel a running ingestion job."""
     job = await get_job(job_id)
     if not job:
@@ -173,7 +173,7 @@ async def cancel_job(job_id: str):
 
 
 @router.get("")
-async def list_jobs():
+async def list_jobs() -> dict:
     """List recent ingestion jobs (last 20)."""
     r = await _get_redis()
     job_ids = await r.lrange(_INDEX_KEY, -20, -1)

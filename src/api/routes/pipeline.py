@@ -35,7 +35,7 @@ def _compute_duration(started: str | object | None, completed: str | object | No
 # GET /api/v1/admin/pipeline/status
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/status")
-async def get_pipeline_status():
+async def get_pipeline_status() -> dict[str, Any]:
     """Get pipeline status."""
     state = _get_state()
     repo = state.get("ingestion_run_repo")
@@ -59,7 +59,7 @@ async def get_pipeline_status():
 # GET /api/v1/admin/pipeline/metrics
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/metrics")
-async def get_pipeline_metrics():
+async def get_pipeline_metrics() -> dict[str, Any]:
     """Get pipeline metrics."""
     empty = {
         "total_runs": 0, "successful_runs": 0, "failed_runs": 0,
@@ -100,7 +100,7 @@ async def get_pipeline_metrics():
 # GET /api/v1/admin/pipeline/runs/{run_id}
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/runs/{run_id}")
-async def get_pipeline_run_detail(run_id: str):
+async def get_pipeline_run_detail(run_id: str) -> dict[str, Any]:
     """Get pipeline run detail."""
     state = _get_state()
     repo = state.get("ingestion_run_repo")
@@ -121,7 +121,7 @@ async def get_pipeline_run_detail(run_id: str):
 # GET /api/v1/admin/pipeline/experiments/{kb_id}/latest
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/experiments/{kb_id}/latest")
-async def get_latest_experiment_run(kb_id: str):
+async def get_latest_experiment_run(kb_id: str) -> dict[str, Any]:
     """Get latest experiment run for a KB."""
     state = _get_state()
     repo = state.get("ingestion_run_repo")
@@ -145,7 +145,7 @@ async def get_latest_experiment_run(kb_id: str):
 # POST /api/v1/admin/kb/{kb_id}/sync
 # ---------------------------------------------------------------------------
 @router.post("/kb/{kb_id}/sync")
-async def trigger_kb_sync(kb_id: str, body: dict[str, Any]):
+async def trigger_kb_sync(kb_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Trigger KB sync."""
     run_id = str(uuid.uuid4())
     return {
@@ -160,7 +160,7 @@ async def trigger_kb_sync(kb_id: str, body: dict[str, Any]):
 # POST /api/v1/admin/kb/{kb_id}/sync/validate
 # ---------------------------------------------------------------------------
 @router.post("/kb/{kb_id}/sync/validate")
-async def validate_kb_sync(kb_id: str, body: dict[str, Any]):
+async def validate_kb_sync(kb_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Validate KB sync config."""
     return {
         "valid": True,
@@ -173,7 +173,7 @@ async def validate_kb_sync(kb_id: str, body: dict[str, Any]):
 # POST /api/v1/admin/pipeline/publish/dry-run
 # ---------------------------------------------------------------------------
 @router.post("/pipeline/publish/dry-run")
-async def publish_experiment_dry_run(body: dict[str, Any]):
+async def publish_experiment_dry_run(body: dict[str, Any]) -> dict[str, Any]:
     """Dry-run publish experiment."""
     return {
         "success": True,
@@ -188,7 +188,7 @@ async def publish_experiment_dry_run(body: dict[str, Any]):
 # POST /api/v1/admin/pipeline/publish/execute
 # ---------------------------------------------------------------------------
 @router.post("/pipeline/publish/execute")
-async def publish_experiment_execute(body: dict[str, Any]):
+async def publish_experiment_execute(body: dict[str, Any]) -> dict[str, Any]:
     """Execute publish experiment."""
     return {
         "success": True,
@@ -202,7 +202,7 @@ async def publish_experiment_execute(body: dict[str, Any]):
 # GET /api/v1/admin/pipeline/gates/stats
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/gates/stats")
-async def get_pipeline_gates_stats():
+async def get_pipeline_gates_stats() -> dict[str, Any]:
     """Get pipeline gates stats."""
     return {
         "gates": [],
@@ -215,7 +215,7 @@ async def get_pipeline_gates_stats():
 # GET /api/v1/admin/pipeline/gates/blocked
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/gates/blocked")
-async def get_pipeline_gates_blocked():
+async def get_pipeline_gates_blocked() -> dict[str, Any]:
     """Get all documents blocked by ingestion gates."""
     return {
         "blocked_documents": [],
@@ -227,7 +227,7 @@ async def get_pipeline_gates_blocked():
 # GET /api/v1/admin/pipeline/gates/{gate_id}/blocked
 # ---------------------------------------------------------------------------
 @router.get("/pipeline/gates/{gate_id}/blocked")
-async def get_pipeline_gate_blocked(gate_id: str):
+async def get_pipeline_gate_blocked(gate_id: str) -> dict[str, Any]:
     """Get documents blocked by a specific gate."""
     return {
         "gate_id": gate_id,
@@ -245,7 +245,7 @@ async def list_ingestion_runs(
     status: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """List ingestion runs."""
     state = _get_state()
     repo = state.get("ingestion_run_repo")
@@ -268,7 +268,7 @@ async def list_ingestion_runs(
 # GET /api/v1/admin/knowledge/ingest/status/{run_id}
 # ---------------------------------------------------------------------------
 @router.get("/knowledge/ingest/status/{run_id}")
-async def get_ingestion_run(run_id: str):
+async def get_ingestion_run(run_id: str) -> dict[str, Any]:
     """Get ingestion run status."""
     state = _get_state()
     repo = state.get("ingestion_run_repo")
@@ -294,7 +294,7 @@ async def get_ingestion_run(run_id: str):
 # POST /api/v1/admin/knowledge/ingest
 # ---------------------------------------------------------------------------
 @router.post("/knowledge/ingest")
-async def trigger_ingestion(body: dict[str, Any]):
+async def trigger_ingestion(body: dict[str, Any]) -> dict[str, Any]:
     """Trigger ingestion."""
     run_id = str(uuid.uuid4())
     return {
@@ -308,7 +308,7 @@ async def trigger_ingestion(body: dict[str, Any]):
 # POST /api/v1/admin/knowledge/ingest/jobs/{run_id}/cancel
 # ---------------------------------------------------------------------------
 @router.post("/knowledge/ingest/jobs/{run_id}/cancel")
-async def cancel_ingestion(run_id: str):
+async def cancel_ingestion(run_id: str) -> dict[str, Any]:
     """Cancel an ingestion run."""
     return {"success": True, "run_id": run_id, "message": "Cancelled"}
 
@@ -319,7 +319,7 @@ async def cancel_ingestion(run_id: str):
 @router.get("/ingestion/stats")
 async def get_ingestion_stats(
     kb_id: Annotated[str | None, Query()] = None,
-):
+) -> dict[str, Any]:
     """Get ingestion stats."""
     state = _get_state()
     repo = state.get("ingestion_run_repo")
@@ -349,7 +349,7 @@ async def get_ingestion_stats(
 # GET /api/v1/admin/ingestion/schedules
 # ---------------------------------------------------------------------------
 @router.get("/ingestion/schedules")
-async def list_ingestion_schedules():
+async def list_ingestion_schedules() -> dict[str, Any]:
     """List ingestion schedules."""
     return {"schedules": [], "total": 0}
 
@@ -358,7 +358,7 @@ async def list_ingestion_schedules():
 # GET /api/v1/admin/categories
 # ---------------------------------------------------------------------------
 @router.get("/categories")
-async def list_l1_categories():
+async def list_l1_categories() -> dict[str, Any]:
     """List L1 categories."""
     state = _get_state()
     repo = state.get("category_repo")
@@ -374,7 +374,7 @@ async def list_l1_categories():
 # ---------------------------------------------------------------------------
 # GET /api/v1/admin/categories/stats
 # ---------------------------------------------------------------------------
-def _extract_kb_ids(raw_names: list[str], collections) -> list[str]:
+def _extract_kb_ids(raw_names: list[str], collections: object) -> list[str]:
     """Extract and deduplicate KB IDs from collection names."""
     prefix = getattr(collections._provider.config, "collection_prefix", "kb") + "_"
     kb_ids = []
@@ -390,7 +390,7 @@ def _extract_kb_ids(raw_names: list[str], collections) -> list[str]:
 
 
 @router.get("/categories/stats")
-async def get_l1_stats():
+async def get_l1_stats() -> dict[str, Any]:
     """Get L1 category stats aggregated from Qdrant facet API."""
     state = _get_state()
     store = state.get("qdrant_store")

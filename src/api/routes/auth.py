@@ -9,7 +9,7 @@ This module keeps login/logout/register/change-password/me.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
@@ -85,7 +85,7 @@ for _sub in (_abac_router, _users_router):
         503: {"description": "Service not initialized"},
     },
 )
-async def login(body: LoginRequest, request: Request, response: Response):
+async def login(body: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
     """Authenticate with email/password, return JWT tokens in HttpOnly cookies."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -138,7 +138,7 @@ async def login(body: LoginRequest, request: Request, response: Response):
         503: {"description": "Service not initialized"},
     },
 )
-async def refresh_token(request: Request, response: Response):
+async def refresh_token(request: Request, response: Response) -> dict[str, Any]:
     """Refresh access token using refresh token from cookie or body."""
     state = _get_state()
     jwt_service = state.get("jwt_service")
@@ -194,7 +194,7 @@ async def refresh_token(request: Request, response: Response):
 
 
 @router.post("/logout")
-async def logout(request: Request, response: Response):
+async def logout(request: Request, response: Response) -> dict[str, Any]:
     """Revoke tokens and clear cookies."""
     state = _get_state()
     jwt_service = state.get("jwt_service")
@@ -226,7 +226,7 @@ async def logout(request: Request, response: Response):
 async def register(
     body: RegisterRequest,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "users"))],
-):
+) -> dict[str, Any]:
     """Register a new internal user (admin only)."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -258,7 +258,7 @@ async def register(
 async def change_password(
     body: ChangePasswordRequest,
     user: Annotated[AuthUser, Depends(get_current_user)],
-):
+) -> dict[str, Any]:
     """Change current user's password. Revokes all existing sessions."""
     auth_service = _get_auth_service()
     if not auth_service:
@@ -286,7 +286,7 @@ async def change_password(
 
 
 @router.get("/me")
-async def get_me(user: Annotated[AuthUser, Depends(get_current_user)]):
+async def get_me(user: Annotated[AuthUser, Depends(get_current_user)]) -> dict[str, Any]:
     """Get current user info and permissions."""
     auth_service = _get_auth_service()
     roles = []

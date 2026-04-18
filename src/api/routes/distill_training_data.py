@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -34,13 +35,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/distill", tags=["Distill - Training Data"])
 
 
-def _get_state():
+def _get_state() -> dict[str, Any]:
     """Deferred import wrapper — circular import 회피용."""
     from src.api.app import _get_state as _inner
     return _inner()
 
 
-def _get_distill_repo():
+def _get_distill_repo() -> Any:
     """distill repo 를 state 에서 조회 (distill.py 의 동일 helper 와 duplicate).
 
     이 helper 를 `distill.py` 에서 import 하면 circular import 가 생긴다
@@ -122,7 +123,7 @@ async def list_training_data(
     sort_order: str = "desc",
     limit: int = 50,
     offset: int = 0,
-):
+) -> dict[str, Any]:
     """학습 데이터 목록."""
     repo = _get_distill_repo()
     return await repo.list_training_data(
@@ -134,7 +135,7 @@ async def list_training_data(
 
 
 @router.post("/training-data", status_code=201)
-async def add_training_data(request: TrainingDataAddRequest):
+async def add_training_data(request: TrainingDataAddRequest) -> dict[str, int]:
     """수동 QA 추가."""
     repo = _get_distill_repo()
     count = await repo.save_training_data([request.model_dump()])
@@ -142,7 +143,9 @@ async def add_training_data(request: TrainingDataAddRequest):
 
 
 @router.put("/training-data/review")
-async def review_training_data(request: TrainingDataReviewRequest):
+async def review_training_data(
+    request: TrainingDataReviewRequest,
+) -> dict[str, int]:
     """학습 데이터 승인/거부."""
     if request.status not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Status must be 'approved' or 'rejected'")
@@ -152,7 +155,9 @@ async def review_training_data(request: TrainingDataReviewRequest):
 
 
 @router.put("/training-data/review-edit")
-async def review_edit_training_data(request: TrainingDataEditReviewRequest):
+async def review_edit_training_data(
+    request: TrainingDataEditReviewRequest,
+) -> dict[str, int]:
     """승인/거부 + 텍스트 편집."""
     repo = _get_distill_repo()
     updated = await repo.bulk_update_training_data(
@@ -162,14 +167,14 @@ async def review_edit_training_data(request: TrainingDataEditReviewRequest):
 
 
 @router.get("/training-data/stats")
-async def training_data_stats(profile_name: str):
+async def training_data_stats(profile_name: str) -> dict[str, Any]:
     """프로필별 학습 데이터 통계."""
     repo = _get_distill_repo()
     return await repo.get_training_data_stats(profile_name)
 
 
 @router.get("/training-data/batches/{batch_id}")
-async def get_batch_stats(batch_id: str):
+async def get_batch_stats(batch_id: str) -> dict[str, Any]:
     """배치 생성 현황/통계."""
     repo = _get_distill_repo()
     return await repo.get_batch_stats(batch_id)
@@ -193,7 +198,9 @@ _BAD_PATTERN_MATCH_THRESHOLD = 2
 
 
 @router.post("/training-data/smart-approve")
-async def smart_approve(profile_name: str, source_type: str | None = None):
+async def smart_approve(
+    profile_name: str, source_type: str | None = None,
+) -> dict[str, int]:
     """품질 체크 후 일괄 승인 (불량은 자동 거부, 마크다운은 cleanup 후 승인).
 
     1. 답변 불가 패턴 → 자동 거부
@@ -258,7 +265,7 @@ async def smart_approve(profile_name: str, source_type: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def _require_distill_service():
+def _require_distill_service() -> Any:
     svc = _get_state().get("distill_service")
     if not svc:
         raise HTTPException(status_code=503, detail="Distill service not initialized")
@@ -267,9 +274,9 @@ def _require_distill_service():
 
 def _spawn_background(coro_factory, *, label: str) -> None:
     """백그라운드 coroutine 실행 + task 참조 유지 + 실패 로깅."""
-    async def _run():
+    async def _run() -> None:
         try:
-            return await coro_factory()
+            await coro_factory()
         except Exception as e:
             logger.error("%s failed: %s", label, e, exc_info=True)
 
@@ -279,7 +286,9 @@ def _spawn_background(coro_factory, *, label: str) -> None:
 
 
 @router.post("/training-data/generate")
-async def generate_training_data(request: GenerateDataRequest):
+async def generate_training_data(
+    request: GenerateDataRequest,
+) -> dict[str, str]:
     """큐레이션용 QA 데이터 생성 (백그라운드)."""
     svc = _require_distill_service()
     _spawn_background(
@@ -290,7 +299,9 @@ async def generate_training_data(request: GenerateDataRequest):
 
 
 @router.post("/training-data/generate-test")
-async def generate_test_data(request: GenerateTestDataRequest):
+async def generate_test_data(
+    request: GenerateTestDataRequest,
+) -> dict[str, str | int]:
     """테스트 시드 데이터 생성 (백그라운드)."""
     svc = _require_distill_service()
     _spawn_background(
@@ -301,7 +312,9 @@ async def generate_test_data(request: GenerateTestDataRequest):
 
 
 @router.post("/training-data/augment")
-async def augment_training_data(request: AugmentRequest):
+async def augment_training_data(
+    request: AugmentRequest,
+) -> dict[str, str]:
     """승인된 QA를 질문 변형으로 증강 (백그라운드)."""
     svc = _require_distill_service()
     _spawn_background(
@@ -314,7 +327,9 @@ async def augment_training_data(request: AugmentRequest):
 
 
 @router.post("/training-data/generate-term-qa")
-async def generate_term_qa(request: GenerateTermQARequest):
+async def generate_term_qa(
+    request: GenerateTermQARequest,
+) -> dict[str, str | int]:
     """PBU 핵심 용어 → QA 학습 데이터 생성 (백그라운드)."""
     svc = _require_distill_service()
     _spawn_background(
@@ -330,7 +345,9 @@ async def generate_term_qa(request: GenerateTermQARequest):
 
 
 @router.post("/training-data/cleanup-answers")
-async def cleanup_answers(profile_name: str, source_type: str | None = None):
+async def cleanup_answers(
+    profile_name: str, source_type: str | None = None,
+) -> dict[str, int]:
     """기존 학습 데이터 답변에서 마크다운/추론/출처 참조 일괄 제거."""
     repo = _get_distill_repo()
     result = await repo.list_training_data(
@@ -362,7 +379,9 @@ _ALLOWED_DELETE_SOURCE_TYPES = frozenset({
 
 
 @router.delete("/training-data/by-source")
-async def delete_by_source_type(profile_name: str, source_type: str):
+async def delete_by_source_type(
+    profile_name: str, source_type: str,
+) -> dict[str, int]:
     """특정 source_type 데이터 일괄 삭제."""
     if source_type not in _ALLOWED_DELETE_SOURCE_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid source_type: {source_type}")
@@ -372,7 +391,7 @@ async def delete_by_source_type(profile_name: str, source_type: str):
 
 
 @router.delete("/training-data/batch/{batch_id}")
-async def delete_batch_data(batch_id: str):
+async def delete_batch_data(batch_id: str) -> dict[str, int]:
     """특정 배치의 데이터 일괄 삭제."""
     repo = _get_distill_repo()
     deleted = await repo.delete_training_data_by_batch(batch_id)

@@ -12,7 +12,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -85,7 +85,7 @@ async def _init_db_with_retry(settings) -> None:
                 raise
 
 
-def _create_repositories(state: AppState, session_factory, db_url: str):
+def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     """Create all repository instances and store in state."""
     from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
     from src.stores.postgres.repositories.glossary import GlossaryRepository
@@ -418,7 +418,7 @@ async def _init_graph(state: AppState, settings) -> None:
         logger.warning("Neo4j init failed: %s", e)
 
 
-def _try_tei_embedding(_settings):
+def _try_tei_embedding(_settings) -> Any:
     """Try to initialize TEI embedding provider."""
     use_cloud = os.getenv("USE_CLOUD_EMBEDDING", "true").lower() in ("true", "1", "yes")
     if not use_cloud:
@@ -438,7 +438,7 @@ def _try_tei_embedding(_settings):
     return None
 
 
-def _try_ollama_embedding(settings):
+def _try_ollama_embedding(settings) -> Any:
     """Try to initialize Ollama embedding provider."""
     try:
         from src.nlp.embedding.ollama_provider import OllamaEmbeddingProvider
@@ -455,7 +455,7 @@ def _try_ollama_embedding(settings):
     return None
 
 
-def _try_onnx_embedding(settings):
+def _try_onnx_embedding(settings) -> Any:
     """Try to initialize ONNX embedding provider."""
     try:
         from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
@@ -582,7 +582,7 @@ async def _init_auth(state: AppState, settings) -> None:
         logger.warning("Auth init failed (running without auth): %s", e)
 
 
-async def _init_services():
+async def _init_services() -> None:
     """Orchestrate all service initialization in dependency order."""
     from src.config import get_settings
     settings = get_settings()
@@ -684,7 +684,7 @@ async def _close_connections(state: AppState) -> None:
             logger.debug("Error closing Auth service: %s", e)
 
 
-async def _shutdown_services():
+async def _shutdown_services() -> None:
     """Clean up on shutdown with graceful drain of active jobs."""
     import asyncio as _aio
 

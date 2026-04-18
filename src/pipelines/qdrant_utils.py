@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import uuid
 import logging
+from typing import Any
+
 from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
@@ -46,7 +48,7 @@ def get_qdrant_url() -> str:
     return get_settings().qdrant.url
 
 
-def create_qdrant_client():
+def create_qdrant_client() -> Any:
     """Qdrant sync 클라이언트 생성 (타임아웃 포함)."""
     from qdrant_client import QdrantClient
 

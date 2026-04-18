@@ -53,7 +53,7 @@ class AuthProviderBase(abc.ABC):
 class AuthenticationError(Exception):
     """Raised when authentication fails."""
 
-    def __init__(self, detail: str = "Authentication failed", status_code: int = 401):
+    def __init__(self, detail: str = "Authentication failed", status_code: int = 401) -> None:
         self.detail = detail
         self.status_code = status_code
         super().__init__(detail)
@@ -71,7 +71,7 @@ class LocalAuthProvider(AuthProviderBase):
     In production, replace with Keycloak or AzureAD.
     """
 
-    def __init__(self, api_keys: dict[str, dict] | None = None):
+    def __init__(self, api_keys: dict[str, dict] | None = None) -> None:
         # api_keys: {"key123": {"email": "...", "name": "...", "roles": [...]}}
         self._api_keys = api_keys or {}
 
@@ -122,7 +122,7 @@ class KeycloakAuthProvider(AuthProviderBase):
         realm: str,
         client_id: str,
         client_secret: str | None = None,
-    ):
+    ) -> None:
         self._server_url = server_url.rstrip("/")
         self._realm = realm
         self._client_id = client_id
@@ -192,7 +192,7 @@ class AzureADAuthProvider(AuthProviderBase):
         AZURE_AD_CLIENT_ID: your-client-id
     """
 
-    def __init__(self, tenant_id: str, client_id: str):
+    def __init__(self, tenant_id: str, client_id: str) -> None:
         self._tenant_id = tenant_id
         self._client_id = client_id
         self._jwks_client: Any = None
@@ -255,7 +255,7 @@ class InternalAuthProvider(AuthProviderBase):
     issued by the internal login endpoint.
     """
 
-    def __init__(self, jwt_service: Any):
+    def __init__(self, jwt_service: Any) -> None:
         from src.auth.jwt_service import JWTService
 
         self._jwt_service: JWTService = jwt_service

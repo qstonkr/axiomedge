@@ -162,7 +162,7 @@ class TermExtractor:
         self._approved_vecs_cache: Any | None = None  # numpy array cache
         self._approved_terms_cache: list[str] | None = None
 
-    def _get_kiwi(self):
+    def _get_kiwi(self) -> Any:
         """Lazy-load KiwiPy tokenizer."""
         if self._kiwi_available is None:
             try:

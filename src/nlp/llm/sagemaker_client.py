@@ -19,7 +19,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from src.config.weights import weights
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
@@ -53,7 +53,7 @@ class SageMakerLLMClient:
         self._config = config or SageMakerConfig()
         self._client = None
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         # SSO token renewal workaround: recreate client each call
         # until IAM key migration, then switch to cached client
         import boto3

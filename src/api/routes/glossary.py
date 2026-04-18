@@ -38,7 +38,7 @@ async def list_glossary_terms(
     term_type: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 100,
-):
+) -> dict[str, Any]:
     """List glossary terms."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -61,7 +61,7 @@ async def list_glossary_terms(
 # (MUST be before /{term_id} to avoid path capture)
 # ---------------------------------------------------------------------------
 @router.get("/domain-stats")
-async def get_domain_stats():
+async def get_domain_stats() -> dict[str, Any]:
     """Get term count by domain_name (전체 데이터 DB 집계)."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -90,7 +90,7 @@ async def get_domain_stats():
 # GET /api/v1/admin/glossary/source-stats
 # ---------------------------------------------------------------------------
 @router.get("/source-stats")
-async def get_source_stats():
+async def get_source_stats() -> dict[str, Any]:
     """Get term count by kb_id/source (표준분류별, 전체 DB 집계)."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -118,7 +118,7 @@ async def get_source_stats():
 # (MUST be before /{term_id} to avoid path capture)
 # ---------------------------------------------------------------------------
 @router.get("/similarity-distribution")
-async def get_similarity_distribution():
+async def get_similarity_distribution() -> dict[str, Any]:
     """Get similarity score distribution with RapidFuzz sampling (500 samples, top-K matching)."""
     state = _get_state()
     try:
@@ -137,7 +137,7 @@ async def list_discovered_synonyms_early(
     status: Annotated[str, Query()] = "pending",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=200)] = 50,
-):
+) -> dict[str, Any]:
     """List auto-discovered synonym candidates."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -160,7 +160,7 @@ async def list_discovered_synonyms_early(
     "/{term_id}",
     responses={404: {"description": "Term not found"}},
 )
-async def get_glossary_term(term_id: str):
+async def get_glossary_term(term_id: str) -> dict[str, Any]:
     """Get single glossary term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -181,7 +181,7 @@ async def get_glossary_term(term_id: str):
     "",
     responses={500: {"description": "Failed to create term"}},
 )
-async def create_glossary_term(body: dict[str, Any]):
+async def create_glossary_term(body: dict[str, Any]) -> dict[str, Any]:
     """Create a glossary term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -209,7 +209,7 @@ async def create_glossary_term(body: dict[str, Any]):
         500: {"description": "Failed to update term"},
     },
 )
-async def update_glossary_term(term_id: str, body: dict[str, Any]):
+async def update_glossary_term(term_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update a glossary term. Global standards are read-only."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -240,7 +240,7 @@ async def update_glossary_term(term_id: str, body: dict[str, Any]):
         500: {"description": "Failed to approve term"},
     },
 )
-async def approve_glossary_term(term_id: str, body: dict[str, Any]):
+async def approve_glossary_term(term_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Approve a glossary term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -278,7 +278,7 @@ async def approve_glossary_term(term_id: str, body: dict[str, Any]):
         500: {"description": "Failed to reject term"},
     },
 )
-async def reject_glossary_term(term_id: str, body: dict[str, Any]):
+async def reject_glossary_term(term_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Reject a glossary term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -313,7 +313,7 @@ async def reject_glossary_term(term_id: str, body: dict[str, Any]):
         404: {"description": "Term not found"},
     },
 )
-async def delete_glossary_term(term_id: str):
+async def delete_glossary_term(term_id: str) -> dict[str, Any]:
     """Delete a glossary term. Global standards are read-only."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -339,7 +339,7 @@ async def delete_glossary_term(term_id: str):
         500: {"description": "Failed to promote term"},
     },
 )
-async def promote_glossary_term_to_global(term_id: str):
+async def promote_glossary_term_to_global(term_id: str) -> dict[str, Any]:
     """Promote a glossary term to global scope."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -380,7 +380,7 @@ async def import_glossary_csv(
     encoding: Annotated[str, Query()] = "utf-8",
     term_type: Annotated[str, Query()] = "term",
     kb_id: Annotated[str, Query()] = "global-standard",
-):
+) -> dict[str, Any]:
     """Import glossary terms from one or multiple CSV files."""
     from src.api.services.glossary_import_service import import_csv
 
@@ -421,7 +421,7 @@ async def import_glossary_csv(
 async def delete_glossary_by_type(
     term_type: str,
     kb_id: Annotated[str, Query()] = "global-standard",
-):
+) -> dict[str, Any]:
     """Delete glossary terms by type."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -450,7 +450,7 @@ async def delete_glossary_by_type(
         500: {"description": "Failed to add synonym"},
     },
 )
-async def add_synonym_to_standard(body: dict[str, Any]):
+async def add_synonym_to_standard(body: dict[str, Any]) -> dict[str, Any]:
     """Add synonym to a standard term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -493,7 +493,7 @@ async def add_synonym_to_standard(body: dict[str, Any]):
         503: {"description": "No DB connection"},
     },
 )
-async def list_synonyms(term_id: str):
+async def list_synonyms(term_id: str) -> dict[str, Any]:
     """List synonyms for a glossary term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -527,7 +527,7 @@ async def list_synonyms(term_id: str):
         503: {"description": "No DB connection"},
     },
 )
-async def remove_synonym(term_id: str, synonym: str):
+async def remove_synonym(term_id: str, synonym: str) -> dict[str, Any]:
     """Remove a synonym from a glossary term."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -569,7 +569,7 @@ async def remove_synonym(term_id: str, synonym: str):
         503: {"description": "No DB connection"},
     },
 )
-async def approve_discovered_synonyms(body: dict[str, Any]):
+async def approve_discovered_synonyms(body: dict[str, Any]) -> dict[str, Any]:
     """Approve one or more discovered synonym candidates.
 
     Approving means: add the synonym to the base term's synonyms list,
@@ -607,7 +607,7 @@ async def approve_discovered_synonyms(body: dict[str, Any]):
         503: {"description": "No DB connection"},
     },
 )
-async def reject_discovered_synonyms(body: dict[str, Any]):
+async def reject_discovered_synonyms(body: dict[str, Any]) -> dict[str, Any]:
     """Reject one or more discovered synonym candidates."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -650,7 +650,7 @@ async def check_pending_similarity(
     threshold: Annotated[float, Query()] = 0.7,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=1000)] = 500,
-):
+) -> dict[str, Any]:
     """Check pending term similarity. Returns pairs of pending terms that look similar to approved terms."""
     state = _get_state()
     repo = state.get("glossary_repo")
@@ -689,7 +689,7 @@ async def check_pending_similarity(
 async def cleanup_pending_by_similarity(
     threshold: Annotated[float, Query()] = 0.7,
     body: dict[str, Any] | None = None,
-):
+) -> dict[str, Any]:
     """Cleanup pending terms by similarity. Removes pending terms that duplicate approved ones."""
     state = _get_state()
     repo = state.get("glossary_repo")

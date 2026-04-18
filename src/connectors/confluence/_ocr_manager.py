@@ -10,6 +10,7 @@ import asyncio
 import io
 import logging
 from pathlib import Path
+from typing import Any
 
 from .models import AttachmentParseResult
 from ._attachment_helpers import (
@@ -40,7 +41,7 @@ class _OcrManagerMixin:
     _ocr_lock = __import__("threading").Lock()
 
     @classmethod
-    def _get_ocr_instance(cls):
+    def _get_ocr_instance(cls) -> Any:
         """싱글톤 PaddleOCR 인스턴스 반환 (amd64 only)."""
         if cls._ocr_instance is None:
             try:
@@ -58,7 +59,7 @@ class _OcrManagerMixin:
         return cls._ocr_instance
 
     @classmethod
-    def cleanup_ocr(cls):
+    def cleanup_ocr(cls) -> None:
         """OCR 인스턴스 정리 및 메모리 해제."""
         import gc
         cls._ocr_instance = None
@@ -131,7 +132,7 @@ class _OcrManagerMixin:
     _OCR_MAX_ASPECT_RATIO = OCR_MAX_ASPECT_RATIO
 
     @staticmethod
-    def _resize_image_if_needed(img, max_size: int = 2048):
+    def _resize_image_if_needed(img, max_size: int = 2048) -> Any:
         """큰 이미지 리사이즈 (메모리 최적화).
 
         Returns:
@@ -292,7 +293,7 @@ class _OcrManagerMixin:
     @classmethod
     def _perform_image_ocr(
         cls, img, content, file_path, metadata_text, policy,
-    ):
+    ) -> Any:
         """Execute OCR on an image and return the result."""
         import gc
 

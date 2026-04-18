@@ -42,7 +42,7 @@ class QAGenerationStage:
 
     name = "qa_generation"
 
-    def __init__(self, generator, session_factory, min_training_samples: int):
+    def __init__(self, generator, session_factory, min_training_samples: int) -> None:
         self._gen = generator
         self._session_factory = session_factory
         self._min_samples = min_training_samples
@@ -75,7 +75,7 @@ class GeneralityStage:
 
     name = "generality"
 
-    def __init__(self, generality_filter):
+    def __init__(self, generality_filter) -> None:
         self._filter = generality_filter
 
     async def process(self, ctx: DataGenContext) -> DataGenContext:
@@ -97,7 +97,7 @@ class LegacyAugmentStage:
 
     name = "legacy_augment"
 
-    def __init__(self, generator):
+    def __init__(self, generator) -> None:
         self._gen = generator
 
     async def process(self, ctx: DataGenContext) -> DataGenContext:
@@ -150,7 +150,7 @@ class ReformatStage:
 
     name = "reformat"
 
-    def __init__(self, llm_helper, concurrency: int = 4):
+    def __init__(self, llm_helper, concurrency: int = 4) -> None:
         self._llm = llm_helper
         self._concurrency = concurrency
 
@@ -201,7 +201,7 @@ class AugmentStage:
 
     name = "augment"
 
-    def __init__(self, llm_helper, n_variations: int, concurrency: int = 4, verify: bool = True):
+    def __init__(self, llm_helper, n_variations: int, concurrency: int = 4, verify: bool = True) -> None:
         self._llm = llm_helper
         self._n = n_variations
         self._concurrency = concurrency

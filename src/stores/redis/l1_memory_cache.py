@@ -34,7 +34,7 @@ class L1InMemoryCache(ICacheLayer):
         self,
         max_size: int = DEFAULT_MAX_SIZE,
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
-    ):
+    ) -> None:
         self._max_size = max_size
         self._ttl_seconds = ttl_seconds
         self._cache: OrderedDict[str, tuple[CacheEntry, float]] = OrderedDict()

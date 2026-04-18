@@ -23,7 +23,7 @@ class QAGenerator:
         llm_helper: LLMHelper,
         quality_filter: QualityFilter,
         profile: DistillProfile,
-    ):
+    ) -> None:
         self.llm = llm_helper
         self.quality = quality_filter
         self.profile = profile

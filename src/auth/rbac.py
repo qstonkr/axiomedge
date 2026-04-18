@@ -108,7 +108,7 @@ class RBACEngine:
     Supports wildcard permissions (*:*) and scoped role evaluation.
     """
 
-    def __init__(self, role_definitions: dict[str, dict] | None = None):
+    def __init__(self, role_definitions: dict[str, dict] | None = None) -> None:
         self._roles = role_definitions or DEFAULT_ROLES
 
     def check_permission(

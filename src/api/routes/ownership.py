@@ -23,7 +23,7 @@ knowledge_router = APIRouter(prefix="/api/v1/knowledge/experts", tags=["Ownershi
 async def list_document_owners(
     kb_id: Annotated[str, Query()],
     status: Annotated[str | None, Query()] = None,
-):
+) -> dict[str, Any]:
     """List document owners."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -43,7 +43,7 @@ async def list_document_owners(
 async def get_document_owner(
     document_id: str,
     kb_id: Annotated[str, Query()],
-):
+) -> dict[str, Any]:
     """Get document owner."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -66,7 +66,7 @@ async def get_document_owner(
 # POST /api/v1/admin/ownership/documents
 # ---------------------------------------------------------------------------
 @admin_router.post("/documents", responses={500: {"description": "Failed to assign owner"}})
-async def assign_document_owner(body: dict[str, Any]):
+async def assign_document_owner(body: dict[str, Any]) -> dict[str, Any]:
     """Assign document owner."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -84,7 +84,7 @@ async def assign_document_owner(body: dict[str, Any]):
 # POST /api/v1/admin/ownership/documents/{document_id}/transfer
 # ---------------------------------------------------------------------------
 @admin_router.post("/documents/{document_id}/transfer", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to transfer ownership"}})
-async def transfer_ownership(document_id: str, body: dict[str, Any]):
+async def transfer_ownership(document_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Transfer document ownership."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -115,7 +115,7 @@ async def transfer_ownership(document_id: str, body: dict[str, Any]):
 # POST /api/v1/admin/ownership/documents/{document_id}/verify
 # ---------------------------------------------------------------------------
 @admin_router.post("/documents/{document_id}/verify", responses={404: {"description": "Document owner not found"}, 500: {"description": "Failed to verify owner"}})
-async def verify_document_owner(document_id: str, body: dict[str, Any]):
+async def verify_document_owner(document_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Verify document owner."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -167,7 +167,7 @@ def _find_stale_owners(all_owners: list[dict], cutoff) -> list[dict]:
 async def get_stale_owners(
     kb_id: Annotated[str, Query()],
     days_threshold: Annotated[int, Query(ge=1)] = 90,
-):
+) -> dict[str, Any]:
     """Get stale owners."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -187,7 +187,7 @@ async def get_stale_owners(
 # GET /api/v1/admin/ownership/availability/{owner_user_id}
 # ---------------------------------------------------------------------------
 @admin_router.get("/availability/{owner_user_id}")
-async def get_owner_availability(owner_user_id: str):
+async def get_owner_availability(owner_user_id: str) -> dict[str, Any]:
     """Get owner availability."""
     state = _get_state()
     repo = state.get("doc_owner_repo")
@@ -209,7 +209,7 @@ async def get_owner_availability(owner_user_id: str):
 # PUT /api/v1/admin/ownership/availability/{owner_user_id}
 # ---------------------------------------------------------------------------
 @admin_router.put("/availability/{owner_user_id}")
-async def update_owner_availability(owner_user_id: str, body: dict[str, Any]):
+async def update_owner_availability(owner_user_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update owner availability."""
     # Availability is a transient property; with doc_owner_repo we can update owner metadata
     state = _get_state()
@@ -229,7 +229,7 @@ async def update_owner_availability(owner_user_id: str, body: dict[str, Any]):
 @admin_router.get("/topics")
 async def list_topic_owners(
     kb_id: Annotated[str, Query()],
-):
+) -> dict[str, Any]:
     """List topic owners."""
     state = _get_state()
     repo = state.get("topic_owner_repo")
@@ -246,7 +246,7 @@ async def list_topic_owners(
 # POST /api/v1/admin/ownership/topics
 # ---------------------------------------------------------------------------
 @admin_router.post("/topics", responses={500: {"description": "Failed to assign topic owner"}})
-async def assign_topic_owner(body: dict[str, Any]):
+async def assign_topic_owner(body: dict[str, Any]) -> dict[str, Any]:
     """Assign topic owner."""
     state = _get_state()
     repo = state.get("topic_owner_repo")
@@ -267,7 +267,7 @@ async def assign_topic_owner(body: dict[str, Any]):
 async def search_experts(
     query: Annotated[str, Query(max_length=200)],
     kb_id: Annotated[str | None, Query()] = None,
-):
+) -> dict[str, Any]:
     """Search for experts by matching topic keywords."""
     state = _get_state()
     topic_repo = state.get("topic_owner_repo")

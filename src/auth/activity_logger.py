@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ActivityLogger:
     """User activity logging and querying."""
 
-    def __init__(self, session_factory: async_sessionmaker):
+    def __init__(self, session_factory: async_sessionmaker) -> None:
         self._session = session_factory
 
     async def log_activity(

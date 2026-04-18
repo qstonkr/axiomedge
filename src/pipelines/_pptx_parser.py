@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import logging
+from collections.abc import Iterator
 
 from . import _parser_utils
 from ._parser_utils import (
@@ -18,7 +19,7 @@ from ._parser_utils import (
 logger = logging.getLogger(__name__)
 
 
-def _iter_pptx_shapes(shapes, _depth: int = 0):
+def _iter_pptx_shapes(shapes, _depth: int = 0) -> Iterator:
     """Recursively yield shapes from PPTX, handling grouped shapes."""
     from pptx.enum.shapes import MSO_SHAPE_TYPE
     if _depth > 10:

@@ -46,7 +46,7 @@ class OllamaEmbeddingProvider:
         base_url: str | None = None,
         model: str = "",
         timeout: float = 300.0,
-    ):
+    ) -> None:
         from src.config import DEFAULT_EMBEDDING_MODEL, get_settings
 
         self._base_url = (base_url or get_settings().ollama.base_url).rstrip("/")

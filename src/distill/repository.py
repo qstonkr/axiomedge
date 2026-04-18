@@ -165,7 +165,7 @@ class DistillRepository:
         return await self._training_data.bulk_update_with_edit(updates)
 
     # --- Edge Servers ---
-    async def register_edge_server(self, **kwargs) -> dict[str, Any]:
+    async def register_edge_server(self, **kwargs: Any) -> dict[str, Any]:
         return await self._edge_servers.register_edge_server(**kwargs)
 
     async def upsert_heartbeat(

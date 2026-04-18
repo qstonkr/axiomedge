@@ -32,7 +32,7 @@ rag_query_router = APIRouter(tags=["RAG"])
 # POST /api/v1/knowledge/ask
 # ---------------------------------------------------------------------------
 @knowledge_router.post("/ask")
-async def rag_query(body: dict[str, Any]):
+async def rag_query(body: dict[str, Any]) -> dict[str, Any]:
     """RAG query."""
     from src.api.app import _get_state
 
@@ -65,7 +65,7 @@ async def rag_query(body: dict[str, Any]):
 # GET /api/v1/knowledge/rag/config
 # ---------------------------------------------------------------------------
 @knowledge_router.get("/rag/config")
-async def get_rag_config():
+async def get_rag_config() -> dict[str, Any]:
     """Get RAG config."""
     return {
         "mode": "classic",
@@ -79,7 +79,7 @@ async def get_rag_config():
 # GET /api/v1/knowledge/rag/stats
 # ---------------------------------------------------------------------------
 @knowledge_router.get("/rag/stats")
-async def get_rag_stats():
+async def get_rag_stats() -> dict[str, Any]:
     """Get RAG stats."""
     return {
         "total_queries": 0,
@@ -391,7 +391,7 @@ async def upload_and_ingest(
     create_new_kb: Annotated[str, Form()] = "false",
     tier: Annotated[str | None, Form()] = None,
     organization_id: Annotated[str | None, Form()] = None,
-):
+) -> dict[str, Any]:
     """Upload and ingest files (returns job ID, processes in background)."""
     import os
 
@@ -488,7 +488,7 @@ async def upload_and_ingest(
 # POST /api/v1/knowledge/reingest-from-jsonl
 # ============================================================================
 
-def _build_reingest_pipeline(state, embedder, store):
+def _build_reingest_pipeline(state: Any, embedder: Any, store: Any) -> IngestionPipeline:
     """Build an IngestionPipeline for re-ingestion."""
     from src.pipelines.ingestion import IngestionPipeline
     from src.api.routes.ingest import _OnnxSparseEmbedder
@@ -546,7 +546,7 @@ def _attach_reingest_callbacks(task, job_id: str, kb_id: str, state) -> None:
 async def reingest_from_jsonl(
     kb_id: Annotated[str, Form()],
     jsonl_path: Annotated[str | None, Form()] = None,
-):
+) -> dict[str, Any]:
     """Re-run Stage 2 (chunk/embed/store) from an existing JSONL checkpoint.
 
     Skips parsing/OCR entirely. Useful when Stage 1 succeeded but Stage 2 failed.
@@ -593,6 +593,6 @@ async def reingest_from_jsonl(
 # ============================================================================
 
 @rag_query_router.post("/api/v1/rag-query")
-async def rag_query_alias(body: dict[str, Any]):
+async def rag_query_alias(body: dict[str, Any]) -> dict[str, Any]:
     """Alias for /api/v1/knowledge/ask - dashboard compatibility."""
     return await rag_query(body)

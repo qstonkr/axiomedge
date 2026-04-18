@@ -53,7 +53,7 @@ class Neo4jConfig:
 class Neo4jKnowledgeLoader:
     """Neo4j 지식 그래프 로더."""
 
-    def __init__(self, config: Neo4jConfig):
+    def __init__(self, config: Neo4jConfig) -> None:
         self.config = config
         self._driver = None
         if not config.password:

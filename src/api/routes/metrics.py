@@ -234,7 +234,7 @@ def _render_prometheus() -> str:
 
 
 @router.get("/metrics")
-async def metrics(format: Annotated[str, Query(alias="format")] = "json"):
+async def metrics(format: Annotated[str, Query(alias="format")] = "json") -> Any:
     """Return current metrics snapshot.
 
     Query parameters:

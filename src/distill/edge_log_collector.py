@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class EdgeLogCollector:
     """S3에서 엣지 서버 로그를 수집하여 DB에 저장."""
 
-    def __init__(self, profile: DistillProfile):
+    def __init__(self, profile: DistillProfile) -> None:
         self.profile = profile
         self.bucket = profile.deploy.s3_bucket
         self.prefix = profile.deploy.s3_prefix
@@ -33,7 +33,7 @@ class EdgeLogCollector:
 
         from src.distill.deployer import _s3_client
 
-        def _list_and_download():
+        def _list_and_download() -> list[dict[str, Any]]:
             s3 = _s3_client()
             log_prefix = f"{self.prefix}logs/"
             all_logs: list[dict[str, Any]] = []

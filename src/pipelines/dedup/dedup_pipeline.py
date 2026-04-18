@@ -231,7 +231,7 @@ class DedupPipeline:
         near_duplicate_threshold: float | None = None,
         semantic_duplicate_threshold: float | None = None,
         stage3_skip_threshold: float | None = None,
-    ):
+    ) -> None:
         """Initialize.
 
         Args:

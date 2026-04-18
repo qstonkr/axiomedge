@@ -9,6 +9,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from typing import Any
 
 import boto3
 from botocore.config import Config
@@ -18,7 +19,7 @@ from src.distill.config import DistillProfile
 logger = logging.getLogger(__name__)
 
 
-def _s3_client():
+def _s3_client() -> Any:
     """V4 서명 + 명시적 region으로 S3 client 생성.
 
     STS 임시 자격증명(SSO/assume-role)은 V4 서명만 허용되므로
@@ -45,7 +46,7 @@ def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:
 class DistillDeployer:
     """S3 모델 배포 관리."""
 
-    def __init__(self, profile: DistillProfile):
+    def __init__(self, profile: DistillProfile) -> None:
         self.profile = profile
         self.bucket = profile.deploy.s3_bucket
         self.prefix = profile.deploy.s3_prefix
@@ -56,7 +57,7 @@ class DistillDeployer:
 
         s3_key = f"{self.prefix}{version}/model.gguf"
 
-        def _upload():
+        def _upload() -> str:
             s3 = _s3_client()
             logger.info("Uploading %s → s3://%s/%s", gguf_path, self.bucket, s3_key)
             s3.upload_file(gguf_path, self.bucket, s3_key)
@@ -77,7 +78,7 @@ class DistillDeployer:
         src_bucket, src_key = _parse_s3_uri(src_uri)
         dst_key = f"{self.prefix}{version}/model.gguf"
 
-        def _copy():
+        def _copy() -> str:
             s3 = _s3_client()
             logger.info("Copying s3://%s/%s → s3://%s/%s",
                         src_bucket, src_key, self.bucket, dst_key)
@@ -106,7 +107,7 @@ class DistillDeployer:
         sha256 = build_info.get("gguf_sha256", "")
         gguf_bucket, gguf_key = _parse_s3_uri(s3_uri)
 
-        def _create_manifest():
+        def _create_manifest() -> dict:
             s3 = _s3_client()
 
             # Pre-signed download URL (24시간 유효) — s3_uri에서 추출한 실제 위치로 서명
@@ -162,7 +163,7 @@ class DistillDeployer:
         """긴급 업데이트 트리거 파일 생성."""
         import asyncio
 
-        def _create():
+        def _create() -> None:
             s3 = _s3_client()
             force_key = f"{self.prefix}force_update.json"
             s3.put_object(
@@ -188,7 +189,7 @@ class DistillDeployer:
         except ValueError:
             return
 
-        def _delete():
+        def _delete() -> None:
             s3 = _s3_client()
             s3.delete_object(Bucket=bucket, Key=key)
             logger.info("Deleted S3 object: %s", s3_uri)

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ProcessPoolExecutor
 
 from src.config.weights import weights as _w
 
@@ -82,7 +83,7 @@ class CVPipeline:
     _pool_lock = __import__("threading").Lock()
 
     @classmethod
-    def _get_pool(cls):
+    def _get_pool(cls) -> ProcessPoolExecutor:
         if cls._process_pool is None:
             with cls._pool_lock:
                 if cls._process_pool is None:

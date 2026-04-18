@@ -50,7 +50,7 @@ GENERALITY_PROMPT = (
 class GeneralityFilter:
     """매장/날짜/직원 종속 질문 필터링."""
 
-    def __init__(self, llm_helper: LLMHelper | None = None):
+    def __init__(self, llm_helper: LLMHelper | None = None) -> None:
         self.llm = llm_helper
 
     def _pattern_score(self, text: str) -> float:

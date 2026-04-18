@@ -127,7 +127,7 @@ def _resolve_quantize_bin() -> str | None:
 class DistillQuantizer:
     """GGUF 양자화 래퍼."""
 
-    def __init__(self, profile: DistillProfile):
+    def __init__(self, profile: DistillProfile) -> None:
         self.profile = profile
         self.quantize_method = profile.deploy.quantize or "q4_k_m"
 

@@ -398,7 +398,7 @@ class Neo4jPersistenceMixin:
             logger.warning(f"최근 엔티티 조회 실패: {e}")
             return []
 
-    def close(self):
+    def close(self) -> None:
         """리소스 정리"""
         if self._neo4j_driver:
             self._neo4j_driver.close()

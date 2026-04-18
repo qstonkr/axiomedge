@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,7 @@ class IConnector(Protocol):
         ...  # pragma: no cover
 
 
-def register_connector(name: str):
+def register_connector(name: str) -> Callable:
     """Connector 등록 decorator.
 
     Usage::

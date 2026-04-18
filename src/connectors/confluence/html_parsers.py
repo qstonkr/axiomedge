@@ -32,7 +32,7 @@ PREFIX_MAILTO = "mailto:"
 class TableExtractor(HTMLParser):
     """HTML에서 테이블 추출"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.tables: list[ExtractedTable] = []
         self.current_table: dict | None = None
@@ -43,7 +43,7 @@ class TableExtractor(HTMLParser):
         self.in_row = False
         self.in_cell = False
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "table":
             self.in_table = True
             self.current_table = {"headers": [], "rows": []}
@@ -56,7 +56,7 @@ class TableExtractor(HTMLParser):
             self.in_cell = True
             self.current_cell = ""
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag == "table" and self.current_table:
             self._finalize_table()
         elif tag == "thead":
@@ -71,7 +71,7 @@ class TableExtractor(HTMLParser):
             self.current_row.append(self.current_cell.strip())
             self.in_cell = False
 
-    def _finalize_table(self):
+    def _finalize_table(self) -> None:
         """현재 테이블 데이터를 ExtractedTable로 변환하여 저장"""
         if self.current_table["headers"] or self.current_table["rows"]:
             # 첫 번째 행이 헤더일 수 있음
@@ -95,7 +95,7 @@ class TableExtractor(HTMLParser):
         self.in_table = False
         self.current_table = None
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if self.in_cell:
             self.current_cell += data
 
@@ -117,14 +117,14 @@ class TableExtractor(HTMLParser):
 class MentionExtractor(HTMLParser):
     """HTML에서 @멘션 추출 (이메일 정보 포함)"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.mentions: list[ExtractedMention] = []
         self.current_text = ""
         self.in_link = False
         self.current_user_id: str | None = None
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
         # Confluence 멘션 패턴
         if tag == "ri:user":
@@ -138,12 +138,12 @@ class MentionExtractor(HTMLParser):
         elif tag == TAG_AC_LINK:
             self.in_link = True
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag == TAG_AC_LINK:
             self.in_link = False
             self.current_user_id = None
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         self.current_text = data
         # @ 패턴 찾기
         for match in re.finditer(r"@([가-힣]+(?:\s[가-힣]+)?)", data):
@@ -160,7 +160,7 @@ class MentionExtractor(HTMLParser):
 class EmailExtractor(HTMLParser):
     """HTML에서 mailto 이메일 링크 추출"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.emails: list[ExtractedEmail] = []
         self.current_email: str | None = None
@@ -168,7 +168,7 @@ class EmailExtractor(HTMLParser):
         self.link_text = ""
         self.context_buffer = ""
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
         if tag == "a":
             href = attrs_dict.get("href", "")
@@ -177,7 +177,7 @@ class EmailExtractor(HTMLParser):
                 self.in_mailto_link = True
                 self.link_text = ""
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag == "a" and self.in_mailto_link and self.current_email:
             self.emails.append(ExtractedEmail(
                 email=self.current_email,
@@ -187,7 +187,7 @@ class EmailExtractor(HTMLParser):
             self.in_mailto_link = False
             self.current_email = None
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         self.context_buffer += data
         if len(self.context_buffer) > 200:
             self.context_buffer = self.context_buffer[-200:]
@@ -201,7 +201,7 @@ class MacroExtractor(HTMLParser):
     # 추출 대상 매크로 타입
     TARGET_MACROS = {"expand", "panel", "note", "info", "warning", "tip", "status", "toc", "children", "excerpt"}
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.macros: list[ExtractedMacro] = []
         self.macro_stack: list[dict] = []  # 중첩 매크로 처리용
@@ -209,7 +209,7 @@ class MacroExtractor(HTMLParser):
         self.in_body = False
         self.body_content = ""
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
 
         if tag == TAG_AC_STRUCTURED_MACRO:
@@ -229,7 +229,7 @@ class MacroExtractor(HTMLParser):
             self.in_body = True
             self.body_content = ""
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag == TAG_AC_STRUCTURED_MACRO and self.macro_stack:
             macro_data = self.macro_stack.pop()
             self.macros.append(ExtractedMacro(
@@ -247,7 +247,7 @@ class MacroExtractor(HTMLParser):
                 self.macro_stack[-1]["content"] = self.body_content.strip()
             self.in_body = False
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if self.current_param_name and self.macro_stack:
             self.macro_stack[-1]["parameters"][self.current_param_name] = data.strip()
             # title 파라미터는 별도 저장
@@ -264,7 +264,7 @@ class LinkExtractor(HTMLParser):
     # 무시할 URL 패턴 (스타일, 스크립트 등)
     IGNORE_PATTERNS = {"javascript:", "#", "data:", "blob:"}
 
-    def __init__(self, base_url: str = ""):
+    def __init__(self, base_url: str = "") -> None:
         super().__init__()
         self.base_url = base_url
         self.internal_links: list[ExtractedLink] = []
@@ -274,7 +274,7 @@ class LinkExtractor(HTMLParser):
         self.link_text = ""
         self.context_buffer = ""
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
 
         # Confluence 내부 링크: ac:link + ri:page
@@ -298,7 +298,7 @@ class LinkExtractor(HTMLParser):
         elif tag == "a":
             self._handle_anchor_start(attrs_dict)
 
-    def _handle_anchor_start(self, attrs_dict: dict):
+    def _handle_anchor_start(self, attrs_dict: dict[str, str | None]) -> None:
         """일반 <a> 태그의 href를 분석하여 내부/외부 링크로 분류"""
         href = attrs_dict.get("href", "")
 
@@ -321,7 +321,7 @@ class LinkExtractor(HTMLParser):
         elif href.startswith("/"):
             self.current_link = {"type": "internal", "url": self.base_url + href, "page_id": None}
 
-    def _parse_confluence_link(self, href: str) -> dict:
+    def _parse_confluence_link(self, href: str) -> dict[str, str | None]:
         """Confluence 내부 링크에서 페이지 ID를 추출"""
         page_id = None
         if "pageId=" in href:
@@ -340,7 +340,7 @@ class LinkExtractor(HTMLParser):
         """현재 컨텍스트 버퍼에서 최근 100자를 반환"""
         return self.context_buffer[-100:] if self.context_buffer else ""
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag == TAG_AC_LINK and self.current_link and self.current_link.get("page_id"):
             self.internal_links.append(ExtractedLink(
                 link_type="internal",
@@ -354,7 +354,7 @@ class LinkExtractor(HTMLParser):
         elif tag == "a" and self.current_link:
             self._finalize_anchor_link()
 
-    def _finalize_anchor_link(self):
+    def _finalize_anchor_link(self) -> None:
         """<a> 태그 종료 시 링크를 내부/외부 목록에 추가"""
         link_type = self.current_link.get("type", "external")
         anchor_text = self._get_anchor_text()
@@ -379,7 +379,7 @@ class LinkExtractor(HTMLParser):
         self.current_link = None
         self.in_link = False
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         self.context_buffer += data
         if len(self.context_buffer) > 200:
             self.context_buffer = self.context_buffer[-200:]
@@ -391,27 +391,27 @@ class LinkExtractor(HTMLParser):
 class SectionExtractor(HTMLParser):
     """HTML에서 섹션 구조 추출"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.sections: list[dict] = []
-        self.current_heading: dict | None = None
+        self.sections: list[dict[str, int | str]] = []
+        self.current_heading: dict[str, int | str] | None = None
         self.in_heading = False
         self.heading_text = ""
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in ("h1", "h2", "h3", "h4"):
             self.in_heading = True
             self.current_heading = {"level": int(tag[1]), "title": ""}
             self.heading_text = ""
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag in ("h1", "h2", "h3", "h4") and self.current_heading:
             self.current_heading["title"] = self.heading_text.strip()
             self.sections.append(self.current_heading)
             self.in_heading = False
             self.current_heading = None
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if self.in_heading:
             self.heading_text += data
 
@@ -419,13 +419,13 @@ class SectionExtractor(HTMLParser):
 class PlainTextExtractor(HTMLParser):
     """HTML에서 plain text 추출"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.text_parts = []
+        self.text_parts: list[str] = []
         self.in_script = False
         self.in_style = False
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag == "script":
             self.in_script = True
         elif tag == "style":
@@ -433,13 +433,13 @@ class PlainTextExtractor(HTMLParser):
         elif tag in ("br", "p", "div", "tr", "li", "h1", "h2", "h3", "h4"):
             self.text_parts.append("\n")
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag == "script":
             self.in_script = False
         elif tag == "style":
             self.in_style = False
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if not self.in_script and not self.in_style:
             self.text_parts.append(data)
 
@@ -453,14 +453,14 @@ class PlainTextExtractor(HTMLParser):
 class CodeBlockExtractor(HTMLParser):
     """HTML에서 코드 블록 추출"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.code_blocks: list[dict] = []
-        self.current_block: dict | None = None
+        self.code_blocks: list[dict[str, str | None]] = []
+        self.current_block: dict[str, str | None] | None = None
         self.in_code = False
         self.code_content = ""
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = dict(attrs)
         # Confluence 코드 매크로 패턴
         if tag == TAG_AC_STRUCTURED_MACRO and attrs_dict.get(TAG_AC_NAME) == "code":
@@ -483,7 +483,7 @@ class CodeBlockExtractor(HTMLParser):
             self.in_code = True
             self.code_content = ""
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if tag in (TAG_AC_PLAIN_TEXT_BODY, "pre", "code") and self.current_block is not None:
             self.current_block["content"] = self.code_content.strip()
             if self.current_block["content"]:  # 빈 코드 블록 제외
@@ -491,7 +491,7 @@ class CodeBlockExtractor(HTMLParser):
             self.current_block = None
             self.in_code = False
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if self.in_code:
             self.code_content += data
 

@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/v1/admin/data-sources", tags=["Data Sources"])
 # GET /api/v1/admin/data-sources
 # ---------------------------------------------------------------------------
 @router.get("")
-async def list_data_sources():
+async def list_data_sources() -> dict[str, Any]:
     """List data sources."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -39,7 +39,7 @@ async def list_data_sources():
 # POST /api/v1/admin/data-sources
 # ---------------------------------------------------------------------------
 @router.post("", responses={500: {"description": "Failed to create data source"}})
-async def create_data_source(body: dict[str, Any]):
+async def create_data_source(body: dict[str, Any]) -> dict[str, Any]:
     """Create a data source."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -61,7 +61,7 @@ async def create_data_source(body: dict[str, Any]):
 # GET /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
 @router.get("/{source_id}", responses={404: {"description": "Data source not found"}})
-async def get_data_source(source_id: str):
+async def get_data_source(source_id: str) -> dict[str, Any]:
     """Get data source."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -79,7 +79,7 @@ async def get_data_source(source_id: str):
 # PUT /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
 @router.put("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to update data source"}})
-async def update_data_source(source_id: str, body: dict[str, Any]):
+async def update_data_source(source_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update data source."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -105,7 +105,7 @@ async def update_data_source(source_id: str, body: dict[str, Any]):
 # DELETE /api/v1/admin/data-sources/{source_id}
 # ---------------------------------------------------------------------------
 @router.delete("/{source_id}", responses={404: {"description": "Data source not found"}, 500: {"description": "Failed to delete data source"}})
-async def delete_data_source(source_id: str):
+async def delete_data_source(source_id: str) -> dict[str, bool | str]:
     """Delete data source."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -130,7 +130,7 @@ async def delete_data_source(source_id: str):
 async def trigger_data_source_sync(
     source_id: str,
     sync_mode: Annotated[str, Query()] = "resume",
-):
+) -> dict[str, Any]:
     """Trigger data source sync (crawl → ingest pipeline)."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -168,7 +168,7 @@ async def trigger_data_source_sync(
 # GET /api/v1/admin/data-sources/{source_id}/status
 # ---------------------------------------------------------------------------
 @router.get("/{source_id}/status")
-async def get_data_source_status(source_id: str):
+async def get_data_source_status(source_id: str) -> dict[str, Any]:
     """Get data source status."""
     state = _get_state()
     repo = state.get("data_source_repo")
@@ -191,7 +191,7 @@ async def get_data_source_status(source_id: str):
 # POST /api/v1/admin/data-sources/file-ingest
 # ---------------------------------------------------------------------------
 @router.post("/file-ingest")
-async def trigger_file_ingest(body: dict[str, Any]):
+async def trigger_file_ingest(body: dict[str, Any]) -> dict[str, Any]:
     """Trigger file ingest."""
     state = _get_state()
     repo = state.get("data_source_repo")

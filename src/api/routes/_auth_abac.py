@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Auth & Permissions"])
 @router.get("/abac/policies")
 async def list_abac_policies(
     _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
-):
+) -> dict[str, list[dict[str, Any]]]:
     """List all ABAC policies."""
     from src.auth.models import ABACPolicyModel
     from src.api.app import _get_state
@@ -70,7 +70,7 @@ async def list_abac_policies(
 async def create_abac_policy(
     body: dict[str, Any],
     _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
-):
+) -> dict[str, Any]:
     """Create a new ABAC policy."""
     from src.auth.models import ABACPolicyModel
     from src.api.app import _get_state
@@ -113,7 +113,7 @@ async def update_abac_policy(
     policy_id: str,
     body: dict[str, Any],
     _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
-):
+) -> dict[str, bool]:
     """Update an ABAC policy."""
     from src.auth.models import ABACPolicyModel
     from src.api.app import _get_state
@@ -149,7 +149,7 @@ async def update_abac_policy(
 async def delete_abac_policy(
     policy_id: str,
     _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
-):
+) -> dict[str, bool]:
     """Delete an ABAC policy."""
     from src.auth.models import ABACPolicyModel
     from src.api.app import _get_state
@@ -177,7 +177,7 @@ async def delete_abac_policy(
 @router.get("/system/stats")
 async def get_system_auth_stats(
     _user: Annotated[AuthUser, Depends(require_permission("admin", "system"))],
-):
+) -> dict[str, Any]:
     """System-level auth statistics for operations dashboard."""
     from src.auth.models import UserModel, UserRoleModel, KBUserPermissionModel, UserActivityLogModel, ABACPolicyModel
     from src.api.app import _get_state

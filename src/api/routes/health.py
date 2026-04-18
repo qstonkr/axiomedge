@@ -101,7 +101,7 @@ async def _check_services(state) -> dict[str, bool]:
 
 
 @router.get("/health")
-async def health():
+async def health() -> dict:
     state = _get_state()
     checks = await _check_services(state)
     healthy = checks.get("qdrant", False) and checks.get("embedding", False)

@@ -50,7 +50,7 @@ def _setup_signal_handlers(
     previous_sigint = signal.getsignal(signal.SIGINT)
     _interrupted = False
 
-    def _graceful_shutdown(signum, _frame):
+    def _graceful_shutdown(signum, _frame) -> None:
         nonlocal _interrupted
         if _interrupted:
             return

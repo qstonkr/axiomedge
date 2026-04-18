@@ -59,7 +59,7 @@ class ABACEngine:
     If no policy matches, default is DENY.
     """
 
-    def __init__(self, policies: list[dict] | None = None):
+    def __init__(self, policies: list[dict] | None = None) -> None:
         self._policies = sorted(
             policies or [],
             key=lambda p: p.get("priority", 0),

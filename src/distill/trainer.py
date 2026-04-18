@@ -18,6 +18,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # SSL 우회 — HuggingFace만 (사내망 프록시 self-signed cert 대응)
 os.environ.setdefault("HF_HUB_DISABLE_SSL_VERIFY", "1")
@@ -41,7 +42,7 @@ class TrainOutput:
 class DistillTrainer:
     """LoRA SFT trainer wrapper."""
 
-    def __init__(self, profile: DistillProfile, output_dir: str):
+    def __init__(self, profile: DistillProfile, output_dir: str) -> None:
         self.profile = profile
         self.output_dir = output_dir
         Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -84,7 +85,7 @@ class DistillTrainer:
             base_ref,
         )
 
-    def prepare_dataset(self, data_path: str):
+    def prepare_dataset(self, data_path: str) -> Any:
         """JSONL → HuggingFace Dataset (전체 학습용, 평가는 Teacher가 별도 수행)."""
         from datasets import load_dataset
 

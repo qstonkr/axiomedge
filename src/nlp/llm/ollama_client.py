@@ -70,7 +70,7 @@ class OllamaClient:
         *,
         base_url: str | None = None,
         model: str | None = None,
-    ):
+    ) -> None:
         if config is not None:
             self._config = config
         elif base_url is not None or model is not None:

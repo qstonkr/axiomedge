@@ -31,7 +31,7 @@ class GlossaryRepository(BaseRepository):
         super().__init__(session_maker)
         self._search_available = True
 
-    def _scope_filter(self, kb_id: str):
+    def _scope_filter(self, kb_id: str) -> Any:
         if kb_id and kb_id.lower() != "all":
             return or_(
                 GlossaryTermModel.scope == "global",

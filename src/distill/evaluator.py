@@ -28,7 +28,7 @@ class EvalResult:
 class DistillEvaluator:
     """학습된 모델을 eval set으로 평가."""
 
-    def __init__(self, teacher_llm, embedder):
+    def __init__(self, teacher_llm, embedder) -> None:
         self.teacher = teacher_llm
         self.embedder = embedder
 

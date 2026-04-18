@@ -35,7 +35,7 @@ class TEIEmbeddingProvider:
     backend = "tei"
     _DENSE_DIM: int = _w.embedding.dimension
 
-    def __init__(self, base_url: str | None = None, timeout: float = 300.0):
+    def __init__(self, base_url: str | None = None, timeout: float = 300.0) -> None:
         from src.config import get_settings
         self._base_url = (
             base_url or get_settings().tei.embedding_url

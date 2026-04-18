@@ -91,7 +91,7 @@ def _log_deleted_files(full: bool, prev_state: dict, new_state: dict) -> None:
         logger.info("Detected %d deleted files: %s", len(deleted), list(deleted)[:5])
 
 
-def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
+def crawl_directory(source_dir: str, output_dir: str, full: bool = False) -> None:
     """Crawl files from source directory and write crawl results.
 
     In incremental mode (default), only new/changed files are processed.
@@ -143,7 +143,7 @@ def crawl_directory(source_dir: str, output_dir: str, full: bool = False):
     _log_deleted_files(full, prev_state, new_state)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Knowledge Crawl CLI")
     parser.add_argument("--source", required=True, help="Source directory to crawl")
     parser.add_argument("--output", default="./crawl_results", help="Output directory for crawl results")

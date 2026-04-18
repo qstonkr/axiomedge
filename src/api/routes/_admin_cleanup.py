@@ -9,15 +9,17 @@ import asyncio
 import logging
 from typing import Any
 
+from types import ModuleType
+
 from fastapi import APIRouter
 
-def _get_admin():
+def _get_admin() -> ModuleType:
     """Late-bound accessor to parent admin module — avoids circular import."""
     import src.api.routes.admin as _admin
     return _admin
 
 
-def _get_state():
+def _get_state() -> dict[str, Any]:
     """Late-bound accessor through parent admin module for test patchability."""
     return _get_admin()._get_state()
 
@@ -31,7 +33,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 # ============================================================================
 
 @router.post("/graph/cleanup")
-async def graph_cleanup(body: dict[str, Any] | None = None):
+async def graph_cleanup(body: dict[str, Any] | None = None) -> dict[str, Any]:
     """Run graph quality cleanup: remove placeholders, reclassify mismatches, etc.
 
     Body (all optional):
@@ -82,7 +84,7 @@ async def graph_cleanup(body: dict[str, Any] | None = None):
 
 
 @router.post("/graph/cleanup/analyze")
-async def graph_cleanup_analyze(body: dict[str, Any] | None = None):
+async def graph_cleanup_analyze(body: dict[str, Any] | None = None) -> dict[str, Any]:
     """Analyze graph quality issues without applying fixes (always dry run)."""
 
     state = _get_state()
@@ -130,7 +132,7 @@ async def graph_cleanup_analyze(body: dict[str, Any] | None = None):
 # ============================================================================
 
 @router.post("/graph/cleanup/ai-classify")
-async def graph_ai_classify(body: dict[str, Any] | None = None):
+async def graph_ai_classify(body: dict[str, Any] | None = None) -> dict[str, Any]:
     """LLM-based entity reclassification using SageMaker EXAONE.
 
     Body (all optional):

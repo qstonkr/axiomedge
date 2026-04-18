@@ -93,7 +93,7 @@ async def _update_kb_counts(state: AppState, kb_id: str, docs: int, chunks: int)
 
 
 @router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})
-async def ingest_directory(request: IngestRequest):
+async def ingest_directory(request: IngestRequest) -> tuple:
     """Ingest documents from a directory."""
     state = _get_state()
     store = state.get("qdrant_store")
@@ -184,7 +184,7 @@ async def ingest_directory(request: IngestRequest):
 async def upload_file(
     file: Annotated[UploadFile, File()],
     kb_id: Annotated[str, Form()] = "knowledge",
-):
+) -> dict:
     """Upload and ingest a single file."""
     state = _get_state()
     store = state.get("qdrant_store")

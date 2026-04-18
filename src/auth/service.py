@@ -12,6 +12,7 @@ AuthService delegates to these modules while maintaining backward-compatible API
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 class AuthService:
     """Facade for all auth operations. Backward-compatible API."""
 
-    def __init__(self, database_url: str, pool_size: int = 5, max_overflow: int = 10):
+    def __init__(self, database_url: str, pool_size: int = 5, max_overflow: int = 10) -> None:
         self._engine = create_async_engine(
             database_url, pool_size=pool_size, max_overflow=max_overflow
         )
@@ -42,7 +43,7 @@ class AuthService:
     async def close(self) -> None:
         await self._engine.dispose()
 
-    def _session(self):
+    def _session(self) -> Any:
         return self._session_factory()
 
     # ── User CRUD (delegates to UserCRUD) ──

@@ -11,7 +11,7 @@ from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, String,
 from sqlalchemy.orm import DeclarativeBase
 
 
-def _utc_now():
+def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 

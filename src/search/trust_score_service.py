@@ -242,7 +242,7 @@ class TrustScoreService:
         trust_score_repo: Any,
         feedback_repo: Any | None = None,
         calculator: TrustScoreCalculator | None = None,
-    ):
+    ) -> None:
         self._trust_score_repo = trust_score_repo
         self._feedback_repo = feedback_repo
         self._calculator = calculator or TrustScoreCalculator()

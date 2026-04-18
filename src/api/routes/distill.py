@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -72,7 +73,7 @@ class ProfileUpdateRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_state():
+def _get_state() -> dict[str, Any]:
     """Deferred import wrapper for src.api.app._get_state.
 
     Module-level import of `src.api.app` creates a circular dependency when
@@ -84,7 +85,7 @@ def _get_state():
     return _inner()
 
 
-def _get_distill_repo():
+def _get_distill_repo() -> Any:
     repo = _get_state().get("distill_repo")
     if not repo:
         raise HTTPException(status_code=503, detail="Distill plugin not initialized")
@@ -96,7 +97,7 @@ def _get_distill_repo():
 # ---------------------------------------------------------------------------
 
 @router.get("/profiles")
-async def list_profiles():
+async def list_profiles() -> dict[str, Any]:
     """모든 프로필 조회."""
     repo = _get_distill_repo()
     profiles = await repo.list_profiles()
@@ -104,7 +105,7 @@ async def list_profiles():
 
 
 @router.get("/profiles/{name}")
-async def get_profile(name: str):
+async def get_profile(name: str) -> dict[str, Any]:
     """프로필 상세 조회."""
     repo = _get_distill_repo()
     profile = await repo.get_profile(name)
@@ -113,7 +114,7 @@ async def get_profile(name: str):
     return profile
 
 
-async def _validate_base_model(repo, hf_id: str) -> None:
+async def _validate_base_model(repo: Any, hf_id: str) -> None:
     """base_model 이 distill_base_models 레지스트리에 존재하고 enabled 인지 검증.
 
     하드코딩 fallback 을 제거한 뒤 방어막 — 대시보드를 우회해 curl/CLI 로
@@ -136,7 +137,9 @@ async def _validate_base_model(repo, hf_id: str) -> None:
 
 
 @router.post("/profiles", status_code=201)
-async def create_profile(request: ProfileCreateRequest):
+async def create_profile(
+    request: ProfileCreateRequest,
+) -> dict[str, Any]:
     """프로필 생성."""
     repo = _get_distill_repo()
     existing = await repo.get_profile(request.name)
@@ -157,7 +160,9 @@ async def create_profile(request: ProfileCreateRequest):
 
 
 @router.put("/profiles/{name}")
-async def update_profile(name: str, request: ProfileUpdateRequest):
+async def update_profile(
+    name: str, request: ProfileUpdateRequest,
+) -> dict[str, Any]:
     """프로필 수정."""
     repo = _get_distill_repo()
     if request.base_model is not None:
@@ -170,7 +175,7 @@ async def update_profile(name: str, request: ProfileUpdateRequest):
 
 
 @router.delete("/profiles/{name}")
-async def delete_profile(name: str):
+async def delete_profile(name: str) -> dict[str, str | bool]:
     """프로필 삭제."""
     repo = _get_distill_repo()
     deleted = await repo.delete_profile(name)
@@ -180,7 +185,7 @@ async def delete_profile(name: str):
 
 
 @router.get("/search-groups")
-async def list_search_groups():
+async def list_search_groups() -> dict[str, list[Any]]:
     """프로필 생성 시 선택 가능한 검색 그룹 목록."""
     group_repo = _get_state().get("search_group_repo")
     if not group_repo:
@@ -210,7 +215,9 @@ class BaseModelUpsertRequest(BaseModel):
 
 
 @router.get("/base-models")
-async def list_base_models(enabled_only: bool = True):
+async def list_base_models(
+    enabled_only: bool = True,
+) -> dict[str, list[dict[str, Any]]]:
     """선택 가능한 베이스 모델 목록. 대시보드 드롭다운에서 사용.
 
     admin 화면은 disabled 행도 봐야 하므로 ``enabled_only=false`` 로 호출.
@@ -221,7 +228,9 @@ async def list_base_models(enabled_only: bool = True):
 
 
 @router.post("/base-models", status_code=201)
-async def upsert_base_model_endpoint(request: BaseModelUpsertRequest):
+async def upsert_base_model_endpoint(
+    request: BaseModelUpsertRequest,
+) -> dict[str, Any]:
     """베이스 모델 레지스트리 추가/갱신. Admin UI 에서 호출."""
     repo = _get_distill_repo()
     data = request.model_dump()
@@ -229,7 +238,9 @@ async def upsert_base_model_endpoint(request: BaseModelUpsertRequest):
 
 
 @router.delete("/base-models/{hf_id:path}")
-async def delete_base_model_endpoint(hf_id: str):
+async def delete_base_model_endpoint(
+    hf_id: str,
+) -> dict[str, str | bool]:
     """베이스 모델 레지스트리 삭제.
 
     ``hf_id`` 는 ``google/gemma-3-4b-it`` 처럼 슬래시가 있어 FastAPI ``:path``
@@ -249,7 +260,9 @@ async def delete_base_model_endpoint(hf_id: str):
 # ---------------------------------------------------------------------------
 
 @router.post("/edge-logs/collect")
-async def collect_edge_logs(profile_name: str | None = None):
+async def collect_edge_logs(
+    profile_name: str | None = None,
+) -> dict[str, int]:
     """S3에서 엣지 로그 수집."""
     repo = _get_distill_repo()
     profiles = await repo.list_profiles()
@@ -282,7 +295,7 @@ async def list_edge_logs(
     success: bool | None = None,
     limit: int = 50,
     offset: int = 0,
-):
+) -> dict[str, Any]:
     """엣지 로그 목록."""
     repo = _get_distill_repo()
     return await repo.list_edge_logs(
@@ -292,14 +305,18 @@ async def list_edge_logs(
 
 
 @router.get("/edge-logs/analytics")
-async def edge_analytics(profile_name: str, days: int = 7):
+async def edge_analytics(
+    profile_name: str, days: int = 7,
+) -> dict[str, Any]:
     """엣지 사용 통계."""
     repo = _get_distill_repo()
     return await repo.get_edge_analytics(profile_name, days=days)
 
 
 @router.get("/edge-logs/failed")
-async def failed_edge_queries(profile_name: str, limit: int = 50):
+async def failed_edge_queries(
+    profile_name: str, limit: int = 50,
+) -> dict[str, list[dict[str, Any]]]:
     """실패 질의 목록."""
     repo = _get_distill_repo()
     items = await repo.list_failed_queries(profile_name, limit=limit)

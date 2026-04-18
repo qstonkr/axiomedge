@@ -403,7 +403,7 @@ def _restore_backups(backups: list[tuple[Path, Path]]) -> None:
                 logger.error("Failed to restore backup %s: %s", bak_path, e)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Edge model sync")
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--upload-logs-only", action="store_true")

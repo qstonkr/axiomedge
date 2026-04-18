@@ -35,7 +35,7 @@ class DistillDataGenerator:
         embedder,
         profile: DistillProfile,
         qdrant_url: str = "",
-    ):
+    ) -> None:
         from src.config import get_settings
         qdrant_url = qdrant_url or get_settings().qdrant.url
         settings = get_settings().distill

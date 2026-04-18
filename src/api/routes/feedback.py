@@ -33,7 +33,7 @@ async def list_feedback(
     feedback_type: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """List feedback."""
     state = _get_state()
     repo = state.get("feedback_repo")
@@ -55,7 +55,7 @@ async def list_feedback(
     "/feedback",
     responses={500: {"description": "Failed to create feedback"}},
 )
-async def create_feedback(body: dict[str, Any]):
+async def create_feedback(body: dict[str, Any]) -> dict[str, Any]:
     """Create feedback."""
     state = _get_state()
     repo = state.get("feedback_repo")
@@ -91,7 +91,7 @@ async def create_feedback(body: dict[str, Any]):
         500: {"description": "Failed to update feedback"},
     },
 )
-async def update_feedback(feedback_id: str, body: dict[str, Any]):
+async def update_feedback(feedback_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Update feedback."""
     state = _get_state()
     repo = state.get("feedback_repo")
@@ -116,7 +116,7 @@ async def update_feedback(feedback_id: str, body: dict[str, Any]):
 # GET /api/v1/admin/feedback/stats
 # ---------------------------------------------------------------------------
 @admin_router.get("/feedback/stats")
-async def get_feedback_stats():
+async def get_feedback_stats() -> dict[str, Any]:
     """Get feedback stats."""
     state = _get_state()
     repo = state.get("feedback_repo")
@@ -139,7 +139,7 @@ async def get_feedback_stats():
 # GET /api/v1/admin/feedback/workflow-stats
 # ---------------------------------------------------------------------------
 @admin_router.get("/feedback/workflow-stats")
-async def get_feedback_workflow_stats():
+async def get_feedback_workflow_stats() -> dict[str, int]:
     """Get feedback workflow stats."""
     state = _get_state()
     repo = state.get("feedback_repo")
@@ -168,7 +168,7 @@ async def list_error_reports(
     status: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """List error reports."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -195,7 +195,7 @@ async def list_error_reports(
 async def get_error_report_statistics(
     kb_id: Annotated[str | None, Query()] = None,
     days: Annotated[int, Query(ge=1)] = 30,
-):
+) -> dict[str, Any]:
     """Get error report statistics."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -222,7 +222,7 @@ async def get_error_report_statistics(
     "/error-reports/{report_id}",
     responses={404: {"description": "Error report not found"}},
 )
-async def get_error_report(report_id: str):
+async def get_error_report(report_id: str) -> dict[str, Any]:
     """Get error report."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -243,7 +243,7 @@ async def get_error_report(report_id: str):
     "/report-error",
     responses={500: {"description": "Failed to create error report"}},
 )
-async def create_error_report(body: dict[str, Any]):
+async def create_error_report(body: dict[str, Any]) -> dict[str, Any]:
     """Create error report."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -278,7 +278,7 @@ async def create_error_report(body: dict[str, Any]):
         500: {"description": "Failed to resolve report"},
     },
 )
-async def resolve_error_report(report_id: str, body: dict[str, Any]):
+async def resolve_error_report(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Resolve error report."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -314,7 +314,7 @@ async def resolve_error_report(report_id: str, body: dict[str, Any]):
         500: {"description": "Failed to reject report"},
     },
 )
-async def reject_error_report(report_id: str, body: dict[str, Any]):
+async def reject_error_report(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Reject error report."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -344,7 +344,7 @@ async def reject_error_report(report_id: str, body: dict[str, Any]):
         500: {"description": "Failed to escalate report"},
     },
 )
-async def escalate_error_report(report_id: str, body: dict[str, Any]):
+async def escalate_error_report(report_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Escalate error report."""
     state = _get_state()
     repo = state.get("error_report_repo")
@@ -379,7 +379,7 @@ async def escalate_error_report(report_id: str, body: dict[str, Any]):
 async def get_learning_artifacts(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict[str, Any]:
     """Get low-confidence learning artifacts."""
     return {
         "artifacts": [],

@@ -41,7 +41,7 @@ class OnnxSparseEmbedder:
         return output.get("lexical_weights", [{} for _ in texts])
 
 
-async def _init_services():
+async def _init_services() -> tuple:
     """Initialize required services."""
     from src.config import get_settings
     from src.nlp.embedding.onnx_provider import OnnxBgeEmbeddingProvider
@@ -168,7 +168,7 @@ async def _ingest_single_file(
     return result.chunks_stored
 
 
-async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
+async def ingest_directory(source_dir: str, kb_id: str, force: bool = False) -> None:
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.pipelines.ingestion import IngestionPipeline
@@ -210,7 +210,7 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False):
     await provider.close()
 
 
-async def ingest_file(file_path: str, kb_id: str):
+async def ingest_file(file_path: str, kb_id: str) -> None:
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.core.models import RawDocument
@@ -242,7 +242,7 @@ async def ingest_file(file_path: str, kb_id: str):
     await provider.close()
 
 
-async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False):
+async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False) -> None:
     embedder, sparse_embedder, store, _, graph_repo, provider = await _init_services()
 
     from src.connectors.crawl_result import CrawlResultConnector
@@ -291,7 +291,7 @@ async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False):
     await provider.close()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Knowledge Ingestion CLI")
     parser.add_argument("--source", help="Source directory to ingest")
     parser.add_argument("--file", help="Single file to ingest")

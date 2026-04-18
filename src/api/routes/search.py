@@ -121,7 +121,7 @@ from src.api.routes._search_steps import (  # noqa: E402
 
 
 @router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})
-async def hub_search(request: HubSearchRequest):
+async def hub_search(request: HubSearchRequest) -> dict:
     """Hub Search - unified knowledge search with full pipeline."""
     state = _get_state()
     search_engine = state.get("qdrant_search")
@@ -261,7 +261,7 @@ async def hub_search(request: HubSearchRequest):
 
 
 @router.get("/hub/kbs")
-async def list_searchable_kbs():
+async def list_searchable_kbs() -> dict:
     """List searchable knowledge bases."""
     state = _get_state()
     collections = state.get("qdrant_collections")

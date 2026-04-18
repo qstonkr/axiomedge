@@ -58,7 +58,7 @@ class RankedResult:
 class FreshnessRanker:
     """최신성 기반 랭커."""
 
-    def __init__(self, config: FreshnessConfig | None = None):
+    def __init__(self, config: FreshnessConfig | None = None) -> None:
         self.config = config or FreshnessConfig()
 
     def rank(

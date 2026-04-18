@@ -10,6 +10,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
@@ -22,12 +23,12 @@ router = APIRouter(prefix="/api/v1/distill", tags=["Distill Builds"])
 _background_tasks: set[asyncio.Task] = set()
 
 
-def _get_state():
+def _get_state() -> dict[str, Any]:
     from src.api.app import _get_state as _inner
     return _inner()
 
 
-def _get_distill_repo():
+def _get_distill_repo() -> Any:
     repo = _get_state().get("distill_repo")
     if not repo:
         raise HTTPException(status_code=503, detail="Distill plugin not initialized")
@@ -42,7 +43,7 @@ class BuildTriggerRequest(BaseModel):
 
     @field_validator("steps")
     @classmethod
-    def validate_steps(cls, v):
+    def validate_steps(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             from src.distill.config import VALID_BUILD_STEPS
             unknown = set(v) - VALID_BUILD_STEPS
@@ -64,7 +65,9 @@ class RetrainRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/builds")
-async def trigger_build(request: BuildTriggerRequest):
+async def trigger_build(
+    request: BuildTriggerRequest,
+) -> dict[str, str]:
     """빌드 시작 (백그라운드)."""
     repo = _get_distill_repo()
     profile = await repo.get_profile(request.profile_name)
@@ -105,7 +108,9 @@ async def trigger_build(request: BuildTriggerRequest):
 
 
 @router.get("/builds")
-async def list_builds(profile_name: str | None = None, limit: int = 50):
+async def list_builds(
+    profile_name: str | None = None, limit: int = 50,
+) -> dict[str, list[dict[str, Any]]]:
     """빌드 이력 조회."""
     repo = _get_distill_repo()
     builds = await repo.list_builds(profile_name=profile_name, limit=limit)
@@ -113,7 +118,9 @@ async def list_builds(profile_name: str | None = None, limit: int = 50):
 
 
 @router.get("/builds/versions")
-async def list_version_history(profile_name: str):
+async def list_version_history(
+    profile_name: str,
+) -> dict[str, list[dict[str, Any]]]:
     """모델 버전 히스토리."""
     repo = _get_distill_repo()
     versions = await repo.list_version_history(profile_name)
@@ -121,7 +128,7 @@ async def list_version_history(profile_name: str):
 
 
 @router.get("/builds/{build_id}")
-async def get_build(build_id: str):
+async def get_build(build_id: str) -> dict[str, Any]:
     """빌드 상세 조회."""
     repo = _get_distill_repo()
     build = await repo.get_build(build_id)
@@ -131,7 +138,7 @@ async def get_build(build_id: str):
 
 
 @router.post("/builds/{build_id}/deploy")
-async def deploy_build(build_id: str):
+async def deploy_build(build_id: str) -> dict[str, str | bool]:
     """특정 빌드를 배포 (S3 manifest 갱신)."""
     repo = _get_distill_repo()
     build = await repo.get_build(build_id)
@@ -190,7 +197,9 @@ async def deploy_build(build_id: str):
 
 
 @router.post("/builds/{build_id}/rollback")
-async def rollback_build(build_id: str):
+async def rollback_build(
+    build_id: str,
+) -> dict[str, str | bool]:
     """이전 빌드로 롤백 (해당 빌드의 manifest를 current로 복원)."""
     repo = _get_distill_repo()
     build = await repo.get_build(build_id)
@@ -243,7 +252,9 @@ async def rollback_build(build_id: str):
 # ---------------------------------------------------------------------------
 
 @router.post("/retrain")
-async def trigger_retrain(request: RetrainRequest):
+async def trigger_retrain(
+    request: RetrainRequest,
+) -> dict[str, int | str]:
     """실패 질문 → 학습 데이터 추가 + 재학습 트리거."""
     repo = _get_distill_repo()
     profile = await repo.get_profile(request.profile_name)
@@ -321,7 +332,9 @@ async def trigger_retrain(request: RetrainRequest):
 # ---------------------------------------------------------------------------
 
 @router.post("/builds/reset-to-base")
-async def reset_to_base_model(profile_name: str):
+async def reset_to_base_model(
+    profile_name: str,
+) -> dict[str, str]:
     """파인튜닝을 초기화하고 베이스 모델(양자화 GGUF)을 S3에 배포.
 
     모든 파인튜닝 빌드를 무시하고 원본 베이스 모델로 엣지 서버를 리셋합니다.
@@ -372,7 +385,9 @@ async def reset_to_base_model(profile_name: str):
 
 
 @router.delete("/builds/{build_id}")
-async def delete_build(build_id: str):
+async def delete_build(
+    build_id: str,
+) -> dict[str, str | bool]:
     """빌드 삭제 (배포 중이거나 진행 중인 빌드는 삭제 불가)."""
     repo = _get_distill_repo()
     build = await repo.get_build(build_id)
@@ -408,7 +423,9 @@ async def delete_build(build_id: str):
 # ---------------------------------------------------------------------------
 
 @router.get("/app/info")
-async def get_app_info(profile_name: str):
+async def get_app_info(
+    profile_name: str,
+) -> dict[str, Any]:
     """현재 앱 버전 + 다운로드 정보 조회 (manifest에서)."""
     repo = _get_distill_repo()
     profile = await repo.get_profile(profile_name)
@@ -419,7 +436,7 @@ async def get_app_info(profile_name: str):
         from src.distill.config import dict_to_profile
         dp = dict_to_profile(profile)
 
-        def _fetch():
+        def _fetch() -> dict[str, str | dict[str, Any]]:
             from src.distill.deployer import _s3_client
             s3 = _s3_client()
             manifest_key = f"{dp.deploy.s3_prefix}manifest.json"

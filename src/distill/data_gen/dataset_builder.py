@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class DatasetBuilder:
     """QA 데이터 후처리: 중복 제거 + augmentation + 밸런싱 + export."""
 
-    def __init__(self, llm_helper: LLMHelper, profile: DistillProfile):
+    def __init__(self, llm_helper: LLMHelper, profile: DistillProfile) -> None:
         self.llm = llm_helper
         self.profile = profile
 

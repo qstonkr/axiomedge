@@ -233,7 +233,7 @@ class _PptOcrMixin:
         cls, image_shapes, policy, prs_slides_count, heartbeat_fn,
         ocr_preprocess: bool, ocr_postprocess: bool,
         extracted_slides: set[int],
-    ):
+    ) -> tuple:
         """Run shape-by-shape OCR on collected image shapes.
 
         Returns (text_parts, attempted, extracted, deferred,
@@ -375,7 +375,7 @@ class _PptOcrMixin:
         return r
 
     @classmethod
-    def _ppt_pdf_fallback(cls, file_path: Path, heartbeat_fn):
+    def _ppt_pdf_fallback(cls, file_path: Path, heartbeat_fn) -> tuple | None:
         """Convert PPTX to PDF via LibreOffice, then OCR the PDF.
 
         Returns (text, tables, ocr_text_chars) or None.
@@ -441,7 +441,7 @@ class _PptOcrMixin:
     def _apply_pdf_fallback_if_needed(
         cls, should_ocr, full_text, tables, ocr_text_chars,
         file_path, heartbeat_fn,
-    ):
+    ) -> tuple:
         """Apply PDF fallback if OCR results are too sparse."""
         if not (should_ocr and len(full_text.strip()) < 50):
             return full_text, tables, ocr_text_chars

@@ -48,7 +48,7 @@ class MultiLayerCache:
         l2_cache: ICacheLayer | None = None,
         embedding_provider: Any | None = None,
         enable_metrics: bool = True,
-    ):
+    ) -> None:
         self._l1 = l1_cache if l1_cache is not None else L1InMemoryCache()
         self._l2 = l2_cache
         self._embedding_provider = embedding_provider

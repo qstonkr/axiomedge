@@ -178,7 +178,7 @@ class OllamaLLMClient(ILLMClient):
         self,
         base_url: str = "",
         model: str | None = None,
-    ):
+    ) -> None:
         import os as _os
         from src.config import DEFAULT_LLM_MODEL, get_settings
         self._base_url = (base_url or get_settings().ollama.base_url).rstrip("/")
@@ -311,7 +311,7 @@ Focus on information that could cause confusion or errors if both documents are 
         llm_client: ILLMClient | None = None,
         model: str | None = None,
         max_content_length: int = 4000,
-    ):
+    ) -> None:
         """Initialize.
 
         Args:
