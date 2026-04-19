@@ -88,7 +88,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col gap-4 px-6 py-8">
+    <div className="mx-auto flex h-full w-full max-w-4xl flex-col gap-4 px-6 py-8">
       <header className="space-y-3">
         <h1 className="text-2xl font-semibold leading-snug text-fg-default">
           💬 지식 검색

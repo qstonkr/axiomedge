@@ -38,7 +38,7 @@ export function ChatInput({
   return (
     <form
       onSubmit={onFormSubmit}
-      className="flex items-end gap-2 rounded-lg border border-border-default bg-bg-canvas p-2 shadow-sm"
+      className="flex w-full items-end gap-3 rounded-lg border border-border-default bg-bg-canvas p-3 shadow-sm"
     >
       <textarea
         ref={ref}
@@ -47,9 +47,9 @@ export function ChatInput({
         onKeyDown={onKey}
         disabled={pending}
         aria-label="검색어"
-        className="min-h-[48px] flex-1 resize-none border-0 bg-transparent px-2 py-1 text-sm text-fg-default placeholder:text-fg-subtle focus:outline-none disabled:opacity-50"
+        className="min-h-[56px] flex-1 resize-none border-0 bg-transparent px-2 py-1 text-sm leading-7 text-fg-default placeholder:text-fg-subtle focus:outline-none disabled:opacity-50"
       />
-      <Button type="submit" disabled={pending} size="sm">
+      <Button type="submit" disabled={pending} size="md">
         {pending ? "검색 중…" : "검색"}
       </Button>
     </form>

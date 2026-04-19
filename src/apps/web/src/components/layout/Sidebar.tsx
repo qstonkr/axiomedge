@@ -23,7 +23,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const t = useTranslations("nav");
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-border-default bg-bg-subtle px-3 py-4 md:block">
+    <aside className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-4 md:block">
       <nav className="space-y-1" aria-label={t("label")}>
         {NAV.map((item) => {
           const active =

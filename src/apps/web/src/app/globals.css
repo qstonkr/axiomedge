@@ -128,9 +128,14 @@ body {
   background: var(--color-bg-canvas);
   color: var(--color-fg-default);
   font-family: var(--font-sans);
+  /* Korean body text needs more vertical breathing than English defaults. */
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* Slight letter-spacing pull-in for tabular Korean — sans-serif feels too
+     loose at the default at small sizes. */
+  letter-spacing: -0.005em;
 }
 
 /* Make the default focus ring match the accent. */

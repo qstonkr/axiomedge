@@ -12,13 +12,23 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // The Pretendard fallback chain lives in globals.css `--font-sans`.
-  // We don't preload a remote webfont here — system Korean fonts cover the
-  // first paint, and Pretendard is loaded from CDN only when the user has
-  // it installed locally. Day 9 may revisit (self-hosted Pretendard).
   return (
     <html lang="ko" className="h-full antialiased">
-      <body className="flex min-h-full flex-col">{children}</body>
+      <head>
+        {/* Pretendard via CDN — Korean-first webfont. The variable build covers
+            the full weight range with a single file. Falls back to system
+            Korean fonts if the CDN is unreachable (chain in globals.css). */}
+        <link
+          rel="preload"
+          as="style"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+        />
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
+        />
+      </head>
+      <body className="flex min-h-screen flex-col">{children}</body>
     </html>
   );
 }
