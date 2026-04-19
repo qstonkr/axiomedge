@@ -514,6 +514,116 @@ export const resolveDedupConflict = (body: {
     body: JSON.stringify(body),
   });
 
+// ── /admin/dedup/stats + /eval (B-2 RAG 품질) ───────────────────────────
+
+export type DedupStats = {
+  total_duplicates_found: number;
+  total_resolved: number;
+  pending: number;
+  stages?: Record<string, { checked: number; flagged: number }>;
+  pipeline_metrics?: Record<string, unknown>;
+};
+
+export const getDedupStats = () =>
+  request<DedupStats>("api/v1/admin/dedup/stats", { method: "GET" });
+
+export type EvalStatus = {
+  status: string;
+  current_eval_id?: string | null;
+  progress?: number;
+  message?: string | null;
+};
+
+export const getEvalStatus = () =>
+  request<EvalStatus>("api/v1/admin/eval/status", { method: "GET" });
+
+export type EvalRun = {
+  id?: string;
+  eval_id?: string;
+  kb_id?: string | null;
+  status?: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  metrics?: Record<string, number> | null;
+};
+
+export const listEvalHistory = async (params?: {
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: EvalRun[]; total: number }> => {
+  const raw = await request<{ evaluations?: EvalRun[]; total?: number }>(
+    "api/v1/admin/eval/history",
+    { method: "GET", query: params },
+  );
+  const items = raw.evaluations ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+export const triggerEval = (body: { kb_id?: string | null }) =>
+  request<{ success: boolean; eval_id?: string }>("api/v1/admin/eval/trigger", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+// ── /admin/golden-set (B-2 Golden Q&A) ──────────────────────────────────
+
+export type GoldenItem = {
+  id: string;
+  kb_id?: string;
+  question: string;
+  answer?: string;
+  contexts?: string[];
+  tags?: string[];
+  difficulty?: string | null;
+  created_at?: string;
+};
+
+export const listGoldenSet = async (params?: {
+  kb_id?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: GoldenItem[]; total: number }> => {
+  const raw = await request<{ items?: GoldenItem[]; total?: number }>(
+    "api/v1/admin/golden-set",
+    { method: "GET", query: params },
+  );
+  const items = raw.items ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+export const deleteGoldenItem = (itemId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/admin/golden-set/${encodeURIComponent(itemId)}`,
+    { method: "DELETE" },
+  );
+
+// ── /agentic/traces (B-2 Agent Trace viewer) ────────────────────────────
+
+export type AgentTraceListItem = {
+  trace_id: string;
+  query: string;
+  answer_preview?: string;
+  llm_provider?: string;
+  iteration_count?: number;
+  total_duration_ms?: number;
+};
+
+export const listAgentTraces = async (limit = 50): Promise<{
+  count: number;
+  traces: AgentTraceListItem[];
+}> => {
+  return request<{ count: number; traces: AgentTraceListItem[] }>(
+    "api/v1/agentic/traces",
+    { method: "GET", query: { limit } },
+  );
+};
+
+export const getAgentTrace = (traceId: string) =>
+  request<Record<string, unknown>>(
+    `api/v1/agentic/traces/${encodeURIComponent(traceId)}`,
+    { method: "GET" },
+  );
+
 // ── /admin/dashboard/summary (B-2 운영 대시보드) ─────────────────────────
 
 export type AdminDashboardSummary = {
