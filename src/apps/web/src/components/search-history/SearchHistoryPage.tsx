@@ -101,8 +101,9 @@ export function SearchHistoryPage() {
       </div>
 
       <div className="flex items-center gap-3 text-xs text-fg-muted">
-        <span>페이지 크기</span>
+        <span id="page-size-label">페이지 크기</span>
         <Select
+          aria-labelledby="page-size-label"
           value={pageSize}
           onChange={(e) => {
             setPageSize(Number(e.target.value));

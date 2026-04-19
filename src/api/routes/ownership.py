@@ -268,15 +268,26 @@ async def search_experts(
     query: Annotated[str, Query(max_length=200)],
     kb_id: Annotated[str | None, Query()] = None,
 ) -> dict[str, Any]:
-    """Search for experts by matching topic keywords."""
+    """Search for experts by matching topic keywords + document ownership.
+
+    Two data sources, deduplicated by ``user_id``:
+      1. ``topic_owners`` — admin-curated SME mapping (often empty in MVP)
+      2. ``document_owners`` — auto-extracted from ingested docs (실데이터 풍부)
+
+    kb_id 없이 호출되면 모든 KB 의 owner 데이터를 합쳐서 검색. UI 가
+    "전체" 필터일 때도 결과가 나오도록 — 빈 결과로 silent fail 하지 않게.
+    """
     state = _get_state()
+    query_lower = query.lower()
+    matched_experts: list[dict[str, Any]] = []
+    seen_users: set[str] = set()
+    errors: list[str] = []
+
+    # ── 1. topic_owner 매칭 (admin-curated) ──
     topic_repo = state.get("topic_owner_repo")
     if topic_repo and kb_id:
         try:
             topics = await topic_repo.get_by_kb(kb_id)
-            query_lower = query.lower()
-            matched_experts: list[dict[str, Any]] = []
-            seen_users: set[str] = set()
             for t in topics:
                 keywords = [k.lower() for k in t.get("topic_keywords", [])]
                 topic_name_lower = t.get("topic_name", "").lower()
@@ -285,11 +296,77 @@ async def search_experts(
                     if user_id and user_id not in seen_users:
                         seen_users.add(user_id)
                         matched_experts.append({
+                            "id": user_id,
                             "user_id": user_id,
-                            "topic_name": t["topic_name"],
-                            "kb_id": t["kb_id"],
+                            "name": user_id,
+                            "topic_name": t.get("topic_name"),
+                            "kb_id": t.get("kb_id"),
+                            "source": "topic_owner",
                         })
-            return {"experts": matched_experts, "total": len(matched_experts), "query": query}
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.warning("Expert search failed: %s", e)
-    return {"experts": [], "total": 0, "query": query}
+            logger.warning("topic_owner expert search failed: %s", e)
+            errors.append(f"topic_owner: {type(e).__name__}: {e}")
+
+    # ── 2. document_owner 매칭 (auto-extracted, MVP 의 주 데이터원) ──
+    # owner_user_id 가 한국어 이름인 경우가 많아 부분 일치로 매칭. document
+    # 수까지 묶어서 카드에 노출.
+    doc_repo = state.get("doc_owner_repo")
+    if doc_repo:
+        try:
+            if kb_id:
+                doc_owners = await doc_repo.get_by_kb(kb_id, limit=2000)
+            else:
+                # KB 별로 모은다 — 전체 KB 순회. KB 리스트는 kb_registry 에서.
+                kb_registry = state.get("kb_registry")
+                doc_owners = []
+                if kb_registry:
+                    all_kbs = await kb_registry.list_all()
+                    for k in all_kbs:
+                        if k.get("status") != "active":
+                            continue
+                        kid = k.get("id") or k.get("kb_id")
+                        if not kid:
+                            continue
+                        try:
+                            doc_owners.extend(await doc_repo.get_by_kb(kid, limit=500))
+                        except Exception as e:  # noqa: BLE001 — 개별 KB 실패는 부분 결과로
+                            errors.append(f"doc_owner kb={kid}: {type(e).__name__}: {e}")
+            # owner_user_id 별로 묶어서 doc 수 표시
+            by_user: dict[str, dict[str, Any]] = {}
+            for o in doc_owners:
+                user_id = o.get("owner_user_id") or ""
+                if not user_id:
+                    continue
+                if query_lower not in user_id.lower():
+                    continue
+                if user_id in seen_users:
+                    continue
+                entry = by_user.setdefault(user_id, {
+                    "id": user_id,
+                    "user_id": user_id,
+                    "name": user_id,
+                    "kb_id": o.get("kb_id"),
+                    "source": "document_owner",
+                    "documents": [],
+                })
+                entry["documents"].append({
+                    "document_id": o.get("document_id"),
+                    "kb_id": o.get("kb_id"),
+                    "ownership_type": o.get("ownership_type"),
+                })
+            for user_id, entry in by_user.items():
+                seen_users.add(user_id)
+                matched_experts.append(entry)
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.warning("document_owner expert search failed: %s", e)
+            errors.append(f"document_owner: {type(e).__name__}: {e}")
+
+    response: dict[str, Any] = {
+        "experts": matched_experts,
+        "total": len(matched_experts),
+        "query": query,
+    }
+    if errors:
+        # 부분 실패도 디버깅 가능하도록 노출 (chat 의 failure_reason 패턴과 동일)
+        response["partial_errors"] = errors
+    return response

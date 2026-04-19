@@ -16,18 +16,11 @@ export function useMyDocumentOwners(params: { kb_id?: string; userId: string }) 
   return useQuery({
     queryKey: ["my-documents", "owners", params],
     queryFn: async () => {
-      // Backend requires kb_id; the enabled gate below ensures we only
-      // call when the user has picked one.
-      const raw = await listDocumentOwners({ kb_id: params.kb_id! });
-      // Endpoint historically returned a list, but now wraps in {owners,total}.
-      const all = (
-        Array.isArray(raw)
-          ? raw
-          : ((raw as unknown as { owners?: DocumentOwner[] }).owners ?? [])
-      ) as DocumentOwner[];
+      // listDocumentOwners 가 backend `{owners}` 를 표준화해서 array 반환.
+      const all = await listDocumentOwners({ kb_id: params.kb_id! });
       // Client-side user filter — endpoint isn't user-scoped server-side yet
       // (B-2 will add owner_user_id query param to /admin/ownership/*).
-      return all.filter((o) => o.owner_user_id === params.userId);
+      return all.filter((o: DocumentOwner) => o.owner_user_id === params.userId);
     },
     enabled: Boolean(params.userId && params.kb_id),
     staleTime: 60 * 1000,

@@ -15,6 +15,26 @@ logger = logging.getLogger(__name__)
 
 _ERR_REPORT_NOT_FOUND = "Error report not found"
 
+# Frontend (Next.js) sends uppercase enum (``SUGGESTION``) and the
+# UI-only token ``ERROR_REPORT`` which maps to backend's ``report``. Accept
+# any case + the alias so we don't 500 on perfectly reasonable client input.
+_FEEDBACK_TYPE_ALIAS = {
+    "error_report": "report",
+    "errorreport": "report",
+}
+
+
+def _normalize_feedback_type(raw: Any) -> str:
+    key = str(raw or "general").strip().lower()
+    key = _FEEDBACK_TYPE_ALIAS.get(key, key)
+    try:
+        return FeedbackType(key).value
+    except ValueError:
+        # 알 수 없는 type → ``general`` 로 흡수 (저장은 됨, admin 이 분류).
+        logger.warning("unknown feedback_type %r — coerced to 'general'", raw)
+        return FeedbackType.GENERAL.value
+
+
 # Two routers: admin feedback + knowledge feedback/error-report
 admin_router = APIRouter(prefix="/api/v1/admin", tags=["Feedback"])
 knowledge_router = APIRouter(prefix="/api/v1/knowledge", tags=["Feedback"])
@@ -62,14 +82,25 @@ async def create_feedback(body: dict[str, Any]) -> dict[str, Any]:
     feedback_id = body.get("id") or str(uuid.uuid4())
     if repo:
         try:
+            # ``dict.get(key, default)`` 는 key 가 **있고 None 이면** None 반환
+            # (default 미적용). 클라이언트가 ``"document_id": null`` 같이 보내면
+            # NOT NULL 컬럼 충돌로 500. ``or`` 체인으로 None/빈문자열 모두 흡수.
             feedback_data = {
                 "id": feedback_id,
-                "entry_id": body.get("entry_id", body.get("document_id", "unknown")),
-                "kb_id": body.get("kb_id", "default"),
-                "user_id": body.get("user_id", body.get("reporter", "anonymous")),
-                "feedback_type": FeedbackType(body.get("feedback_type", body.get("type", "general"))).value,
-                "status": body.get("status", "pending"),
-                "description": body.get("description", body.get("content", "")),
+                "entry_id": (
+                    body.get("entry_id") or body.get("document_id") or "unknown"
+                ),
+                "kb_id": body.get("kb_id") or "default",
+                "user_id": (
+                    body.get("user_id") or body.get("reporter") or "anonymous"
+                ),
+                "feedback_type": _normalize_feedback_type(
+                    body.get("feedback_type") or body.get("type"),
+                ),
+                "status": body.get("status") or "pending",
+                "description": (
+                    body.get("description") or body.get("content") or ""
+                ),
                 "error_category": body.get("error_category"),
                 "suggested_content": body.get("suggested_content"),
             }
@@ -250,15 +281,30 @@ async def create_error_report(body: dict[str, Any]) -> dict[str, Any]:
     report_id = body.get("id") or str(uuid.uuid4())
     if repo:
         try:
+            # 같은 None-aware 패턴 (위 create_feedback 주석 참조).
             report_data = {
                 "id": report_id,
-                "document_id": body.get("document_id", body.get("message_id", "unknown")),
-                "kb_id": body.get("kb_id", body.get("kb", "default")),
-                "error_type": body.get("error_type", body.get("type", "incorrect_answer")),
-                "description": body.get("description", body.get("title", body.get("content", ""))),
-                "reporter_user_id": body.get("reporter_user_id", body.get("reporter", body.get("session_id", "anonymous"))),  # noqa: E501
-                "status": body.get("status", "pending"),
-                "priority": body.get("priority", "medium"),
+                "document_id": (
+                    body.get("document_id") or body.get("message_id") or "unknown"
+                ),
+                "kb_id": body.get("kb_id") or body.get("kb") or "default",
+                "error_type": (
+                    body.get("error_type") or body.get("type") or "incorrect_answer"
+                ),
+                "description": (
+                    body.get("description")
+                    or body.get("title")
+                    or body.get("content")
+                    or ""
+                ),
+                "reporter_user_id": (
+                    body.get("reporter_user_id")
+                    or body.get("reporter")
+                    or body.get("session_id")
+                    or "anonymous"
+                ),
+                "status": body.get("status") or "pending",
+                "priority": body.get("priority") or "medium",
             }
             await repo.save(report_data)
             return {"success": True, "report_id": report_id, "message": "Error reported"}
