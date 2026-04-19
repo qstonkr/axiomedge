@@ -1014,6 +1014,196 @@ export const submitVerificationVote = (
     body: JSON.stringify(body),
   });
 
+// ── /distill/profiles + base-models + builds + training-data + edge ────
+// (B-2 Phase 8 — /admin/edge 6 탭)
+
+export type DistillProfile = {
+  name: string;
+  enabled: boolean;
+  description?: string;
+  search_group?: string;
+  base_model?: string;
+  lora?: { r?: number; alpha?: number; dropout?: number };
+  deploy?: {
+    quantize?: string;
+    s3_bucket?: string;
+    s3_prefix?: string;
+    auto_update_cron?: string;
+  };
+  qa_style?: { mode?: string; max_answer_tokens?: number };
+  training?: {
+    epochs?: number;
+    batch_size?: number;
+    learning_rate?: number;
+    gradient_accumulation?: number;
+    max_seq_length?: number;
+  };
+  data_quality?: Record<string, unknown>;
+};
+
+export const listDistillProfiles = async (): Promise<DistillProfile[]> => {
+  // backend ships ``{profiles: {name: profile}}`` (dict)
+  const raw = await request<{ profiles?: Record<string, DistillProfile> }>(
+    "api/v1/distill/profiles",
+    { method: "GET" },
+  );
+  return Object.values(raw.profiles ?? {});
+};
+
+export const getDistillProfile = (name: string) =>
+  request<DistillProfile>(
+    `api/v1/distill/profiles/${encodeURIComponent(name)}`,
+    { method: "GET" },
+  );
+
+export const deleteDistillProfile = (name: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/profiles/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  );
+
+// ── base-models ──
+
+export type BaseModel = {
+  hf_id: string;
+  display_name: string;
+  params?: string;
+  license?: string;
+  commercial_use?: boolean;
+  verified?: boolean;
+  notes?: string;
+  enabled?: boolean;
+  sort_order?: number;
+};
+
+export const listBaseModels = async (
+  enabledOnly = false,
+): Promise<BaseModel[]> => {
+  const raw = await request<{ models?: BaseModel[] }>(
+    "api/v1/distill/base-models",
+    { method: "GET", query: { enabled_only: enabledOnly ? 1 : 0 } },
+  );
+  return raw.models ?? [];
+};
+
+export const upsertBaseModel = (body: BaseModel) =>
+  request<BaseModel>("api/v1/distill/base-models", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const deleteBaseModel = (hfId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/base-models/${encodeURIComponent(hfId)}`,
+    { method: "DELETE" },
+  );
+
+// ── builds (학습/배포) ──
+
+export type DistillBuild = {
+  id: string;
+  profile_name?: string;
+  status?: string;
+  version?: string;
+  search_group?: string;
+  base_model?: string;
+  training_samples?: number;
+  data_sources?: string;
+  train_loss?: number | null;
+  eval_loss?: number | null;
+  training_duration_sec?: number | null;
+  created_at?: string;
+};
+
+export const listDistillBuilds = async (): Promise<DistillBuild[]> => {
+  const raw = await request<{ items?: DistillBuild[] }>("api/v1/distill/builds", {
+    method: "GET",
+  });
+  return raw.items ?? [];
+};
+
+export const triggerRetrain = (body: { profile_name: string }) =>
+  request<{ success: boolean; build_id?: string }>("api/v1/distill/retrain", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const deployBuild = (buildId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/builds/${encodeURIComponent(buildId)}/deploy`,
+    { method: "POST" },
+  );
+
+export const rollbackBuild = (buildId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/builds/${encodeURIComponent(buildId)}/rollback`,
+    { method: "POST" },
+  );
+
+export const deleteBuild = (buildId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/builds/${encodeURIComponent(buildId)}`,
+    { method: "DELETE" },
+  );
+
+// ── training-data (데이터 큐레이션) ──
+
+export type TrainingDataStats = {
+  profile_name: string;
+  total: number;
+  approved: number;
+  pending: number;
+  rejected: number;
+  by_source?: Record<string, number>;
+  by_batch?: Record<string, number>;
+};
+
+export const getTrainingDataStats = (profileName: string) =>
+  request<TrainingDataStats>("api/v1/distill/training-data/stats", {
+    method: "GET",
+    query: { profile_name: profileName },
+  });
+
+export const triggerGenerateTrainingData = (body: {
+  profile_name: string;
+  num_samples?: number;
+}) =>
+  request<{ success: boolean; batch_id?: string }>(
+    "api/v1/distill/training-data/generate",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+// ── edge-servers (서버 운영 — list 는 useOps 의 useEdgeServers) ──
+
+export const deleteEdgeServer = (storeId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/edge-servers/${encodeURIComponent(storeId)}`,
+    { method: "DELETE" },
+  );
+
+export const requestEdgeUpdate = (storeId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/edge-servers/${encodeURIComponent(storeId)}/request-update`,
+    { method: "POST" },
+  );
+
+// ── manifest (운영/배포) ──
+
+export type EdgeManifest = {
+  profile_name: string;
+  version?: string;
+  model_url?: string;
+  model_sha256?: string;
+  app_version?: string;
+  base_model?: string;
+};
+
+export const getEdgeManifest = (profileName: string) =>
+  request<EdgeManifest>(
+    `api/v1/distill/manifest/${encodeURIComponent(profileName)}`,
+    { method: "GET" },
+  );
+
 // ── /admin/dashboard/summary (B-2 운영 대시보드) ─────────────────────────
 
 export type AdminDashboardSummary = {
