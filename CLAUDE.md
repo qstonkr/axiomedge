@@ -20,7 +20,8 @@ make setup-distill-toolchain    # llama.cpp convert+quantize+libllama (one-match
                                 # 상세: docs/DISTILL_TOOLCHAIN.md
 make start / stop               # docker compose up/down
 make api                        # FastAPI :8000
-make dashboard                  # Streamlit :8501
+make dashboard                  # Streamlit :8501 (admin/legacy)
+make web-dev                    # Next.js :3000 (사용자 화면 — B-1)
 
 # CLI
 make ingest ARGS="--source ./docs/ --kb-id my-kb"
@@ -97,7 +98,8 @@ Large files are split into helpers/sub-modules with **facade re-exports** for ba
 | `src/api/routes/glossary.py` | + `glossary_helpers.py` | Glossary CRUD (route + business logic) |
 | `src/pipelines/graphrag/` | extractor + models + prompts + _neo4j_persistence | GraphRAG entity/relation extraction + Neo4j persistence |
 | `src/search/enhanced_similarity_matcher.py` | → `similarity/` pkg | Similarity matching (matcher, strategies, utils) |
-| `src/apps/dashboard/services/api/` | 8 modules | Frontend API client (core, kb, search, glossary, quality, admin, auth, misc) |
+| `src/apps/dashboard/services/api/` | 8 modules | Streamlit API client (legacy admin) |
+| `src/apps/web/` | Next.js 16 + Tailwind v4 | 사용자 화면 (B-1) — 6 페이지 + BFF 인증 (`docs/WEB.md`) |
 | `src/connectors/confluence/` | 8-module pkg | Confluence crawler (client, models, html_parsers, attachment_parser, config, output, structured_ir) |
 | `src/distill/` | service + data_gen/ + repositories/ | Edge model distillation (QA curation, LoRA SFT, GGUF, S3 deploy) |
 | `src/distill/data_gen/` | 5-module pkg | Data generation (qa_generator, quality_filter, generality_filter, dataset_builder, test_data_templates) |

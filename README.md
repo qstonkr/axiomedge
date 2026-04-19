@@ -22,9 +22,11 @@ Python 3.12+ · FastAPI · Streamlit · Qdrant · Neo4j · PostgreSQL · Redis �
 make setup
 make start
 
-# API + Dashboard
+# API + Frontend
 make api          # FastAPI :8000
-make dashboard    # Streamlit :8501
+make web-install  # 1회 — pnpm install (src/apps/web/)
+make web-dev      # Next.js :3000 (사용자 화면 — B-1)
+make dashboard    # Streamlit :8501 (admin/legacy)
 
 # 문서 인제스트
 make ingest ARGS="--source ./docs/ --kb-id my-kb"

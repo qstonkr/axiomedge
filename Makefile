@@ -1,4 +1,4 @@
-.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-unit-fast test-integration test-e2e test-coverage-gate tei-refresh web-install web-dev web-build web-typecheck web-lint web-test web-test-e2e web-gen-api
+.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-unit-fast test-integration test-e2e test-coverage-gate tei-refresh web-install web-dev web-build web-typecheck web-lint web-test web-test-e2e web-gen-api web-gen-api-offline web-docker-build web-docker-run
 
 # Pin Compose project name so existing knowledge-local_* volumes are reused
 # regardless of the working directory or compose file location.
@@ -43,8 +43,8 @@ tei-refresh:
 dashboard:
 	uv run streamlit run src/apps/dashboard/app.py --server.address 0.0.0.0 --server.port 8501
 
-# === Web (Next.js — apps/web) ===
-WEB_DIR = apps/web
+# === Web (Next.js — src/apps/web) ===
+WEB_DIR = src/apps/web
 
 web-install:
 	pnpm --dir $(WEB_DIR) install
@@ -77,6 +77,17 @@ web-gen-api:
 # which imports the FastAPI app in-process. Faster, no port collision.
 web-gen-api-offline:
 	pnpm --dir $(WEB_DIR) gen:api:offline
+
+# Build production Docker image (multi-stage, standalone Next.js).
+WEB_IMAGE ?= axiomedge-web:latest
+web-docker-build:
+	docker build -t $(WEB_IMAGE) -f $(WEB_DIR)/Dockerfile $(WEB_DIR)
+
+# Run the built image. Override API_URL when FastAPI lives elsewhere.
+web-docker-run:
+	docker run --rm -it -p 3000:3000 \
+	  -e API_URL=$${API_URL:-http://host.docker.internal:8000} \
+	  $(WEB_IMAGE)
 
 # === MCP Server ===
 mcp:

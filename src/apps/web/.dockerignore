@@ -1,0 +1,16 @@
+node_modules
+.next
+.next/cache
+.git
+.gitignore
+.env*
+README.md
+AGENTS.md
+CLAUDE.md
+DESIGN.md
+tests
+playwright.config.ts
+vitest.config.ts
+*.tsbuildinfo
+.eslintcache
+coverage
