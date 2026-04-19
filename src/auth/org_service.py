@@ -18,6 +18,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+
+def _utc_naive_now() -> datetime:
+    """OrgMembershipModel uses TIMESTAMP WITHOUT TIME ZONE — give it naive UTC."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_ORG_ID = "default-org"
@@ -97,7 +102,7 @@ class OrgService:
                     "status": row.status,
                 }
 
-            now = datetime.now(timezone.utc)
+            now = _utc_naive_now()
             membership = OrgMembershipModel(
                 id=str(uuid.uuid4()),
                 user_id=user_id,

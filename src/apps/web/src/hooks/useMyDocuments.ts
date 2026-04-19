@@ -16,14 +16,20 @@ export function useMyDocumentOwners(params: { kb_id?: string; userId: string }) 
   return useQuery({
     queryKey: ["my-documents", "owners", params],
     queryFn: async () => {
-      const all = await listDocumentOwners({ kb_id: params.kb_id });
-      // The endpoint isn't user-scoped server-side yet; filter client-side
-      // until the API ships an `owner_user_id` query parameter.
-      return all.filter(
-        (o) => o.owner_user_id === params.userId,
+      // Backend requires kb_id; the enabled gate below ensures we only
+      // call when the user has picked one.
+      const raw = await listDocumentOwners({ kb_id: params.kb_id! });
+      // Endpoint historically returned a list, but now wraps in {owners,total}.
+      const all = (
+        Array.isArray(raw)
+          ? raw
+          : ((raw as unknown as { owners?: DocumentOwner[] }).owners ?? [])
       ) as DocumentOwner[];
+      // Client-side user filter — endpoint isn't user-scoped server-side yet
+      // (B-2 will add owner_user_id query param to /admin/ownership/*).
+      return all.filter((o) => o.owner_user_id === params.userId);
     },
-    enabled: Boolean(params.userId),
+    enabled: Boolean(params.userId && params.kb_id),
     staleTime: 60 * 1000,
   });
 }
@@ -60,7 +66,8 @@ export function usePendingTasks() {
 export function useStaleOwners(params: { kb_id?: string }) {
   return useQuery({
     queryKey: ["my-documents", "stale", params.kb_id ?? null],
-    queryFn: () => listStaleOwners({ kb_id: params.kb_id }),
+    queryFn: () => listStaleOwners({ kb_id: params.kb_id! }),
+    enabled: Boolean(params.kb_id),
     staleTime: 5 * 60 * 1000,
   });
 }

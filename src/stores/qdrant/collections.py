@@ -281,7 +281,9 @@ class QdrantCollectionManager:
             await client.get_collection(alias_name)
             self._alias_resolution_cache[kb_id] = (alias_name, time.time() + 60)
             return alias_name
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except Exception:  # noqa: BLE001 — qdrant grpc raises non-stdlib types
+            # No alias defined → fall back to the base collection (the
+            # original write target). Idempotent — caller doesn't care which.
             self._alias_resolution_cache[kb_id] = (base_name, time.time() + 60)
             return base_name
 

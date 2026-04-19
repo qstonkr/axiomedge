@@ -194,3 +194,15 @@ class AppState:
         """
         val = getattr(self, key, None)
         return val is not None
+
+    def keys(self):
+        """Yield public field names. Required for ``dict(state)`` to work and
+        lets agentic / similar layers shallow-copy the service registry."""
+        from dataclasses import fields
+        return [f.name for f in fields(self) if not f.name.startswith("_")]
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def items(self):
+        return [(k, getattr(self, k)) for k in self.keys()]

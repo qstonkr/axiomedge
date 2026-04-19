@@ -26,7 +26,7 @@ export function proxy(req: NextRequest) {
 }
 
 function isPublic(pathname: string): boolean {
-  if (pathname === "/" || pathname === "/login") return true;
+  if (pathname === "/login") return true;
   if (pathname.startsWith("/api/auth/")) return true;
   if (pathname.startsWith("/_next/")) return true;
   if (pathname.startsWith("/favicon")) return true;

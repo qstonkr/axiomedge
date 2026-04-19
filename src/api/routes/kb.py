@@ -70,7 +70,10 @@ async def _enrich_kb_counts(kbs: list[dict], store) -> None:
         kb_id = kb.get("kb_id") or kb.get("id", "")
         try:
             kb["chunk_count"] = await store.count(kb_id)
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except Exception as e:  # noqa: BLE001 — count is presentational
+            # Qdrant raises ``grpc.aio.AioRpcError`` (not a stdlib type) when
+            # a KB's collection or alias is missing. UI fallback to 0 lets the
+            # KB list render even when the vector store hasn't been seeded yet.
             logger.warning(
                 "Failed to count chunks for KB %s: %s — falling back to 0",
                 kb_id, e,

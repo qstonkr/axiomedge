@@ -247,7 +247,10 @@ async def _step_tree_expand(
             "Tree expansion: siblings=%d, section_hits=%d",
             len(siblings), len(section_hits),
         )
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except Exception as e:  # noqa: BLE001 — neo4j ClientError isn't stdlib
+        # Missing fulltext index / disconnected graph / etc. are non-fatal:
+        # base hybrid search results still come back. Logged at warning so
+        # ops can spot a misconfigured index without breaking user search.
         logger.warning("Tree context expansion failed: %s", e)
 
     return all_chunks
