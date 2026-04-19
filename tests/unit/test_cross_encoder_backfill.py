@@ -54,13 +54,20 @@ class TestLoadModelSyncLocal:
     @patch.object(mod, "_loading", False)
     @patch.object(mod, "_model", None)
     @patch(
-        "src.search.cross_encoder_reranker.CrossEncoder",
-        create=True,
+        "sentence_transformers.CrossEncoder",
         side_effect=ImportError("no sentence_transformers"),
     )
     def test_load_failure_sets_model_none(self, _mock_ce: MagicMock) -> None:
-        """When CrossEncoder import/init fails, _model stays None."""
-        # _load_model_sync catches all exceptions
+        """When CrossEncoder import/init fails, _model stays None.
+
+        ``cross_encoder_reranker.py`` 안의 ``from sentence_transformers import CrossEncoder``
+        가 lazy import 라 module-level binding patch 는 효과 없음 — 실제
+        ``sentence_transformers.CrossEncoder`` 를 patch.
+        """
+        # 다른 test 가 module global ``_model`` 을 set 했을 수 있어 강제 None
+        mod._model = None
+        mod._load_attempted = False
+        mod._loading = False
         mod._load_model_sync()
         assert mod._load_attempted is True
         assert mod._loading is False

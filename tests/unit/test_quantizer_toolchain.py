@@ -8,10 +8,18 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _clear_toolchain_env(monkeypatch):
-    """각 테스트 독립 — env var 초기화."""
+    """각 테스트 독립 — env var 초기화.
+
+    ``quantizer.py`` 의 실제 env 이름은 ``DISTILL_LLAMA_*`` 접두 — 옛
+    fixture 가 접두 누락된 이름만 cleanup 해서 단독 실행과 풀 스위트의 결과
+    가 달랐다. 양쪽 모두 명시.
+    """
     for var in (
         "DISTILL_CONVERT_SCRIPT",
         "DISTILL_QUANTIZE_BIN",
+        "DISTILL_LLAMA_CONVERT_SCRIPT",
+        "DISTILL_LLAMA_QUANTIZE_BIN",
+        "DISTILL_LIB_LLAMA_PATH",
         "DISTILL_ALLOW_PATH_FALLBACK",
     ):
         monkeypatch.delenv(var, raising=False)

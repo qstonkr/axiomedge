@@ -121,7 +121,15 @@ class TestPipelineSettings:
 
 
 class TestAuthSettings:
-    def test_defaults(self):
+    def test_defaults(self, monkeypatch):
+        # .env 에서 AUTH_* 가 process env 로 들어와 있을 수 있어 default 검증
+        # 전 env 비움 — pydantic-settings 는 priority 가 env > default.
+        for key in [
+            "AUTH_ENABLED", "AUTH_PROVIDER", "AUTH_JWT_ALGORITHM",
+            "AUTH_JWT_ACCESS_EXPIRE_MINUTES", "AUTH_JWT_REFRESH_EXPIRE_HOURS",
+            "AUTH_JWT_ISSUER", "AUTH_COOKIE_SECURE",
+        ]:
+            monkeypatch.delenv(key, raising=False)
         s = AuthSettings()
         assert s.enabled is False
         assert s.provider == "local"

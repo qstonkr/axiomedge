@@ -183,7 +183,11 @@ class TestInitGraph:
 # ---------------------------------------------------------------------------
 
 class TestInitEmbedding:
-    async def test_init_embedding_tei(self):
+    async def test_init_embedding_tei(self, monkeypatch):
+        # .env 가 USE_CLOUD_EMBEDDING=false 일 수 있어 명시 활성 + 유효 URL
+        monkeypatch.setenv("USE_CLOUD_EMBEDDING", "true")
+        monkeypatch.setenv("BGE_TEI_URL", "http://localhost:8001")
+
         from src.api.app import _init_embedding
 
         state = AppState()

@@ -402,7 +402,8 @@ class TestGraphRAGExtractorGetLlm:
                 llm = ext._get_llm()
                 assert llm is not None
 
-    def test_sagemaker_when_enabled(self):
+    def test_sagemaker_when_enabled(self, monkeypatch):
+        monkeypatch.setenv("SAGEMAKER_ENDPOINT_NAME", "test-endpoint")
         ext = GraphRAGExtractor()
         with patch.dict("os.environ", {"GRAPHRAG_USE_SAGEMAKER": "true"}):
             with patch("src.pipelines.graphrag_extractor._SageMakerLLMClient") as mock_cls:

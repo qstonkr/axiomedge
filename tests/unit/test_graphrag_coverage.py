@@ -681,7 +681,9 @@ class TestCreateRelationship:
 
 
 class TestLLMClients:
-    def test_sagemaker_invoke(self):
+    def test_sagemaker_invoke(self, monkeypatch):
+        # _SageMakerLLMClient.__init__ 가 SAGEMAKER_ENDPOINT_NAME 필수 검증
+        monkeypatch.setenv("SAGEMAKER_ENDPOINT_NAME", "test-endpoint")
         from src.pipelines.graphrag_extractor import _SageMakerLLMClient
         client = _SageMakerLLMClient()
         mock_boto_client = MagicMock()
@@ -697,7 +699,8 @@ class TestLLMClients:
             )
             assert "nodes" in result
 
-    def test_get_llm_sagemaker(self):
+    def test_get_llm_sagemaker(self, monkeypatch):
+        monkeypatch.setenv("SAGEMAKER_ENDPOINT_NAME", "test-endpoint")
         extractor = GraphRAGExtractor(llm_client=None)
         with patch.dict("os.environ", {"GRAPHRAG_USE_SAGEMAKER": "true"}):
             llm = extractor._get_llm()
