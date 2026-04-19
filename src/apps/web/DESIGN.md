@@ -242,9 +242,112 @@ Heading + Body fg-muted
 
 ---
 
+## Admin Shell (B-2)
+
+사용자 화면 (`(app)`) 과 admin 화면 (`(admin)`) 은 **같은 컴포넌트 라이브러리** 를
+사용하되, **shell (sidebar/header/accent/density) 만 차별화** 한다. 사용자가
+URL 만 보고 있는 영역을 식별할 필요 없이, 페이지 진입 즉시 시각적으로 구분된다.
+
+차별화는 `<html data-admin="true">` 스코프로 토큰 override 하는 방식 — 별도
+컴포넌트 fork 없음. AdminShell layout 이 `document.documentElement.dataset.admin`
+을 set 하고 unmount 시 unset.
+
+### Tone
+
+- **운영자 톤** — Sentry/Posthog/Datadog 패턴 합성
+- **dark sidebar + light content** (운영 dashboard 의 보편 패턴)
+- **압축된 density** — table dense, compact rows, sticky header
+- **teal accent** — 사용자 화면 indigo (`#5e6ad2`) 와 hue 충분히 분리
+
+### Color Tokens (admin override)
+
+`[data-admin="true"]` 스코프에서만 적용. 나머지는 `:root` 토큰 그대로 사용.
+
+| Token | Light (admin) | Dark (admin) | 용도 |
+|---|---|---|---|
+| `accent-default` | `#14b8a6` (teal-500) | `#2dd4bf` (teal-400) | admin primary |
+| `accent-emphasis` | `#0d9488` (teal-600) | `#14b8a6` (teal-500) | admin hover |
+| `accent-subtle` | `#ccfbf1` (teal-100) | `#134e4a` (teal-900) | admin badge bg |
+| `admin-sidebar-bg` | `#1f2937` (slate-800) | `#0f172a` (slate-900) | sidebar 항상 dark |
+| `admin-sidebar-fg` | `#cbd5e1` (slate-300) | `#cbd5e1` | sidebar 텍스트 |
+| `admin-sidebar-active-bg` | `#0f766e` (teal-700) | `#0d9488` | sidebar 선택 항목 bg |
+| `admin-sidebar-hover-bg` | `#374151` (slate-700) | `#1e293b` (slate-800) | sidebar hover |
+
+### Severity Tokens (운영 alert)
+
+| Token | Hex (light) | 용도 |
+|---|---|---|
+| `severity-info` | `#3b82f6` | INFO log |
+| `severity-warn` | `#c47a16` | WARN log, queued job |
+| `severity-error` | `#d23f3f` | ERROR log, failed job |
+| `severity-critical` | `#7f1d1d` | CRITICAL alert, P0 incident |
+| `severity-success` | `#2f9461` | success state, healthy |
+
+### Density Tokens
+
+| 컨텍스트 | spacing | typography |
+|---|---|---|
+| admin table row | `py-1.5 px-2` | `text-xs leading-snug` |
+| admin form row | `gap-3` | `text-sm` |
+| admin section gap | `gap-4` | — |
+| admin metric card | `p-4` | `text-3xl` value + `text-xs` label |
+
+### Shell Layout
+
+```
+<html data-admin="true">
+  <body>
+    <div class="flex min-h-screen">
+      <AdminSidebar />              ← w-60, dark bg, teal active
+      <div class="flex-1 flex flex-col">
+        <AdminHeader />             ← sticky top-0, h-12, breadcrumb + actions
+        <main class="overflow-auto p-6">{children}</main>
+      </div>
+    </div>
+  </body>
+</html>
+```
+
+### Brand 라벨
+
+좌상단 sidebar header 또는 main header 좌측에 항상 노출:
+
+```
+axiomedge ▸ [Admin]   ← teal pill, text-xs uppercase
+```
+
+### Components (admin 전용)
+
+| 컴포넌트 | 출처 패턴 | 용도 |
+|---|---|---|
+| `<MetricCard label value delta sparkline />` | Posthog dashboard | KPI 표시 |
+| `<Sparkline points />` | SVG only, no deps | metric card 보조 |
+| `<DataTable columns rows />` | Linear/Stripe 합성 | KB/문서/owner list |
+| `<LogViewer events />` | Sentry event log | job/edge log tail |
+| `<EventTimeline events />` | Sentry breadcrumb | ingest pipeline 단계 |
+| `<SeverityBadge level />` | Sentry severity color | alert/log row |
+| `<AdminSidebar groups />` | dark sidebar with sections | 4 그룹 메뉴 |
+| `<AdminHeader breadcrumb actions />` | sticky compact | 페이지 컨텍스트 |
+| `<KbScopePicker />` | 재사용 가능 | 다수 admin 페이지에서 사용 |
+
+### Reference patterns
+
+- **Posthog**: 메트릭 카드 그리드 (4×N), filter chips (좌측 좁은 column),
+  시계열 차트 with hover tooltip
+- **Sentry**: severity color (info/warn/error/critical) 일관 적용,
+  event timeline (수직 line + 단계별 마커), stack-trace 같은 dense detail
+  panel, breadcrumb context
+- **Supabase**: table editor (inline edit, row hover action, column resize),
+  schema visual
+
+---
+
 ## Reference
 
-- Linear DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/linear/README.md`
+- Linear DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/linear.app/README.md`
 - Notion DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/notion/README.md`
+- Posthog DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/posthog/README.md`
+- Sentry DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/sentry/README.md`
+- Supabase DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/supabase/README.md`
 - 토큰 정의: `src/app/globals.css`
 - Tailwind v4 가이드: `node_modules/tailwindcss/dist/...` (CSS-first config)

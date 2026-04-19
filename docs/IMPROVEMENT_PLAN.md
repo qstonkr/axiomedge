@@ -213,7 +213,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ---
 
-### PR4. 툴체인 env var 강제 🔨
+### PR4. 툴체인 env var 강제 ✅
 
 - **Severity**: 🔴 Blocker (2개 SSOT 항목)
 - **축**: SSOT + Hardcoding
@@ -229,7 +229,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ---
 
-### PR5. Config 드리프트 정리 🔨
+### PR5. Config 드리프트 정리 ✅
 
 - **Severity**: 🟠 Major
 - **축**: SSOT
@@ -264,7 +264,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 
 ---
 
-### PR7. 문서 블로커 3개 🔨
+### PR7. 문서 블로커 3개 ✅
 
 - **Severity**: 🔴 Blocker (6개 중 3개)
 - **축**: Documentation
@@ -281,7 +281,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 **목표**: 플러그인/레지스트리 패턴 도입. 확장성 확보.
 **예상 기간**: 3~4주
 
-### PR8. Provider registry 중앙화 🔨
+### PR8. Provider registry 중앙화 ✅
 
 - **Severity**: 🔴 Blocker (modularity 축)
 - **축**: Modularity / SRP
@@ -328,7 +328,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **Effort**: 8~12h
 - **Test plan**: 기존 통합 테스트 pass + 단계별 unit 테스트 신규
 
-### PR11. Config 디렉터리 재편 ⏳
+### PR11. Config 디렉터리 재편 ✅ (profiles.py 후속 1건)
 
 - **Severity**: 🟠 Major
 - **축**: SSOT

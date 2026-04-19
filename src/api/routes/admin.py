@@ -66,6 +66,94 @@ for route in _graph_router.routes:
 
 
 # ============================================================================
+# Operations Dashboard Summary (B-2)
+# ============================================================================
+
+@router.get("/dashboard/summary")
+async def admin_dashboard_summary() -> dict:
+    """Admin 운영 대시보드용 요약 카운터.
+
+    Streamlit dashboard.py 의 6 카드 지표를 한 번에 묶어 반환:
+      - active_kbs: 활성 KB 수
+      - total_documents: 모든 KB 의 document_count 합
+      - total_chunks: 모든 KB 의 chunk_count 합
+      - feedback_pending: pending feedback 수
+      - error_reports_pending: pending error report 수
+      - search_history_24h: 최근 24h 검색 수
+
+    각 항목은 best-effort — repo 접근 실패해도 나머지는 채워서 반환.
+    실패한 카운터는 ``null`` 로 노출 (UI 가 "데이터 없음" 표시).
+    """
+    state = _get_state()
+    out: dict[str, Any] = {
+        "active_kbs": None,
+        "total_documents": None,
+        "total_chunks": None,
+        "feedback_pending": None,
+        "error_reports_pending": None,
+        "search_history_24h": None,
+        "errors": [],
+    }
+
+    # KB / docs / chunks — kb_registry 의 list_all + 각 KB 의 document_count
+    kb_registry = state.get("kb_registry")
+    if kb_registry is not None:
+        try:
+            kbs = await kb_registry.list_all()
+            active = [k for k in kbs if k.get("status") == "active"]
+            out["active_kbs"] = len(active)
+            out["total_documents"] = sum(
+                int(k.get("document_count") or 0) for k in active
+            )
+            out["total_chunks"] = sum(
+                int(k.get("chunk_count") or 0) for k in active
+            )
+        except Exception as e:  # noqa: BLE001 — best effort
+            out["errors"].append(f"kb_registry: {type(e).__name__}: {e}")
+
+    # Feedback pending — feedback_repo
+    feedback_repo = state.get("feedback_repo")
+    if feedback_repo is not None:
+        try:
+            count_fn = getattr(feedback_repo, "count", None)
+            if count_fn:
+                out["feedback_pending"] = await count_fn(status="pending")
+        except Exception as e:  # noqa: BLE001
+            out["errors"].append(f"feedback_repo: {type(e).__name__}: {e}")
+
+    # Error reports pending — error_report_repo
+    error_repo = state.get("error_report_repo")
+    if error_repo is not None:
+        try:
+            list_fn = getattr(error_repo, "list_recent", None) or getattr(
+                error_repo, "list_all", None,
+            )
+            if list_fn:
+                rows = await list_fn(status="pending", limit=500)
+                # rows 가 list 또는 dict {items} 둘 다 가능
+                if isinstance(rows, dict):
+                    rows = rows.get("items") or rows.get("reports") or []
+                out["error_reports_pending"] = len(rows or [])
+        except Exception as e:  # noqa: BLE001
+            out["errors"].append(f"error_report_repo: {type(e).__name__}: {e}")
+
+    # Search history 24h — search_log_repo
+    search_log_repo = state.get("search_log_repo")
+    if search_log_repo is not None:
+        try:
+            from datetime import datetime, timedelta, timezone
+
+            since = datetime.now(timezone.utc) - timedelta(hours=24)
+            count_since = getattr(search_log_repo, "count_since", None)
+            if count_since:
+                out["search_history_24h"] = await count_since(since=since)
+        except Exception as e:  # noqa: BLE001
+            out["errors"].append(f"search_log_repo: {type(e).__name__}: {e}")
+
+    return out
+
+
+# ============================================================================
 # Qdrant Collections
 # ============================================================================
 

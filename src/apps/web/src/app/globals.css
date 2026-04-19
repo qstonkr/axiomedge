@@ -83,6 +83,46 @@
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
 }
 
+/*
+ * Admin shell tokens — applied when `<html data-admin="true">` is set by
+ * AdminShell layout. Override accent (indigo → teal) to give admin pages
+ * an immediately recognizable visual identity vs. the user-facing app.
+ * 사용자 화면과 같은 컴포넌트를 그대로 쓰되, accent 와 sidebar 토큰만
+ * teal/dark 으로 교체.
+ */
+[data-admin="true"] {
+  --color-accent-default: #14b8a6; /* teal-500 */
+  --color-accent-emphasis: #0d9488; /* teal-600 */
+  --color-accent-subtle: #ccfbf1; /* teal-100 */
+
+  /* admin sidebar 는 light/dark theme 와 무관하게 항상 dark — 운영 dashboard 패턴 */
+  --color-admin-sidebar-bg: #1f2937; /* slate-800 */
+  --color-admin-sidebar-fg: #cbd5e1; /* slate-300 */
+  --color-admin-sidebar-fg-strong: #f8fafc; /* slate-50 */
+  --color-admin-sidebar-active-bg: #0f766e; /* teal-700 */
+  --color-admin-sidebar-active-fg: #f0fdfa; /* teal-50 */
+  --color-admin-sidebar-hover-bg: #374151; /* slate-700 */
+  --color-admin-sidebar-border: #334155; /* slate-700 */
+
+  /* severity 5단계 — log viewer / event timeline / metric delta 색 */
+  --color-severity-info: #3b82f6;
+  --color-severity-warn: #c47a16;
+  --color-severity-error: #d23f3f;
+  --color-severity-critical: #7f1d1d;
+  --color-severity-success: #2f9461;
+}
+
+[data-admin="true"][data-theme="dark"] {
+  --color-accent-default: #2dd4bf; /* teal-400 — dark bg 위 대비 */
+  --color-accent-emphasis: #14b8a6;
+  --color-accent-subtle: #134e4a; /* teal-900 */
+
+  --color-admin-sidebar-bg: #0f172a; /* slate-900 */
+  --color-admin-sidebar-active-bg: #0d9488;
+  --color-admin-sidebar-hover-bg: #1e293b; /* slate-800 */
+  --color-admin-sidebar-border: #1e293b;
+}
+
 @theme inline {
   --color-bg-canvas: var(--color-bg-canvas);
   --color-bg-subtle: var(--color-bg-subtle);
@@ -100,6 +140,21 @@
   --color-accent-default: var(--color-accent-default);
   --color-accent-emphasis: var(--color-accent-emphasis);
   --color-accent-subtle: var(--color-accent-subtle);
+
+  /* admin shell — only meaningful inside [data-admin="true"] */
+  --color-admin-sidebar-bg: var(--color-admin-sidebar-bg);
+  --color-admin-sidebar-fg: var(--color-admin-sidebar-fg);
+  --color-admin-sidebar-fg-strong: var(--color-admin-sidebar-fg-strong);
+  --color-admin-sidebar-active-bg: var(--color-admin-sidebar-active-bg);
+  --color-admin-sidebar-active-fg: var(--color-admin-sidebar-active-fg);
+  --color-admin-sidebar-hover-bg: var(--color-admin-sidebar-hover-bg);
+  --color-admin-sidebar-border: var(--color-admin-sidebar-border);
+
+  --color-severity-info: var(--color-severity-info);
+  --color-severity-warn: var(--color-severity-warn);
+  --color-severity-error: var(--color-severity-error);
+  --color-severity-critical: var(--color-severity-critical);
+  --color-severity-success: var(--color-severity-success);
 
   --color-success-default: var(--color-success-default);
   --color-success-subtle: var(--color-success-subtle);

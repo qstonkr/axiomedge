@@ -366,6 +366,23 @@ export const getSearchHistory = async (params?: {
   return { items, total: raw.total ?? items.length };
 };
 
+// ── /admin/dashboard/summary (B-2 운영 대시보드) ─────────────────────────
+
+export type AdminDashboardSummary = {
+  active_kbs: number | null;
+  total_documents: number | null;
+  total_chunks: number | null;
+  feedback_pending: number | null;
+  error_reports_pending: number | null;
+  search_history_24h: number | null;
+  errors: string[];
+};
+
+export const getAdminDashboardSummary = () =>
+  request<AdminDashboardSummary>("api/v1/admin/dashboard/summary", {
+    method: "GET",
+  });
+
 // ── /knowledge/upload (document upload) ────────────────────────────────
 
 export const uploadDocumentToKb = async (kbId: string, file: File) => {
