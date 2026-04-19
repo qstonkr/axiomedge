@@ -136,7 +136,11 @@ class TestUpsert:
         client.upsert = AsyncMock()
 
         import logging
-        with caplog.at_level(logging.WARNING):
+        # 다른 test 가 logger propagate=False / disable 했을 수 있어 명시 reset
+        target = logging.getLogger("src.stores.qdrant.store")
+        target.propagate = True
+        target.disabled = False
+        with caplog.at_level(logging.WARNING, logger="src.stores.qdrant.store"):
             await store.upsert(
                 kb_id="test",
                 content="wrong dim",

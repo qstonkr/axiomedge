@@ -77,19 +77,25 @@ class TestResolveConvertScript:
 
         from src.distill.quantizer import _resolve_convert_script
         import logging
-        caplog.set_level(logging.ERROR, logger="src.distill.quantizer")
-
-        assert _resolve_convert_script() is None
-        assert any("DISTILL_CONVERT_SCRIPT is set but not found" in r.message for r in caplog.records)
+        # 다른 test 가 logger propagate=False / disable 했을 수 있어 명시 reset.
+        # caplog.at_level context 가 set_level 보다 robust.
+        target_logger = logging.getLogger("src.distill.quantizer")
+        target_logger.propagate = True
+        target_logger.disabled = False
+        with caplog.at_level(logging.ERROR, logger="src.distill.quantizer"):
+            assert _resolve_convert_script() is None
+            assert any("DISTILL_CONVERT_SCRIPT is set but not found" in r.message for r in caplog.records)
 
     def test_env_var_unset_and_fallback_disabled_returns_none(self, monkeypatch, caplog):
         # env var 없음 + fallback flag 없음 → 즉시 None + error log
         from src.distill.quantizer import _resolve_convert_script
         import logging
-        caplog.set_level(logging.ERROR, logger="src.distill.quantizer")
-
-        assert _resolve_convert_script() is None
-        assert any("DISTILL_CONVERT_SCRIPT is not set" in r.message for r in caplog.records)
+        target_logger = logging.getLogger("src.distill.quantizer")
+        target_logger.propagate = True
+        target_logger.disabled = False
+        with caplog.at_level(logging.ERROR, logger="src.distill.quantizer"):
+            assert _resolve_convert_script() is None
+            assert any("DISTILL_CONVERT_SCRIPT is not set" in r.message for r in caplog.records)
 
     def test_env_var_unset_but_fallback_opt_in_uses_path(self, monkeypatch, tmp_path):
         """DISTILL_ALLOW_PATH_FALLBACK=1 이면 $PATH 탐색 허용."""

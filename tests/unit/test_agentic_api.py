@@ -19,6 +19,11 @@ from src.agentic.protocols import (
 )
 from src.api.routes import agentic as agentic_route
 
+# B-0 RBAC bypass — agentic 엔드포인트가 Depends(get_current_user/org) 를 쓰므로
+# fake user/org 주입. 단독 실행은 통과하지만 풀 스위트에서 fixture pollution
+# (다른 test 가 ASGITransport / state mock 을 leak) 으로 401 발생.
+pytestmark = pytest.mark.usefixtures("bypass_route_auth")
+
 
 # =============================================================================
 # Trace serialization

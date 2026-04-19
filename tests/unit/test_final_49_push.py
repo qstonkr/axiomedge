@@ -571,10 +571,11 @@ class TestClassifyPdfPageHeading:
             "Some text content here",
             {"blocks": []},
         ]
-        # First call is plain get_text(), second is get_text("dict")
-        # Easier: mock _extract_pdf_page_heading directly
-        with patch.object(
-            dp_mod, "_extract_pdf_page_heading",
+        # 실제 _classify_pdf_page 는 src/pipelines/_pdf_parser.py 안에서 module-
+        # local _extract_pdf_page_heading 호출. document_parser facade binding
+        # patch 는 효과 없음 — 진짜 source module patch.
+        with patch(
+            "src.pipelines._pdf_parser._extract_pdf_page_heading",
             return_value="Title",
         ):
             page.get_text.side_effect = None
@@ -691,8 +692,10 @@ class TestCheckFontBrokenCmapWithToUnicode:
         )
         doc.xref_stream.return_value = cmap_data
 
-        with patch.object(
-            dp_mod, "_get_embedded_font_size",
+        # _check_font_broken_cmap 가 _pdf_parser.py 안에서 module-local
+        # _get_embedded_font_size 호출 — 진짜 source module patch.
+        with patch(
+            "src.pipelines._pdf_parser._get_embedded_font_size",
             return_value=50000,
         ):
             result = dp_mod._check_font_broken_cmap(
@@ -943,14 +946,18 @@ class TestParsePptxEnhanced:
         mock_slide = MagicMock()
         mock_prs.slides = [mock_slide]
 
+        # 실제 코드는 src/pipelines/_pptx_parser.py 안에서 module-local
+        # ``_process_enhanced_slide`` + ``_parser_utils._process_images_ocr``
+        # 호출. document_parser facade 의 binding patch 는 효과 없음 — 진짜
+        # source module 의 함수를 직접 patch.
         with (
             patch("pptx.Presentation", return_value=mock_prs),
-            patch.object(
-                dp_mod, "_process_enhanced_slide",
+            patch(
+                "src.pipelines._pptx_parser._process_enhanced_slide",
                 return_value="[Slide 1]\nContent",
             ),
-            patch.object(
-                dp_mod, "_process_images_ocr",
+            patch(
+                "src.pipelines._pptx_parser._parser_utils._process_images_ocr",
                 return_value=("", []),
             ),
         ):
@@ -967,12 +974,12 @@ class TestParsePptxEnhanced:
 
         with (
             patch("pptx.Presentation", return_value=mock_prs),
-            patch.object(
-                dp_mod, "_extract_pptx_modified_date",
+            patch(
+                "src.pipelines._pptx_parser._extract_pptx_modified_date",
                 return_value="2024-01-01",
             ),
-            patch.object(
-                dp_mod, "_process_images_ocr",
+            patch(
+                "src.pipelines._pptx_parser._parser_utils._process_images_ocr",
                 return_value=("OCR text", [{"img": 1}]),
             ),
         ):
@@ -986,14 +993,16 @@ class TestProcessImagesOcrWithImages:
     """Covers line 875 (base_url strip with actual images)."""
 
     def test_base_url_strip_with_real_processing(self):
+        # _process_images_ocr 는 _parser_utils 안에서 module-local
+        # _process_single_image_ocr 호출 — 진짜 source module patch.
         with (
             patch.dict(
                 "os.environ",
                 {"PADDLEOCR_API_URL": "http://h:8866/ocr"},
             ),
             patch("httpx.Client") as mock_cls,
-            patch.object(
-                dp_mod, "_process_single_image_ocr",
+            patch(
+                "src.pipelines._parser_utils._process_single_image_ocr",
             ) as mock_proc,
         ):
             mock_client = MagicMock()
