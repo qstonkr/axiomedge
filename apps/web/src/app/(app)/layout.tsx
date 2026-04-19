@@ -38,7 +38,7 @@ export default async function AppLayout({
               displayName={session.display_name}
             />
           </header>
-          <main className="min-w-0 flex-1 bg-bg-canvas">{children}</main>
+          <main className="flex min-w-0 flex-1 flex-col bg-bg-canvas">{children}</main>
         </div>
       </div>
     </AppProviders>
