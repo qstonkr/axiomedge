@@ -110,12 +110,17 @@ class TestListKBs:
 
 class TestCreateKB:
     def test_create_kb_success(self):
+        """B-1 Day 1: /api/v1/kb/create only accepts tier=personal now."""
         from src.api.state import AppState
 
         state = AppState()
         collections = AsyncMock()
         collections.ensure_collection = AsyncMock()
+        registry = AsyncMock()
+        registry.list_by_tier = AsyncMock(return_value=[])
+        registry.create_kb = AsyncMock()
         state["qdrant_collections"] = collections
+        state["kb_registry"] = registry
 
         with patch.object(kb, "_get_state", return_value=state):
             app = _make_test_app()
@@ -125,12 +130,13 @@ class TestCreateKB:
                 async with AsyncClient(transport=transport, base_url="http://test") as ac:
                     resp = await ac.post(
                         "/api/v1/kb/create",
-                        json={"kb_id": "new-kb", "name": "New KB"},
+                        json={"kb_id": "pkb-new", "name": "New KB", "tier": "personal"},
                     )
                     assert resp.status_code == 200
                     data = resp.json()
                     assert data["success"] is True
-                    assert data["kb_id"] == "new-kb"
+                    assert data["kb_id"] == "pkb-new"
+                    assert data["tier"] == "personal"
 
             asyncio.run(_run())
 

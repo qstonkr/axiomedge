@@ -257,15 +257,30 @@ class TestListKbsImpl:
 # create_kb (original route)
 # ---------------------------------------------------------------------------
 class TestCreateKb:
+    """B-1 Day 1: /api/v1/kb/create is now personal-only and dependency-injected."""
+
+    @staticmethod
+    def _user_org():
+        from src.auth.dependencies import OrgContext
+        from src.auth.providers import AuthUser
+        user = AuthUser(
+            sub="user-A", email="a@test", display_name="A",
+            provider="internal", roles=["MEMBER"], active_org_id="org-1",
+        )
+        org = OrgContext(id="org-1", user_role_in_org="MEMBER")
+        return user, org
+
     def test_no_collections_503(self):
         from src.api.routes.kb import create_kb, KBCreateRequest
 
         state = _mock_state(qdrant_collections=None)
+        user, org = self._user_org()
         with patch("src.api.routes.kb._get_state", return_value=state):
             with pytest.raises(Exception) as exc_info:
-                _run(create_kb(KBCreateRequest(
-                    kb_id="x", name="X"
-                )))
+                _run(create_kb(
+                    KBCreateRequest(kb_id="x", name="X", tier="personal"),
+                    user=user, org=org,
+                ))
             assert exc_info.value.status_code == 503
 
     def test_success(self):
@@ -273,13 +288,19 @@ class TestCreateKb:
 
         coll = AsyncMock()
         coll.ensure_collection = AsyncMock()
-        state = _mock_state(qdrant_collections=coll)
+        registry = AsyncMock()
+        registry.list_by_tier = AsyncMock(return_value=[])
+        registry.create_kb = AsyncMock()
+        state = _mock_state(qdrant_collections=coll, kb_registry=registry)
+        user, org = self._user_org()
         with patch("src.api.routes.kb._get_state", return_value=state):
-            result = _run(create_kb(KBCreateRequest(
-                kb_id="my-kb", name="My KB"
-            )))
+            result = _run(create_kb(
+                KBCreateRequest(kb_id="pkb-mine", name="My KB", tier="personal"),
+                user=user, org=org,
+            ))
         assert result["success"] is True
-        assert result["kb_id"] == "my-kb"
+        assert result["kb_id"] == "pkb-mine"
+        assert result["owner_id"] == "user-A"
 
     def test_ensure_collection_error_500(self):
         from src.api.routes.kb import create_kb, KBCreateRequest
@@ -288,12 +309,16 @@ class TestCreateKb:
         coll.ensure_collection = AsyncMock(
             side_effect=RuntimeError("vector dim mismatch")
         )
-        state = _mock_state(qdrant_collections=coll)
+        registry = AsyncMock()
+        registry.list_by_tier = AsyncMock(return_value=[])
+        state = _mock_state(qdrant_collections=coll, kb_registry=registry)
+        user, org = self._user_org()
         with patch("src.api.routes.kb._get_state", return_value=state):
             with pytest.raises(Exception) as exc_info:
-                _run(create_kb(KBCreateRequest(
-                    kb_id="bad", name="Bad"
-                )))
+                _run(create_kb(
+                    KBCreateRequest(kb_id="bad", name="Bad", tier="personal"),
+                    user=user, org=org,
+                ))
             assert exc_info.value.status_code == 500
 
 
@@ -1207,7 +1232,7 @@ class TestStaticEndpoints:
 # Direct route-handler tests bypass FastAPI's dependency injection, so an
 # explicit OrgContext stand-in is supplied wherever Depends(get_current_org)
 # would otherwise arrive at runtime.
-def _org(org_id: str = "default-org") -> "OrgContext":
+def _org(org_id: str = "default-org"):
     from src.auth.dependencies import OrgContext
     return OrgContext(id=org_id, user_role_in_org="OWNER")
 

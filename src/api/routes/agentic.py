@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 
 from src.agentic.agent import Agent
 from src.agentic.protocols import AgentTrace
-from src.auth.dependencies import OrgContext, get_current_org
+from src.auth.dependencies import OrgContext, get_current_org, get_current_user
+from src.auth.providers import AuthUser
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ def _cache_trace(trace_id: str, trace_dict: dict[str, Any]) -> None:
 @router.post("/ask", response_model=AgenticAskResponse)
 async def agentic_ask(
     request: AgenticAskRequest,
+    user: AuthUser = Depends(get_current_user),
     org: OrgContext = Depends(get_current_org),
 ) -> AgenticAskResponse:
     """Agentic RAG — plan → execute tools → reflect → (retry).
@@ -86,8 +88,9 @@ async def agentic_ask(
     기존 /search/hub 와 별도 — Korean planner + GraphRAG routing + Tiered planning +
     OCR re-search + Edge ↔ HQ LLM routing 5축 차별화 활용.
 
-    org context 는 agent state 에 ``organization_id`` 로 주입돼 모든
-    KB-touching tool (kb_list, qdrant_search 등) 에 자동 전파.
+    org/user context 는 agent state 에 ``organization_id`` / ``current_user_id``
+    로 주입돼 모든 KB-touching tool (kb_list, qdrant_search 등) 에 자동
+    전파 — owner-only personal KB 격리도 자동 작동.
     """
     state = _get_state()
     if state is None:
@@ -97,6 +100,7 @@ async def agentic_ask(
         agent = Agent()  # env-driven LLM provider + default tool registry
         agent_state = dict(state)
         agent_state["organization_id"] = org.id
+        agent_state["current_user_id"] = user.sub
         trace = await agent.run(request.query, state=agent_state)
     except Exception as e:  # noqa: BLE001 — surface as 500 with detail
         logger.exception("Agentic ask failed")

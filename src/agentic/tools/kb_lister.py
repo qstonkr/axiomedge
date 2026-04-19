@@ -47,6 +47,7 @@ class KBListerTool(Tool):
             # from get_current_org. None means cross-org (system path) — not
             # something user-triggered agent runs should ever do.
             organization_id = state.get("organization_id")
+            current_user_id = state.get("current_user_id")
             kbs = await kb_registry.list_all(
                 limit=limit, organization_id=organization_id,
             )
@@ -54,6 +55,13 @@ class KBListerTool(Tool):
                 kbs = [k for k in kbs if k.get("tier") == tier_filter]
             # active only
             kbs = [k for k in kbs if k.get("status") == "active"]
+            # B-1 Day 1 — owner-only personal KB isolation. Other users'
+            # personal KBs are dropped even within the same org.
+            if current_user_id:
+                kbs = [
+                    k for k in kbs
+                    if k.get("tier") != "personal" or k.get("owner_id") == current_user_id
+                ]
             # 단순화 — agent 가 prompt 에 토큰 적게 쓰도록
             slim = [
                 {

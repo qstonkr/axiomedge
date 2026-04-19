@@ -52,8 +52,9 @@ from src.auth.permission_matrix import find_required_permission
     ("POST", "/api/v1/admin/kb/abc/members", ("kb", "write")),
     ("DELETE", "/api/v1/admin/kb/abc/members/u1", ("kb", "write")),
 
-    # Legacy /api/v1/kb
-    ("POST", "/api/v1/kb/create", ("kb", "create")),
+    # /api/v1/kb/create (B-1 Day 1: personal-KB self-service path —
+    # MEMBER allowed, tier=personal hard-locked in handler)
+    ("POST", "/api/v1/kb/create", ("document", "write")),
     ("GET", "/api/v1/kb/list", ("kb", "read")),
     ("DELETE", "/api/v1/kb/abc", ("kb", "delete")),
 

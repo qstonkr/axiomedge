@@ -118,20 +118,28 @@ class KBRegistryRepository:
                 raise RuntimeError(f"Database error: {e}") from e
 
     async def get_kb(
-        self, kb_id: str, organization_id: str | None = None,
+        self, kb_id: str,
+        organization_id: str | None = None,
+        owner_id: str | None = None,
     ) -> dict[str, Any] | None:
-        """Get KB by ID, optionally scoped to an organization.
+        """Get KB by ID, optionally scoped to an organization and/or owner.
 
         ``organization_id`` is the multi-tenant gate (B-0 Day 3): when set,
         rows from other orgs return None (the route maps that to a 404 so
         the existence of foreign KBs is not leaked). System code (background
         sync, health checks) may pass None to read across orgs — use sparingly.
+
+        ``owner_id`` is the personal-KB gate (B-1 Day 1): when set, requires
+        the row's owner_id to match. Combined with ``tier=personal`` filter
+        at the caller site, this enforces "owner-only" personal KB access.
         """
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel).where(KBConfigModel.id == kb_id)
                 if organization_id is not None:
                     stmt = stmt.where(KBConfigModel.organization_id == organization_id)
+                if owner_id is not None:
+                    stmt = stmt.where(KBConfigModel.owner_id == owner_id)
                 result = await session.execute(stmt)
                 model = result.scalar_one_or_none()
                 return self._model_to_dict(model) if model else None
@@ -205,13 +213,20 @@ class KBRegistryRepository:
     async def list_all(
         self, limit: int = 100, offset: int = 0,
         organization_id: str | None = None,
+        owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List KB configurations, optionally scoped to an organization."""
+        """List KB configurations, optionally scoped to an organization/owner.
+
+        ``owner_id`` is mainly for personal-KB enumeration (B-1) — combined
+        with ``tier=personal`` it returns just the caller's own personal KBs.
+        """
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel)
                 if organization_id is not None:
                     stmt = stmt.where(KBConfigModel.organization_id == organization_id)
+                if owner_id is not None:
+                    stmt = stmt.where(KBConfigModel.owner_id == owner_id)
                 stmt = (
                     stmt.order_by(KBConfigModel.tier, KBConfigModel.name)
                     .limit(limit)
@@ -224,14 +239,18 @@ class KBRegistryRepository:
                 raise RuntimeError(f"Database error: {e}") from e
 
     async def list_by_tier(
-        self, tier: str, organization_id: str | None = None,
+        self, tier: str,
+        organization_id: str | None = None,
+        owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List KB by tier, optionally scoped to an organization."""
+        """List KB by tier, optionally scoped to an organization and/or owner."""
         async with await self._get_session() as session:
             try:
                 stmt = select(KBConfigModel).where(KBConfigModel.tier == tier)
                 if organization_id is not None:
                     stmt = stmt.where(KBConfigModel.organization_id == organization_id)
+                if owner_id is not None:
+                    stmt = stmt.where(KBConfigModel.owner_id == owner_id)
                 stmt = stmt.order_by(KBConfigModel.name).limit(500)
                 result = await session.execute(stmt)
                 models = result.scalars().all()
@@ -256,13 +275,21 @@ class KBRegistryRepository:
             except SQLAlchemyError as e:
                 raise RuntimeError(f"Database error: {e}") from e
 
-    async def count(self, tier: str | None = None) -> int:
-        """Count KBs."""
+    async def count(
+        self, tier: str | None = None,
+        organization_id: str | None = None,
+        owner_id: str | None = None,
+    ) -> int:
+        """Count KBs, optionally filtered by tier/org/owner."""
         async with await self._get_session() as session:
             try:
                 stmt = select(func.count()).select_from(KBConfigModel)
                 if tier:
                     stmt = stmt.where(KBConfigModel.tier == tier)
+                if organization_id is not None:
+                    stmt = stmt.where(KBConfigModel.organization_id == organization_id)
+                if owner_id is not None:
+                    stmt = stmt.where(KBConfigModel.owner_id == owner_id)
                 result = await session.execute(stmt)
                 return result.scalar() or 0
             except SQLAlchemyError as e:

@@ -14,6 +14,62 @@ from src.auth.providers import AuthUser
 logger = logging.getLogger(__name__)
 
 
+async def _ensure_personal_kb(
+    user_id: str, organization_id: str | None, display_name: str,
+) -> None:
+    """Create the user's first personal KB on signup.
+
+    Called from ``sync_user_from_idp`` (first time only) and ``create_user``.
+    Idempotent — bails out if any personal KB already exists for the user.
+    Failures are logged but do not block user creation; a missing personal
+    KB is recoverable (the /my-knowledge UI will let the user create one).
+
+    Lives at module scope so it doesn't capture ``UserCRUD`` and can be
+    awaited *after* the user-creation transaction has committed (Postgres
+    FK to ``auth_users`` would otherwise fail inside the same uncommitted
+    session).
+    """
+    if not organization_id:
+        return
+
+    try:
+        from src.config import get_settings
+        from src.stores.postgres.repositories.kb_registry import KBRegistryRepository
+    except ImportError:
+        logger.debug("Settings/registry modules unavailable; skipping personal KB seed")
+        return
+
+    try:
+        settings = get_settings()
+        repo = KBRegistryRepository(settings.database.database_url)
+        await repo.initialize()
+        try:
+            existing = await repo.list_by_tier(
+                "personal", organization_id=organization_id, owner_id=user_id,
+            )
+            if existing:
+                return  # already seeded — idempotent
+
+            kb_id = f"pkb_{user_id.replace('-', '')[:12]}_001"
+            await repo.create_kb({
+                "id": kb_id,
+                "name": f"{display_name} 의 지식",
+                "description": "자동 생성된 개인 지식 베이스",
+                "tier": "personal",
+                "organization_id": organization_id,
+                "owner_id": user_id,
+                "status": "active",
+                "settings": {},
+                "dataset_ids_by_env": {},
+                "sync_sources": [],
+            })
+            logger.info("Seeded personal KB for new user %s: %s", user_id, kb_id)
+        finally:
+            await repo.shutdown()
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("Personal KB seeding failed for user %s: %s", user_id, e)
+
+
 class UserCRUD:
     """User management operations backed by PostgreSQL."""
 
@@ -21,7 +77,12 @@ class UserCRUD:
         self._session = session_factory
 
     async def sync_user_from_idp(self, auth_user: AuthUser) -> dict:
-        """Create or update user from IdP token claims."""
+        """Create or update user from IdP token claims.
+
+        On the first sync (new user) we also seed a personal KB so the
+        Streamlit/Next.js "내 지식" page has something to show on first load.
+        Subsequent syncs are idempotent — no extra KBs are created.
+        """
         from src.auth.models import UserModel
 
         async with self._session() as session:
@@ -29,6 +90,7 @@ class UserCRUD:
                 select(UserModel).where(UserModel.external_id == auth_user.sub)
             )
             user = result.scalar_one_or_none()
+            is_new_user = user is None
 
             if user:
                 user.email = auth_user.email
@@ -53,6 +115,14 @@ class UserCRUD:
                 await self._assign_default_role(session, user.id, auth_user.roles)
 
             await session.commit()
+
+            if is_new_user:
+                await _ensure_personal_kb(
+                    user_id=user.id,
+                    organization_id=user.organization_id,
+                    display_name=user.display_name or user.email,
+                )
+
             return {"id": user.id, "email": user.email}
 
     async def _assign_default_role(
@@ -93,7 +163,7 @@ class UserCRUD:
         organization_id: str | None = None,
         role: str = "viewer",
     ) -> dict:
-        """Create a local user manually."""
+        """Create a local user manually + seed a personal KB."""
         from src.auth.models import UserModel
 
         async with self._session() as session:
@@ -118,7 +188,12 @@ class UserCRUD:
             await self._assign_default_role(session, user_id, [role])
             await session.commit()
 
-            return {"id": user_id, "email": email, "display_name": display_name, "role": role}
+        await _ensure_personal_kb(
+            user_id=user_id,
+            organization_id=organization_id,
+            display_name=display_name,
+        )
+        return {"id": user_id, "email": email, "display_name": display_name, "role": role}
 
     async def update_user(
         self,

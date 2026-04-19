@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
-from src.auth.dependencies import OrgContext, get_current_org
+from src.auth.dependencies import OrgContext, get_current_org, get_current_user
+from src.auth.providers import AuthUser
 from src.config.weights import weights as _w
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ class KBCreateRequest(BaseModel):
     name: str = Field(..., max_length=200)
     description: str = Field(default="", max_length=2000)
     tier: str = Field(default="global")
+
+
+# B-1 Day 1 — soft cap on personal KBs per user. Configurable via env if needed.
+PERSONAL_KB_LIMIT_PER_USER = 10
 
 
 class KBInfo(BaseModel):
@@ -156,17 +161,75 @@ async def _list_kbs_impl(
 # Original /api/v1/kb/* routes
 # ============================================================================
 
-@router.post("/create", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
-async def create_kb(request: KBCreateRequest) -> dict[str, Any]:
-    """Create a new knowledge base (Qdrant collection)."""
+@router.post("/create", responses={
+    503: {"description": "Qdrant not initialized"},
+    400: {"description": "Tier/cap validation failed"},
+    409: {"description": "Personal KB limit reached"},
+    500: {"description": "Internal error"},
+})
+async def create_kb(
+    request: KBCreateRequest,
+    user: AuthUser = Depends(get_current_user),
+    org: OrgContext = Depends(get_current_org),
+) -> dict[str, Any]:
+    """Create a knowledge base.
+
+    Permissions (B-1 Day 1):
+    - ``tier=personal``: any authenticated user, capped at
+      ``PERSONAL_KB_LIMIT_PER_USER`` rows per (user, org). Caller becomes owner.
+    - other tiers: rejected here (use the admin endpoint with kb:create perm).
+    """
     state = _get_state()
     collections = state.get("qdrant_collections")
     if not collections:
         raise HTTPException(status_code=503, detail=_QDRANT_NOT_INIT)
 
+    if request.tier != "personal":
+        raise HTTPException(
+            status_code=400,
+            detail="POST /api/v1/kb/create only accepts tier='personal'. "
+                   "Use the admin KB endpoint for team/global tiers.",
+        )
+
+    kb_registry = state.get("kb_registry")
+    owner_id = user.sub
+
+    if kb_registry is not None:
+        try:
+            existing = await kb_registry.list_by_tier(
+                "personal", organization_id=org.id, owner_id=owner_id,
+            )
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            raise HTTPException(status_code=500, detail=f"KB count query failed: {e}")
+        if len(existing) >= PERSONAL_KB_LIMIT_PER_USER:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Personal KB limit reached ({PERSONAL_KB_LIMIT_PER_USER}). "
+                    "Delete an existing personal KB to create a new one."
+                ),
+            )
+
     try:
         await collections.ensure_collection(request.kb_id)
-        return {"success": True, "kb_id": request.kb_id, "message": f"KB '{request.name}' created"}
+        if kb_registry is not None:
+            await kb_registry.create_kb({
+                "id": request.kb_id,
+                "name": request.name,
+                "description": request.description,
+                "tier": "personal",
+                "organization_id": org.id,
+                "owner_id": owner_id,
+                "status": "active",
+                "settings": {},
+                "dataset_ids_by_env": {},
+                "sync_sources": [],
+            })
+        return {
+            "success": True, "kb_id": request.kb_id,
+            "tier": "personal", "owner_id": owner_id,
+            "message": f"Personal KB '{request.name}' created",
+        }
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         raise HTTPException(status_code=500, detail=str(e))
 

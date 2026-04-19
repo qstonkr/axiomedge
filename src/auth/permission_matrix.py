@@ -94,8 +94,13 @@ PERMISSION_RULES: list[PermissionRule] = [
     _rule(r"^/api/v1/admin/kb/?$", "GET", "kb", "read"),
     _rule(r"^/api/v1/admin/kb/search-cache/clear$", "POST", "kb", "write"),
 
-    # ── /api/v1/kb/* (legacy, mostly read; create/delete are write-paths)
-    _rule(r"^/api/v1/kb/create$", "POST", "kb", "create"),
+    # ── /api/v1/kb/* (mostly read; /create is the personal-KB self-service path)
+    # B-1 Day 1: /api/v1/kb/create is the ONLY route MEMBER can use to create
+    # a KB, and it is hard-locked to tier=personal in the handler. So the
+    # matrix permission is the lower-bar document:write (anyone who can write
+    # documents can carve their personal KB). Team/global KB creation lives at
+    # /api/v1/admin/kb (kb:create — OWNER/ADMIN only) further down this list.
+    _rule(r"^/api/v1/kb/create$", "POST", "document", "write"),
     _rule(r"^/api/v1/kb/list$", "GET", "kb", "read"),
     _rule(r"^/api/v1/kb/[^/]+$", "DELETE", "kb", "delete"),
     _rule(r"^/api/v1/kb(?:/.*)?$", "GET", "kb", "read"),

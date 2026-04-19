@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 
 from src.api.app import _get_state
 from src.api.routes.metrics import inc as metrics_inc
-from src.auth.dependencies import OrgContext, get_current_org
+from src.auth.dependencies import OrgContext, get_current_org, get_current_user
+from src.auth.providers import AuthUser
 from src.config.weights import weights
 from src.search.answer_guard import AnswerGuard
 from src.search.passage_cleaner import clean_chunks
@@ -125,9 +126,10 @@ from src.api.routes._search_steps import (  # noqa: E402
 @router.post("/hub", response_model=HubSearchResponse, responses={503: {"description": "Search engine or embedding provider not initialized"}})  # noqa: E501
 async def hub_search(
     request: HubSearchRequest,
+    user: AuthUser = Depends(get_current_user),
     org: OrgContext = Depends(get_current_org),
 ) -> HubSearchResponse:
-    """Hub Search - unified knowledge search with full pipeline (org-scoped)."""
+    """Hub Search - unified knowledge search (org + owner-scoped personal KB)."""
     from src.core.observability.tracing import trace_rag_stage
 
     state = _get_state()
@@ -152,8 +154,10 @@ async def hub_search(
         return cached
     metrics_inc("search_cache_misses")
 
-    # 1. Resolve collections (filtered by caller's organization)
-    collections = await _step_resolve_collections(request, state, organization_id=org.id)
+    # 1. Resolve collections (filtered by caller's organization + personal-KB owner)
+    collections = await _step_resolve_collections(
+        request, state, organization_id=org.id, current_user_id=user.sub,
+    )
 
     # 2. Preprocess query
     with trace_rag_stage("preprocess"):

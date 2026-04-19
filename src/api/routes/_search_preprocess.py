@@ -62,15 +62,46 @@ async def _resolve_collections_from_qdrant(state: dict[str, Any]) -> list[str]:
         return ["knowledge"]
 
 
+async def _drop_foreign_personal_kbs(
+    collections: list[str], state: dict[str, Any], current_user_id: str | None,
+) -> list[str]:
+    """Remove personal KBs whose owner_id != current_user_id.
+
+    B-1 Day 1 — owner-only personal KB isolation. Same-org admins must not
+    see other users' personal KBs in search results. Non-personal KBs pass
+    through untouched. When ``current_user_id`` is None (anonymous dev mode)
+    the filter is a no-op so existing local workflows aren't broken.
+    """
+    if not current_user_id or not collections:
+        return collections
+
+    kb_registry = state.get("kb_registry")
+    if not kb_registry:
+        return collections
+
+    accessible: list[str] = []
+    for kb_id in collections:
+        try:
+            kb = await kb_registry.get_kb(kb_id)
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+            kb = None
+        if kb and kb.get("tier") == "personal" and kb.get("owner_id") != current_user_id:
+            continue  # foreign personal KB — drop
+        accessible.append(kb_id)
+    return accessible
+
+
 async def _filter_by_kb_registry(
     collections: list[str], state: dict[str, Any],
     organization_id: str | None = None,
+    current_user_id: str | None = None,
 ) -> list[str]:
-    """Filter collections by KB registry active status (cached).
+    """Filter collections by KB registry active status (cached) + tenancy gates.
 
     ``organization_id`` narrows the active-KB set to the caller's tenant so
     cross-tenant collection names in the Qdrant listing are dropped even if
-    they leaked in.
+    they leaked in. ``current_user_id`` additionally drops any personal KB
+    that the caller does not own (B-1 Day 1, owner-only isolation).
     """
     from src.api.routes.search_helpers import get_active_kb_ids
     kb_registry = state.get("kb_registry")
@@ -81,6 +112,7 @@ async def _filter_by_kb_registry(
             kb_registry, organization_id=organization_id,
         )
         filtered = [c for c in collections if c in active_kb_ids]
+        filtered = await _drop_foreign_personal_kbs(filtered, state, current_user_id)
         return filtered if filtered else collections
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("KB registry filter failed, using unfiltered collections: %s", e)
@@ -91,11 +123,13 @@ async def _step_resolve_collections(
     request: Any,
     state: dict[str, Any],
     organization_id: str | None = None,
+    current_user_id: str | None = None,
 ) -> list[str]:
     """Step 1: Resolve KB collections from request params.
 
     ``organization_id`` is forwarded to the KB-registry filter so the search
     pipeline only ever sees collections that belong to the caller's tenant.
+    ``current_user_id`` further restricts ``tier=personal`` KBs to the caller.
     """
     collections = request.kb_ids or []
     if not collections and request.kb_filter and request.kb_filter.kb_ids:
@@ -113,7 +147,9 @@ async def _step_resolve_collections(
         collections = await _resolve_collections_from_qdrant(state)
 
     collections = await _filter_by_kb_registry(
-        collections, state, organization_id=organization_id,
+        collections, state,
+        organization_id=organization_id,
+        current_user_id=current_user_id,
     )
     return collections
 
