@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  createDistillProfile,
   deleteBaseModel,
   deleteBuild,
   deleteDistillProfile,
@@ -17,10 +18,13 @@ import {
   rollbackBuild,
   triggerGenerateTrainingData,
   triggerRetrain,
+  updateDistillProfile,
   upsertBaseModel,
   type BaseModel,
   type DistillBuild,
   type DistillProfile,
+  type DistillProfileCreateBody,
+  type DistillProfileUpdateBody,
   type EdgeManifest,
   type TrainingDataStats,
 } from "@/lib/api/endpoints";
@@ -38,6 +42,25 @@ export function useDeleteDistillProfile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => deleteDistillProfile(name),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "distill", "profiles"] }),
+  });
+}
+
+export function useCreateDistillProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DistillProfileCreateBody) => createDistillProfile(body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "distill", "profiles"] }),
+  });
+}
+
+export function useUpdateDistillProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; body: DistillProfileUpdateBody }) =>
+      updateDistillProfile(input.name, input.body),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["admin", "distill", "profiles"] }),
   });

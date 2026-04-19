@@ -1062,6 +1062,49 @@ export const deleteDistillProfile = (name: string) =>
     { method: "DELETE" },
   );
 
+export type DistillProfileCreateBody = {
+  name: string;
+  search_group: string;
+  base_model: string;
+  description?: string;
+  enabled?: boolean;
+  lora?: { r?: number; alpha?: number; dropout?: number };
+  training?: {
+    epochs?: number;
+    batch_size?: number;
+    learning_rate?: number;
+    gradient_accumulation?: number;
+    max_seq_length?: number;
+  };
+  qa_style?: { mode?: string; max_answer_tokens?: number };
+  data_quality?: Record<string, unknown>;
+  deploy?: {
+    quantize?: string;
+    s3_bucket?: string;
+    s3_prefix?: string;
+    auto_update_cron?: string;
+  };
+};
+
+export type DistillProfileUpdateBody = Partial<
+  Omit<DistillProfileCreateBody, "name">
+>;
+
+export const createDistillProfile = (body: DistillProfileCreateBody) =>
+  request<DistillProfile>("api/v1/distill/profiles", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateDistillProfile = (
+  name: string,
+  body: DistillProfileUpdateBody,
+) =>
+  request<DistillProfile>(
+    `api/v1/distill/profiles/${encodeURIComponent(name)}`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+
 // ── base-models ──
 
 export type BaseModel = {

@@ -14,9 +14,11 @@ import {
   useToast,
   type TabItem,
 } from "@/components/ui";
+import { useSearchGroups } from "@/hooks/admin/useContent";
 import { useEdgeServers } from "@/hooks/admin/useOps";
 import {
   useBaseModels,
+  useCreateDistillProfile,
   useDeleteBaseModel,
   useDeleteBuild,
   useDeleteDistillProfile,
@@ -30,12 +32,15 @@ import {
   useTrainingDataStats,
   useTriggerGenerateTrainingData,
   useTriggerRetrain,
+  useUpdateDistillProfile,
   useUpsertBaseModel,
 } from "@/hooks/admin/useDistill";
 import type {
   BaseModel,
   DistillBuild,
   DistillProfile,
+  DistillProfileCreateBody,
+  DistillProfileUpdateBody,
   EdgeServer,
 } from "@/lib/api/endpoints";
 
@@ -218,7 +223,13 @@ function ServersTab() {
 function ProfilesTab() {
   const toast = useToast();
   const { data, isLoading, isError } = useDistillProfiles();
+  const baseModels = useBaseModels();
+  const groups = useSearchGroups();
+  const create = useCreateDistillProfile();
+  const update = useUpdateDistillProfile();
   const del = useDeleteDistillProfile();
+  const [editing, setEditing] = useState<DistillProfile | null>(null);
+  const [creating, setCreating] = useState(false);
   const profiles = data ?? [];
 
   async function onDelete(p: DistillProfile) {
@@ -280,19 +291,29 @@ function ProfilesTab() {
       header: "",
       align: "right",
       render: (p) => (
-        <Button size="sm" variant="ghost" onClick={() => onDelete(p)}>
-          삭제
-        </Button>
+        <div className="flex justify-end gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+            수정
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onDelete(p)}>
+            삭제
+          </Button>
+        </div>
       ),
     },
   ];
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-fg-muted">
-        프로필 신규 생성/수정은 큰 JSON 폼이 필요해 후속 작업으로 분리됨.
-        지금은 list / 삭제만.
-      </p>
+      <div className="flex items-end justify-between">
+        <p className="text-xs text-fg-muted">
+          Distill 학습 프로필. 베이스 모델 + 검색 그룹 + LoRA/training/deploy
+          하이퍼파라미터를 묶음.
+        </p>
+        <Button size="sm" onClick={() => setCreating(true)}>
+          + 신규 프로필
+        </Button>
+      </div>
       {isLoading ? <Skeleton className="h-48" /> : isError ? (
         <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
           프로필 목록을 불러올 수 없습니다
@@ -300,7 +321,297 @@ function ProfilesTab() {
       ) : (
         <DataTable<DistillProfile> columns={columns} rows={profiles} rowKey={(r) => r.name} empty="등록된 프로필이 없습니다" />
       )}
+
+      <ProfileFormDialog
+        key={editing?.name ?? (creating ? "create" : "closed")}
+        open={creating || editing !== null}
+        initial={editing}
+        baseModels={(baseModels.data ?? []).filter((m) => m.enabled !== false)}
+        groups={(groups.data?.groups ?? []).map((g) => ({ name: g.name }))}
+        onClose={() => { setCreating(false); setEditing(null); }}
+        onSubmit={async (body) => {
+          try {
+            if (editing) {
+              // PUT 은 name 제외
+              const { name: _name, ...patch } = body;
+              await update.mutateAsync({ name: editing.name, body: patch });
+              toast.push("수정되었습니다", "success");
+            } else {
+              await create.mutateAsync(body);
+              toast.push("신규 프로필이 추가되었습니다", "success");
+            }
+            setCreating(false);
+            setEditing(null);
+          } catch (e) {
+            toast.push(e instanceof Error ? e.message : "저장 실패", "danger");
+          }
+        }}
+        pending={create.isPending || update.isPending}
+      />
     </div>
+  );
+}
+
+function ProfileFormDialog({
+  open, initial, baseModels, groups, onClose, onSubmit, pending,
+}: {
+  open: boolean;
+  initial: DistillProfile | null;
+  baseModels: BaseModel[];
+  groups: { name: string }[];
+  onClose: () => void;
+  onSubmit: (body: DistillProfileCreateBody) => void;
+  pending: boolean;
+}) {
+  // basic
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [searchGroup, setSearchGroup] = useState(initial?.search_group ?? "");
+  const [baseModel, setBaseModel] = useState(initial?.base_model ?? "");
+  const [enabled, setEnabled] = useState(initial?.enabled ?? true);
+
+  // LoRA
+  const [loraR, setLoraR] = useState(initial?.lora?.r ?? 16);
+  const [loraAlpha, setLoraAlpha] = useState(initial?.lora?.alpha ?? 32);
+  const [loraDropout, setLoraDropout] = useState(initial?.lora?.dropout ?? 0.05);
+
+  // training
+  const [epochs, setEpochs] = useState(initial?.training?.epochs ?? 3);
+  const [batchSize, setBatchSize] = useState(initial?.training?.batch_size ?? 1);
+  const [learningRate, setLearningRate] = useState(initial?.training?.learning_rate ?? 5e-5);
+  const [gradAccum, setGradAccum] = useState(initial?.training?.gradient_accumulation ?? 16);
+  const [maxSeqLen, setMaxSeqLen] = useState(initial?.training?.max_seq_length ?? 512);
+
+  // qa_style
+  const [qaMode, setQaMode] = useState(initial?.qa_style?.mode ?? "concise");
+  const [maxAnswerTokens, setMaxAnswerTokens] = useState(initial?.qa_style?.max_answer_tokens ?? 256);
+
+  // deploy
+  const [quantize, setQuantize] = useState(initial?.deploy?.quantize ?? "q4_k_m");
+  const [s3Bucket, setS3Bucket] = useState(initial?.deploy?.s3_bucket ?? "gs-knowledge-models");
+  const [s3Prefix, setS3Prefix] = useState(initial?.deploy?.s3_prefix ?? "");
+  const [autoUpdateCron, setAutoUpdateCron] = useState(initial?.deploy?.auto_update_cron ?? "");
+
+  // data_quality (raw JSON — 너무 동적이라 form 화 어려움)
+  const [dataQualityText, setDataQualityText] = useState(
+    JSON.stringify(initial?.data_quality ?? {}, null, 2),
+  );
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    let data_quality: Record<string, unknown> | undefined;
+    try {
+      const parsed = dataQualityText.trim()
+        ? JSON.parse(dataQualityText)
+        : undefined;
+      data_quality = parsed;
+    } catch {
+      alert("data_quality 가 유효한 JSON 이 아닙니다");
+      return;
+    }
+    onSubmit({
+      name: name.trim(),
+      search_group: searchGroup,
+      base_model: baseModel,
+      description,
+      enabled,
+      lora: { r: loraR, alpha: loraAlpha, dropout: loraDropout },
+      training: {
+        epochs, batch_size: batchSize, learning_rate: learningRate,
+        gradient_accumulation: gradAccum, max_seq_length: maxSeqLen,
+      },
+      qa_style: { mode: qaMode, max_answer_tokens: maxAnswerTokens },
+      deploy: {
+        quantize, s3_bucket: s3Bucket,
+        s3_prefix: s3Prefix || undefined,
+        auto_update_cron: autoUpdateCron || undefined,
+      },
+      data_quality,
+    });
+  }
+
+  return (
+    <Dialog
+      open={open} onClose={onClose}
+      title={initial ? `프로필 수정 — ${initial.name}` : "신규 Distill 프로필"}
+      description="베이스 모델 + 검색 그룹 + LoRA/training/deploy 하이퍼파라미터"
+      width="xl"
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>취소</Button>
+          <Button
+            type="submit"
+            form="profile-form"
+            disabled={pending || !name.trim() || !searchGroup || !baseModel}
+          >
+            {pending ? "저장 중…" : "저장"}
+          </Button>
+        </>
+      }
+    >
+      <form id="profile-form" onSubmit={submit} className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            기본
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              이름
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                disabled={Boolean(initial)}
+                autoFocus
+              />
+            </label>
+            <label className="flex items-center gap-2 pt-5 text-sm">
+              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+              <span className="text-fg-default">활성</span>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              검색 그룹
+              <Select value={searchGroup} onChange={(e) => setSearchGroup(e.target.value)} required>
+                <option value="">— 검색 그룹 선택 —</option>
+                {groups.map((g) => (
+                  <option key={g.name} value={g.name}>{g.name}</option>
+                ))}
+              </Select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              베이스 모델
+              <Select value={baseModel} onChange={(e) => setBaseModel(e.target.value)} required>
+                <option value="">— 모델 선택 —</option>
+                {baseModels.map((m) => (
+                  <option key={m.hf_id} value={m.hf_id}>
+                    {m.display_name} ({m.hf_id})
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            설명
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          </label>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            LoRA
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              r (rank)
+              <Input type="number" value={loraR} onChange={(e) => setLoraR(Number(e.target.value))} min={1} max={128} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              alpha
+              <Input type="number" value={loraAlpha} onChange={(e) => setLoraAlpha(Number(e.target.value))} min={1} max={256} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              dropout
+              <Input type="number" step="0.01" value={loraDropout} onChange={(e) => setLoraDropout(Number(e.target.value))} min={0} max={0.5} />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Training
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              epochs
+              <Input type="number" value={epochs} onChange={(e) => setEpochs(Number(e.target.value))} min={1} max={50} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              batch_size
+              <Input type="number" value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value))} min={1} max={64} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              learning_rate
+              <Input type="number" step="0.00001" value={learningRate} onChange={(e) => setLearningRate(Number(e.target.value))} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              gradient_accumulation
+              <Input type="number" value={gradAccum} onChange={(e) => setGradAccum(Number(e.target.value))} min={1} max={64} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              max_seq_length
+              <Input type="number" value={maxSeqLen} onChange={(e) => setMaxSeqLen(Number(e.target.value))} min={128} max={4096} />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            QA Style
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              mode
+              <Select value={qaMode} onChange={(e) => setQaMode(e.target.value)}>
+                <option value="concise">concise</option>
+                <option value="balanced">balanced</option>
+                <option value="detailed">detailed</option>
+              </Select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              max_answer_tokens
+              <Input type="number" value={maxAnswerTokens} onChange={(e) => setMaxAnswerTokens(Number(e.target.value))} min={32} max={2048} />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Deploy
+          </legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              quantize
+              <Select value={quantize} onChange={(e) => setQuantize(e.target.value)}>
+                <option value="q4_k_m">q4_k_m (4-bit, 추천)</option>
+                <option value="q5_k_m">q5_k_m</option>
+                <option value="q8_0">q8_0</option>
+                <option value="f16">f16 (no quantize)</option>
+              </Select>
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              S3 bucket
+              <Input value={s3Bucket} onChange={(e) => setS3Bucket(e.target.value)} />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              S3 prefix
+              <Input value={s3Prefix} onChange={(e) => setS3Prefix(e.target.value)} placeholder="예: pbu-store/" />
+            </label>
+            <label className="block space-y-1 text-xs font-medium text-fg-muted">
+              자동 업데이트 cron
+              <Input
+                value={autoUpdateCron}
+                onChange={(e) => setAutoUpdateCron(e.target.value)}
+                placeholder="예: 0 3 * * 1 (매주 월 03시)"
+                className="font-mono"
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            Data Quality (advanced — raw JSON)
+          </legend>
+          <Textarea
+            value={dataQualityText}
+            onChange={(e) => setDataQualityText(e.target.value)}
+            rows={6}
+            className="font-mono text-xs"
+            placeholder='{"augmentation_count": 3, "enable_self_consistency": true}'
+          />
+        </fieldset>
+      </form>
+    </Dialog>
   );
 }
 
