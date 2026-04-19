@@ -76,8 +76,17 @@ export function AdminSidebar() {
         </span>
       </Link>
       <nav className="space-y-5" aria-label="관리자 메뉴">
-        {NAV.map((group) => (
+        {NAV.map((group, idx) => (
           <div key={group.label}>
+            {idx > 0 && (
+              <div
+                aria-hidden
+                className="mb-3 h-px"
+                style={{
+                  background: "var(--color-admin-sidebar-border)",
+                }}
+              />
+            )}
             <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-admin-sidebar-fg/60">
               {group.label}
             </p>
@@ -92,12 +101,19 @@ export function AdminSidebar() {
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs transition-colors",
+                        "relative flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs transition-colors",
                         active
                           ? "bg-admin-sidebar-active-bg text-admin-sidebar-active-fg font-medium"
                           : "text-admin-sidebar-fg hover:bg-admin-sidebar-hover-bg hover:text-admin-sidebar-fg-strong",
                       )}
                     >
+                      {/* active 좌측 accent bar — teal-300 — visual anchor */}
+                      {active && (
+                        <span
+                          aria-hidden
+                          className="absolute -left-3 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-accent-default"
+                        />
+                      )}
                       <span aria-hidden className="text-sm leading-none">
                         {item.icon}
                       </span>

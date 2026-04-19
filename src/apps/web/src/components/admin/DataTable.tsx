@@ -41,16 +41,23 @@ export function DataTable<Row extends Record<string, unknown>>({
   }
 
   return (
-    <div className={cn("overflow-x-auto rounded-lg border border-border-default", className)}>
+    <div
+      className={cn(
+        "relative overflow-auto rounded-lg border border-border-default",
+        // sticky thead 가 동작하려면 부모가 max-height + overflow-y 필요 (호출자가
+        // 큰 list 일 때 max-h-* 추가 권장)
+        className,
+      )}
+    >
       <table className="min-w-full divide-y divide-border-default text-xs">
-        <thead className="bg-bg-subtle text-fg-muted">
+        <thead className="sticky top-0 z-10 bg-bg-subtle text-fg-muted shadow-[0_1px_0_var(--color-border-default)]">
           <tr>
             {columns.map((c) => (
               <th
                 key={c.key}
                 scope="col"
                 className={cn(
-                  "px-2 py-1.5 text-left font-medium",
+                  "px-2 py-2 text-left text-[11px] font-semibold uppercase tracking-wider",
                   c.align === "right" && "text-right",
                   c.align === "center" && "text-center",
                   c.sticky && "sticky left-0 bg-bg-subtle",
@@ -62,14 +69,19 @@ export function DataTable<Row extends Record<string, unknown>>({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border-default bg-bg-canvas">
+        <tbody className="bg-bg-canvas">
           {rows.map((row, idx) => (
             <tr
               key={rowKey(row, idx)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={cn(
-                "leading-snug",
-                onRowClick && "cursor-pointer transition-colors hover:bg-bg-muted/50",
+                "border-b border-border-default/60 leading-snug transition-colors",
+                // zebra — 짝수 행 살짝 어둡게 (시선 추적)
+                "even:bg-bg-subtle/40",
+                // hover — 더 짙게 + 좌측 accent 살짝 비침 (interactive 시그널)
+                "hover:bg-bg-muted/60",
+                onRowClick &&
+                  "cursor-pointer hover:shadow-[inset_2px_0_0_0_var(--color-accent-default)]",
               )}
             >
               {columns.map((c) => (

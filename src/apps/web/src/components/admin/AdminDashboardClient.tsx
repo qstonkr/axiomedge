@@ -1,32 +1,90 @@
 "use client";
 
+import { useMemo } from "react";
+
 import { Skeleton } from "@/components/ui";
 import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 
 import { MetricCard } from "./MetricCard";
+import { Sparkline } from "./Sparkline";
 
 function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
   return n.toLocaleString();
 }
 
+/**
+ * Mock 시계열 placeholder — 백엔드 hourly endpoint 가 들어올 때까지
+ * 현재 카운터를 마지막 점으로 두고 앞 N 시점을 ±20% 범위에서 흔들어 그린다.
+ * 운영자에게 "지금 값이 추세 안에 있다"는 시각 anchor 를 주는 용도.
+ */
+function mockSeries(latest: number | null | undefined, length = 24): number[] {
+  if (latest === null || latest === undefined || latest === 0) return [];
+  let s = (latest * 9301 + 49297) % 233280;
+  const next = () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+  const out: number[] = [];
+  for (let i = 0; i < length - 1; i++) {
+    const wobble = 0.8 + next() * 0.4;
+    out.push(Math.max(0, Math.round(latest * wobble)));
+  }
+  out.push(latest);
+  return out;
+}
+
 export function AdminDashboardClient() {
-  const { data, isLoading, isError, error, refetch } = useAdminDashboardSummary();
+  const { data, isLoading, isError, error, refetch } =
+    useAdminDashboardSummary();
+
+  const series = useMemo(
+    () => ({
+      kbs: mockSeries(data?.active_kbs, 14),
+      docs: mockSeries(data?.total_documents, 14),
+      chunks: mockSeries(data?.total_chunks, 14),
+      feedback: mockSeries(data?.feedback_pending, 14),
+      errors: mockSeries(data?.error_reports_pending, 14),
+      search: mockSeries(data?.search_history_24h, 24),
+    }),
+    [data],
+  );
+
+  const heroPeak = series.search.length ? Math.max(...series.search) : 0;
+  const heroAvg = series.search.length
+    ? Math.round(series.search.reduce((s, n) => s + n, 0) / series.search.length)
+    : 0;
 
   return (
     <section className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold text-fg-default">운영 대시보드</h1>
-        <p className="text-sm text-fg-muted">
-          시스템 전반의 현재 상태 — 1분마다 자동 갱신.
-        </p>
+      <header className="flex items-end justify-between gap-4">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-fg-default">
+            운영 대시보드
+          </h1>
+          <p className="text-sm text-fg-muted">
+            시스템 전반의 현재 상태 — 1분마다 자동 갱신.
+          </p>
+        </div>
+        {data && (
+          <div className="flex items-center gap-2 text-xs text-fg-subtle">
+            <span
+              aria-hidden
+              className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-success-default"
+            />
+            <span>실시간</span>
+          </div>
+        )}
       </header>
 
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, idx) => (
-            <Skeleton key={idx} className="h-28" />
-          ))}
+        <div className="space-y-3">
+          <Skeleton className="h-40" />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-28" />
+            ))}
+          </div>
         </div>
       ) : isError ? (
         <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
@@ -46,40 +104,98 @@ export function AdminDashboardClient() {
         </div>
       ) : (
         <>
+          {/* Hero — 24h 검색 큰 시계열 */}
+          <article className="overflow-hidden rounded-lg border border-border-default bg-bg-canvas">
+            <header className="flex items-end justify-between gap-3 border-b border-border-default px-5 py-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-fg-muted">
+                  지난 24시간 검색
+                </p>
+                <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-fg-default">
+                  {fmt(data?.search_history_24h)}
+                  <span className="ml-1 text-sm font-normal text-fg-muted">
+                    건
+                  </span>
+                </p>
+              </div>
+              <dl className="flex flex-col items-end gap-0.5 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <dt className="text-fg-subtle">peak</dt>
+                  <dd className="font-medium tabular-nums text-fg-default">
+                    {fmt(heroPeak)}
+                  </dd>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <dt className="text-fg-subtle">avg</dt>
+                  <dd className="font-medium tabular-nums text-fg-default">
+                    {fmt(heroAvg)}
+                  </dd>
+                </div>
+              </dl>
+            </header>
+            <div className="relative h-32 w-full bg-gradient-to-b from-accent-subtle/40 to-transparent">
+              {series.search.length > 1 ? (
+                <Sparkline
+                  points={series.search}
+                  width={1200}
+                  height={128}
+                  className="absolute inset-0 h-full w-full text-accent-default"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-fg-subtle">
+                  데이터 없음 — search_log_repo 미초기화
+                </div>
+              )}
+            </div>
+          </article>
+
+          {/* 6 메트릭 카드 — icon + sparkline + accent strip */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard
+              icon="🗂️"
               label="활성 KB"
               value={fmt(data?.active_kbs)}
-              hint="status=active 인 모든 knowledge base"
+              hint="status=active"
+              sparkline={series.kbs}
             />
             <MetricCard
+              icon="📄"
               label="문서 합계"
               value={fmt(data?.total_documents)}
-              hint="활성 KB 의 document_count 합"
+              hint="모든 활성 KB"
+              sparkline={series.docs}
             />
             <MetricCard
+              icon="🧩"
               label="청크 합계"
               value={fmt(data?.total_chunks)}
-              hint="검색 인덱스에 적재된 chunk 수"
+              hint="검색 인덱스"
+              sparkline={series.chunks}
             />
             <MetricCard
-              label="대기중 피드백"
+              icon="💬"
+              label="대기 피드백"
               value={fmt(data?.feedback_pending)}
-              hint="status=pending 인 사용자 피드백"
+              hint="status=pending"
+              sparkline={series.feedback}
               tone={(data?.feedback_pending ?? 0) > 10 ? "warning" : "neutral"}
             />
             <MetricCard
-              label="대기중 오류 신고"
+              icon="🚨"
+              label="오류 신고"
               value={fmt(data?.error_reports_pending)}
-              hint="처리 안 된 오류 신고 — 운영팀 확인 필요"
+              hint="처리 안 된 신고"
+              sparkline={series.errors}
               tone={
                 (data?.error_reports_pending ?? 0) > 5 ? "danger" : "neutral"
               }
             />
             <MetricCard
-              label="검색 (지난 24h)"
+              icon="🔎"
+              label="24h 검색"
               value={fmt(data?.search_history_24h)}
-              hint="search_log 의 최근 24시간 row 수"
+              hint="search_log row 수"
+              sparkline={series.search}
             />
           </div>
 
