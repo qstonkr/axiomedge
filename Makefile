@@ -73,6 +73,11 @@ web-test-e2e:
 web-gen-api:
 	pnpm --dir $(WEB_DIR) gen:api
 
+# Same as web-gen-api but does not need uvicorn — uses scripts/dump_openapi.py
+# which imports the FastAPI app in-process. Faster, no port collision.
+web-gen-api-offline:
+	pnpm --dir $(WEB_DIR) gen:api:offline
+
 # === MCP Server ===
 mcp:
 	uv run python -m src.mcp_server

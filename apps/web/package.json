@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "gen:api": "openapi-typescript ${API_OPENAPI_URL:-http://localhost:8000/openapi.json} -o src/lib/api/types.ts"
+    "gen:api": "openapi-typescript ${API_OPENAPI_URL:-http://localhost:8000/openapi.json} -o src/lib/api/types.ts",
+    "gen:api:offline": "cd ../.. && uv run python scripts/dump_openapi.py | npx openapi-typescript /dev/stdin -o apps/web/src/lib/api/types.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

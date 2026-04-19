@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { AppProviders } from "@/components/providers";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { getSession } from "@/lib/auth/session";
@@ -25,19 +26,21 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-full">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 items-center justify-between border-b border-border-default bg-bg-subtle px-6">
-          <span className="text-sm font-medium text-fg-default">axiomedge</span>
-          <OrgSwitcher
-            activeOrgId={session.active_org_id}
-            memberships={session.memberships}
-            displayName={session.display_name}
-          />
-        </header>
-        <main className="min-w-0 flex-1 bg-bg-canvas">{children}</main>
+    <AppProviders>
+      <div className="flex min-h-full">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-12 items-center justify-between border-b border-border-default bg-bg-subtle px-6">
+            <span className="text-sm font-medium text-fg-default">axiomedge</span>
+            <OrgSwitcher
+              activeOrgId={session.active_org_id}
+              memberships={session.memberships}
+              displayName={session.display_name}
+            />
+          </header>
+          <main className="min-w-0 flex-1 bg-bg-canvas">{children}</main>
+        </div>
       </div>
-    </div>
+    </AppProviders>
   );
 }
