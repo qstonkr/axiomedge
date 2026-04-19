@@ -13,15 +13,21 @@ import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
 import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
 
+type Tab = "pending" | "history";
+
 export function ConflictsClient() {
   const toast = useToast();
+  const [tab, setTab] = useState<Tab>("pending");
   const { data, isLoading, isError, error } = useDedupConflicts({
     page: 1,
     page_size: 100,
   });
   const resolve = useResolveDedupConflict();
   const [resolving, setResolving] = useState<string | null>(null);
-  const items = data?.items ?? [];
+  const allItems = data?.items ?? [];
+  const pendingItems = allItems.filter((c) => c.status !== "resolved");
+  const historyItems = allItems.filter((c) => c.status === "resolved");
+  const items = tab === "pending" ? pendingItems : historyItems;
 
   async function onResolve(c: DedupConflict, action: "keep_a" | "keep_b" | "merge" | "ignore") {
     if (!c.id) return;
@@ -143,19 +149,36 @@ export function ConflictsClient() {
         <MetricCard label="전체" value={data?.total ?? 0} />
         <MetricCard
           label="대기"
-          value={items.filter((c) => c.status === "pending").length}
-          tone={
-            items.filter((c) => c.status === "pending").length > 0
-              ? "warning"
-              : "neutral"
-          }
+          value={pendingItems.length}
+          tone={pendingItems.length > 0 ? "warning" : "neutral"}
         />
-        <MetricCard
-          label="해결됨"
-          value={items.filter((c) => c.status === "resolved").length}
-          tone="success"
-        />
+        <MetricCard label="해결됨" value={historyItems.length} tone="success" />
       </div>
+
+      <nav className="flex gap-1 border-b border-border-default" aria-label="탭">
+        <button
+          type="button"
+          onClick={() => setTab("pending")}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
+            tab === "pending"
+              ? "border-accent-default font-medium text-fg-default"
+              : "border-transparent text-fg-muted hover:text-fg-default"
+          }`}
+        >
+          대기 ({pendingItems.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("history")}
+          className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
+            tab === "history"
+              ? "border-accent-default font-medium text-fg-default"
+              : "border-transparent text-fg-muted hover:text-fg-default"
+          }`}
+        >
+          해결 이력 ({historyItems.length})
+        </button>
+      </nav>
 
       {isLoading ? (
         <Skeleton className="h-48" />

@@ -1,7 +1,10 @@
 "use client";
 
-import { Skeleton } from "@/components/ui";
+import { useState } from "react";
+
+import { Button, Skeleton, useToast } from "@/components/ui";
 import { usePendingVerifications } from "@/hooks/admin/useContent";
+import { useVerificationVote } from "@/hooks/admin/useLifecycle";
 
 import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
@@ -15,8 +18,36 @@ function fmtDate(s: unknown): string {
 }
 
 export function VerificationClient() {
+  const toast = useToast();
   const { data, isLoading, isError, error } = usePendingVerifications();
+  const vote = useVerificationVote();
+  const [voting, setVoting] = useState<string | null>(null);
   const items = (data ?? []) as VerificationRow[];
+
+  async function onVote(r: VerificationRow, voteType: "upvote" | "downvote") {
+    const docId = String(r.document_id ?? r.id ?? "");
+    if (!docId) return;
+    setVoting(docId);
+    try {
+      const res = await vote.mutateAsync({
+        docId,
+        voteType,
+        kbId: typeof r.kb_id === "string" ? r.kb_id : undefined,
+      });
+      const tone = voteType === "upvote" ? "success" : "warning";
+      toast.push(
+        `${voteType === "upvote" ? "👍 검증 통과" : "👎 검증 보류"}` +
+          (res.new_kts_score
+            ? ` (신뢰도: ${(res.new_kts_score * 100).toFixed(0)}%)`
+            : ""),
+        tone,
+      );
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "투표 실패", "danger");
+    } finally {
+      setVoting(null);
+    }
+  }
 
   const columns: Column<VerificationRow>[] = [
     {
@@ -64,6 +95,34 @@ export function VerificationClient() {
           {fmtDate(r.created_at)}
         </span>
       ),
+    },
+    {
+      key: "_actions",
+      header: "투표",
+      align: "right",
+      render: (r) => {
+        const docId = String(r.document_id ?? r.id ?? "");
+        return (
+          <div className="flex justify-end gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={voting === docId}
+              onClick={() => onVote(r, "upvote")}
+            >
+              👍
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={voting === docId}
+              onClick={() => onVote(r, "downvote")}
+            >
+              👎
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 

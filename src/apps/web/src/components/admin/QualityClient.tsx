@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { Button, Skeleton, useToast } from "@/components/ui";
+import { useTransparencyStats } from "@/hooks/admin/useLifecycle";
 import {
   useDedupStats,
   useEvalHistory,
@@ -30,6 +31,7 @@ export function QualityClient() {
   const dedup = useDedupStats();
   const evalStatus = useEvalStatus();
   const evalHistory = useEvalHistory({ page: 1, page_size: 20 });
+  const transparency = useTransparencyStats();
   const trigger = useTriggerEval();
   const [running, setRunning] = useState(false);
 
@@ -153,6 +155,43 @@ export function QualityClient() {
           tone={(dedupData?.pending ?? 0) > 0 ? "warning" : "neutral"}
         />
       </div>
+
+      <article className="space-y-3">
+        <h2 className="text-sm font-medium text-fg-default">투명성 지표</h2>
+        {transparency.isLoading ? (
+          <Skeleton className="h-24" />
+        ) : transparency.isError ? (
+          <p className="text-xs text-fg-muted">
+            투명성 지표를 불러올 수 없습니다.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricCard
+              label="투명성 점수"
+              value={`${((transparency.data?.transparency_score ?? 0) * 100).toFixed(1)}%`}
+              tone={
+                (transparency.data?.transparency_score ?? 0) >= 0.9
+                  ? "success"
+                  : (transparency.data?.transparency_score ?? 0) >= 0.6
+                    ? "warning"
+                    : "danger"
+              }
+            />
+            <MetricCard
+              label="출처 커버리지"
+              value={`${((transparency.data?.source_coverage_rate ?? 0) * 100).toFixed(1)}%`}
+            />
+            <MetricCard
+              label="검증 완료 문서"
+              value={(transparency.data?.verified ?? 0).toLocaleString()}
+            />
+            <MetricCard
+              label="평균 출처 (응답당)"
+              value={(transparency.data?.avg_sources_per_response ?? 0).toFixed(2)}
+            />
+          </div>
+        )}
+      </article>
 
       <article className="space-y-3">
         <h2 className="text-sm font-medium text-fg-default">최근 평가 history</h2>

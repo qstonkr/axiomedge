@@ -909,6 +909,111 @@ export const searchGraphEntities = (body: {
     { method: "POST", body: JSON.stringify(body) },
   );
 
+// ── /admin/pipeline/gates (B-2 ingest 게이트) ───────────────────────────
+
+export type PipelineGateStat = {
+  gate?: string;
+  gate_id?: string;
+  total_checks?: number;
+  blocked?: number;
+  passed?: number;
+  block_rate?: number;
+};
+
+export type PipelineGatesStats = {
+  gates: PipelineGateStat[];
+  total_blocked: number;
+  total_passed: number;
+};
+
+export const getPipelineGatesStats = () =>
+  request<PipelineGatesStats>("api/v1/admin/pipeline/gates/stats", {
+    method: "GET",
+  });
+
+export type BlockedDocument = {
+  document_id?: string;
+  kb_id?: string;
+  gate?: string;
+  reason?: string;
+  blocked_at?: string;
+  status?: string;
+};
+
+export const getPipelineGatesBlocked = async (): Promise<BlockedDocument[]> => {
+  const raw = await request<{ blocked_documents?: BlockedDocument[] }>(
+    "api/v1/admin/pipeline/gates/blocked",
+    { method: "GET" },
+  );
+  return raw.blocked_documents ?? [];
+};
+
+// ── /admin/kb/{kb_id}/lifecycle (B-2 doc lifecycle) ─────────────────────
+
+export type KbLifecycleEvent = {
+  ts?: string;
+  event?: string;
+  actor?: string;
+  detail?: string;
+};
+
+export type KbLifecycle = {
+  kb_id: string;
+  stage: string;
+  created_at?: string | null;
+  last_updated?: string | null;
+  events?: KbLifecycleEvent[];
+  draft_count?: number;
+  published_count?: number;
+  archived_count?: number;
+  scheduled_archive?: Array<{
+    document_id: string;
+    archive_at: string;
+    reason?: string;
+  }>;
+};
+
+export const getKbLifecycle = (kbId: string) =>
+  request<KbLifecycle>(
+    `api/v1/admin/kb/${encodeURIComponent(kbId)}/lifecycle`,
+    { method: "GET" },
+  );
+
+// ── /admin/transparency/stats (B-2 quality 보강) ────────────────────────
+
+export type TransparencyStats = {
+  total_documents: number;
+  total_citations: number;
+  with_provenance: number;
+  with_owner: number;
+  verified: number;
+  transparency_score: number;
+  source_coverage_rate: number;
+  avg_sources_per_response: number;
+};
+
+export const getTransparencyStats = () =>
+  request<TransparencyStats>("api/v1/admin/transparency/stats", {
+    method: "GET",
+  });
+
+// ── /admin/verification/{doc_id}/vote (B-2 verification 투표) ──────────
+
+export const submitVerificationVote = (
+  docId: string,
+  body: { vote_type: "upvote" | "downvote"; kb_id?: string; user_id?: string },
+) =>
+  request<{
+    success: boolean;
+    doc_id: string;
+    vote_type: string;
+    new_kts_score?: number | null;
+    confidence_tier?: string | null;
+  }>(`api/v1/admin/verification/${encodeURIComponent(docId)}/vote`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
 // ── /admin/dashboard/summary (B-2 운영 대시보드) ─────────────────────────
 
 export type AdminDashboardSummary = {

@@ -2,7 +2,10 @@
 
 import { Skeleton } from "@/components/ui";
 import { usePipelineStatus } from "@/hooks/admin/useContent";
+import { useGatesBlocked, useGatesStats } from "@/hooks/admin/useLifecycle";
+import type { BlockedDocument, PipelineGateStat } from "@/lib/api/endpoints";
 
+import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
 import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
 
@@ -13,6 +16,91 @@ function fmtDate(s: string | null | undefined): string {
 
 export function IngestClient() {
   const { data, isLoading, isError, error } = usePipelineStatus();
+  const gates = useGatesStats();
+  const blocked = useGatesBlocked();
+
+  const gateColumns: Column<PipelineGateStat>[] = [
+    {
+      key: "gate",
+      header: "게이트",
+      render: (g) => (
+        <span className="font-mono text-[10px] text-fg-default">
+          {g.gate ?? g.gate_id ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "total_checks",
+      header: "전체",
+      align: "right",
+      render: (g) => (g.total_checks ?? 0).toLocaleString(),
+    },
+    {
+      key: "passed",
+      header: "통과",
+      align: "right",
+      render: (g) => (g.passed ?? 0).toLocaleString(),
+    },
+    {
+      key: "blocked",
+      header: "차단",
+      align: "right",
+      render: (g) => (g.blocked ?? 0).toLocaleString(),
+    },
+    {
+      key: "block_rate",
+      header: "차단율",
+      align: "right",
+      render: (g) =>
+        typeof g.block_rate === "number"
+          ? `${(g.block_rate * 100).toFixed(1)}%`
+          : "—",
+    },
+  ];
+
+  const blockedColumns: Column<BlockedDocument>[] = [
+    {
+      key: "document_id",
+      header: "문서 ID",
+      render: (b) => (
+        <span className="font-mono text-[10px] text-fg-default">
+          {b.document_id ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "kb_id",
+      header: "KB",
+      render: (b) => (
+        <span className="font-mono text-[10px] text-fg-muted">
+          {b.kb_id ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "gate",
+      header: "차단 게이트",
+      render: (b) => (
+        <SeverityBadge level="warn">{b.gate ?? "—"}</SeverityBadge>
+      ),
+    },
+    {
+      key: "reason",
+      header: "사유",
+      render: (b) => (
+        <span className="line-clamp-2 text-fg-default">{b.reason ?? "—"}</span>
+      ),
+    },
+    {
+      key: "blocked_at",
+      header: "시각",
+      render: (b) => (
+        <span className="font-mono text-[10px] text-fg-muted">
+          {fmtDate(b.blocked_at)}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <section className="space-y-6">
@@ -60,6 +148,38 @@ export function IngestClient() {
               }
             />
           </div>
+
+          <article className="space-y-2">
+            <h2 className="text-sm font-medium text-fg-default">
+              인제스션 게이트 통계
+            </h2>
+            {gates.isLoading ? (
+              <Skeleton className="h-24" />
+            ) : (
+              <DataTable
+                columns={gateColumns}
+                rows={gates.data?.gates ?? []}
+                rowKey={(r, idx) => r.gate ?? r.gate_id ?? `gate-${idx}`}
+                empty="현재 활성 게이트 통계가 없습니다."
+              />
+            )}
+          </article>
+
+          <article className="space-y-2">
+            <h2 className="text-sm font-medium text-fg-default">
+              거부/보류 문서 ({(blocked.data ?? []).length})
+            </h2>
+            {blocked.isLoading ? (
+              <Skeleton className="h-24" />
+            ) : (
+              <DataTable
+                columns={blockedColumns}
+                rows={blocked.data ?? []}
+                rowKey={(r, idx) => r.document_id ?? `b-${idx}`}
+                empty="거부/보류된 문서가 없습니다."
+              />
+            )}
+          </article>
 
           {data?.last_run && (
             <article className="rounded-lg border border-border-default bg-bg-canvas p-4">

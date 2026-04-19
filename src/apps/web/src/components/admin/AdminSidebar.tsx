@@ -28,6 +28,7 @@ const NAV: NavGroup[] = [
       { href: "/admin/groups", label: "검색 그룹", icon: "🗂️" },
       { href: "/admin/conflicts", label: "중복/모순", icon: "⚠️" },
       { href: "/admin/verification", label: "검증 대기", icon: "🔍" },
+      { href: "/admin/lifecycle", label: "문서 라이프사이클", icon: "♻️" },
     ],
   },
   {
