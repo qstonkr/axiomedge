@@ -12,6 +12,7 @@ import {
   submitErrorReport,
   type ErrorReportBody,
 } from "@/lib/api/endpoints";
+import { useEscape } from "@/lib/useEscape";
 
 import type { ChunkSource } from "./types";
 
@@ -46,6 +47,8 @@ export function ErrorReportDialog({
     useState<ErrorReportBody["priority"]>("MEDIUM");
   const [description, setDescription] = useState("");
   const [pending, setPending] = useState(false);
+
+  useEscape(true, onClose);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

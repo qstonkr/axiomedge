@@ -1,0 +1,26 @@
+{
+  "nav": {
+    "label": "User menu",
+    "chat": "Knowledge search",
+    "find_owner": "Find owner",
+    "my_knowledge": "My knowledge",
+    "my_documents": "My documents",
+    "my_feedback": "Feedback / report",
+    "search_history": "Search history"
+  },
+  "common": {
+    "logout": "Log out",
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "submit": "Submit",
+    "search": "Search",
+    "skip_to_main": "Skip to main content"
+  },
+  "errors": {
+    "generic": "An unexpected error occurred.",
+    "retry": "Try again",
+    "loading": "Failed to load data."
+  }
+}

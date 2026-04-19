@@ -9,6 +9,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useCreatePersonalKb } from "@/hooks/useMyKnowledge";
+import { useEscape } from "@/lib/useEscape";
 
 /** Slugify Korean/Latin user input into a kb_id-safe string. */
 function slugify(name: string): string {
@@ -33,6 +34,8 @@ export function CreateKbDialog({
   const create = useCreatePersonalKb(userId);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+
+  useEscape(true, onClose);
 
   const kbId =
     `pkb_${userId.replace(/-/g, "").slice(0, 12)}_${slugify(name).slice(0, 30)}`;

@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useState, useTransition } from "react";
 
+import { ThemeToggle } from "./ThemeToggle";
 import type { Membership } from "@/lib/auth/session";
 
 type Props = {
@@ -13,6 +15,7 @@ type Props = {
 
 export function OrgSwitcher({ activeOrgId, memberships, displayName }: Props) {
   const router = useRouter();
+  const t = useTranslations("common");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -65,12 +68,13 @@ export function OrgSwitcher({ activeOrgId, memberships, displayName }: Props) {
       )}
       <span aria-hidden>·</span>
       <span className="text-fg-default">{displayName}</span>
+      <ThemeToggle />
       <button
         type="button"
         onClick={logout}
         className="rounded-md px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-bg-muted hover:text-fg-default"
       >
-        로그아웃
+        {t("logout")}
       </button>
       {error && (
         <span role="alert" className="text-danger-default">
