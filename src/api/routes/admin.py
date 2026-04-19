@@ -191,10 +191,26 @@ async def collection_stats(name: str) -> dict:
 # Config Weights - Hot Reload
 # ============================================================================
 
+def _json_safe(value: Any) -> Any:
+    """``weights.to_dict()`` 에는 ``resilience.retry_on`` 같은 exception class
+    tuple 이 들어 있어 그대로 jsonable_encoder 에 넘기면 500. 직렬화 못 하는
+    값은 dotted-path 문자열 (또는 type repr) 로 치환."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, type):
+        return f"{value.__module__}.{value.__qualname__}"
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    # fallback — repr 로 노출 (운영자가 디버깅 가능)
+    return repr(value)
+
+
 @router.post("/config/weights")
 async def get_config_weights() -> dict:
-    """Return current config weights."""
-    return weights.to_dict()
+    """Return current config weights (JSON-safe)."""
+    return _json_safe(weights.to_dict())
 
 
 @router.put("/config/weights", responses={400: {"description": "Empty body or no valid weight fields matched"}})
