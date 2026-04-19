@@ -120,10 +120,19 @@ export type SearchGroup = {
   name: string;
   kb_ids: string[];
   description?: string;
+  is_default?: boolean;
+  created_by?: string;
+  created_at?: string;
 };
 
-export const listSearchGroups = () =>
-  request<SearchGroup[]>("api/v1/search-groups", { method: "GET" });
+export const listSearchGroups = async (): Promise<{ groups: SearchGroup[] }> => {
+  // backend 는 ``/distill/search-groups`` 가 정답 — ``/search-groups`` 는 404
+  const raw = await request<{ groups?: SearchGroup[] }>(
+    "api/v1/distill/search-groups",
+    { method: "GET" },
+  );
+  return { groups: raw.groups ?? [] };
+};
 
 // ── /knowledge/feedback + /knowledge/report-error ───────────────────────
 
@@ -365,6 +374,145 @@ export const getSearchHistory = async (params?: {
   const items = (raw.searches ?? []).map(adaptSearchHistoryRow);
   return { items, total: raw.total ?? items.length };
 };
+
+// ── /admin/data-sources (B-2 콘텐츠 관리) ───────────────────────────────
+
+export type DataSource = {
+  id: string;
+  name: string;
+  source_type: string;
+  kb_id?: string | null;
+  schedule?: string | null;
+  status?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  last_sync_at?: string | null;
+  last_sync_result?: Record<string, unknown> | null;
+  error_message?: string | null;
+  metadata?: Record<string, unknown> | null;
+  crawl_config?: Record<string, unknown> | null;
+  pipeline_config?: Record<string, unknown> | null;
+};
+
+export const listDataSources = async (): Promise<DataSource[]> => {
+  // Backend ships ``{sources: [...]}``.
+  const raw = await request<{ sources?: DataSource[] }>(
+    "api/v1/admin/data-sources",
+    { method: "GET" },
+  );
+  return raw.sources ?? [];
+};
+
+export const triggerDataSourceSync = (sourceId: string) =>
+  request<{ success: boolean; job_id?: string; message?: string }>(
+    `api/v1/admin/data-sources/${encodeURIComponent(sourceId)}/trigger`,
+    { method: "POST" },
+  );
+
+export const getDataSourceStatus = (sourceId: string) =>
+  request<Record<string, unknown>>(
+    `api/v1/admin/data-sources/${encodeURIComponent(sourceId)}/status`,
+    { method: "GET" },
+  );
+
+// ── /admin/pipeline/status (B-2 ingest) ─────────────────────────────────
+
+export type PipelineRun = {
+  id?: string;
+  run_id?: string;
+  kb_id?: string;
+  source_type?: string;
+  source_name?: string;
+  status?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  document_count?: number | null;
+  error_message?: string | null;
+};
+
+export type PipelineStatus = {
+  status: string;
+  active_runs: number;
+  queued: number;
+  last_run?: PipelineRun | null;
+  recent_runs?: PipelineRun[];
+};
+
+export const getPipelineStatus = () =>
+  request<PipelineStatus>("api/v1/admin/pipeline/status", { method: "GET" });
+
+export const getPipelineMetrics = () =>
+  request<Record<string, unknown>>("api/v1/admin/pipeline/metrics", {
+    method: "GET",
+  });
+
+// ── /admin/glossary (B-2 용어집) ────────────────────────────────────────
+
+export type GlossaryTerm = {
+  id: string;
+  term_id?: string;
+  kb_id: string;
+  term: string;
+  term_ko?: string | null;
+  definition?: string | null;
+  synonyms?: string[];
+  domain?: string | null;
+  source?: string | null;
+  status?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export const listGlossaryTerms = async (params?: {
+  kb_id?: string;
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: GlossaryTerm[]; total: number }> => {
+  const raw = await request<{ terms?: GlossaryTerm[]; total?: number }>(
+    "api/v1/admin/glossary",
+    { method: "GET", query: params },
+  );
+  const items = raw.terms ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+// ── /admin/dedup/conflicts (B-2 중복/모순) ──────────────────────────────
+
+export type DedupConflict = {
+  id?: string;
+  kb_id?: string;
+  doc_a?: string;
+  doc_b?: string;
+  similarity?: number;
+  conflict_type?: string;
+  status?: string;
+  resolved_at?: string | null;
+  detected_at?: string | null;
+};
+
+export const listDedupConflicts = async (params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: DedupConflict[]; total: number }> => {
+  const raw = await request<{
+    conflicts?: DedupConflict[];
+    total?: number;
+  }>("api/v1/admin/dedup/conflicts", { method: "GET", query: params });
+  const items = raw.conflicts ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+export const resolveDedupConflict = (body: {
+  conflict_id: string;
+  resolution: "keep_a" | "keep_b" | "merge" | "ignore";
+  note?: string;
+}) =>
+  request<{ success: boolean }>("api/v1/admin/dedup/resolve", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 
 // ── /admin/dashboard/summary (B-2 운영 대시보드) ─────────────────────────
 
