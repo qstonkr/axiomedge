@@ -126,6 +126,7 @@ async def login(body: LoginRequest, request: Request, response: Response) -> dic
         "success": True,
         "user": user,
         "roles": result["role_names"],
+        "active_org_id": result.get("active_org_id"),
         "token_type": "Bearer",
         "expires_in": jwt_service.access_expire_seconds,
     }
@@ -311,15 +312,23 @@ async def change_password(
 
 @router.get("/me")
 async def get_me(user: Annotated[AuthUser, Depends(get_current_user)]) -> dict[str, Any]:
-    """Get current user info and permissions."""
+    """Return current user, role/permission set, and org context.
+
+    Frontend uses this to:
+    - Render the user chip + role-aware nav
+    - Populate the OrgSwitcher (memberships list)
+    - Decide whether to call ``/switch-org`` (multiple memberships)
+    """
     auth_service = _get_auth_service()
-    roles = []
+    roles: list[Any] = []
+    memberships: list[dict[str, Any]] = []
     if auth_service:
         roles = await auth_service.get_user_roles(user.sub)
+        memberships = await auth_service.list_user_memberships(user.sub)
 
     from src.api.app import _get_state
     rbac = _get_state().get("rbac_engine")
-    permissions = []
+    permissions: list[str] = []
     if rbac:
         permissions = sorted(rbac.get_effective_permissions(roles))
 
@@ -330,6 +339,92 @@ async def get_me(user: Annotated[AuthUser, Depends(get_current_user)]) -> dict[s
         "provider": user.provider,
         "department": user.department,
         "organization_id": user.organization_id,
+        "active_org_id": user.active_org_id,
+        "memberships": memberships,
         "roles": roles,
         "permissions": permissions,
+    }
+
+
+# =============================================================================
+# Switch organization (multi-membership users)
+# =============================================================================
+
+
+from pydantic import BaseModel, Field  # noqa: E402 — kept after re-exports
+
+
+class SwitchOrgRequest(BaseModel):
+    organization_id: str = Field(..., min_length=1, max_length=100)
+
+
+@router.post(
+    "/switch-org",
+    responses={
+        403: {"description": "User is not a member of the requested organization"},
+        503: {"description": "Service not initialized"},
+    },
+)
+async def switch_org(
+    body: SwitchOrgRequest,
+    request: Request,
+    response: Response,
+    user: Annotated[AuthUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Issue a new token pair scoped to the requested organization.
+
+    Validates membership, then mints a fresh access/refresh pair with the
+    new ``active_org_id`` claim and rewrites the HttpOnly cookies. The old
+    access JTI is added to the revocation list so it can't be reused.
+    """
+    state = _get_state()
+    auth_service = state.get("auth_service")
+    jwt_service = state.get("jwt_service")
+    token_store = state.get("token_store")
+    rbac = state.get("rbac_engine")
+    revoked_store = state.get("revoked_token_store")
+
+    if not (auth_service and jwt_service):
+        raise HTTPException(status_code=503, detail=_AUTH_NOT_INIT)
+
+    if not await auth_service.is_org_member(user.sub, body.organization_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"User is not a member of organization '{body.organization_id}'",
+        )
+
+    user_dict = await auth_service.get_user(user.sub) or {
+        "id": user.sub, "email": user.email, "display_name": user.display_name,
+    }
+
+    result = await build_login_tokens(
+        auth_service=auth_service,
+        jwt_service=jwt_service,
+        token_store=token_store,
+        rbac=rbac,
+        user=user_dict,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent", "")[:500],
+        requested_org_id=body.organization_id,
+    )
+
+    # Best-effort revocation of the previous access token's JTI so the old
+    # session cannot keep talking to the previous org. Failures here are
+    # logged but do not block the switch.
+    old_jti = user.raw_claims.get("jti") if user.raw_claims else None
+    if revoked_store and old_jti:
+        try:
+            ttl = jwt_service.access_expire_seconds
+            await revoked_store.revoke(old_jti, ttl_seconds=ttl)
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.debug("Old JTI revocation skipped: %s", e)
+
+    pair = result["token_pair"]
+    set_auth_cookies(response, jwt_service, pair.access_token, pair.refresh_token)
+
+    return {
+        "success": True,
+        "active_org_id": result.get("active_org_id"),
+        "token_type": "Bearer",
+        "expires_in": jwt_service.access_expire_seconds,
     }
