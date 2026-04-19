@@ -3,16 +3,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  approveGlossaryTerm,
+  createGlossaryTerm,
+  createSearchGroup,
+  deleteGlossaryTerm,
+  deleteSearchGroup,
   getPipelineStatus,
   listDedupConflicts,
   listDocumentOwners,
   listGlossaryTerms,
   listPendingVerifications,
   listSearchGroups,
+  rejectGlossaryTerm,
   resolveDedupConflict,
+  updateGlossaryTerm,
+  updateSearchGroup,
   type DedupConflict,
   type GlossaryTerm,
+  type GlossaryUpsertBody,
   type PipelineStatus,
+  type SearchGroupUpsertBody,
 } from "@/lib/api/endpoints";
 
 // ── /admin/ingest ──
@@ -48,12 +58,80 @@ export function useDocumentOwners(kbId: string | null) {
   });
 }
 
+// ── /admin/glossary mutations ──
+export function useCreateGlossaryTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: GlossaryUpsertBody) => createGlossaryTerm(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "glossary"] }),
+  });
+}
+
+export function useUpdateGlossaryTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; body: Partial<GlossaryUpsertBody> }) =>
+      updateGlossaryTerm(input.id, input.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "glossary"] }),
+  });
+}
+
+export function useDeleteGlossaryTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (termId: string) => deleteGlossaryTerm(termId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "glossary"] }),
+  });
+}
+
+export function useApproveGlossaryTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (termId: string) => approveGlossaryTerm(termId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "glossary"] }),
+  });
+}
+
+export function useRejectGlossaryTerm() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; reason?: string }) =>
+      rejectGlossaryTerm(input.id, input.reason),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "glossary"] }),
+  });
+}
+
 // ── /admin/groups ──
 export function useSearchGroups() {
   return useQuery({
     queryKey: ["admin", "search-groups"],
     queryFn: () => listSearchGroups(),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useCreateSearchGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SearchGroupUpsertBody) => createSearchGroup(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "search-groups"] }),
+  });
+}
+
+export function useUpdateSearchGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; body: SearchGroupUpsertBody }) =>
+      updateSearchGroup(input.id, input.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "search-groups"] }),
+  });
+}
+
+export function useDeleteSearchGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (groupId: string) => deleteSearchGroup(groupId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "search-groups"] }),
   });
 }
 

@@ -3,9 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  createDataSource,
+  deleteDataSource,
   listDataSources,
   triggerDataSourceSync,
+  updateDataSource,
   type DataSource,
+  type DataSourceUpsertBody,
 } from "@/lib/api/endpoints";
 
 const QK = ["admin", "data-sources"] as const;
@@ -26,5 +30,30 @@ export function useTriggerDataSource() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [...QK, "list"] });
     },
+  });
+}
+
+export function useCreateDataSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DataSourceUpsertBody) => createDataSource(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...QK, "list"] }),
+  });
+}
+
+export function useUpdateDataSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; body: Partial<DataSourceUpsertBody> }) =>
+      updateDataSource(input.id, input.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...QK, "list"] }),
+  });
+}
+
+export function useDeleteDataSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceId: string) => deleteDataSource(sourceId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...QK, "list"] }),
   });
 }

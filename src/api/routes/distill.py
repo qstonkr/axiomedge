@@ -194,6 +194,85 @@ async def list_search_groups() -> dict[str, list[Any]]:
     return {"groups": groups}
 
 
+class SearchGroupUpsertRequest(BaseModel):
+    """검색 그룹 생성/수정 요청 (admin 화면에서 호출)."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    kb_ids: list[str] = Field(default_factory=list)
+    description: str = ""
+    is_default: bool = False
+
+
+@router.post("/search-groups")
+async def create_search_group(body: SearchGroupUpsertRequest) -> dict[str, Any]:
+    """신규 검색 그룹 생성."""
+    group_repo = _get_state().get("search_group_repo")
+    if not group_repo:
+        raise HTTPException(status_code=503, detail="search_group_repo not initialized")
+    try:
+        existing = await group_repo.get_by_name(body.name)
+        if existing:
+            raise HTTPException(
+                status_code=409, detail=f"Group '{body.name}' already exists",
+            )
+        created = await group_repo.create(
+            name=body.name,
+            kb_ids=body.kb_ids,
+            description=body.description,
+            is_default=body.is_default,
+        )
+        return {"success": True, "group": created}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 — surface root cause
+        logger.warning("create_search_group failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"create failed: {e}") from e
+
+
+@router.put("/search-groups/{group_id}")
+async def update_search_group(
+    group_id: str, body: SearchGroupUpsertRequest,
+) -> dict[str, Any]:
+    """검색 그룹 수정 (name/kb_ids/description/is_default 덮어쓰기)."""
+    group_repo = _get_state().get("search_group_repo")
+    if not group_repo:
+        raise HTTPException(status_code=503, detail="search_group_repo not initialized")
+    try:
+        updated = await group_repo.update(
+            group_id=group_id,
+            name=body.name,
+            kb_ids=body.kb_ids,
+            description=body.description,
+            is_default=body.is_default,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+        return {"success": True, "group": updated}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.warning("update_search_group failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"update failed: {e}") from e
+
+
+@router.delete("/search-groups/{group_id}")
+async def delete_search_group(group_id: str) -> dict[str, Any]:
+    """검색 그룹 삭제 — default 그룹이면 409."""
+    group_repo = _get_state().get("search_group_repo")
+    if not group_repo:
+        raise HTTPException(status_code=503, detail="search_group_repo not initialized")
+    try:
+        ok = await group_repo.delete(group_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.warning("delete_search_group failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"delete failed: {e}") from e
+
+
 # ---------------------------------------------------------------------------
 # Base Model Registry — 대시보드 드롭다운 SSOT
 # ---------------------------------------------------------------------------

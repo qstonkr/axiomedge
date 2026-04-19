@@ -409,6 +409,37 @@ export const triggerDataSourceSync = (sourceId: string) =>
     { method: "POST" },
   );
 
+export type DataSourceUpsertBody = {
+  name: string;
+  source_type: string;
+  kb_id?: string | null;
+  schedule?: string | null;
+  crawl_config?: Record<string, unknown> | null;
+  pipeline_config?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export const createDataSource = (body: DataSourceUpsertBody) =>
+  request<DataSource>("api/v1/admin/data-sources", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateDataSource = (
+  sourceId: string,
+  body: Partial<DataSourceUpsertBody>,
+) =>
+  request<DataSource>(
+    `api/v1/admin/data-sources/${encodeURIComponent(sourceId)}`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+
+export const deleteDataSource = (sourceId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/admin/data-sources/${encodeURIComponent(sourceId)}`,
+    { method: "DELETE" },
+  );
+
 export const getDataSourceStatus = (sourceId: string) =>
   request<Record<string, unknown>>(
     `api/v1/admin/data-sources/${encodeURIComponent(sourceId)}/status`,
@@ -476,6 +507,51 @@ export const listGlossaryTerms = async (params?: {
   const items = raw.terms ?? [];
   return { items, total: raw.total ?? items.length };
 };
+
+export type GlossaryUpsertBody = {
+  kb_id: string;
+  term: string;
+  term_ko?: string | null;
+  definition?: string | null;
+  synonyms?: string[];
+  domain?: string | null;
+};
+
+export const createGlossaryTerm = (body: GlossaryUpsertBody) =>
+  request<GlossaryTerm>("api/v1/admin/glossary", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateGlossaryTerm = (
+  termId: string,
+  body: Partial<GlossaryUpsertBody>,
+) =>
+  request<GlossaryTerm>(`api/v1/admin/glossary/${encodeURIComponent(termId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const deleteGlossaryTerm = (termId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/admin/glossary/${encodeURIComponent(termId)}`,
+    { method: "DELETE" },
+  );
+
+export const approveGlossaryTerm = (termId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/admin/glossary/${encodeURIComponent(termId)}/approve`,
+    { method: "POST" },
+  );
+
+export const rejectGlossaryTerm = (termId: string, reason?: string) =>
+  request<{ success: boolean }>(
+    `api/v1/admin/glossary/${encodeURIComponent(termId)}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason: reason ?? "" }),
+    },
+  );
 
 // ── /admin/dedup/conflicts (B-2 중복/모순) ──────────────────────────────
 
@@ -660,6 +736,77 @@ export const listAuthRoles = async (): Promise<AuthRole[]> => {
   });
   return raw.roles ?? [];
 };
+
+export type AuthUserUpsertBody = {
+  email: string;
+  display_name?: string | null;
+  department?: string | null;
+  password?: string;
+  is_active?: boolean;
+};
+
+export const createAuthUser = (body: AuthUserUpsertBody) =>
+  request<AuthUser>("api/v1/auth/users", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateAuthUser = (
+  userId: string,
+  body: Partial<AuthUserUpsertBody>,
+) =>
+  request<AuthUser>(`api/v1/auth/users/${encodeURIComponent(userId)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteAuthUser = (userId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/users/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+
+export const assignAuthRole = (userId: string, role: string) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/users/${encodeURIComponent(userId)}/roles`,
+    { method: "POST", body: JSON.stringify({ role }) },
+  );
+
+export const revokeAuthRole = (userId: string, role: string) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(role)}`,
+    { method: "DELETE" },
+  );
+
+// ── search-groups CRUD ──────────────────────────────────────────────────
+
+export type SearchGroupUpsertBody = {
+  name: string;
+  kb_ids: string[];
+  description?: string;
+  is_default?: boolean;
+};
+
+export const createSearchGroup = (body: SearchGroupUpsertBody) =>
+  request<{ success: boolean; group: SearchGroup }>(
+    "api/v1/distill/search-groups",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const updateSearchGroup = (
+  groupId: string,
+  body: SearchGroupUpsertBody,
+) =>
+  request<{ success: boolean; group: SearchGroup }>(
+    `api/v1/distill/search-groups/${encodeURIComponent(groupId)}`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+
+export const deleteSearchGroup = (groupId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/distill/search-groups/${encodeURIComponent(groupId)}`,
+    { method: "DELETE" },
+  );
 
 // ── /distill/edge-servers (B-2 Edge fleet) ──────────────────────────────
 

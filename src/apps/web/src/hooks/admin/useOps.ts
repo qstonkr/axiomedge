@@ -3,16 +3,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  assignAuthRole,
   cancelIngestRun,
+  createAuthUser,
+  deleteAuthUser,
   getConfigWeights,
   getGraphStats,
   listAuthRoles,
   listAuthUsers,
   listEdgeServers,
   listIngestRuns,
+  revokeAuthRole,
   searchGraphEntities,
+  updateAuthUser,
   type AuthRole,
   type AuthUser,
+  type AuthUserUpsertBody,
   type EdgeServer,
   type GraphStats,
   type IngestRun,
@@ -32,6 +38,49 @@ export function useAuthRoles() {
     queryKey: ["admin", "roles"],
     queryFn: () => listAuthRoles(),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useCreateAuthUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AuthUserUpsertBody) => createAuthUser(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useUpdateAuthUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; body: Partial<AuthUserUpsertBody> }) =>
+      updateAuthUser(input.id, input.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useDeleteAuthUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => deleteAuthUser(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useAssignAuthRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { userId: string; role: string }) =>
+      assignAuthRole(input.userId, input.role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
+  });
+}
+
+export function useRevokeAuthRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { userId: string; role: string }) =>
+      revokeAuthRole(input.userId, input.role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "users"] }),
   });
 }
 
