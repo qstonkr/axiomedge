@@ -1,4 +1,4 @@
-.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-unit-fast test-integration test-e2e test-coverage-gate tei-refresh
+.PHONY: setup setup-distill-toolchain start stop api dashboard crawl ingest search test test-unit test-unit-fast test-integration test-e2e test-coverage-gate tei-refresh web-install web-dev web-build web-typecheck web-lint web-test web-test-e2e web-gen-api
 
 # Pin Compose project name so existing knowledge-local_* volumes are reused
 # regardless of the working directory or compose file location.
@@ -42,6 +42,36 @@ tei-refresh:
 
 dashboard:
 	uv run streamlit run src/apps/dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+
+# === Web (Next.js — apps/web) ===
+WEB_DIR = apps/web
+
+web-install:
+	pnpm --dir $(WEB_DIR) install
+
+web-dev:
+	pnpm --dir $(WEB_DIR) dev
+
+web-build:
+	pnpm --dir $(WEB_DIR) build
+
+web-typecheck:
+	pnpm --dir $(WEB_DIR) typecheck
+
+web-lint:
+	pnpm --dir $(WEB_DIR) lint
+
+web-test:
+	pnpm --dir $(WEB_DIR) test
+
+# Playwright E2E. Boots `next dev` automatically unless PLAYWRIGHT_BASE_URL is set.
+web-test-e2e:
+	pnpm --dir $(WEB_DIR) test:e2e
+
+# Regenerate src/lib/api/types.ts from running FastAPI's /openapi.json.
+# Requires `make api` running (or set API_OPENAPI_URL to a different host).
+web-gen-api:
+	pnpm --dir $(WEB_DIR) gen:api
 
 # === MCP Server ===
 mcp:

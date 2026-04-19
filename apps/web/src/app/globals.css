@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/*
+ * axiomedge design tokens — Linear + Notion 하이브리드.
+ * 자세한 사용법과 의미는 ./../../DESIGN.md 참조.
+ */
+
+:root {
+  /* ── neutral palette (Notion-style 회색 계열) ── */
+  --color-bg-canvas: #ffffff;
+  --color-bg-subtle: #f7f7f5;
+  --color-bg-muted: #efeeec;
+  --color-bg-emphasis: #e3e2e0;
+
+  --color-fg-default: #1f1f1f;
+  --color-fg-muted: #5f5e5b;
+  --color-fg-subtle: #8a8a87;
+  --color-fg-onAccent: #ffffff;
+
+  --color-border-default: #e3e2e0;
+  --color-border-strong: #c6c5c2;
+
+  /* ── accent (Linear-style 차분한 indigo) ── */
+  --color-accent-default: #5e6ad2;
+  --color-accent-emphasis: #4d57b5;
+  --color-accent-subtle: #eef0fb;
+
+  /* ── semantic ── */
+  --color-success-default: #2f9461;
+  --color-success-subtle: #eaf6ef;
+  --color-danger-default: #d23f3f;
+  --color-danger-subtle: #fbecec;
+  --color-warning-default: #c47a16;
+  --color-warning-subtle: #fbf2e2;
+
+  /* ── radii ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* ── shadows (Notion 부드러운 elevation) ── */
+  --shadow-xs: 0 1px 2px rgba(15, 15, 15, 0.05);
+  --shadow-sm: 0 1px 3px rgba(15, 15, 15, 0.08), 0 1px 2px rgba(15, 15, 15, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 15, 15, 0.08);
+  --shadow-lg: 0 12px 32px rgba(15, 15, 15, 0.10);
+
+  /* ── typography (한국어 우선 — Pretendard fallback chain) ── */
+  --font-sans:
+    "Pretendard Variable", "Pretendard",
+    -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Segoe UI", "Noto Sans KR", "Malgun Gothic",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "JetBrains Mono", "SFMono-Regular", "Menlo", "Consolas", monospace;
+}
+
+[data-theme="dark"] {
+  --color-bg-canvas: #1a1a1a;
+  --color-bg-subtle: #232323;
+  --color-bg-muted: #2c2c2c;
+  --color-bg-emphasis: #383838;
+
+  --color-fg-default: #ededed;
+  --color-fg-muted: #b6b3ac;
+  --color-fg-subtle: #8a8a87;
+
+  --color-border-default: #323232;
+  --color-border-strong: #4a4a4a;
+
+  --color-accent-default: #8389e3;
+  --color-accent-emphasis: #6770d4;
+  --color-accent-subtle: #2c2e54;
+
+  --color-success-subtle: #1f3a2c;
+  --color-danger-subtle: #43221f;
+  --color-warning-subtle: #3a2e15;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline {
+  --color-bg-canvas: var(--color-bg-canvas);
+  --color-bg-subtle: var(--color-bg-subtle);
+  --color-bg-muted: var(--color-bg-muted);
+  --color-bg-emphasis: var(--color-bg-emphasis);
+
+  --color-fg-default: var(--color-fg-default);
+  --color-fg-muted: var(--color-fg-muted);
+  --color-fg-subtle: var(--color-fg-subtle);
+  --color-fg-onAccent: var(--color-fg-onAccent);
+
+  --color-border-default: var(--color-border-default);
+  --color-border-strong: var(--color-border-strong);
+
+  --color-accent-default: var(--color-accent-default);
+  --color-accent-emphasis: var(--color-accent-emphasis);
+  --color-accent-subtle: var(--color-accent-subtle);
+
+  --color-success-default: var(--color-success-default);
+  --color-success-subtle: var(--color-success-subtle);
+  --color-danger-default: var(--color-danger-default);
+  --color-danger-subtle: var(--color-danger-subtle);
+  --color-warning-default: var(--color-warning-default);
+  --color-warning-subtle: var(--color-warning-subtle);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-pill: var(--radius-pill);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html,
+body {
+  background: var(--color-bg-canvas);
+  color: var(--color-fg-default);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Make the default focus ring match the accent. */
+:focus-visible {
+  outline: 2px solid var(--color-accent-default);
+  outline-offset: 2px;
+}
