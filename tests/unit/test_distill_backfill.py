@@ -6,11 +6,17 @@ Tests core public methods with appropriate mocking.
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
+
+# llama_cpp 는 optional dep — local dev 에 미설치 시 ``patch("llama_cpp.Llama")`` 가
+# import 단계에서 ModuleNotFoundError 로 fail. mock 으로 등록만 해 두면
+# patch 가 정상 동작 (어차피 evaluator 가 lazy import 라 prod 에선 무관).
+sys.modules.setdefault("llama_cpp", MagicMock())
 
 import pytest
 

@@ -7,12 +7,16 @@ from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 # Pre-import to avoid circular import issues
 import src.api.app  # noqa: F401
 from src.api.routes import search as search_route
+
+# B-0 RBAC bypass (conftest 의 bypass_route_auth fixture)
+pytestmark = pytest.mark.usefixtures("bypass_route_auth")
 
 
 def _make_test_app():

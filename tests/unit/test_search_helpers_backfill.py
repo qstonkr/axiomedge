@@ -768,11 +768,14 @@ class TestRetrieveChunksByIds:
             id="p1",
             payload={"content": "hello", "metadata": {"k": "v"}},
         )
-        client = MagicMock()
-        client.retrieve = MagicMock(return_value=[pt])
+        # qdrant_provider.ensure_client() 는 async — AsyncMock 으로 raw client 반환
+        raw = MagicMock()
+        raw.retrieve = MagicMock(return_value=[pt])
+        provider = MagicMock()
+        provider.ensure_client = AsyncMock(return_value=raw)
 
         result = await retrieve_chunks_by_ids(
-            client,
+            provider,
             ["coll1"],
             ["p1"],
             {"p1": 0.9},
@@ -788,21 +791,25 @@ class TestRetrieveChunksByIds:
             id="p2",
             payload={"content": "x", "metadata": {}},
         )
-        client = MagicMock()
-        client.retrieve = MagicMock(return_value=[pt])
+        raw = MagicMock()
+        raw.retrieve = MagicMock(return_value=[pt])
+        provider = MagicMock()
+        provider.ensure_client = AsyncMock(return_value=raw)
 
         result = await retrieve_chunks_by_ids(
-            client, ["coll1"], ["p2"], {},
+            provider, ["coll1"], ["p2"], {},
         )
         assert result[0]["score"] == 0.3
 
     @pytest.mark.asyncio
     async def test_handles_exception(self):
-        client = MagicMock()
-        client.retrieve = MagicMock(side_effect=RuntimeError("fail"))
+        raw = MagicMock()
+        raw.retrieve = MagicMock(side_effect=RuntimeError("fail"))
+        provider = MagicMock()
+        provider.ensure_client = AsyncMock(return_value=raw)
 
         result = await retrieve_chunks_by_ids(
-            client, ["coll1"], ["p1"], {},
+            provider, ["coll1"], ["p1"], {},
         )
         assert result == []
 

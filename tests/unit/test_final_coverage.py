@@ -9,6 +9,9 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+# B-0 RBAC bypass (conftest 의 bypass_route_auth fixture)
+pytestmark = pytest.mark.usefixtures("bypass_route_auth")
+
 
 def _run(coro):
     return asyncio.run(coro)

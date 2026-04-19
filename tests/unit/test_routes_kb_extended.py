@@ -12,6 +12,9 @@ from httpx import ASGITransport, AsyncClient
 import src.api.app  # noqa: F401
 from src.api.routes import kb
 
+# B-0 RBAC bypass (conftest 의 bypass_route_auth fixture)
+pytestmark = pytest.mark.usefixtures("bypass_route_auth")
+
 
 def _make_app():
     app = FastAPI()

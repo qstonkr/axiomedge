@@ -5,12 +5,17 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 # Pre-import to avoid circular import issues
 import src.api.app  # noqa: F401
 from src.api.routes import kb
+
+# B-0 RBAC enforcement bypass — domain logic 만 검증하므로 conftest 의
+# bypass_route_auth fixture 로 fake user/org dependency override.
+pytestmark = pytest.mark.usefixtures("bypass_route_auth")
 
 
 def _make_test_app():
