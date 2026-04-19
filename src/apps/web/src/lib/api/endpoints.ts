@@ -624,6 +624,144 @@ export const getAgentTrace = (traceId: string) =>
     { method: "GET" },
   );
 
+// ── /auth/users (B-2 사용자 관리) ───────────────────────────────────────
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  display_name?: string | null;
+  provider?: string;
+  department?: string | null;
+  is_active?: boolean;
+  created_at?: string;
+};
+
+export const listAuthUsers = async (params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{ users: AuthUser[]; total?: number }> => {
+  const raw = await request<{ users?: AuthUser[]; total?: number }>(
+    "api/v1/auth/users",
+    { method: "GET", query: params },
+  );
+  return { users: raw.users ?? [], total: raw.total };
+};
+
+export type AuthRole = {
+  id?: string;
+  name: string;
+  display_name?: string | null;
+  description?: string | null;
+};
+
+export const listAuthRoles = async (): Promise<AuthRole[]> => {
+  const raw = await request<{ roles?: AuthRole[] }>("api/v1/auth/roles", {
+    method: "GET",
+  });
+  return raw.roles ?? [];
+};
+
+// ── /distill/edge-servers (B-2 Edge fleet) ──────────────────────────────
+
+export type EdgeServer = {
+  id: string;
+  store_id: string;
+  profile_name?: string;
+  display_name?: string | null;
+  status?: string;
+  last_heartbeat?: string | null;
+  server_ip?: string | null;
+  os_type?: string | null;
+  app_version?: string | null;
+  model_version?: string | null;
+  ram_total_mb?: number | null;
+  ram_used_mb?: number | null;
+  disk_free_mb?: number | null;
+  avg_latency_ms?: number | null;
+  total_queries?: number;
+  success_count?: number;
+};
+
+export const listEdgeServers = async (): Promise<EdgeServer[]> => {
+  const raw = await request<{ items?: EdgeServer[] }>(
+    "api/v1/distill/edge-servers",
+    { method: "GET" },
+  );
+  return raw.items ?? [];
+};
+
+// ── /admin/knowledge/ingest/jobs (B-2 작업 모니터) ──────────────────────
+
+export type IngestRun = {
+  id: string;
+  run_id?: string;
+  kb_id?: string;
+  source_type?: string;
+  source_name?: string;
+  status?: string;
+  documents_fetched?: number;
+  documents_ingested?: number;
+  documents_held?: number;
+  documents_rejected?: number;
+  chunks_stored?: number;
+  chunks_deduped?: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  errors?: string[];
+};
+
+export const listIngestRuns = async (): Promise<IngestRun[]> => {
+  const raw = await request<{ runs?: IngestRun[] }>(
+    "api/v1/admin/knowledge/ingest/jobs",
+    { method: "GET" },
+  );
+  return raw.runs ?? [];
+};
+
+export const cancelIngestRun = (runId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/admin/knowledge/ingest/jobs/${encodeURIComponent(runId)}/cancel`,
+    { method: "POST" },
+  );
+
+// ── /admin/config/weights (B-2 가중치 설정) ─────────────────────────────
+
+export const getConfigWeights = () =>
+  request<Record<string, unknown>>("api/v1/admin/config/weights", {
+    method: "POST", // backend 는 POST = 조회 (legacy quirk)
+    body: JSON.stringify({}),
+  });
+
+// ── /admin/graph/stats (B-2 그래프 탐색) ───────────────────────────────
+
+export type GraphStats = {
+  node_types?: Record<string, number>;
+  edge_types?: Record<string, number>;
+  total_nodes?: number;
+  total_edges?: number;
+};
+
+export const getGraphStats = () =>
+  request<GraphStats>("api/v1/admin/graph/stats", { method: "GET" });
+
+export type GraphSearchHit = {
+  entity_id?: string;
+  entity_name: string;
+  entity_type?: string;
+  related_count?: number;
+  kb_id?: string;
+};
+
+export const searchGraphEntities = (body: {
+  query: string;
+  entity_types?: string[];
+  limit?: number;
+}) =>
+  request<{ hits?: GraphSearchHit[]; results?: GraphSearchHit[] }>(
+    "api/v1/admin/graph/search",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
 // ── /admin/dashboard/summary (B-2 운영 대시보드) ─────────────────────────
 
 export type AdminDashboardSummary = {
