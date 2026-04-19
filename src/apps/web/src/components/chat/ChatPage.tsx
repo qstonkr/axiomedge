@@ -48,6 +48,8 @@ export function ChatPage() {
           query,
           answer: res.answer,
           chunks: [], // agentic 은 separate trace 에 있고, /chat 1차 화면에는 답변만
+          failure_reason: res.failure_reason ?? null,
+          errors: res.errors ?? [],
           meta: {
             confidence: res.confidence,
             iteration_count: res.iteration_count,

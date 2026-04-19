@@ -35,7 +35,10 @@ from src.search.query_classifier import QueryType
 def test_context_includes_graph_query_hint_for_entities() -> None:
     e = QueryEnrichment(entities=["신촌점", "김담당"])
     ctx = _build_planner_context(e, query_type=QueryType.FACTUAL)
-    assert "graph_query 우선" in ctx
+    # planner 가 entity 검출 시 graph_query 와 qdrant_search 둘 다 사용하도록
+    # 가이드. (graph index 가 비어 있는 KB 도 많아 graph_query 만 쓰면 0 chunks)
+    assert "graph_query" in ctx
+    assert "qdrant_search" in ctx
     assert "신촌점" in ctx
 
 

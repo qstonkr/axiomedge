@@ -49,6 +49,10 @@ class AgenticAskResponse(BaseModel):
     total_duration_ms: float
     estimated_cost_usd: float
     confidence: float
+    # 빈 답변일 때 무엇이 잘못됐는지 사용자/디버거에게 노출.
+    # 비어있지 않은 답변일 때도 누적된 (non-fatal) 에러가 있으면 함께 반환.
+    failure_reason: str | None = None
+    errors: list[str] = Field(default_factory=list)
 
 
 def _trace_to_dict(trace: AgentTrace) -> dict[str, Any]:
@@ -110,6 +114,17 @@ async def agentic_ask(
     _cache_trace(trace.trace_id, trace_dict)
 
     last_critique = trace.critiques[-1] if trace.critiques else None
+    # 빈 답변 → 첫 에러를 failure_reason 으로 띄움 (없으면 generic 메시지).
+    # 답변이 있어도 비-치명적 에러는 errors 로 그대로 노출 (디버깅용).
+    failure_reason: str | None = None
+    if not trace.final_answer:
+        if trace.errors:
+            failure_reason = trace.errors[0]
+        else:
+            failure_reason = (
+                "agent produced empty answer (no recorded error — "
+                "check planner output / LLM provider connectivity)"
+            )
     return AgenticAskResponse(
         trace_id=trace.trace_id,
         answer=trace.final_answer,
@@ -119,6 +134,8 @@ async def agentic_ask(
         total_duration_ms=trace.total_duration_ms,
         estimated_cost_usd=trace.tokens.estimated_cost_usd,
         confidence=last_critique.confidence if last_critique else 0.0,
+        failure_reason=failure_reason,
+        errors=list(trace.errors),
     )
 
 

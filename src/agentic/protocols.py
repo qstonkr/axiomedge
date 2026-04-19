@@ -167,6 +167,10 @@ class AgentTrace:
     total_duration_ms: float = 0.0
     tokens: TokenUsage = field(default_factory=TokenUsage)
     llm_provider: str = ""
+    # ── Failure surface (없으면 빈 list) ───────────────────────────────
+    # 빈 final_answer 일 때 클라이언트가 "왜 비었는지" 알 수 있도록 누적.
+    # tool 실패 / synthesize 실패 / reflect 실패 detail 을 같은 큐에 모은다.
+    errors: list[str] = field(default_factory=list)
 
     @property
     def iteration_count(self) -> int:

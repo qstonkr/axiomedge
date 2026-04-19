@@ -25,6 +25,8 @@ export type AssistantTurn = {
   answer: string;
   chunks: ChunkSource[];
   searched_kbs?: string[];
+  failure_reason?: string | null;
+  errors?: string[];
   meta?: {
     confidence?: string | number;
     crag_action?: string | null;

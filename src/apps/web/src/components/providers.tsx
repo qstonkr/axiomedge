@@ -16,7 +16,12 @@ export function AppProviders({
   locale?: Locale;
 }) {
   return (
-    <NextIntlClientProvider locale={locale} messages={getMessages(locale)}>
+    <NextIntlClientProvider
+      locale={locale}
+      messages={getMessages(locale)}
+      timeZone="Asia/Seoul"
+      now={new Date()}
+    >
       <QueryProvider>
         <ToastProvider>{children}</ToastProvider>
       </QueryProvider>

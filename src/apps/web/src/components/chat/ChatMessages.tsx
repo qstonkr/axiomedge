@@ -28,9 +28,43 @@ export function ChatMessages({
           <li key={turn.id} className="space-y-3">
             <article className="rounded-lg border border-border-default bg-bg-canvas p-4 shadow-sm">
               <h3 className="sr-only">답변</h3>
-              <p className="whitespace-pre-wrap text-sm leading-7 text-fg-default">
-                {turn.answer || "답변을 생성하지 못했습니다."}
-              </p>
+              {turn.answer ? (
+                <p className="whitespace-pre-wrap text-sm leading-7 text-fg-default">
+                  {turn.answer}
+                </p>
+              ) : (
+                <div className="space-y-2 text-sm leading-7">
+                  <p className="text-fg-muted">
+                    답변이 비어 있습니다 — 백엔드(LLM/agentic)가 응답을 생성하지 못했습니다.
+                    {turn.chunks.length > 0 && " 소스 문서가 있다면 아래에서 직접 확인해 주세요."}
+                  </p>
+                  {turn.failure_reason && (
+                    <div className="rounded-md border border-danger-default/30 bg-danger-subtle px-3 py-2 text-xs">
+                      <div className="mb-1 font-medium text-danger-default">실패 원인</div>
+                      <div className="whitespace-pre-wrap break-words font-mono text-fg-default">
+                        {turn.failure_reason}
+                      </div>
+                    </div>
+                  )}
+                  {turn.errors && turn.errors.length > 1 && (
+                    <details className="text-xs text-fg-subtle">
+                      <summary className="cursor-pointer">
+                        추가 오류 {turn.errors.length - 1}건
+                      </summary>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 font-mono">
+                        {turn.errors.slice(1).map((e, i) => (
+                          <li key={i} className="break-words">{e}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  {turn.meta?.trace_id && (
+                    <span className="mt-1 block font-mono text-xs text-fg-subtle">
+                      trace: {turn.meta.trace_id}
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="mt-3">
                 <MetaSignals meta={turn.meta} />
               </div>
