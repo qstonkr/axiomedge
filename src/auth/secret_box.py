@@ -169,23 +169,24 @@ class VaultBox:
             )
         try:
             import hvac  # noqa: PLC0415
+            from hvac.exceptions import (  # noqa: PLC0415
+                Forbidden,
+                InvalidPath,
+            )
         except ImportError as e:
+            # hvac 미설치 또는 호환되지 않는 버전 (예외 클래스가 이동/제거된
+            # 경우). silent fallback (Exception 매칭) 보다 명시적 실패가 안전 —
+            # get/delete 가 모든 예외를 None 으로 흡수하면 connection 에러도
+            # "secret 없음" 으로 오해되어 라우트 fallback 이 잘못 동작.
             raise SecretBoxError(
-                "hvac 라이브러리가 설치되지 않았습니다. "
+                "hvac 라이브러리가 설치되지 않았거나 호환되지 않는 버전입니다. "
                 "`uv pip install 'knowledge-local[vault]'` 또는 `pip install hvac>=2.0`.",
             ) from e
 
-        # hvac 의 sentinel 예외 클래스를 캐싱 — get/delete 에서 isinstance 로
-        # 안전하게 분기. ``type(e).__name__`` 문자열 비교는 hvac 가 클래스명
-        # 변경하면 silent break 라 isinstance 가 더 robust.
-        # ImportError 시점은 위 try 가 이미 보장 — 여기서는 attribute 접근만.
-        try:
-            self._exc_invalid_path: type[Exception] = hvac.exceptions.InvalidPath
-            self._exc_forbidden: type[Exception] = hvac.exceptions.Forbidden
-        except AttributeError:
-            # 매우 오래된/포크된 hvac — fallback 으로 일반 Exception 매칭.
-            self._exc_invalid_path = Exception
-            self._exc_forbidden = Exception
+        # 캐싱 — get/delete 가 isinstance 로 분기 (문자열 ``type(e).__name__``
+        # 비교 X). 위 from-import 가 보장하므로 fallback 분기 불필요.
+        self._exc_invalid_path: type[Exception] = InvalidPath
+        self._exc_forbidden: type[Exception] = Forbidden
 
         self._mount_point = mount_point.strip("/")
         self._path_prefix = path_prefix.strip("/")

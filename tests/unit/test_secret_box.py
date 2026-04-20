@@ -322,24 +322,25 @@ class TestVaultBox:
         await box.delete("org/x/data-source/never-existed")
 
     def test_unauthenticated_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import sys
-        import types
-
-        # is_authenticated() = False 시나리오
-        class _Client:
-            def __init__(self, **kwargs):
-                pass
-            def is_authenticated(self):
-                return False
-            secrets = None
-
-        fake_hvac = types.ModuleType("hvac")
-        fake_hvac.Client = _Client  # type: ignore[attr-defined]
-        monkeypatch.setitem(sys.modules, "hvac", fake_hvac)
+        store: dict[str, dict] = {}
+        captured = _install_fake_hvac(monkeypatch, store)
+        captured["authenticated"] = False  # is_authenticated() → False
 
         from src.auth.secret_box import VaultBox
         with pytest.raises(SecretBoxError, match="인증 실패"):
             VaultBox(addr="https://vault.test", token="bad-token")
+
+    def test_hvac_missing_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """hvac 미설치 시나리오 — 명시적 SecretBoxError, silent Exception fallback X."""
+        import sys
+
+        # hvac 와 hvac.exceptions 둘 다 sys.modules 에서 제거 + import 차단
+        monkeypatch.setitem(sys.modules, "hvac", None)
+        monkeypatch.setitem(sys.modules, "hvac.exceptions", None)
+
+        from src.auth.secret_box import VaultBox
+        with pytest.raises(SecretBoxError, match="hvac"):
+            VaultBox(addr="https://vault.test", token="tk")
 
     def test_namespace_passed_to_client(
         self, monkeypatch: pytest.MonkeyPatch,
