@@ -7,6 +7,10 @@ import streamlit as st
 
 st.set_page_config(page_title="검증 관리", page_icon="✅", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/verification", "검증 대기")
+
 
 import plotly.graph_objects as go
 

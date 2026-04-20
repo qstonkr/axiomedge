@@ -7,6 +7,10 @@ import streamlit as st
 
 st.set_page_config(page_title="골든 셋 관리", page_icon="🎯", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/golden-set", "Golden Set")
+
 import pandas as pd
 
 from components.sidebar import render_sidebar

@@ -16,6 +16,10 @@ from components.sidebar import render_sidebar
 from services.api import agentic_ask, get_agent_trace, list_agent_traces
 
 st.set_page_config(page_title="Agent Trace", page_icon="🤖", layout="wide")
+
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/traces", "Agent Trace")
 render_sidebar()
 
 st.title("🤖 Agent Trace Viewer")

@@ -8,6 +8,10 @@ import streamlit as st
 
 st.set_page_config(page_title="검색 그룹", page_icon="📂", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/groups", "검색 그룹")
+
 from components.sidebar import render_sidebar
 from services import api_client
 from services.api_client import api_failed

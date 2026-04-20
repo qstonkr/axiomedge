@@ -9,6 +9,10 @@ import streamlit as st
 
 st.set_page_config(page_title="문서 라이프사이클", page_icon="📋", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/lifecycle", "문서 라이프사이클")
+
 
 import plotly.graph_objects as go
 

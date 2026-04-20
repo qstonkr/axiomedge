@@ -7,6 +7,10 @@ import streamlit as st
 
 st.set_page_config(page_title="오류 신고", page_icon="🚨", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/errors", "오류 신고")
+
 
 from components.sidebar import render_sidebar
 from services import api_client

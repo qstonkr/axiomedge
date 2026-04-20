@@ -9,6 +9,10 @@ import streamlit as st
 
 st.set_page_config(page_title="충돌 / 중복", page_icon="⚠️", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/conflicts", "중복/모순")
+
 
 import plotly.express as px
 import plotly.graph_objects as go

@@ -10,6 +10,10 @@ import streamlit as st
 
 st.set_page_config(page_title="KB 현황", page_icon="📊", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin", "운영 대시보드")
+
 
 import pandas as pd
 import plotly.express as px

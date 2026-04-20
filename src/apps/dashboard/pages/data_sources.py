@@ -9,6 +9,10 @@ import streamlit as st
 
 st.set_page_config(page_title="데이터소스 관리", page_icon="📁", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/sources", "데이터 소스")
+
 
 
 from components.sidebar import hide_default_nav, render_sidebar

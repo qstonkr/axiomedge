@@ -11,6 +11,10 @@ import streamlit as st
 
 st.set_page_config(page_title="용어집", page_icon="📖", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/glossary", "용어집")
+
 
 import pandas as pd  # noqa: E402
 

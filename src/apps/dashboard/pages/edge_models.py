@@ -10,6 +10,10 @@ import streamlit as st
 
 st.set_page_config(page_title="엣지 모델", page_icon="🤖", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/edge", "Edge 모델")
+
 from components.constants import (  # noqa: E402
     CURATION_STATUS_ICONS,
     DISTILL_STATUS_ICONS,

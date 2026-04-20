@@ -11,6 +11,10 @@ import streamlit as st
 
 st.set_page_config(page_title="Job Monitor", page_icon="⚙️", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/jobs", "작업 모니터")
+
 from components.sidebar import hide_default_nav, render_sidebar
 from services import api_client
 from services.api_client import api_failed

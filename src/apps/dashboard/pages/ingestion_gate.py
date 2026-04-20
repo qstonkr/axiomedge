@@ -9,6 +9,10 @@ import streamlit as st
 
 st.set_page_config(page_title="인제스천 게이트", page_icon="🚦", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/ingest", "Ingest 작업")
+
 
 from components.sidebar import render_sidebar
 from services import api_client

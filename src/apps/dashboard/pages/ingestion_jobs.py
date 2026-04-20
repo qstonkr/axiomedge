@@ -9,6 +9,10 @@ import streamlit as st
 
 st.set_page_config(page_title="인제스천 작업", page_icon="📥", layout="wide")
 
+from components.deprecate_banner import deprecated_for
+
+deprecated_for("/admin/ingest", "Ingest 작업")
+
 
 
 from components.constants import PIPELINE_STEPS, PIPELINE_STEP_LABELS, STEP_STATUS_ICONS
