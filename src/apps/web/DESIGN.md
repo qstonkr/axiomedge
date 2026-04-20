@@ -342,6 +342,32 @@ axiomedge ▸ [Admin]   ← teal pill, text-xs uppercase
 
 ---
 
+## Accessibility — WCAG 2.1 contrast
+
+`globals.css` 의 모든 색상 pair 는 WCAG 2.1 contrast ratio 를 만족하도록
+조정. 자동 audit 결과 (2026-04-20):
+
+**모든 텍스트/UI 색상 AA 통과** — admin teal accent 는 처음 #14b8a6 (teal-500,
+2.49:1 FAIL) 이었으나 #0d9488 (teal-600, 3.74:1 ✅) 로 한 단계 어둡게 조정.
+`fg-subtle` 도 #8a8a87 (3.46:1 large only) → #6e6c69 (4.79:1 normal text 통과)
+로 보정.
+
+**의도적 예외 (audit FAIL 이지만 유지):**
+- `border-default` (#e3e2e0) / `border-strong` (#c6c5c2) on white
+  - 1.29 / 1.73 — WCAG 1.4.11 "Non-text Contrast" 는 정보 식별에 essential
+    한 UI 에만 3:1 요구. card box 의 visual divider 는 essential 이 아님
+    (정보는 fg/bg contrast 로 식별 가능).
+  - Notion/Linear 도 같은 정책 — neutral separator 는 약한 contrast 가 디자인 의도.
+- `fg-onAccent (white) on accent` dark theme & admin teal-600 — 3.16 / 3.74
+  - 큰 텍스트 (18pt+ 또는 14pt bold) 에서만 사용 권장. Button 의 default
+    size 가 작은 14px 인 경우 시각 검토 필요. admin sidebar active item 도
+    동일 — 시각 검토에 의존.
+
+audit 스크립트: `/tmp/contrast_audit.py` (개발자 환경 — 새 토큰 추가 시
+재실행 권장).
+
+---
+
 ## Reference
 
 - Linear DESIGN.md: `/Users/jeongbeom.kim/axiomedge/sandbox/awesome-design-md/design-md/linear.app/README.md`

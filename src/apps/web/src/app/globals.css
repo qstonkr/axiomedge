@@ -14,7 +14,10 @@
 
   --color-fg-default: #1f1f1f;
   --color-fg-muted: #5f5e5b;
-  --color-fg-subtle: #8a8a87;
+  /* fg-subtle: 작은 caption/hint 에 쓰여 작은 글자 contrast 가 중요.
+   * 종전 #8a8a87 (3.46:1) 는 large text 한정이라 16px caption 에 부적합.
+   * #6e6c69 (4.79:1) 로 어둡게 → WCAG AA normal text 통과. */
+  --color-fg-subtle: #6e6c69;
   --color-fg-onAccent: #ffffff;
 
   --color-border-default: #e3e2e0;
@@ -91,8 +94,11 @@
  * teal/dark 으로 교체.
  */
 [data-admin="true"] {
-  --color-accent-default: #14b8a6; /* teal-500 */
-  --color-accent-emphasis: #0d9488; /* teal-600 */
+  /* teal-500 (#14b8a6) 는 흰 배경 contrast 2.49 (FAIL UI/text). teal-600 으로
+   * 한 단계 어둡게 해서 3.74 ✅ AA UI / large text 충족. emphasis 는 teal-700.
+   * 시각 identity (teal hue) 는 그대로 유지. */
+  --color-accent-default: #0d9488; /* teal-600 */
+  --color-accent-emphasis: #0f766e; /* teal-700 */
   --color-accent-subtle: #ccfbf1; /* teal-100 */
 
   /* admin sidebar 는 light/dark theme 와 무관하게 항상 dark — 운영 dashboard 패턴 */
