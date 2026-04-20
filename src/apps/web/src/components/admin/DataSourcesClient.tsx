@@ -14,6 +14,7 @@ import {
   Textarea,
   useToast,
 } from "@/components/ui";
+import { ConnectorCatalog } from "@/components/connectors/ConnectorCatalog";
 import {
   useCreateDataSource,
   useDataSources,
@@ -22,34 +23,23 @@ import {
   useUpdateDataSource,
 } from "@/hooks/admin/useDataSources";
 import type { DataSource, DataSourceUpsertBody } from "@/lib/api/endpoints";
+import {
+  CONNECTOR_CATALOG,
+  findConnector,
+  type ConnectorEntry,
+} from "@/lib/connectors/catalog";
 
 import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
 import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
 
-const SOURCE_TYPES = [
-  { id: "confluence", label: "Confluence" },
-  { id: "git", label: "Git" },
-  { id: "jira", label: "Jira" },
-  { id: "slack", label: "Slack" },
-  { id: "teams", label: "Teams" },
-  { id: "gwiki", label: "Google Wiki" },
-  { id: "file_upload", label: "파일 업로드" },
-  { id: "crawl_result", label: "크롤 결과" },
-];
-
 const SCHEDULES = ["수동", "hourly", "daily", "weekly"];
 
-const TYPE_ICON: Record<string, string> = {
-  confluence: "📘",
-  git: "🔧",
-  jira: "🪪",
-  teams: "💬",
-  slack: "💬",
-  gwiki: "📚",
-  file_upload: "📄",
-  crawl_result: "🔍",
-};
+// connector 카탈로그의 icon SSOT 를 그대로 사용 — 신규 connector 추가 시
+// catalog.ts 한 곳만 갱신하면 테이블 / 폼 / 카드 모두 자동 반영.
+const TYPE_ICON: Record<string, string> = Object.fromEntries(
+  CONNECTOR_CATALOG.map((c) => [c.id, c.icon]),
+);
 
 function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
@@ -65,7 +55,21 @@ export function DataSourcesClient() {
   const del = useDeleteDataSource();
   const [triggering, setTriggering] = useState<string | null>(null);
   const [editing, setEditing] = useState<DataSource | null>(null);
-  const [creating, setCreating] = useState(false);
+  // 신규 등록 워크플로우: 카탈로그 → 카드 선택 → form (preset).
+  // catalogOpen=true 이면 카탈로그 카드 grid 가 떠 있고, 카드 선택 시
+  // ``presetType`` 으로 source_type 을 채워 form dialog 가 열림.
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [presetType, setPresetType] = useState<string | null>(null);
+
+  function onPickConnector(entry: ConnectorEntry) {
+    setCatalogOpen(false);
+    setPresetType(entry.id);
+  }
+
+  function closeFormDialog() {
+    setEditing(null);
+    setPresetType(null);
+  }
 
   async function onTrigger(s: DataSource) {
     setTriggering(s.id);
@@ -229,7 +233,7 @@ export function DataSourcesClient() {
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
             새로고침
           </Button>
-          <Button size="sm" onClick={() => setCreating(true)}>
+          <Button size="sm" onClick={() => setCatalogOpen(true)}>
             + 신규 소스
           </Button>
         </div>
@@ -271,15 +275,22 @@ export function DataSourcesClient() {
         />
       )}
 
+      <ConnectorCatalog
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        onSelect={onPickConnector}
+        scope="admin"
+        title="신규 데이터 소스 추가"
+        description="추가할 connector 종류를 선택하세요. 회색 카드는 곧 출시 예정입니다."
+      />
+
       <DataSourceFormDialog
-        // key 로 remount → editing 이 바뀌면 form state 새로 초기화
-        key={editing?.id ?? (creating ? "create" : "closed")}
-        open={creating || editing !== null}
+        // key 로 remount → editing 또는 presetType 이 바뀌면 form state 재초기화
+        key={editing?.id ?? presetType ?? "closed"}
+        open={editing !== null || presetType !== null}
         initial={editing}
-        onClose={() => {
-          setCreating(false);
-          setEditing(null);
-        }}
+        presetType={presetType}
+        onClose={closeFormDialog}
         onSubmit={async (body) => {
           try {
             if (editing) {
@@ -289,8 +300,7 @@ export function DataSourcesClient() {
               await create.mutateAsync(body);
               toast.push("신규 소스가 추가되었습니다", "success");
             }
-            setCreating(false);
-            setEditing(null);
+            closeFormDialog();
           } catch (e) {
             toast.push(
               e instanceof Error ? e.message : "저장 실패",
@@ -307,23 +317,30 @@ export function DataSourcesClient() {
 function DataSourceFormDialog({
   open,
   initial,
+  presetType,
   onClose,
   onSubmit,
   pending,
 }: {
   open: boolean;
   initial: DataSource | null;
+  /** 신규 등록 시 카탈로그에서 선택한 source_type — initial 이 null 일 때만 사용. */
+  presetType: string | null;
   onClose: () => void;
   onSubmit: (body: DataSourceUpsertBody) => void;
   pending: boolean;
 }) {
-  // 부모가 key={initial?.id ?? 'create'} 로 remount 시켜주므로 lazy init 만 충분
+  // 부모가 key={initial?.id ?? presetType ?? 'closed'} 로 remount 시켜주므로
+  // lazy init 만 충분 — initial / presetType 가 바뀌면 새 인스턴스로 교체.
+  const effectiveType = initial?.source_type ?? presetType ?? "git";
+  const connector = findConnector(effectiveType);
   const [name, setName] = useState(initial?.name ?? "");
-  const [sourceType, setSourceType] = useState(initial?.source_type ?? "git");
   const [kbId, setKbId] = useState(initial?.kb_id ?? "");
   const [schedule, setSchedule] = useState(initial?.schedule ?? "수동");
   const [crawlConfigText, setCrawlConfigText] = useState(
-    JSON.stringify(initial?.crawl_config ?? {}, null, 2),
+    initial?.crawl_config
+      ? JSON.stringify(initial.crawl_config, null, 2)
+      : "",  // 신규 등록은 빈 채로 — placeholder 가 example schema 안내
   );
   // Per-source token (Confluence PAT, Git auth_token, ...). Backend 는 plain
   // 절대 응답하지 않음 — has_secret bool 만. UI 는 password input.
@@ -346,7 +363,7 @@ function DataSourceFormDialog({
     //   둘 다 아님 → key omit (옛 token 유지)
     const body: DataSourceUpsertBody = {
       name: name.trim(),
-      source_type: sourceType,
+      source_type: effectiveType,
       kb_id: kbId.trim() || null,
       schedule: schedule === "수동" ? null : schedule,
       crawl_config,
@@ -359,12 +376,20 @@ function DataSourceFormDialog({
     onSubmit(body);
   }
 
+  const titleText = initial
+    ? `데이터 소스 수정 — ${initial.name}`
+    : connector
+      ? `${connector.icon} 신규 ${connector.label} 소스`
+      : "신규 데이터 소스";
+
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title={initial ? `데이터 소스 수정 — ${initial.name}` : "신규 데이터 소스"}
-      description="외부 커넥터의 이름/타입/스케줄/크롤 설정 (JSON)"
+      title={titleText}
+      description={
+        connector?.description ?? "외부 커넥터의 이름/스케줄/크롤 설정 (JSON)"
+      }
       width="lg"
       footer={
         <>
@@ -378,6 +403,19 @@ function DataSourceFormDialog({
       }
     >
       <form id="ds-form" onSubmit={submit} className="space-y-3">
+        {/* 타입은 카탈로그에서 선택됨 — form 안에서는 read-only 표시. 잘못
+            선택했으면 취소 후 다시 카드에서 고름. */}
+        <div className="rounded-md border border-border-default bg-bg-subtle px-3 py-2 text-xs text-fg-muted">
+          <span className="text-fg-subtle">타입: </span>
+          <span className="font-medium text-fg-default">
+            {connector?.icon ?? "📁"} {connector?.label ?? effectiveType}
+          </span>
+          <span className="font-mono text-[10px] text-fg-subtle">
+            {" "}
+            ({effectiveType})
+          </span>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1 text-xs font-medium text-fg-muted">
             이름
@@ -386,20 +424,8 @@ function DataSourceFormDialog({
               onChange={(e) => setName(e.target.value)}
               required
               autoFocus
+              placeholder={`예: ${connector?.label ?? "내 소스"} - prod`}
             />
-          </label>
-          <label className="block space-y-1 text-xs font-medium text-fg-muted">
-            타입
-            <Select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value)}
-            >
-              {SOURCE_TYPES.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label} ({t.id})
-                </option>
-              ))}
-            </Select>
           </label>
           <label className="block space-y-1 text-xs font-medium text-fg-muted">
             대상 KB ID
@@ -409,7 +435,7 @@ function DataSourceFormDialog({
               placeholder="예: g-espa, AX_Role"
             />
           </label>
-          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          <label className="block space-y-1 text-xs font-medium text-fg-muted sm:col-span-2">
             스케줄
             <Select
               value={schedule}
@@ -429,7 +455,10 @@ function DataSourceFormDialog({
             value={crawlConfigText}
             onChange={(e) => setCrawlConfigText(e.target.value)}
             rows={8}
-            placeholder='{"repo_url": "...", "include_globs": ["**/*.md"]}'
+            placeholder={
+              connector?.configSchema ??
+              '{"repo_url": "...", "include_globs": ["**/*.md"]}'
+            }
             className="font-mono text-xs"
           />
           <span className="text-[10px] text-fg-subtle">

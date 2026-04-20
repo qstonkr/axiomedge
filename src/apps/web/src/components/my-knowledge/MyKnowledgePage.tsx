@@ -2,13 +2,16 @@
 
 import { useState } from "react";
 
+import { ConnectorCatalog } from "@/components/connectors/ConnectorCatalog";
 import {
   Button,
   EmptyState,
   ErrorFallback,
   Skeleton,
+  useToast,
 } from "@/components/ui";
 import { useKbDocuments, useMyPersonalKbs } from "@/hooks/useMyKnowledge";
+import type { ConnectorEntry } from "@/lib/connectors/catalog";
 
 import { CreateKbDialog } from "./CreateKbDialog";
 import { DocumentList } from "./DocumentList";
@@ -18,14 +21,35 @@ import { KbCard } from "./KbCard";
 const PERSONAL_KB_LIMIT = 10;
 
 export function MyKnowledgePage({ userId }: { userId: string }) {
+  const toast = useToast();
   const { data, isLoading, isError, error, refetch } = useMyPersonalKbs(userId);
   const [creating, setCreating] = useState(false);
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
+  // 카탈로그 dialog: 사용자가 connector 종류를 카드 grid 에서 선택.
+  // 현재 ``available`` 인 사용자용 connector 는 file_upload 뿐 — 카드 클릭 시
+  // 기존 DocumentUploader 영역으로 anchor scroll. 나머지는 planned.
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   const kbs = data ?? [];
   const selected = kbs.find((kb) => kb.kb_id === selectedKbId) ?? kbs[0];
   const atCap = kbs.length >= PERSONAL_KB_LIMIT;
   const docs = useKbDocuments(selected?.kb_id, { page: 1, page_size: 50 });
+
+  function onPickConnector(entry: ConnectorEntry) {
+    setCatalogOpen(false);
+    if (entry.id === "file_upload") {
+      // 현재 화면 안의 DocumentUploader 영역으로 scroll — 사용자가 즉시 업로드 가능.
+      const el = document.getElementById("personal-uploader");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.focus();
+      return;
+    }
+    // 그 외 — 백엔드 connector 등록은 admin 권한 필요. 사용자에게 안내.
+    toast.push(
+      `${entry.label} 임포트는 관리자 권한이 필요합니다 — 관리자에게 요청해주세요.`,
+      "warning",
+    );
+  }
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
@@ -43,6 +67,19 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
           <span>
             {kbs.length} / {PERSONAL_KB_LIMIT}
           </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setCatalogOpen(true)}
+            disabled={!selected}
+            title={
+              !selected
+                ? "먼저 KB 를 선택하거나 만드세요"
+                : "데이터 가져오기 (파일 업로드 / 외부 connector)"
+            }
+          >
+            📥 데이터 가져오기
+          </Button>
           <Button
             size="sm"
             disabled={atCap}
@@ -99,7 +136,9 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
                     {selected.chunk_count ?? 0}개
                   </p>
                 </header>
-                <DocumentUploader kbId={selected.kb_id} />
+                <div id="personal-uploader" tabIndex={-1}>
+                  <DocumentUploader kbId={selected.kb_id} />
+                </div>
                 <DocumentList
                   documents={docs.data?.documents ?? []}
                   total={docs.data?.total ?? 0}
@@ -127,6 +166,15 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
           onClose={() => setCreating(false)}
         />
       )}
+
+      <ConnectorCatalog
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        onSelect={onPickConnector}
+        scope="user"
+        title="데이터 가져오기"
+        description="파일 업로드 또는 외부 소스에서 KB 로 가져옵니다. 회색 카드는 곧 출시 예정입니다."
+      />
     </section>
   );
 }
