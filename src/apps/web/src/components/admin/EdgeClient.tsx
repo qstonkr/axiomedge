@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Dialog,
+  ErrorFallback,
   Input,
   Select,
   Skeleton,
@@ -946,10 +947,46 @@ function BuildsTab() {
           {retrain.isPending ? "시작 중…" : "재학습 실행"}
         </Button>
       </div>
+      {/* 진행 중 build 가 있으면 progress 카드. */}
+      {(() => {
+        const running = builds.filter(
+          (b) => b.status === "running" || b.status === "training",
+        );
+        if (running.length === 0) return null;
+        return (
+          <article className="space-y-2">
+            <h3 className="text-sm font-medium text-fg-default">
+              진행 중 ({running.length})
+            </h3>
+            <ul className="space-y-2">
+              {running.map((b) => (
+                <li
+                  key={b.id}
+                  className="rounded-md border border-warning-default/30 bg-warning-subtle px-4 py-3 text-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-fg-default">
+                        {b.profile_name} · {b.version}
+                      </p>
+                      <p className="text-xs text-fg-muted">
+                        샘플 {(b.training_samples ?? 0).toLocaleString()}건 ·
+                        loss {b.train_loss?.toFixed(4) ?? "—"}
+                      </p>
+                    </div>
+                    <span className="animate-pulse rounded-full bg-warning-default/20 px-2.5 py-1 text-xs font-medium text-warning-default">
+                      ⚙️ {b.status}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </article>
+        );
+      })()}
+
       {isLoading ? <Skeleton className="h-48" /> : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-          빌드 목록을 불러올 수 없습니다
-        </div>
+        <ErrorFallback title="빌드 목록을 불러올 수 없습니다" />
       ) : (
         <DataTable<DistillBuild> columns={columns} rows={builds} rowKey={(r) => r.id} empty="아직 빌드 기록이 없습니다" />
       )}
@@ -1014,9 +1051,11 @@ function TrainingDataTab() {
       ) : stats.isLoading ? (
         <Skeleton className="h-32" />
       ) : stats.isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-          통계를 불러올 수 없습니다
-        </div>
+        <ErrorFallback
+          title="통계를 불러올 수 없습니다"
+          error={stats.error}
+          onRetry={() => stats.refetch()}
+        />
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

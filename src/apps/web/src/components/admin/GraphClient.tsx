@@ -2,17 +2,19 @@
 
 import { useState, type FormEvent } from "react";
 
-import { Button, Input, Skeleton } from "@/components/ui";
+import { Button, ErrorFallback, Input, Skeleton } from "@/components/ui";
 import { useGraphSearch, useGraphStats } from "@/hooks/admin/useOps";
 import type { GraphSearchHit } from "@/lib/api/endpoints";
 
 import { DataTable, type Column } from "./DataTable";
+import { GraphView } from "./GraphView";
 import { MetricCard } from "./MetricCard";
 
 export function GraphClient() {
   const stats = useGraphStats();
   const [draft, setDraft] = useState("");
   const [committed, setCommitted] = useState("");
+  const [selected, setSelected] = useState<GraphSearchHit | null>(null);
   const search = useGraphSearch({ query: committed });
 
   function onSubmit(e: FormEvent) {
@@ -156,17 +158,41 @@ export function GraphClient() {
           {search.isLoading ? (
             <Skeleton className="h-32" />
           ) : search.isError ? (
-            <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-              검색에 실패했습니다
-            </div>
+            <ErrorFallback
+              title="검색에 실패했습니다"
+              error={search.error}
+              onRetry={() => search.refetch()}
+            />
           ) : (
             <DataTable<GraphSearchHit>
               columns={columns}
               rows={hits}
               rowKey={(r, idx) => r.entity_id ?? `${r.entity_name}-${idx}`}
+              onRowClick={(r) => setSelected(r)}
               empty="결과가 없습니다"
             />
           )}
+        </article>
+      )}
+
+      {selected && (
+        <article className="space-y-3">
+          <header className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-fg-default">
+              🕸️ {selected.entity_name} — 1-hop 이웃 그래프
+            </h2>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelected(null)}
+            >
+              닫기
+            </Button>
+          </header>
+          <GraphView
+            nodeId={selected.entity_id ?? selected.entity_name}
+            hubLabel={selected.entity_name}
+          />
         </article>
       )}
     </section>

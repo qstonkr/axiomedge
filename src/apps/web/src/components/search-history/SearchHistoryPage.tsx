@@ -198,8 +198,86 @@ export function SearchHistoryPage() {
           </table>
         </div>
       )}
+
+      {/* 검색 이벤트 타임라인 — 위 표와 동일 데이터를 chronological 로 정리.
+          event_type 이 있으면 icon, 없으면 검색 default. Streamlit
+          search_history.py 의 LineageEventType 패턴 이식. */}
+      {!isLoading && !isError && filtered.length > 0 && (
+        <section aria-labelledby="timeline-heading" className="space-y-3 pt-4">
+          <h2
+            id="timeline-heading"
+            className="text-sm font-medium text-fg-default"
+          >
+            🕒 검색 이벤트 타임라인
+          </h2>
+          <ol className="space-y-1.5 border-l-2 border-border-default pl-4">
+            {filtered.slice(0, 30).map((it, idx) => {
+              const ts = it.timestamp?.slice(0, 19).replace("T", " ") ?? "";
+              const evt = (
+                it as { event_type?: string }
+              ).event_type as string | undefined;
+              const icon = eventIcon(evt);
+              return (
+                <li
+                  key={`${ts}-${idx}`}
+                  className="relative grid grid-cols-[20px_120px_minmax(0,1fr)] items-start gap-3 text-xs"
+                >
+                  <span
+                    aria-hidden
+                    className="-ml-[26px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-bg-canvas text-base ring-2 ring-border-default"
+                  >
+                    {icon}
+                  </span>
+                  <span className="font-mono text-fg-muted">{ts}</span>
+                  <span className="break-words text-fg-default">
+                    {evt && (
+                      <span className="mr-2 rounded bg-bg-muted px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
+                        {evt}
+                      </span>
+                    )}
+                    &ldquo;{it.query}&rdquo;{" "}
+                    <span className="text-fg-subtle">
+                      ({it.result_count ?? 0}건)
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          {filtered.length > 30 && (
+            <p className="text-xs text-fg-subtle">
+              최근 30건만 표시 — 더 보려면 위 표 페이지네이션 사용.
+            </p>
+          )}
+        </section>
+      )}
     </section>
   );
+}
+
+function eventIcon(type: string | undefined): string {
+  switch (type) {
+    case "CREATED":
+      return "🆕";
+    case "UPDATED":
+      return "📝";
+    case "MERGED":
+      return "🔀";
+    case "SPLIT":
+      return "✂️";
+    case "ARCHIVED":
+      return "📦";
+    case "RESTORED":
+      return "♻️";
+    case "LINKED":
+      return "🔗";
+    case "UNLINKED":
+      return "🔓";
+    case "MIGRATED":
+      return "🚚";
+    default:
+      return "🔍";
+  }
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

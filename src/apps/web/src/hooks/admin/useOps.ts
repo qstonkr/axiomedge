@@ -7,6 +7,7 @@ import {
   cancelIngestRun,
   createAuthUser,
   deleteAuthUser,
+  expandGraphNode,
   getConfigWeights,
   getGraphStats,
   listAbacPolicies,
@@ -169,5 +170,15 @@ export function useGraphSearch(body: {
     queryFn: () => searchGraphEntities(body),
     enabled: body.query.length > 0,
     staleTime: 60 * 1000,
+  });
+}
+
+/** 한 노드의 1-hop 이웃 + edge 들 — 시각화용. node 클릭으로 활성화. */
+export function useGraphExpand(nodeId: string | null, maxNeighbors = 24) {
+  return useQuery({
+    queryKey: ["admin", "graph", "expand", nodeId, maxNeighbors],
+    queryFn: () => expandGraphNode(nodeId!, maxNeighbors),
+    enabled: Boolean(nodeId),
+    staleTime: 5 * 60 * 1000,
   });
 }

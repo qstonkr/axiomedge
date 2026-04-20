@@ -7,6 +7,8 @@ import {
   getAgentTrace,
   getDedupStats,
   getEvalStatus,
+  getKbTrustDistribution,
+  getKbTrustScores,
   listAgentTraces,
   listEvalHistory,
   listGoldenSet,
@@ -17,6 +19,7 @@ import {
   type EvalRun,
   type EvalStatus,
   type GoldenItem,
+  type TrustScoreItem,
 } from "@/lib/api/endpoints";
 
 // ── /admin/quality (RAG 메트릭 + dedup) ──
@@ -52,6 +55,30 @@ export function useTriggerEval() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "eval"] });
     },
+  });
+}
+
+/** KB 의 trust score row 들 — 6 signal 평균 + radar chart 용. */
+export function useKbTrustScores(kbId: string | null) {
+  return useQuery<{ items: TrustScoreItem[]; total: number; kb_id: string }>({
+    queryKey: ["admin", "kb", kbId, "trust-scores"],
+    queryFn: () => getKbTrustScores(kbId!),
+    enabled: Boolean(kbId),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** KB 의 confidence_tier 분포 + 평균 점수 — pie chart 용. */
+export function useKbTrustDistribution(kbId: string | null) {
+  return useQuery<{
+    distribution: Record<string, number>;
+    avg_score: number;
+    kb_id: string;
+  }>({
+    queryKey: ["admin", "kb", kbId, "trust-distribution"],
+    queryFn: () => getKbTrustDistribution(kbId!),
+    enabled: Boolean(kbId),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

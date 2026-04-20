@@ -1,8 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
-import { Button, Skeleton, useToast } from "@/components/ui";
+import { Button, ErrorFallback, Skeleton, useToast } from "@/components/ui";
 import { useTransparencyStats } from "@/hooks/admin/useLifecycle";
 import {
   useDedupStats,
@@ -13,6 +23,7 @@ import {
 import type { EvalRun } from "@/lib/api/endpoints";
 
 import { DataTable, type Column } from "./DataTable";
+import { KbQualityRadar } from "./KbQualityRadar";
 import { MetricCard } from "./MetricCard";
 import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
 
@@ -109,6 +120,20 @@ export function QualityClient() {
 
   const evalRunning = evalStatus.data?.status === "running";
 
+  // 평가 history 의 metric 시계열 — 최근 → 오래된 순서로 reverse 해서 좌→우 시간순.
+  const trendData = useMemo(() => {
+    const rows = evalHistory.data?.items ?? [];
+    return [...rows]
+      .reverse()
+      .map((r, idx) => ({
+        idx: idx + 1,
+        ts: (r.started_at ?? "").slice(5, 16).replace("T", " "),
+        faithfulness: Number(((r.metrics?.faithfulness ?? 0) * 100).toFixed(1)),
+        relevancy: Number(((r.metrics?.relevancy ?? 0) * 100).toFixed(1)),
+        completeness: Number(((r.metrics?.completeness ?? 0) * 100).toFixed(1)),
+      }));
+  }, [evalHistory.data]);
+
   return (
     <section className="space-y-6">
       <header className="flex items-end justify-between gap-3">
@@ -194,13 +219,93 @@ export function QualityClient() {
       </article>
 
       <article className="space-y-3">
+        <h2 className="text-sm font-medium text-fg-default">KTS 6-Signal (KB 별)</h2>
+        <KbQualityRadar />
+      </article>
+
+      <article className="space-y-3">
+        <h2 className="text-sm font-medium text-fg-default">평가 메트릭 추이</h2>
+        {evalHistory.isLoading ? (
+          <Skeleton className="h-48" />
+        ) : trendData.length < 2 ? (
+          <p className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-6 text-center text-xs text-fg-muted">
+            추이를 그리려면 평가 기록 2건 이상이 필요합니다.
+          </p>
+        ) : (
+          <div
+            className="rounded-lg border border-border-default bg-bg-canvas p-3"
+            style={{ height: 260 }}
+          >
+            <ResponsiveContainer>
+              <LineChart data={trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid stroke="var(--color-border-default)" strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="ts"
+                  tick={{ fill: "var(--color-fg-subtle)", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  tick={{ fill: "var(--color-fg-subtle)", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `${v}%`}
+                  width={40}
+                />
+                <RechartsTooltip
+                  contentStyle={{
+                    background: "var(--color-bg-canvas)",
+                    border: "1px solid var(--color-border-default)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "var(--color-fg-default)",
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line
+                  type="monotone"
+                  dataKey="faithfulness"
+                  name="Faithfulness"
+                  stroke="var(--color-accent-default)"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="relevancy"
+                  name="Relevancy"
+                  stroke="var(--color-success-default)"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="completeness"
+                  name="Completeness"
+                  stroke="var(--color-warning-default)"
+                  strokeWidth={2}
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </article>
+
+      <article className="space-y-3">
         <h2 className="text-sm font-medium text-fg-default">최근 평가 history</h2>
         {evalHistory.isLoading ? (
           <Skeleton className="h-32" />
         ) : evalHistory.isError ? (
-          <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-            평가 기록을 불러올 수 없습니다
-          </div>
+          <ErrorFallback
+            title="평가 기록을 불러올 수 없습니다"
+            error={evalHistory.error}
+            onRetry={() => evalHistory.refetch()}
+          />
         ) : (
           <DataTable<EvalRun>
             columns={columns}

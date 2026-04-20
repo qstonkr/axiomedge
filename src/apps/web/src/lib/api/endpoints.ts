@@ -778,6 +778,52 @@ export const triggerEval = (body: { kb_id?: string | null }) =>
     body: JSON.stringify(body),
   });
 
+/**
+ * KB 의 trust score (KTS) row 들 — 각 row 가 6 signal score 와 confidence_tier
+ * 보유. quality 화면이 6-signal 평균을 계산해서 radar chart 로 표시.
+ */
+export type TrustScoreItem = {
+  document_id?: string;
+  doc_id?: string;
+  hallucination_score?: number;
+  source_credibility?: number;
+  freshness_score?: number;
+  consistency_score?: number;
+  usage_score?: number;
+  user_validation_score?: number;
+  confidence_tier?: string;
+  kts_score?: number;
+  updated_at?: string;
+};
+
+export const getKbTrustScores = async (
+  kbId: string,
+): Promise<{ items: TrustScoreItem[]; total: number; kb_id: string }> => {
+  return request<{
+    items: TrustScoreItem[];
+    total: number;
+    kb_id: string;
+  }>(`api/v1/admin/kb/${encodeURIComponent(kbId)}/trust-scores`, {
+    method: "GET",
+  });
+};
+
+export const getKbTrustDistribution = async (
+  kbId: string,
+): Promise<{
+  distribution: Record<string, number>;
+  avg_score: number;
+  kb_id: string;
+}> => {
+  return request<{
+    distribution: Record<string, number>;
+    avg_score: number;
+    kb_id: string;
+  }>(`api/v1/admin/kb/${encodeURIComponent(kbId)}/trust-scores/distribution`, {
+    method: "GET",
+  });
+};
+
 // ── /admin/golden-set (B-2 Golden Q&A) ──────────────────────────────────
 
 export type GoldenItem = {
@@ -1173,6 +1219,37 @@ export const searchGraphEntities = (body: {
     "api/v1/admin/graph/search",
     { method: "POST", body: JSON.stringify(body) },
   );
+
+export type GraphNeighbor = {
+  id?: string;
+  node_id?: string;
+  name?: string;
+  label?: string;
+  type?: string;
+  entity_type?: string;
+  [k: string]: unknown;
+};
+
+export type GraphEdge = {
+  source?: string;
+  target?: string;
+  from?: string;
+  to?: string;
+  type?: string;
+  label?: string;
+  weight?: number;
+};
+
+export const expandGraphNode = (nodeId: string, maxNeighbors = 24) =>
+  request<{
+    node_id: string;
+    neighbors: GraphNeighbor[];
+    edges: GraphEdge[];
+    error?: string;
+  }>("api/v1/admin/graph/expand", {
+    method: "POST",
+    body: JSON.stringify({ node_id: nodeId, max_neighbors: maxNeighbors }),
+  });
 
 // ── /admin/pipeline/gates (B-2 ingest 게이트) ───────────────────────────
 
