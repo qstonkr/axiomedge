@@ -75,13 +75,16 @@ export function Dialog({
       aria-labelledby="dialog-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
-      {/* backdrop */}
-      <button
-        type="button"
-        aria-label="닫기"
-        data-close
+      {/* backdrop — div + role=presentation 으로 click outside 만 처리.
+          예전엔 <button> 이었으나 Tab focus 가 잡혀 dialog 안 → backdrop →
+          외부로 빠져나가는 흐름이 생겨 모달 trap 깨짐. 키보드 사용자는
+          이미 Esc 로 닫을 수 있으므로 backdrop 은 mouse-only 가 안전.
+          aria-hidden 으로 SR 도 스킵. */}
+      <div
+        role="presentation"
+        aria-hidden="true"
         onClick={onClose}
-        className="absolute inset-0 bg-fg-default/40 backdrop-blur-sm"
+        className="absolute inset-0 cursor-pointer bg-fg-default/40 backdrop-blur-sm"
       />
       {/* panel */}
       <div

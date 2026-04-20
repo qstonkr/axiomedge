@@ -74,6 +74,20 @@ export function DataTable<Row extends Record<string, unknown>>({
             <tr
               key={rowKey(row, idx)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              // 키보드 사용자가 row 활성화할 수 있도록 — Enter/Space 로 onRowClick 호출.
+              // role/tabIndex 는 onRowClick 있을 때만 (clickable 의미가 있을 때만 focusable).
+              role={onRowClick ? "button" : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              onKeyDown={
+                onRowClick
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRowClick(row);
+                      }
+                    }
+                  : undefined
+              }
               className={cn(
                 "border-b border-border-default/60 leading-snug transition-colors",
                 // zebra — 짝수 행 살짝 어둡게 (시선 추적)
@@ -81,7 +95,7 @@ export function DataTable<Row extends Record<string, unknown>>({
                 // hover — 더 짙게 + 좌측 accent 살짝 비침 (interactive 시그널)
                 "hover:bg-bg-muted/60",
                 onRowClick &&
-                  "cursor-pointer hover:shadow-[inset_2px_0_0_0_var(--color-accent-default)]",
+                  "cursor-pointer hover:shadow-[inset_2px_0_0_0_var(--color-accent-default)] focus-visible:bg-bg-muted/60 focus-visible:shadow-[inset_2px_0_0_0_var(--color-accent-default)] focus-visible:outline-none",
               )}
             >
               {columns.map((c) => (
