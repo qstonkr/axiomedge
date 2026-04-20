@@ -293,6 +293,30 @@ export const listErrorReports = async (params?: {
   return { items, total: raw.total ?? items.length };
 };
 
+/** 운영자가 신고를 resolve 처리 — resolution_note 와 함께 status=resolved. */
+export const resolveErrorReport = (
+  reportId: string,
+  body: { resolution_note?: string },
+) =>
+  request<{ success: boolean; report_id: string; status: string }>(
+    `api/v1/admin/error-reports/${encodeURIComponent(reportId)}/resolve`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+/** Admin 이 직접 오류 신고 (사용자 신고와 별개) — knowledge/report-error 와 동일 endpoint. */
+export const adminCreateErrorReport = (body: {
+  document_id?: string | null;
+  kb_id?: string | null;
+  title: string;
+  description: string;
+  error_type: string;
+  priority: "critical" | "high" | "medium" | "low" | string;
+}) =>
+  request<{ success: boolean; report_id: string }>(
+    "api/v1/knowledge/report-error",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
 /**
  * User-scope ("내 것만") feedback list — `feedback:submit` 권한이면 OK
  * (MEMBER/VIEWER 도 호출 가능). `/my-feedback`, `/my-documents` 의 대기
@@ -363,6 +387,31 @@ export const listStaleOwners = async (params: {
   );
   return raw.stale_owners ?? [];
 };
+
+/** KB scope topic-owner (전문가 / SME) — admin curated. */
+export type TopicOwner = {
+  topic_name: string;
+  owner_user_id: string;
+  display_name?: string;
+  email?: string;
+  expertise?: string[];
+  kb_id?: string;
+};
+
+export const listTopicOwners = async (
+  kbId: string,
+): Promise<{ topics: TopicOwner[]; total: number; kb_id: string }> => {
+  return request<{ topics: TopicOwner[]; total: number; kb_id: string }>(
+    "api/v1/admin/ownership/topics",
+    { method: "GET", query: { kb_id: kbId } },
+  );
+};
+
+export const assignTopicOwner = (body: TopicOwner) =>
+  request<{ success: boolean; message: string }>(
+    "api/v1/admin/ownership/topics",
+    { method: "POST", body: JSON.stringify(body) },
+  );
 
 // ── /knowledge/experts/search ──────────────────────────────────────────
 
@@ -838,6 +887,76 @@ export const getKbTrustDistribution = async (
   });
 };
 
+/**
+ * KB 의 L1 카테고리 분포 — Qdrant payload `l1_category` 별 문서 수.
+ * Streamlit `dashboard.py` 의 L1 카테고리 탭이 호출하던 endpoint.
+ */
+export type KbCategory = { name: string; document_count: number };
+
+export const getKbCategories = async (
+  kbId: string,
+): Promise<{ categories: KbCategory[]; total: number; kb_id: string }> => {
+  return request<{
+    categories: KbCategory[];
+    total: number;
+    kb_id: string;
+  }>(`api/v1/admin/kb/${encodeURIComponent(kbId)}/categories`, {
+    method: "GET",
+  });
+};
+
+/** Graph 전문가 찾기 — topic 으로 expert 노드 검색. */
+export type GraphExpert = {
+  id?: string;
+  name?: string;
+  email?: string;
+  topics?: string[];
+  trust_score?: number;
+  document_count?: number;
+};
+
+export const findGraphExperts = (topic: string, limit = 10) =>
+  request<{ topic: string; experts: GraphExpert[]; error?: string }>(
+    "api/v1/admin/graph/experts",
+    { method: "GET", query: { topic, limit } },
+  );
+
+/** Graph 무결성 보고 (저장된 최근 결과). */
+export type GraphIntegrity = {
+  status: string;
+  orphan_nodes: number;
+  dangling_edges: number;
+  missing_relationships: number;
+  total_issues: number;
+  issues: Array<{
+    type?: string;
+    severity?: string;
+    description?: string;
+    node_id?: string;
+  }>;
+  last_check?: string | null;
+  error?: string;
+};
+
+export const getGraphIntegrity = () =>
+  request<GraphIntegrity>("api/v1/admin/graph/integrity", { method: "GET" });
+
+/** Graph 무결성 점검 실행 — KB scope 옵션. */
+export const runGraphIntegrityCheck = (kbId?: string) =>
+  request<{
+    success: boolean;
+    total_nodes: number;
+    total_edges: number;
+    orphan_count: number;
+    missing_relationships: number;
+    inconsistencies: number;
+    details: Array<Record<string, unknown>>;
+    error?: string;
+  }>("api/v1/admin/graph/integrity/run", {
+    method: "POST",
+    body: JSON.stringify(kbId ? { kb_id: kbId } : {}),
+  });
+
 // ── /admin/golden-set (B-2 Golden Q&A) ──────────────────────────────────
 
 export type GoldenItem = {
@@ -1086,6 +1205,25 @@ export const cancelIngestRun = (runId: string) =>
     `api/v1/admin/knowledge/ingest/jobs/${encodeURIComponent(runId)}/cancel`,
     { method: "POST" },
   );
+
+/**
+ * 한 ingestion run 의 상세 (status logs / step outcomes 포함). Streamlit
+ * job_monitor.py 의 expander 가 호출하던 endpoint.
+ */
+export const getIngestRunDetail = (runId: string) =>
+  request<
+    IngestRun & {
+      status_logs?: Array<{
+        step?: string;
+        status?: string;
+        message?: string;
+        timestamp?: string;
+      }>;
+      error_message?: string;
+    }
+  >(`api/v1/admin/knowledge/ingest/status/${encodeURIComponent(runId)}`, {
+    method: "GET",
+  });
 
 /**
  * ABAC 정책 — admin/system 권한 필요. resource_type/action/conditions

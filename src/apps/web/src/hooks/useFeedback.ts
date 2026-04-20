@@ -3,10 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  adminCreateErrorReport,
   listErrorReports,
   listFeedback,
   listMyErrorReports,
   listMyFeedback,
+  resolveErrorReport,
   submitErrorReport,
   submitFeedback,
   type ErrorReportBody,
@@ -86,5 +88,31 @@ export function useSubmitErrorReport() {
       qc.invalidateQueries({ queryKey: ["error-reports", "list"] });
       qc.invalidateQueries({ queryKey: ["my-error-reports", "list"] });
     },
+  });
+}
+
+/** 운영자 직접 신고 — admin 화면 의 신규 신고 form 이 호출. */
+export function useAdminCreateErrorReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof adminCreateErrorReport>[0]) =>
+      adminCreateErrorReport(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["error-reports", "list"] });
+      qc.invalidateQueries({ queryKey: ["my-error-reports", "list"] });
+    },
+  });
+}
+
+/** 신고 resolve — `/admin/errors` 화면이 호출. resolution_note 와 함께. */
+export function useResolveErrorReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      reportId: string;
+      body: { resolution_note?: string };
+    }) => resolveErrorReport(params.reportId, params.body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["error-reports", "list"] }),
   });
 }

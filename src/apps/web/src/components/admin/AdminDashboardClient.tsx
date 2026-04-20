@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui";
 import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 
 import { AreaChartHero, type HeroPoint } from "./AreaChartHero";
+import { L1CategoryChart } from "./L1CategoryChart";
 import { MetricCard } from "./MetricCard";
 
 function fmt(n: number | null | undefined): string {
@@ -206,6 +207,8 @@ export function AdminDashboardClient() {
               sparkline={series.search}
             />
           </div>
+
+          <L1CategoryChart />
 
           {data?.errors && data.errors.length > 0 && (
             <details className="rounded-md border border-warning-default/30 bg-warning-subtle p-3 text-xs">

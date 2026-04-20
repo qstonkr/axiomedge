@@ -1,13 +1,93 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
-import { Skeleton } from "@/components/ui";
+import {
+  Button,
+  ErrorFallback,
+  Input,
+  Skeleton,
+  Textarea,
+  useToast,
+} from "@/components/ui";
 import { useAgentTrace, useAgentTraces } from "@/hooks/admin/useQuality";
+import { useAgenticAsk } from "@/hooks/useSearch";
 import type { AgentTraceListItem } from "@/lib/api/endpoints";
 
 import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
+
+function NewAgenticForm({ onTraceId }: { onTraceId: (id: string) => void }) {
+  const toast = useToast();
+  const ask = useAgenticAsk();
+  const [query, setQuery] = useState("");
+  const [kbFilter, setKbFilter] = useState("");
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!query.trim()) return;
+    const kbIds = kbFilter
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    try {
+      const res = await ask.mutateAsync({
+        query: query.trim(),
+        kb_ids: kbIds.length > 0 ? kbIds : null,
+      });
+      const tid = res.trace_id;
+      if (tid) {
+        toast.push(`실행 완료 — trace ${tid.slice(0, 8)}…`, "success");
+        onTraceId(tid);
+      } else {
+        toast.push("실행 완료 (trace_id 없음)", "warning");
+      }
+      setQuery("");
+    } catch (err) {
+      toast.push(
+        err instanceof Error ? err.message : "실행 실패",
+        "danger",
+      );
+    }
+  }
+
+  return (
+    <details className="rounded-lg border border-border-default bg-bg-canvas">
+      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-default">
+        ➕ 새 agentic 질문 실행
+      </summary>
+      <form onSubmit={onSubmit} className="space-y-3 px-4 pb-4">
+        <p className="text-xs text-fg-muted">
+          여기에서 실행한 질문은 새 trace 를 생성하고, 그 결과를 아래
+          trace 목록에서 즉시 확인할 수 있습니다.
+        </p>
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          질문
+          <Textarea
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            rows={2}
+            placeholder="예: 신촌점 차주 매장 점검 일정"
+            required
+          />
+        </label>
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          KB 필터 (콤마 구분, 비우면 전체)
+          <Input
+            value={kbFilter}
+            onChange={(e) => setKbFilter(e.target.value)}
+            placeholder="예: g-espa, g-fc"
+          />
+        </label>
+        <div className="flex justify-end">
+          <Button type="submit" disabled={ask.isPending || !query.trim()}>
+            {ask.isPending ? "실행 중…" : "실행"}
+          </Button>
+        </div>
+      </form>
+    </details>
+  );
+}
 
 export function TracesClient() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -77,6 +157,8 @@ export function TracesClient() {
         </p>
       </header>
 
+      <NewAgenticForm onTraceId={setSelectedId} />
+
       <div className="grid gap-3 sm:grid-cols-2">
         <MetricCard label="총 trace" value={list.data?.count ?? 0} />
         <MetricCard
@@ -96,9 +178,11 @@ export function TracesClient() {
       {list.isLoading ? (
         <Skeleton className="h-48" />
       ) : list.isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-          trace 목록을 불러올 수 없습니다
-        </div>
+        <ErrorFallback
+          title="trace 목록을 불러올 수 없습니다"
+          error={list.error}
+          onRetry={() => list.refetch()}
+        />
       ) : (
         <DataTable<AgentTraceListItem>
           columns={columns}

@@ -29,6 +29,7 @@ export type AssistantTurn = {
   errors?: string[];
   meta?: {
     confidence?: string | number;
+    confidence_level?: "HIGH" | "MEDIUM" | "LOW" | "UNCERTAIN" | string;
     crag_action?: string | null;
     query_type?: string;
     search_time_ms?: number;
@@ -36,6 +37,20 @@ export type AssistantTurn = {
     estimated_cost_usd?: number;
     llm_provider?: string;
     trace_id?: string;
+    /** Composite Reranking 분해 — Streamlit `rerank_breakdown` 동치. */
+    rerank_breakdown?: {
+      dense?: number;
+      sparse?: number;
+      colbert?: number;
+      cross_encoder?: number;
+    };
+    /** 쿼리 확장된 토큰. */
+    expanded_terms?: string[];
+    /** 오타 교정 결과. */
+    corrected_query?: string;
+    original_query?: string;
+    /** Working memory probe hit. */
+    working_memory_hit?: boolean;
   };
 };
 

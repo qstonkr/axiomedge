@@ -11,6 +11,7 @@ import { ChatMessages } from "./ChatMessages";
 import { ErrorReportDialog } from "./ErrorReportDialog";
 import { KbSelector } from "./KbSelector";
 import { ModeToggle } from "./ModeToggle";
+import { RecommendedQueries } from "./RecommendedQueries";
 import type { AssistantTurn, ChunkSource, UserTurn } from "./types";
 
 // id collision 방지 — sessionStorage 복원 후 다시 카운트 시작해도 충돌 없도록
@@ -69,6 +70,7 @@ export function ChatPage() {
           top_k: 8,
           include_answer: true,
         });
+        const md = res.metadata ?? {};
         assistant = {
           kind: "assistant",
           id: newId("a"),
@@ -78,9 +80,25 @@ export function ChatPage() {
           searched_kbs: res.searched_kbs,
           meta: {
             confidence: res.confidence,
-            crag_action: (res.metadata?.crag_action as string | undefined) ?? null,
+            confidence_level: (md.confidence_level as string | undefined) ?? undefined,
+            crag_action: (md.crag_action as string | undefined) ?? null,
             query_type: res.query_type,
             search_time_ms: res.search_time_ms,
+            rerank_breakdown:
+              (md.rerank_breakdown as
+                | { dense?: number; sparse?: number; colbert?: number; cross_encoder?: number }
+                | undefined) ??
+              (md.composite_rerank as
+                | { dense?: number; sparse?: number; colbert?: number; cross_encoder?: number }
+                | undefined),
+            expanded_terms:
+              (md.expanded_terms as string[] | undefined) ??
+              (md.query_expansion as string[] | undefined),
+            corrected_query: md.corrected_query as string | undefined,
+            original_query: md.original_query as string | undefined,
+            working_memory_hit:
+              (md.working_memory_hit as boolean | undefined) ??
+              (md.wm_probe_hit as boolean | undefined),
           },
         };
       }
@@ -119,18 +137,33 @@ export function ChatPage() {
 
       <section className="flex-1 overflow-y-auto pb-4">
         {turns.length === 0 && !pending ? (
-          <EmptyState
-            icon="🔍"
-            title="궁금한 것을 물어보세요"
-            description="신촌점 차주 매장 점검 일정 / PBU 와 관련된 시스템 / 오늘 휴무 매장…"
-          />
+          <div className="space-y-4">
+            <EmptyState
+              icon="🔍"
+              title="궁금한 것을 물어보세요"
+              description="신촌점 차주 매장 점검 일정 / PBU 와 관련된 시스템 / 오늘 휴무 매장…"
+            />
+            <RecommendedQueries onPick={(q) => onSubmit(q)} pending={pending} />
+          </div>
         ) : (
-          <ChatMessages
-            turns={turns}
-            pending={pending}
-            pendingQuery={pendingQuery}
-            onReportError={setReportTarget}
-          />
+          <>
+            <ChatMessages
+              turns={turns}
+              pending={pending}
+              pendingQuery={pendingQuery}
+              onReportError={setReportTarget}
+            />
+            {turns.length > 0 && !pending && (
+              <details className="mt-4 rounded-md border border-border-default bg-bg-subtle px-3 py-2 text-xs">
+                <summary className="cursor-pointer text-fg-muted">
+                  💡 추천 질문 더 보기
+                </summary>
+                <div className="mt-2">
+                  <RecommendedQueries onPick={(q) => onSubmit(q)} pending={pending} />
+                </div>
+              </details>
+            )}
+          </>
         )}
       </section>
 

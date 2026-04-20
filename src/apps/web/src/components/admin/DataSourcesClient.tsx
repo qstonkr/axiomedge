@@ -7,6 +7,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import {
   Button,
   Dialog,
+  ErrorFallback,
   Input,
   Select,
   Skeleton,
@@ -242,14 +243,11 @@ export function DataSourcesClient() {
       {isLoading ? (
         <Skeleton className="h-48" />
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            데이터 소스 목록을 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="데이터 소스 목록을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <DataTable<DataSource>
           columns={columns}
