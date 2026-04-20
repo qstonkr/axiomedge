@@ -335,6 +335,17 @@ export const listMyFeedback = async (params?: {
   return { items, total: raw.total ?? items.length };
 };
 
+/**
+ * 최근 N일간 가장 많이 검색된 쿼리 — chat 의 추천 검색어 동적 source.
+ * aggregate 라 PII 없음 → 모든 사용자 호출 가능 (feedback:submit 권한).
+ * fallback=true 면 backend 가 결과 못 줘서 client 가 hardcoded suggestion 사용.
+ */
+export const getPopularQueries = (days = 7, limit = 4) =>
+  request<{ queries: string[]; days: number; fallback: boolean }>(
+    "api/v1/knowledge/popular-queries",
+    { method: "GET", query: { days, limit } },
+  );
+
 /** User-scope error-report list — listMyFeedback 와 같은 사유. */
 export const listMyErrorReports = async (params?: {
   status?: string;

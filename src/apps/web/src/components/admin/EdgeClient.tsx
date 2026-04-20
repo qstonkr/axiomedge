@@ -1120,7 +1120,8 @@ function TrainingDataReviewTable({ profileName }: { profileName: string }) {
 
   async function onReview(status: "approved" | "rejected") {
     if (selected.size === 0) return;
-    if (status === "rejected" && !confirm(`${selected.size}건 거부?`)) return;
+    const verb = status === "approved" ? "승인" : "거부";
+    if (!confirm(`${selected.size}건 ${verb}?`)) return;
     try {
       const res = await review.mutateAsync({ ids: Array.from(selected), status });
       toast.push(`${res.updated}건 ${status === "approved" ? "승인" : "거부"}됨`, "success");

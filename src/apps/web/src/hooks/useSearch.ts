@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import {
   agenticAsk,
+  getPopularQueries,
   listKbs,
   searchHub,
   type AgenticAskRequest,
@@ -36,5 +37,14 @@ export function useHubSearch() {
 export function useAgenticAsk() {
   return useMutation<AgenticAskResponse, Error, AgenticAskRequest>({
     mutationFn: (body) => agenticAsk(body),
+  });
+}
+
+/** 추천 검색어 — 최근 검색 통계 기반 (없으면 fallback=true). */
+export function usePopularQueries(days = 7, limit = 4) {
+  return useQuery({
+    queryKey: ["popular-queries", days, limit],
+    queryFn: () => getPopularQueries(days, limit),
+    staleTime: 10 * 60 * 1000, // 10분 — 추천이라 fresh 강제 안 함
   });
 }

@@ -124,6 +124,9 @@ PERMISSION_RULES: list[PermissionRule] = [
     # /api/v1/knowledge/feedback (feedback:submit) 으로 처리됨.
     _rule(r"^/api/v1/knowledge/feedback/my$", "GET", "feedback", "submit"),
     _rule(r"^/api/v1/knowledge/error-reports/my$", "GET", "feedback", "submit"),
+    # 추천 검색어 (popular queries) — aggregate 통계라 모든 role 호출 가능.
+    # `feedback:submit` 으로 권한 요구 (POST 사용자 화면 권한과 동등).
+    _rule(r"^/api/v1/knowledge/popular-queries$", "GET", "feedback", "submit"),
 
     # ── Quality / golden-set / verification
     _rule(r"^/api/v1/admin/golden-set(?:/.*)?$", "POST|PUT|DELETE|PATCH", "quality", "write"),

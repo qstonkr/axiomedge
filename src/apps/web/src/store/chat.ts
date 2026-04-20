@@ -52,6 +52,14 @@ export const useChatStore = create<ChatStore>()(
       storage: createJSONStorage(() => sessionStorage),
       // version 올리면 stored shape 호환 안 될 때 이전 데이터 무시.
       version: 1,
+      // sessionStorage 5MB 한계 보호 — agentic answer + chunks 가 큰
+      // payload 라 50+ turn 이면 quota 위험. 마지막 30 turn 만 persist
+      // (in-memory state 는 그대로, persist 시점에만 trim).
+      partialize: (state) => ({
+        selectedKbIds: state.selectedKbIds,
+        mode: state.mode,
+        turns: state.turns.slice(-30),
+      }),
     },
   ),
 );

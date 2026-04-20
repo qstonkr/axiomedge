@@ -61,12 +61,27 @@ class FeedbackRepository(BaseRepository):
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def get_by_user(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    async def get_by_user(
+        self,
+        user_id: str,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """사용자 본인 피드백 — status 옵션 + offset/limit pagination.
+
+        offset 추가로 client 가 page 별 정확한 slice 요청 가능해서
+        ``limit=page_size * page`` 같은 over-fetch 회피.
+        """
         async with await self._get_session() as session:
+            stmt = select(KnowledgeFeedbackModel).where(
+                KnowledgeFeedbackModel.user_id == user_id,
+            )
+            if status:
+                stmt = stmt.where(KnowledgeFeedbackModel.status == status)
             stmt = (
-                select(KnowledgeFeedbackModel)
-                .where(KnowledgeFeedbackModel.user_id == user_id)
-                .order_by(KnowledgeFeedbackModel.created_at.desc())
+                stmt.order_by(KnowledgeFeedbackModel.created_at.desc())
+                .offset(offset)
                 .limit(limit)
             )
             result = await session.execute(stmt)
@@ -128,13 +143,21 @@ class FeedbackRepository(BaseRepository):
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def count(self, status: str | None = None, feedback_type: str | None = None) -> int:
+    async def count(
+        self,
+        status: str | None = None,
+        feedback_type: str | None = None,
+        user_id: str | None = None,
+    ) -> int:
+        """피드백 row 수. user_id 옵션 — `/knowledge/feedback/my` 의 정확한 total."""
         async with await self._get_session() as session:
             stmt = select(func.count()).select_from(KnowledgeFeedbackModel)
             if status:
                 stmt = stmt.where(KnowledgeFeedbackModel.status == status)
             if feedback_type:
                 stmt = stmt.where(KnowledgeFeedbackModel.feedback_type == feedback_type)
+            if user_id:
+                stmt = stmt.where(KnowledgeFeedbackModel.user_id == user_id)
             result = await session.execute(stmt)
             return result.scalar() or 0
 

@@ -65,13 +65,19 @@ export function DiscoveredSynonymsPanel() {
     }
   }
 
+  function failureNote(errors: string[]): string {
+    if (errors.length === 0) return "";
+    const head = errors.slice(0, 3).join(" / ");
+    return ` (실패 ${errors.length}건: ${head}${errors.length > 3 ? " …" : ""})`;
+  }
+
   async function onApprove() {
     if (selected.size === 0) return;
     try {
       const res = await approve.mutateAsync(Array.from(selected));
       toast.push(
-        `${res.approved}건 승인됨${res.errors.length ? ` (실패 ${res.errors.length})` : ""}`,
-        res.success ? "success" : "warning",
+        `${res.approved}건 승인됨${failureNote(res.errors)}`,
+        res.success && res.errors.length === 0 ? "success" : "warning",
       );
       setSelected(new Set());
     } catch (e) {
@@ -85,8 +91,8 @@ export function DiscoveredSynonymsPanel() {
     try {
       const res = await reject.mutateAsync(Array.from(selected));
       toast.push(
-        `${res.rejected}건 거부됨${res.errors.length ? ` (실패 ${res.errors.length})` : ""}`,
-        res.success ? "success" : "warning",
+        `${res.rejected}건 거부됨${failureNote(res.errors)}`,
+        res.success && res.errors.length === 0 ? "success" : "warning",
       );
       setSelected(new Set());
     } catch (e) {

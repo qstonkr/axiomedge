@@ -115,6 +115,41 @@ async def create_feedback(body: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/knowledge/popular-queries  -- 추천 검색어 (모든 사용자)
+# ---------------------------------------------------------------------------
+@knowledge_router.get("/popular-queries")
+async def get_popular_queries(
+    days: Annotated[int, Query(ge=1, le=90)] = 7,
+    limit: Annotated[int, Query(ge=1, le=20)] = 4,
+) -> dict[str, Any]:
+    """최근 N일간 가장 많이 검색된 query 들 — chat 의 추천 검색어로 사용.
+
+    aggregate 통계라 PII 없음 → `feedback:submit` 권한 (모든 role 보유).
+    backend 의 ``UsageLogRepository.get_analytics(days=N)["top_queries"]``
+    재활용 (admin /search/analytics 와 동일 source).
+    """
+    state = _get_state()
+    repo = state.get("usage_log_repo")
+    if repo is None:
+        return {"queries": [], "days": days, "fallback": True}
+
+    try:
+        analytics = await repo.get_analytics(days=days)
+        top = analytics.get("top_queries", [])
+        # 비어있는 query, 매우 짧은 query 는 추천에서 제외
+        queries = [
+            q.get("query", "").strip()
+            for q in top
+            if isinstance(q, dict) and q.get("query")
+        ]
+        queries = [q for q in queries if len(q) >= 2][:limit]
+        return {"queries": queries, "days": days, "fallback": False}
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("Popular queries fetch failed: %s", e)
+        return {"queries": [], "days": days, "fallback": True}
+
+
+# ---------------------------------------------------------------------------
 # GET /api/v1/knowledge/feedback/my  -- user-scope (자기 자신의 피드백만)
 # ---------------------------------------------------------------------------
 @knowledge_router.get("/feedback/my")
@@ -137,14 +172,17 @@ async def list_my_feedback(
         return {"feedback": [], "total": 0, "page": page, "page_size": page_size}
 
     try:
-        # 페이지네이션은 클라이언트 사이드 — 사용자별 row 가 적어 cursor 보다 단순.
-        rows = await repo.get_by_user(user.sub, limit=page_size * page)
-        if status:
-            rows = [r for r in rows if r.get("status") == status]
-        start = (page - 1) * page_size
+        # offset/limit 으로 정확한 page 만 fetch — repo 가 status server-side
+        # WHERE 처리. total 은 별도 count 쿼리 (있으면) 또는 fetch 길이 fallback.
+        offset = (page - 1) * page_size
+        rows = await repo.get_by_user(
+            user.sub, status=status, limit=page_size, offset=offset,
+        )
+        # total — 정확한 count (status + user_id WHERE).
+        total = await repo.count(status=status, user_id=user.sub)
         return {
-            "feedback": rows[start:start + page_size],
-            "total": len(rows),
+            "feedback": rows,
+            "total": total,
             "page": page,
             "page_size": page_size,
         }
@@ -376,11 +414,16 @@ async def list_my_error_reports(
         return {"reports": [], "total": 0, "page": page, "page_size": page_size}
 
     try:
-        rows = await repo.get_by_user(user.sub, status=status, limit=page_size * page)
-        start = (page - 1) * page_size
+        # offset/limit + server-side status filter — feedback/my 와 동일.
+        offset = (page - 1) * page_size
+        rows = await repo.get_by_user(
+            user.sub, status=status, limit=page_size, offset=offset,
+        )
+        # total — error_report_repo 에 count 메서드 없어 보수적으로 추정.
+        total = offset + len(rows)
         return {
-            "reports": rows[start:start + page_size],
-            "total": len(rows),
+            "reports": rows,
+            "total": total,
             "page": page,
             "page_size": page_size,
         }

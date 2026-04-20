@@ -288,6 +288,10 @@ async def list_kb_documents(
 
     try:
         collection_name = collections.get_collection_name(kb_id) if collections else f"kb_{kb_id}"
+        # NOTE: Qdrant scroll 은 cursor 기반이라 offset 직접 지원 안 함.
+        # `page * page_size + page_size` 만큼 fetch 후 client-side slice — admin
+        # endpoint 와 동일 패턴. personal KB 는 보통 << 1000 docs 라 acceptable.
+        # 큰 KB 는 admin endpoint (`/admin/kb/{kb_id}/documents`) 사용 권장.
         docs = await _scroll_kb_documents(qdrant_url, collection_name, page * page_size + page_size)
         all_docs = list(docs.values())
         start = (page - 1) * page_size

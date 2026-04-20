@@ -255,12 +255,12 @@ class ErrorReportRepository(BaseRepository):
         user_id: str,
         status: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         """Reports submitted by ``user_id`` (sorted newest first).
 
-        Used by the user-facing ``GET /api/v1/knowledge/error-reports/my``
-        endpoint so MEMBER-role users can see their own reports without
-        needing the admin-scope `feedback:review` permission.
+        offset/limit pagination — client 가 정확한 page 만 요청하면 over-fetch
+        없이 효율적. status 옵션은 server-side WHERE.
         """
         async with await self._get_session() as session:
             stmt = select(DocumentErrorReportModel).where(
@@ -268,7 +268,11 @@ class ErrorReportRepository(BaseRepository):
             )
             if status:
                 stmt = stmt.where(DocumentErrorReportModel.status == status)
-            stmt = stmt.order_by(DocumentErrorReportModel.created_at.desc()).limit(limit)
+            stmt = (
+                stmt.order_by(DocumentErrorReportModel.created_at.desc())
+                .offset(offset)
+                .limit(limit)
+            )
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
