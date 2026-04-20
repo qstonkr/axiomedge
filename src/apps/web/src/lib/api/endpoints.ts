@@ -113,6 +113,38 @@ export const deleteKb = (kbId: string) =>
     method: "DELETE",
   });
 
+/**
+ * 한 personal KB 안의 문서 목록 (owner 만 호출 가능). Backend 가
+ * Qdrant payload 를 scroll 하므로 정확한 row 모양은 파일별로 다양 —
+ * 자주 쓰는 키 (`document_id`, `document_name`, `created_at`, `chunk_count`)
+ * 만 typed 하고 나머지는 unknown 으로 둠.
+ */
+export type KbDocument = {
+  document_id?: string;
+  document_name?: string;
+  doc_id?: string;
+  source?: string;
+  source_type?: string;
+  created_at?: string;
+  chunk_count?: number;
+  [k: string]: unknown;
+};
+
+export const listKbDocuments = (
+  kbId: string,
+  params?: { page?: number; page_size?: number },
+) =>
+  request<{
+    documents: KbDocument[];
+    total: number;
+    page: number;
+    page_size: number;
+    kb_id: string;
+  }>(`api/v1/kb/${encodeURIComponent(kbId)}/documents`, {
+    method: "GET",
+    query: params,
+  });
+
 // ── /search-groups ──────────────────────────────────────────────────────
 
 export type SearchGroup = {
@@ -202,16 +234,44 @@ export const submitErrorReport = (body: ErrorReportBody) => {
 
 // ── /admin/feedback + /admin/error-reports (목록 조회) ──────────────────
 
+/**
+ * Backend `feedback` row 의 정규화된 모양. backend 는 일부 필드가 빠진
+ * row 도 보낼 수 있으므로 모든 필드 optional. 표시 단(my-feedback) 에서
+ * 빠진 필드는 default 라벨/공란으로 표시.
+ */
+export type FeedbackItem = {
+  id?: string;
+  feedback_type?: string;
+  status?: string;
+  content?: string;
+  document_id?: string | null;
+  created_at?: string;
+  user_id?: string;
+};
+
+/** Backend `error_report` row 정규화 — 동일하게 모든 필드 optional. */
+export type ErrorReportItem = {
+  id?: string;
+  error_type?: string;
+  priority?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  document_id?: string | null;
+  created_at?: string;
+  user_id?: string;
+};
+
 export const listFeedback = async (params?: {
   status?: string;
   feedback_type?: string;
   page?: number;
   page_size?: number;
-}): Promise<{ items: Array<Record<string, unknown>>; total: number }> => {
+}): Promise<{ items: FeedbackItem[]; total: number }> => {
   // Backend ships ``{feedback: [...], total?: number}`` — wrap into the
   // {items,total} shape every consumer expects.
   const raw = await request<{
-    feedback?: Array<Record<string, unknown>>;
+    feedback?: FeedbackItem[];
     total?: number;
   }>("api/v1/admin/feedback/list", { method: "GET", query: params });
   const items = raw.feedback ?? [];
@@ -222,10 +282,10 @@ export const listErrorReports = async (params?: {
   status?: string;
   page?: number;
   page_size?: number;
-}): Promise<{ items: Array<Record<string, unknown>>; total: number }> => {
+}): Promise<{ items: ErrorReportItem[]; total: number }> => {
   // Backend ships ``{reports: [...]}`` — normalize to {items,total}.
   const raw = await request<{
-    reports?: Array<Record<string, unknown>>;
+    reports?: ErrorReportItem[];
     total?: number;
   }>("api/v1/admin/error-reports", { method: "GET", query: params });
   const items = raw.reports ?? [];
@@ -286,14 +346,22 @@ export type Owner = {
 export const searchOwners = async (params: {
   query: string;
   kb_id?: string;
-}): Promise<{ owners: Owner[] }> => {
-  // Backend ships ``{experts: [...], total, query}`` — alias as `owners`
-  // for the legacy frontend shape.
-  const raw = await request<{ experts?: Owner[] }>(
-    "api/v1/knowledge/experts/search",
-    { method: "GET", query: params },
-  );
-  return { owners: raw.experts ?? [] };
+}): Promise<{ owners: Owner[]; partial_errors?: string[] }> => {
+  // Backend ships ``{experts: [...], total, query, partial_errors?}`` —
+  // alias `experts` as `owners` for the legacy frontend shape, and
+  // surface partial_errors so the UI can warn about degraded results
+  // (e.g. graph search succeeded but document_owner search failed).
+  const raw = await request<{
+    experts?: Owner[];
+    partial_errors?: string[];
+  }>("api/v1/knowledge/experts/search", { method: "GET", query: params });
+  const out: { owners: Owner[]; partial_errors?: string[] } = {
+    owners: raw.experts ?? [],
+  };
+  if (raw.partial_errors && raw.partial_errors.length > 0) {
+    out.partial_errors = raw.partial_errors;
+  }
+  return out;
 };
 
 // ── /admin/verification/pending ────────────────────────────────────────

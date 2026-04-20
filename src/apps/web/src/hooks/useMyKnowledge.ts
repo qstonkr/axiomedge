@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createPersonalKb,
   deleteKb,
+  listKbDocuments,
   listKbs,
   uploadDocumentToKb,
   type Kb,
@@ -59,6 +60,24 @@ export function useUploadDocument(kbId: string) {
       // doc_count etc. lives on the KB row — refetch the list so the count
       // updates without a full page refresh.
       qc.invalidateQueries({ queryKey: QK });
+      // 새 문서 행도 즉시 반영.
+      qc.invalidateQueries({ queryKey: ["my-knowledge", "documents", kbId] });
     },
+  });
+}
+
+/**
+ * 한 personal KB 안의 문서 목록 — owner-only (`/api/v1/kb/{kb_id}/documents`).
+ * Backend 는 Qdrant scroll 결과를 deduplicate 해서 doc_id 단위 row 로 반환.
+ */
+export function useKbDocuments(
+  kbId: string | null | undefined,
+  params?: { page?: number; page_size?: number },
+) {
+  return useQuery({
+    queryKey: ["my-knowledge", "documents", kbId, params],
+    queryFn: () => listKbDocuments(kbId!, params),
+    enabled: Boolean(kbId),
+    staleTime: 30 * 1000,
   });
 }

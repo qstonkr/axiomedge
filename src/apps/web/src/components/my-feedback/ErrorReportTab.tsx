@@ -13,7 +13,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useErrorReportsList, useSubmitErrorReport } from "@/hooks/useFeedback";
-import type { ErrorReportBody } from "@/lib/api/endpoints";
+import type { ErrorReportBody, ErrorReportItem } from "@/lib/api/endpoints";
 
 const ERROR_TYPES: { id: ErrorReportBody["error_type"]; label: string }[] = [
   { id: "INACCURATE", label: "부정확" },
@@ -159,23 +159,23 @@ export function ErrorReportTab() {
           />
         ) : (
           <ul className="space-y-2">
-            {(list.data?.items ?? []).map((item, idx) => {
-              const it = item as Record<string, unknown>;
-              const t = String(it.title ?? "(제목 없음)");
-              const status = String(it.status ?? "pending");
-              const pType = String(it.error_type ?? "");
-              const pri = String(it.priority ?? "MEDIUM");
-              const tone =
-                PRIORITIES.find((p) => p.id === pri)?.tone ?? "neutral";
-              const created = String(it.created_at ?? "");
+            {(list.data?.items ?? []).map((item: ErrorReportItem, idx) => {
+              const t = item.title ?? "(제목 없음)";
+              const status = item.status ?? "pending";
+              const pType = item.error_type ?? "";
+              const pri = item.priority ?? "MEDIUM";
+              const matchedPri = PRIORITIES.find((p) => p.id === pri);
+              const matchedType = ERROR_TYPES.find((x) => x.id === pType);
+              const tone = matchedPri?.tone ?? "neutral";
+              const created = item.created_at ?? "";
               return (
                 <li
-                  key={String(it.id ?? idx)}
+                  key={item.id ?? idx}
                   className="rounded-md border border-border-default bg-bg-canvas px-4 py-3 text-sm"
                 >
                   <div className="mb-1 flex items-center gap-2 text-xs">
-                    <Badge tone={tone}>{PRIORITIES.find((p) => p.id === pri)?.label ?? pri}</Badge>
-                    <span className="text-fg-muted">{ERROR_TYPES.find((x) => x.id === pType)?.label ?? pType}</span>
+                    <Badge tone={tone}>{matchedPri?.label ?? pri}</Badge>
+                    <span className="text-fg-muted">{matchedType?.label ?? pType}</span>
                     <span className="text-fg-muted">· {status}</span>
                     <span className="ml-auto font-mono text-fg-subtle">
                       {created.slice(0, 19).replace("T", " ")}

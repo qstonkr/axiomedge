@@ -40,7 +40,6 @@ import type {
   DistillBuild,
   DistillProfile,
   DistillProfileCreateBody,
-  DistillProfileUpdateBody,
   EdgeServer,
 } from "@/lib/api/endpoints";
 

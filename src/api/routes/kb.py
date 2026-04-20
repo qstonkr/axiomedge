@@ -245,6 +245,64 @@ async def list_kbs(
     return await _list_kbs_impl(organization_id=org.id)
 
 
+@router.get(
+    "/{kb_id}/documents",
+    responses={
+        403: {"description": "Caller does not own this KB"},
+        404: {"description": "KB not found"},
+        503: {"description": "Qdrant not initialized"},
+    },
+)
+async def list_kb_documents(
+    kb_id: str,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    user: AuthUser = Depends(get_current_user),
+    org: OrgContext = Depends(get_current_org),
+) -> dict[str, Any]:
+    """List documents in a personal KB the caller owns.
+
+    Owner-only endpoint — used by ``/my-knowledge`` to show what the user
+    has uploaded into their own KB. Admin scope (other tiers) goes through
+    ``/api/v1/admin/kb/{kb_id}/documents`` instead.
+    """
+    state = _get_state()
+    collections = state.get("qdrant_collections")
+    qdrant_url = state.get("qdrant_url", _default_qdrant_url())
+    if not collections:
+        raise HTTPException(status_code=503, detail=_QDRANT_NOT_INIT)
+
+    # Ownership check via kb_registry — personal KB 의 owner_id 가 caller 이어야.
+    # `get_kb(owner_id=...)` 자체가 owner 미스매치 시 None 반환 → 404 로 매핑하면
+    # 다른 사용자 KB 의 존재 여부를 누설하지 않는다 (B-1 Day 1 패턴).
+    kb_registry = state.get("kb_registry")
+    if kb_registry is not None:
+        try:
+            kb_row = await kb_registry.get_kb(
+                kb_id, organization_id=org.id, owner_id=user.sub,
+            )
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            raise HTTPException(status_code=500, detail=f"KB lookup failed: {e}")
+        if kb_row is None:
+            raise HTTPException(status_code=404, detail=f"KB '{kb_id}' not found")
+
+    try:
+        collection_name = collections.get_collection_name(kb_id) if collections else f"kb_{kb_id}"
+        docs = await _scroll_kb_documents(qdrant_url, collection_name, page * page_size + page_size)
+        all_docs = list(docs.values())
+        start = (page - 1) * page_size
+        return {
+            "documents": all_docs[start:start + page_size],
+            "total": len(all_docs),
+            "page": page,
+            "page_size": page_size,
+            "kb_id": kb_id,
+        }
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("Personal KB documents fetch failed: %s", e)
+        return {"documents": [], "total": 0, "page": page, "page_size": page_size, "kb_id": kb_id}
+
+
 @router.delete("/{kb_id}", responses={503: {"description": "Qdrant not initialized"}, 500: {"description": "Internal error"}})  # noqa: E501
 async def delete_kb(kb_id: str) -> dict[str, Any]:
     """Delete a knowledge base."""

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import { Button, Skeleton, useToast } from "@/components/ui";
 import { usePendingVerifications } from "@/hooks/admin/useContent";
@@ -12,6 +12,22 @@ import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
 
 type VerificationRow = Record<string, unknown>;
 
+const URGENT_THRESHOLD_MS = 86_400_000; // 24h
+const NOW_REFRESH_MS = 60_000; // 1 분마다 "지금" 갱신 — 운영 대시보드 충분.
+
+// React 19 Compiler 는 render / useMemo 안에서 Date.now() 같은 impure 호출을
+// 금지한다. 표준 escape hatch 인 useSyncExternalStore 로 외부 시간을 구독.
+function subscribeToTime(callback: () => void): () => void {
+  const id = setInterval(callback, NOW_REFRESH_MS);
+  return () => clearInterval(id);
+}
+function getNow(): number {
+  return Date.now();
+}
+function useNow(): number {
+  return useSyncExternalStore(subscribeToTime, getNow, getNow);
+}
+
 function fmtDate(s: unknown): string {
   if (typeof s !== "string") return "—";
   return s.slice(0, 19).replace("T", " ");
@@ -22,7 +38,19 @@ export function VerificationClient() {
   const { data, isLoading, isError, error } = usePendingVerifications();
   const vote = useVerificationVote();
   const [voting, setVoting] = useState<string | null>(null);
-  const items = (data ?? []) as VerificationRow[];
+  // `data` 자체가 매 render 마다 같은 reference 이므로 useMemo 의 dep 안정화에 충분.
+  const items = useMemo(() => (data ?? []) as VerificationRow[], [data]);
+
+  // "지금" 은 useSyncExternalStore 로 (1분 주기) — useMemo 안에서 Date.now() 직접
+  // 호출은 React 19 Compiler 가 impure 로 차단.
+  const now = useNow();
+  const urgentCount = useMemo(() => {
+    return items.filter((r) => {
+      const ts = r.created_at;
+      if (typeof ts !== "string") return false;
+      return now - new Date(ts).getTime() > URGENT_THRESHOLD_MS;
+    }).length;
+  }, [items, now]);
 
   async function onVote(r: VerificationRow, voteType: "upvote" | "downvote") {
     const docId = String(r.document_id ?? r.id ?? "");
@@ -139,13 +167,7 @@ export function VerificationClient() {
         <MetricCard label="대기 건수" value={items.length} />
         <MetricCard
           label="긴급 (24h+)"
-          value={
-            items.filter((r) => {
-              const ts = r.created_at;
-              if (typeof ts !== "string") return false;
-              return Date.now() - new Date(ts).getTime() > 86_400_000;
-            }).length
-          }
+          value={urgentCount}
           tone="warning"
         />
       </div>

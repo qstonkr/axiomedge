@@ -13,7 +13,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { useFeedbackList, useSubmitFeedback } from "@/hooks/useFeedback";
-import type { FeedbackBody } from "@/lib/api/endpoints";
+import type { FeedbackBody, FeedbackItem } from "@/lib/api/endpoints";
 
 const TYPES: { id: FeedbackBody["feedback_type"]; label: string; tone: "success" | "danger" | "accent" | "warning" | "neutral" }[] = [
   { id: "UPVOTE", label: "👍 좋아요", tone: "success" },
@@ -115,22 +115,20 @@ export function FeedbackTab() {
           />
         ) : (
           <ul className="space-y-2">
-            {(list.data?.items ?? []).map((item, idx) => {
-              const it = item as Record<string, unknown>;
-              const type = String(it.feedback_type ?? "");
-              const status = String(it.status ?? "pending");
-              const created = String(it.created_at ?? "");
-              const txt = String(it.content ?? "");
-              const tone = TYPES.find((t) => t.id === type)?.tone ?? "neutral";
+            {(list.data?.items ?? []).map((item: FeedbackItem, idx) => {
+              const type = item.feedback_type ?? "";
+              const status = item.status ?? "pending";
+              const created = item.created_at ?? "";
+              const txt = item.content ?? "";
+              const matched = TYPES.find((t) => t.id === type);
+              const tone = matched?.tone ?? "neutral";
               return (
                 <li
-                  key={String(it.id ?? idx)}
+                  key={item.id ?? idx}
                   className="rounded-md border border-border-default bg-bg-canvas px-4 py-3 text-sm"
                 >
                   <div className="mb-1 flex items-center gap-2 text-xs">
-                    <Badge tone={tone}>
-                      {TYPES.find((t) => t.id === type)?.label ?? type}
-                    </Badge>
+                    <Badge tone={tone}>{matched?.label ?? type ?? "(유형 없음)"}</Badge>
                     <span className="text-fg-muted">{status}</span>
                     <span className="ml-auto font-mono text-fg-subtle">
                       {created.slice(0, 19).replace("T", " ")}

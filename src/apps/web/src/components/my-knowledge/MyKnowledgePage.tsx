@@ -7,9 +7,10 @@ import {
   EmptyState,
   Skeleton,
 } from "@/components/ui";
-import { useMyPersonalKbs } from "@/hooks/useMyKnowledge";
+import { useKbDocuments, useMyPersonalKbs } from "@/hooks/useMyKnowledge";
 
 import { CreateKbDialog } from "./CreateKbDialog";
+import { DocumentList } from "./DocumentList";
 import { DocumentUploader } from "./DocumentUploader";
 import { KbCard } from "./KbCard";
 
@@ -23,6 +24,7 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
   const kbs = data ?? [];
   const selected = kbs.find((kb) => kb.kb_id === selectedKbId) ?? kbs[0];
   const atCap = kbs.length >= PERSONAL_KB_LIMIT;
+  const docs = useKbDocuments(selected?.kb_id, { page: 1, page_size: 50 });
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
@@ -91,10 +93,15 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
                   </p>
                 </header>
                 <DocumentUploader kbId={selected.kb_id} />
-                <p className="text-xs text-fg-subtle">
-                  업로드된 문서 목록은 곧 표시됩니다 (Day 7 의 문서 인덱스
-                  파이프라인과 연결 필요 — 후속 작업).
-                </p>
+                <DocumentList
+                  documents={docs.data?.documents ?? []}
+                  total={docs.data?.total ?? 0}
+                  isLoading={docs.isLoading}
+                  isError={docs.isError}
+                  errorMessage={
+                    docs.error instanceof Error ? docs.error.message : undefined
+                  }
+                />
               </>
             ) : (
               <EmptyState

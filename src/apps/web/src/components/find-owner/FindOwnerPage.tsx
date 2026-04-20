@@ -31,6 +31,7 @@ export function FindOwnerPage() {
   }
 
   const owners = data?.owners ?? [];
+  const partialErrors = data?.partial_errors ?? [];
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
@@ -116,6 +117,23 @@ export function FindOwnerPage() {
           title="결과가 없습니다"
           description="다른 키워드로 검색해 보세요."
         />
+      )}
+
+      {/* 부분 실패 — 일부 검색 source(graph/document_owner 등)가 실패해도
+          나머지 결과는 표시. 어떤 source 가 실패했는지 디버깅용으로 노출. */}
+      {partialErrors.length > 0 && (
+        <details className="rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs">
+          <summary className="cursor-pointer font-medium text-warning-default">
+            일부 검색 소스 실패 ({partialErrors.length}건) — 결과가 부분적일 수 있습니다
+          </summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 font-mono text-fg-muted">
+            {partialErrors.map((e, i) => (
+              <li key={i} className="break-words">
+                {e}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {owners.length > 0 && (
