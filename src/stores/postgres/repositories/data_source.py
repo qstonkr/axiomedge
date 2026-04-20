@@ -186,6 +186,38 @@ class DataSourceRepository(BaseRepository):
                 await session.rollback()
                 raise
 
+    async def set_secret_path(
+        self,
+        source_id: str,
+        organization_id: str,
+        secret_path: str | None,
+    ) -> bool:
+        """SecretBox put/delete 후 호출 — DB 의 secret_path / has_secret 동기화.
+
+        secret_path 가 None 이면 토큰 삭제 (has_secret=False), 아니면 등록
+        (has_secret=True). org 미스매치 시 False.
+        """
+        async with await self._get_session() as session:
+            try:
+                stmt = (
+                    update(DataSourceModel)
+                    .where(
+                        DataSourceModel.id == source_id,
+                        DataSourceModel.organization_id == organization_id,
+                    )
+                    .values(
+                        secret_path=secret_path,
+                        has_secret=secret_path is not None,
+                        updated_at=_utc_now(),
+                    )
+                )
+                result = await session.execute(stmt)
+                await session.commit()
+                return result.rowcount > 0
+            except SQLAlchemyError:
+                await session.rollback()
+                raise
+
     @staticmethod
     def _to_dict(model: DataSourceModel) -> dict[str, Any]:
         return {
@@ -204,4 +236,8 @@ class DataSourceRepository(BaseRepository):
             "last_sync_result": _safe_json_loads(model.last_sync_result),
             "error_message": model.error_message,
             "metadata": _safe_json_loads(model.metadata_),
+            # secret_path 는 connector launcher 가 SecretBox.get 호출에 사용.
+            # plain token 은 절대 응답에 포함 X — 라우트가 응답 직전 mask.
+            "secret_path": model.secret_path,
+            "has_secret": bool(model.has_secret),
         }

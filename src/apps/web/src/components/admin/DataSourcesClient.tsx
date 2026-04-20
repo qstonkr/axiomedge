@@ -156,6 +156,20 @@ export function DataSourcesClient() {
       ),
     },
     {
+      key: "has_secret",
+      header: "토큰",
+      render: (s) =>
+        s.has_secret ? (
+          <span className="text-success-default" title="SecretBox 에 토큰 저장됨">
+            🔐
+          </span>
+        ) : (
+          <span className="text-fg-subtle" title="토큰 미설정 — connector 가 401">
+            —
+          </span>
+        ),
+    },
+    {
       key: "last_sync_at",
       header: "마지막 동기화",
       render: (s) => (
@@ -311,6 +325,11 @@ function DataSourceFormDialog({
   const [crawlConfigText, setCrawlConfigText] = useState(
     JSON.stringify(initial?.crawl_config ?? {}, null, 2),
   );
+  // Per-source token (Confluence PAT, Git auth_token, ...). Backend 는 plain
+  // 절대 응답하지 않음 — has_secret bool 만. UI 는 password input.
+  const [secretToken, setSecretToken] = useState("");
+  const [clearSecret, setClearSecret] = useState(false);
+  const hasExistingSecret = Boolean(initial?.has_secret);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -321,13 +340,23 @@ function DataSourceFormDialog({
       alert("crawl_config 가 유효한 JSON 이 아닙니다");
       return;
     }
-    onSubmit({
+    // secret_token 처리:
+    //   clearSecret=true → null 명시 (backend 가 SecretBox.delete)
+    //   secretToken 값 입력 → 그 값 저장
+    //   둘 다 아님 → key omit (옛 token 유지)
+    const body: DataSourceUpsertBody = {
       name: name.trim(),
       source_type: sourceType,
       kb_id: kbId.trim() || null,
       schedule: schedule === "수동" ? null : schedule,
       crawl_config,
-    });
+    };
+    if (clearSecret) {
+      body.secret_token = null;
+    } else if (secretToken.trim()) {
+      body.secret_token = secretToken.trim();
+    }
+    onSubmit(body);
   }
 
   return (
@@ -403,7 +432,53 @@ function DataSourceFormDialog({
             placeholder='{"repo_url": "...", "include_globs": ["**/*.md"]}'
             className="font-mono text-xs"
           />
+          <span className="text-[10px] text-fg-subtle">
+            ⚠️ token / PAT / password 는 절대 여기에 넣지 마세요 — 아래 전용 입력 사용.
+          </span>
         </label>
+
+        {/* Per-source secret (PAT / auth_token) — SecretBox 로 분리 저장 */}
+        <fieldset className="space-y-2 rounded-md border border-warning-default/30 bg-warning-subtle/40 p-3">
+          <legend className="px-1 text-xs font-semibold text-warning-default">
+            🔐 인증 토큰
+          </legend>
+          <p className="text-[11px] text-fg-muted">
+            Confluence PAT / Git auth_token 등 — 입력한 값은 즉시 암호화되어
+            저장됩니다 (DB 평문 X). 응답에는 절대 노출되지 않으며 동기화 시점에만
+            connector 로 inject 됩니다.
+          </p>
+          <Input
+            type="password"
+            value={secretToken}
+            onChange={(e) => {
+              setSecretToken(e.target.value);
+              if (e.target.value) setClearSecret(false);
+            }}
+            disabled={clearSecret}
+            placeholder={
+              hasExistingSecret
+                ? "(설정됨 — 변경하려면 새 token 입력, 비워두면 유지)"
+                : "토큰 입력 (선택 — 안 넣으면 connector 가 401)"
+            }
+            autoComplete="new-password"
+          />
+          {hasExistingSecret && (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={clearSecret}
+                onChange={(e) => {
+                  setClearSecret(e.target.checked);
+                  if (e.target.checked) setSecretToken("");
+                }}
+                className="h-3.5 w-3.5 accent-danger-default"
+              />
+              <span className="text-danger-default">
+                🗑️ 저장된 토큰 삭제 (저장 시 SecretBox 에서 제거)
+              </span>
+            </label>
+          )}
+        </fieldset>
       </form>
     </Dialog>
   );

@@ -370,18 +370,56 @@ class TestResolvePageId:
 # ---------------------------------------------------------------------------
 
 class TestResolvePat:
-    def test_returns_pat_when_set(self):
+    """0006 이후 _resolve_pat 가 async + source 인자 — SecretBox 우선, env fallback."""
+
+    @pytest.mark.asyncio
+    async def test_returns_pat_when_env_set_no_source(self):
         from src.api.routes.data_source_sync import _resolve_pat
 
         with patch("src.api.routes.data_source_sync._CONFLUENCE_PAT", "my-pat"):
-            assert _resolve_pat() == "my-pat"
+            assert await _resolve_pat() == "my-pat"
 
-    def test_raises_when_empty(self):
+    @pytest.mark.asyncio
+    async def test_raises_when_empty(self):
         from src.api.routes.data_source_sync import _resolve_pat
 
         with patch("src.api.routes.data_source_sync._CONFLUENCE_PAT", ""):
-            with pytest.raises(ValueError, match="CONFLUENCE_PAT"):
-                _resolve_pat()
+            with pytest.raises(ValueError, match="Confluence PAT"):
+                await _resolve_pat()
+
+    @pytest.mark.asyncio
+    async def test_secret_box_overrides_env(self):
+        """has_secret=True source 면 SecretBox 가 env 보다 우선."""
+        from src.api.routes.data_source_sync import _resolve_pat
+
+        source = {
+            "id": "ds-1",
+            "has_secret": True,
+            "secret_path": "org/o1/data-source/ds-1",
+        }
+        mock_box = AsyncMock()
+        mock_box.get = AsyncMock(return_value="per-source-pat")
+        with (
+            patch("src.api.routes.data_source_sync._CONFLUENCE_PAT", "env-pat"),
+            patch(
+                "src.auth.secret_box.get_secret_box",
+                return_value=mock_box,
+            ),
+        ):
+            assert await _resolve_pat(source) == "per-source-pat"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_env_when_secret_box_returns_none(self):
+        from src.api.routes.data_source_sync import _resolve_pat
+
+        source = {"id": "ds-1", "has_secret": True, "secret_path": "p"}
+        mock_box = AsyncMock()
+        mock_box.get = AsyncMock(return_value=None)  # path exists in DB but SecretBox empty
+        with (
+            patch("src.api.routes.data_source_sync._CONFLUENCE_PAT", "env-pat"),
+            patch("src.auth.secret_box.get_secret_box", return_value=mock_box),
+        ):
+            assert await _resolve_pat(source) == "env-pat"
 
 
 # ---------------------------------------------------------------------------

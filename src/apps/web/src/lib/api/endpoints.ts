@@ -543,6 +543,7 @@ export type DataSource = {
   name: string;
   source_type: string;
   kb_id?: string | null;
+  organization_id?: string | null;
   schedule?: string | null;
   status?: string | null;
   created_at?: string;
@@ -553,6 +554,8 @@ export type DataSource = {
   metadata?: Record<string, unknown> | null;
   crawl_config?: Record<string, unknown> | null;
   pipeline_config?: Record<string, unknown> | null;
+  /** SecretBox 에 저장된 token 유무. backend 는 plain token 절대 응답 X. */
+  has_secret?: boolean;
 };
 
 export const listDataSources = async (): Promise<DataSource[]> => {
@@ -578,6 +581,15 @@ export type DataSourceUpsertBody = {
   crawl_config?: Record<string, unknown> | null;
   pipeline_config?: Record<string, unknown> | null;
   metadata?: Record<string, unknown> | null;
+  /**
+   * Per-source connector token (Confluence PAT / Git auth_token / etc).
+   * - 일반 string: SecretBox 에 저장 (덮어쓰기)
+   * - 빈 string ("") 또는 omitted: 옛 token 그대로 유지 (변경 없음)
+   * - 명시적 null: SecretBox 에서 삭제 (has_secret=false)
+   *
+   * Backend 는 응답에 plain 절대 포함 안 함 — has_secret bool 만.
+   */
+  secret_token?: string | null;
 };
 
 export const createDataSource = (body: DataSourceUpsertBody) =>

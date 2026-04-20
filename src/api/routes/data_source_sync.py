@@ -231,13 +231,34 @@ def _resolve_page_id(source: dict[str, Any]) -> str:
     return page_id
 
 
-def _resolve_pat() -> str:
-    """Resolve Confluence PAT from env. Raises ValueError if missing."""
+async def _resolve_pat(source: dict[str, Any] | None = None) -> str:
+    """Resolve Confluence PAT — SecretBox 우선, env fallback (마이그레이션 동안).
+
+    SaaS 멀티테넌트: source 의 secret_path 가 source-별 PAT 를 보관.
+    env CONFLUENCE_PAT 는 0006 migration 이전 데이터의 backfill fallback —
+    Phase 2 종료 시 deprecated. plan 의 명시적 결정: 사람이 입력한 secret 은
+    SecretBox 만, 시스템 default env 는 멀티테넌트 cross-tenant 누설.
+    """
+    if source and source.get("has_secret") and source.get("secret_path"):
+        from src.auth.secret_box import SecretBoxError, get_secret_box
+
+        try:
+            box = get_secret_box()
+            value = await box.get(source["secret_path"])
+            if value:
+                return value
+        except SecretBoxError as e:
+            logger.warning(
+                "SecretBox.get failed for source %s: %s — falling back to env",
+                source.get("id"), e,
+            )
+
     pat = _CONFLUENCE_PAT
     if not pat:
         raise ValueError(
-            "CONFLUENCE_PAT not configured. "
-            "Set CONFLUENCE_PAT or CONF_PAT environment variable."
+            "Confluence PAT not configured. "
+            "이 source 의 token 을 admin UI 에서 설정하거나 (권장) "
+            "CONFLUENCE_PAT env 를 설정하세요 (deprecated)."
         )
     return pat
 
@@ -536,7 +557,7 @@ async def _run_confluence_source_sync(
 
     try:
         page_id = _resolve_page_id(source)
-        pat = _resolve_pat()
+        pat = await _resolve_pat(source)
 
         logger.info(
             "Starting sync for source %s (kb=%s, page_id=%s)",
@@ -654,6 +675,22 @@ async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
         connector_config = dict(source.get("crawl_config") or {})
         connector_config.setdefault("name", source_name)
         connector_config.setdefault("id", source_id)
+
+        # SecretBox 우선 — has_secret=True 이면 SecretBox 에서 token fetch.
+        # 평문 auth_token 이 crawl_config 에 남아있다면 (옛 데이터) 그대로 fallback.
+        if source.get("has_secret") and source.get("secret_path"):
+            from src.auth.secret_box import SecretBoxError, get_secret_box
+
+            try:
+                box = get_secret_box()
+                token = await box.get(source["secret_path"])
+                if token:
+                    connector_config["auth_token"] = token
+            except SecretBoxError as e:
+                logger.warning(
+                    "SecretBox.get failed for git source %s: %s — falling back to crawl_config plain",
+                    source_id, e,
+                )
 
         result = await connector.fetch(
             connector_config, force=False, last_fingerprint=last_fingerprint,

@@ -651,6 +651,11 @@ class DataSourceModel(KnowledgeBase):
     last_sync_result = Column(Text, default="{}")  # JSON
     error_message = Column(Text, nullable=True)
     metadata_ = Column("metadata", Text, default="{}")  # JSON
+    # 0006_data_source_secret.py — connector token (Confluence PAT, Git PAT
+    # 등) 의 at-rest 암호화 저장. plain 은 SecretBox(path=secret_path) 가
+    # 보관. crawl_config 의 평문 token 필드는 deprecated — 절대 저장 X.
+    secret_path = Column(String(255), nullable=True)
+    has_secret = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("idx_kds_kb_id", "kb_id"),

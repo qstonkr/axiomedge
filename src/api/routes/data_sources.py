@@ -15,12 +15,64 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.app import _get_state
 from src.auth.dependencies import OrgContext, get_current_org
+from src.auth.secret_box import SecretBoxError, get_secret_box
 
 logger = logging.getLogger(__name__)
 
 _DS_NOT_FOUND = "Data source not found"
+_SECRET_MASK_KEYS = ("auth_token", "pat", "password", "api_key", "token")
 _background_tasks: set[asyncio.Task] = set()  # prevent premature GC of fire-and-forget tasks
 router = APIRouter(prefix="/api/v1/admin/data-sources", tags=["Data Sources"])
+
+
+# ---------------------------------------------------------------------------
+# Secret helpers — Phase 2: SecretBox put/get/delete + DB path 동기화 +
+# 응답 직전 mask. Phase 4 에서 backend (Vault 등) 만 교체하면 path 그대로 동작.
+# ---------------------------------------------------------------------------
+
+def _secret_path(organization_id: str, source_id: str) -> str:
+    """Org-scoped immutable path."""
+    return f"org/{organization_id}/data-source/{source_id}"
+
+
+async def _store_secret(
+    repo: Any, organization_id: str, source_id: str, value: str,
+) -> None:
+    """SecretBox.put + DB has_secret/secret_path 동기화. KEY 미설정 시 raise."""
+    box = get_secret_box()  # SECRET_BOX_KEY 미설정 시 SecretBoxError → 500.
+    path = _secret_path(organization_id, source_id)
+    await box.put(path, value)
+    await repo.set_secret_path(source_id, organization_id, path)
+
+
+async def _delete_secret(
+    repo: Any, organization_id: str, source_id: str,
+) -> None:
+    """SecretBox.delete + DB has_secret/secret_path 비우기. idempotent.
+
+    SECRET_BOX_KEY 미설정 환경 (dev / test 일부) 에서도 DB cleanup 은 진행 —
+    SecretBox 호출만 silently skip. 라우트가 secret 없는 source 도 삭제할 수 있어야 함.
+    """
+    path = _secret_path(organization_id, source_id)
+    try:
+        box = get_secret_box()
+        await box.delete(path)
+    except SecretBoxError as e:
+        logger.warning("SecretBox.delete skipped for %s: %s", path, e)
+    await repo.set_secret_path(source_id, organization_id, None)
+
+
+def _mask_secret_fields(source: dict[str, Any]) -> dict[str, Any]:
+    """응답 직전 호출. secret_path 제거, crawl_config 의 옛 평문 token 마스킹."""
+    safe = dict(source)
+    safe.pop("secret_path", None)
+    cfg = safe.get("crawl_config")
+    if isinstance(cfg, dict):
+        masked = {
+            k: ("***" if k in _SECRET_MASK_KEYS else v) for k, v in cfg.items()
+        }
+        safe["crawl_config"] = masked
+    return safe
 
 
 # ---------------------------------------------------------------------------
@@ -30,13 +82,14 @@ router = APIRouter(prefix="/api/v1/admin/data-sources", tags=["Data Sources"])
 async def list_data_sources(
     org: OrgContext = Depends(get_current_org),
 ) -> dict[str, Any]:
-    """List data sources — caller's org scope only."""
+    """List data sources — caller's org scope only. secret 마스킹."""
     state = _get_state()
     repo = state.get("data_source_repo")
     if repo:
         try:
             sources = await repo.list(organization_id=org.id)
-            return {"sources": sources, "total": len(sources)}
+            masked = [_mask_secret_fields(s) for s in sources]
+            return {"sources": masked, "total": len(masked)}
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo list failed: %s", e)
     return {"sources": [], "total": 0}
@@ -50,18 +103,37 @@ async def create_data_source(
     body: dict[str, Any],
     org: OrgContext = Depends(get_current_org),
 ) -> dict[str, Any]:
-    """Create a data source — automatically scoped to caller's org."""
+    """Create a data source — automatically scoped to caller's org.
+
+    body 가 ``secret_token`` 가지면 SecretBox 에 저장 + crawl_config 의 평문
+    auth_token 자동 제거 (이중 저장 방지).
+    """
     state = _get_state()
     repo = state.get("data_source_repo")
     source_id = body.get("id") or str(uuid.uuid4())
+    secret_token = body.pop("secret_token", None)
     if repo:
         try:
             data = dict(body)
             data.setdefault("id", source_id)
             data.setdefault("status", "active")
-            # body 가 organization_id 보내도 무시 — caller 의 org 로 강제.
             data.pop("organization_id", None)
+            # crawl_config 의 평문 token 키는 절대 DB 평문 저장 X — 사용자가
+            # body 에 넣었어도 SecretBox 로 redirect, plain 키는 strip.
+            cfg = data.get("crawl_config")
+            if isinstance(cfg, dict):
+                fallback_token = next(
+                    (cfg.get(k) for k in _SECRET_MASK_KEYS if cfg.get(k)),
+                    None,
+                )
+                if fallback_token and not secret_token:
+                    secret_token = str(fallback_token)
+                data["crawl_config"] = {
+                    k: v for k, v in cfg.items() if k not in _SECRET_MASK_KEYS
+                }
             await repo.register(data, organization_id=org.id)
+            if isinstance(secret_token, str) and secret_token.strip():
+                await _store_secret(repo, org.id, source_id, secret_token.strip())
             return {"success": True, "source_id": source_id, "message": "Data source created"}
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo register failed: %s", e)
@@ -77,14 +149,14 @@ async def get_data_source(
     source_id: str,
     org: OrgContext = Depends(get_current_org),
 ) -> dict[str, Any]:
-    """Get data source — cross-org 시 404 (존재 누설 X)."""
+    """Get data source — cross-org 시 404. secret 마스킹."""
     state = _get_state()
     repo = state.get("data_source_repo")
     if repo:
         try:
             source = await repo.get(source_id, organization_id=org.id)
             if source:
-                return source
+                return _mask_secret_fields(source)
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo get failed: %s", e)
     raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
@@ -99,23 +171,38 @@ async def update_data_source(
     body: dict[str, Any],
     org: OrgContext = Depends(get_current_org),
 ) -> dict[str, Any]:
-    """Update data source — cross-org 시 404."""
+    """Update data source — cross-org 시 404.
+
+    body.secret_token 처리:
+      - 비어있는 string ("") → 변경 없음 (옛 token 유지)
+      - 명시적 ``null`` → SecretBox 에서 삭제 (has_secret=false)
+      - 일반 string → SecretBox 에 저장 (덮어쓰기)
+    """
     state = _get_state()
     repo = state.get("data_source_repo")
+    secret_token = body.get("secret_token", "")  # sentinel: missing key → ""
+    has_secret_key = "secret_token" in body
     if repo:
         try:
             existing = await repo.get(source_id, organization_id=org.id)
             if not existing:
                 raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
-            # Update status if provided, otherwise keep current
             status = body.get("status", existing.get("status", "active"))
             error_message = body.get("error_message")
             updated = await repo.update_status(
                 source_id, status, organization_id=org.id, error_message=error_message,
             )
             if not updated:
-                # update 사이에 cross-org delete 가 끼었거나 race — 404 로 매핑.
                 raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
+            # secret 변경 처리.
+            if has_secret_key:
+                if secret_token is None:
+                    await _delete_secret(repo, org.id, source_id)
+                elif isinstance(secret_token, str) and secret_token.strip():
+                    await _store_secret(
+                        repo, org.id, source_id, secret_token.strip(),
+                    )
+                # 빈 string ("") 은 의도적 no-op — 옛 token 유지.
             return {"success": True, "source_id": source_id, "message": "Updated"}
         except HTTPException:
             raise
@@ -133,11 +220,13 @@ async def delete_data_source(
     source_id: str,
     org: OrgContext = Depends(get_current_org),
 ) -> dict[str, bool | str]:
-    """Delete data source — cross-org 시 404."""
+    """Delete data source — cross-org 시 404. SecretBox cascade delete."""
     state = _get_state()
     repo = state.get("data_source_repo")
     if repo:
         try:
+            # secret 먼저 정리 (SecretBox.delete idempotent).
+            await _delete_secret(repo, org.id, source_id)
             deleted = await repo.delete(source_id, organization_id=org.id)
             if not deleted:
                 raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
