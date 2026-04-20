@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 
-import { Button, Skeleton, useToast } from "@/components/ui";
+import {
+  Button,
+  ErrorFallback,
+  Skeleton,
+  useToast,
+} from "@/components/ui";
 import {
   useCancelIngestRun,
   useIngestRuns,
@@ -20,7 +25,9 @@ function fmtDate(s: string | null | undefined): string {
 
 export function JobsClient() {
   const toast = useToast();
-  const { data, isLoading, isError, error } = useIngestRuns();
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const { data, isLoading, isError, error, refetch, isFetching, dataUpdatedAt } =
+    useIngestRuns(autoRefresh);
   const cancel = useCancelIngestRun();
   const [cancelling, setCancelling] = useState<string | null>(null);
   const runs = data ?? [];
@@ -123,11 +130,41 @@ export function JobsClient() {
 
   return (
     <section className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-semibold text-fg-default">작업 모니터</h1>
-        <p className="text-sm text-fg-muted">
-          백그라운드 ingest run — 15초마다 자동 갱신.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold text-fg-default">작업 모니터</h1>
+          <p className="text-sm text-fg-muted">
+            백그라운드 ingest run — {autoRefresh ? "15초마다 자동 갱신" : "자동 갱신 꺼짐"}.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          {dataUpdatedAt > 0 && (
+            <span className="text-fg-subtle">
+              최근 갱신{" "}
+              {new Date(dataUpdatedAt).toLocaleTimeString("ko-KR", {
+                hour12: false,
+              })}
+            </span>
+          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            title="지금 한 번 새로고침"
+          >
+            🔄 {isFetching ? "갱신 중…" : "새로고침"}
+          </Button>
+          <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-border-default px-2.5 py-1 text-fg-muted">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="h-3.5 w-3.5 accent-accent-default"
+            />
+            <span>자동 갱신</span>
+          </label>
+        </div>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -147,14 +184,11 @@ export function JobsClient() {
       {isLoading ? (
         <Skeleton className="h-48" />
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            run 목록을 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="run 목록을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <DataTable<IngestRun>
           columns={columns}

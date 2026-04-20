@@ -16,6 +16,7 @@ import {
   listSearchGroups,
   rejectGlossaryTerm,
   resolveDedupConflict,
+  triggerIngestion,
   updateGlossaryTerm,
   updateSearchGroup,
   type DedupConflict,
@@ -23,6 +24,7 @@ import {
   type GlossaryUpsertBody,
   type PipelineStatus,
   type SearchGroupUpsertBody,
+  type TriggerIngestionBody,
 } from "@/lib/api/endpoints";
 
 // ── /admin/ingest ──
@@ -32,6 +34,19 @@ export function usePipelineStatus() {
     queryFn: () => getPipelineStatus(),
     staleTime: 15 * 1000,
     refetchInterval: 15 * 1000,
+  });
+}
+
+export function useTriggerIngestion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: TriggerIngestionBody) => triggerIngestion(body),
+    onSuccess: () => {
+      // 새 run 이 생기면 pipeline status / runs / job-monitor 모두 invalidate.
+      qc.invalidateQueries({ queryKey: ["admin", "pipeline", "status"] });
+      qc.invalidateQueries({ queryKey: ["admin", "ingest", "runs"] });
+      qc.invalidateQueries({ queryKey: ["admin", "jobs"] });
+    },
   });
 }
 

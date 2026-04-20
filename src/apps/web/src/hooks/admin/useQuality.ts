@@ -11,6 +11,7 @@ import {
   listEvalHistory,
   listGoldenSet,
   triggerEval,
+  updateGoldenItem,
   type AgentTraceListItem,
   type DedupStats,
   type EvalRun,
@@ -57,6 +58,7 @@ export function useTriggerEval() {
 // ── /admin/golden-set ──
 export function useGoldenSet(params?: {
   kb_id?: string;
+  status?: string;
   page?: number;
   page_size?: number;
 }) {
@@ -71,6 +73,17 @@ export function useDeleteGoldenItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (itemId: string) => deleteGoldenItem(itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "golden-set"] }),
+  });
+}
+
+export function useUpdateGoldenItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      itemId: string;
+      body: Parameters<typeof updateGoldenItem>[1];
+    }) => updateGoldenItem(params.itemId, params.body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "golden-set"] }),
   });
 }

@@ -95,12 +95,18 @@ export function useEdgeServers() {
 }
 
 // ── /admin/jobs ──
-export function useIngestRuns() {
+/**
+ * autoRefresh=true (기본) 면 15초마다 polling. UI 에서 사용자가 toggle
+ * 끄면 false 로 전달 — useQuery 의 refetchInterval 이 false 가 되어 polling
+ * 중단. 페이지 백그라운드 탭일 때 (focus 잃었을 때) 도 자동 중단됨 (TanStack
+ * default refetchIntervalInBackground=false).
+ */
+export function useIngestRuns(autoRefresh = true, intervalMs = 15_000) {
   return useQuery<IngestRun[]>({
     queryKey: ["admin", "jobs"],
     queryFn: () => listIngestRuns(),
     staleTime: 15 * 1000,
-    refetchInterval: 15 * 1000,
+    refetchInterval: autoRefresh ? intervalMs : false,
   });
 }
 

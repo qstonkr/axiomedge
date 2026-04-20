@@ -1,13 +1,141 @@
 "use client";
 
-import { Skeleton } from "@/components/ui";
-import { usePipelineStatus } from "@/hooks/admin/useContent";
+import { useState, type FormEvent } from "react";
+
+import {
+  Button,
+  ErrorFallback,
+  Input,
+  Select,
+  Skeleton,
+  Textarea,
+  useToast,
+} from "@/components/ui";
+import {
+  usePipelineStatus,
+  useTriggerIngestion,
+} from "@/hooks/admin/useContent";
 import { useGatesBlocked, useGatesStats } from "@/hooks/admin/useLifecycle";
-import type { BlockedDocument, PipelineGateStat } from "@/lib/api/endpoints";
+import { useSearchableKbs } from "@/hooks/useSearch";
+import type {
+  BlockedDocument,
+  PipelineGateStat,
+  TriggerIngestionBody,
+} from "@/lib/api/endpoints";
 
 import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
 import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
+
+const SOURCE_TYPES: TriggerIngestionBody["source_type"][] = [
+  "CONFLUENCE",
+  "JIRA",
+  "GIT",
+  "TEAMS",
+  "GWIKI",
+  "SHAREPOINT",
+  "MANUAL",
+];
+
+function TriggerIngestionForm() {
+  const toast = useToast();
+  const trigger = useTriggerIngestion();
+  const kbs = useSearchableKbs();
+  const [kbId, setKbId] = useState("");
+  const [sourceType, setSourceType] =
+    useState<TriggerIngestionBody["source_type"]>("MANUAL");
+  const [description, setDescription] = useState("");
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!kbId.trim()) {
+      toast.push("KB 를 선택하거나 직접 입력하세요.", "warning");
+      return;
+    }
+    try {
+      const res = await trigger.mutateAsync({
+        kb_id: kbId.trim(),
+        source_type: sourceType,
+        description: description.trim() || undefined,
+      });
+      const runId = res.run_id ?? res.id ?? "(id 없음)";
+      toast.push(`인제스트가 시작되었습니다 — ${runId}`, "success");
+      setDescription("");
+    } catch (err) {
+      toast.push(
+        err instanceof Error ? err.message : "트리거 실패",
+        "danger",
+      );
+    }
+  }
+
+  const kbOptions = kbs.data ?? [];
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="space-y-3 rounded-lg border border-border-default bg-bg-canvas p-4"
+    >
+      <h2 className="text-sm font-medium text-fg-default">수동 인제스트 트리거</h2>
+      <p className="text-xs text-fg-muted">
+        스케줄링 외 수동으로 한 번 실행할 때 사용. 진행 상태는 위 카드 +
+        최근 실행 영역에서 확인.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          대상 KB
+          {kbOptions.length > 0 ? (
+            <Select value={kbId} onChange={(e) => setKbId(e.target.value)}>
+              <option value="">— KB 선택 —</option>
+              {kbOptions.map((kb) => (
+                <option key={kb.kb_id} value={kb.kb_id}>
+                  {kb.name} ({kb.kb_id})
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input
+              value={kbId}
+              onChange={(e) => setKbId(e.target.value)}
+              placeholder="KB ID 직접 입력"
+            />
+          )}
+        </label>
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          소스 타입
+          <Select
+            value={sourceType}
+            onChange={(e) =>
+              setSourceType(
+                e.target.value as TriggerIngestionBody["source_type"],
+              )
+            }
+          >
+            {SOURCE_TYPES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
+      <label className="block space-y-1 text-xs font-medium text-fg-muted">
+        설명 (선택)
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="인제스트 사유 — 운영 로그용"
+          maxLength={500}
+        />
+      </label>
+      <div className="flex justify-end">
+        <Button type="submit" disabled={trigger.isPending}>
+          {trigger.isPending ? "트리거 중…" : "인제스트 시작"}
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 function fmtDate(s: string | null | undefined): string {
   if (!s) return "—";
@@ -118,14 +246,10 @@ export function IngestClient() {
           ))}
         </div>
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            파이프라인 상태를 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="파이프라인 상태를 불러올 수 없습니다"
+          error={error}
+        />
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -180,6 +304,8 @@ export function IngestClient() {
               />
             )}
           </article>
+
+          <TriggerIngestionForm />
 
           {data?.last_run && (
             <article className="rounded-lg border border-border-default bg-bg-canvas p-4">

@@ -752,11 +752,13 @@ export type GoldenItem = {
   contexts?: string[];
   tags?: string[];
   difficulty?: string | null;
+  status?: "approved" | "pending" | "rejected" | string;
   created_at?: string;
 };
 
 export const listGoldenSet = async (params?: {
   kb_id?: string;
+  status?: string;
   page?: number;
   page_size?: number;
 }): Promise<{ items: GoldenItem[]; total: number }> => {
@@ -772,6 +774,23 @@ export const deleteGoldenItem = (itemId: string) =>
   request<{ success: boolean }>(
     `api/v1/admin/golden-set/${encodeURIComponent(itemId)}`,
     { method: "DELETE" },
+  );
+
+/**
+ * Golden set 항목의 status 변경 등 부분 업데이트 (PATCH).
+ * Streamlit 의 "승인 / 거부" 버튼이 호출하던 endpoint.
+ */
+export const updateGoldenItem = (
+  itemId: string,
+  body: Partial<{
+    status: "approved" | "pending" | "rejected";
+    question: string;
+    answer: string;
+  }>,
+) =>
+  request<{ success: boolean; item?: GoldenItem }>(
+    `api/v1/admin/golden-set/${encodeURIComponent(itemId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
   );
 
 // ── /agentic/traces (B-2 Agent Trace viewer) ────────────────────────────
@@ -970,6 +989,29 @@ export const cancelIngestRun = (runId: string) =>
   request<{ success: boolean }>(
     `api/v1/admin/knowledge/ingest/jobs/${encodeURIComponent(runId)}/cancel`,
     { method: "POST" },
+  );
+
+/**
+ * 수동 인제스천 트리거 — Streamlit ingestion_jobs.py 의 trigger_ingestion_form
+ * 패턴 이식. KB + source_type 필수, description 선택. 성공 시 ``run_id`` 반환.
+ */
+export type TriggerIngestionBody = {
+  kb_id: string;
+  source_type:
+    | "CONFLUENCE"
+    | "JIRA"
+    | "GIT"
+    | "TEAMS"
+    | "GWIKI"
+    | "SHAREPOINT"
+    | "MANUAL";
+  description?: string;
+};
+
+export const triggerIngestion = (body: TriggerIngestionBody) =>
+  request<{ run_id?: string; id?: string; success?: boolean }>(
+    "api/v1/admin/knowledge/ingest",
+    { method: "POST", body: JSON.stringify(body) },
   );
 
 // ── /admin/config/weights (B-2 가중치 설정) ─────────────────────────────
