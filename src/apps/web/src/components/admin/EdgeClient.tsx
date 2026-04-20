@@ -29,7 +29,9 @@ import {
   useDistillProfiles,
   useEdgeManifest,
   useRequestEdgeUpdate,
+  useReviewTrainingData,
   useRollbackBuild,
+  useTrainingData,
   useTrainingDataStats,
   useTriggerGenerateTrainingData,
   useTriggerRetrain,
@@ -1080,9 +1082,159 @@ function TrainingDataTab() {
           <Button onClick={onGenerate} disabled={generate.isPending}>
             {generate.isPending ? "생성 중…" : `+${numSamples} QA 생성`}
           </Button>
+
+          <TrainingDataReviewTable profileName={profileName} />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * 학습 데이터 sample review — pending 큐 노출 + 체크박스 → 일괄 승인/거부.
+ * 데이터 큐레이션 (audit 의 #100) 의 핵심 미완 부분이었음.
+ */
+function TrainingDataReviewTable({ profileName }: { profileName: string }) {
+  const toast = useToast();
+  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">(
+    "pending",
+  );
+  const list = useTrainingData({ profile_name: profileName, status: statusFilter, limit: 50 });
+  const review = useReviewTrainingData();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const items = list.data?.items ?? [];
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAll() {
+    if (selected.size === items.length) setSelected(new Set());
+    else setSelected(new Set(items.map((it) => it.id)));
+  }
+
+  async function onReview(status: "approved" | "rejected") {
+    if (selected.size === 0) return;
+    if (status === "rejected" && !confirm(`${selected.size}건 거부?`)) return;
+    try {
+      const res = await review.mutateAsync({ ids: Array.from(selected), status });
+      toast.push(`${res.updated}건 ${status === "approved" ? "승인" : "거부"}됨`, "success");
+      setSelected(new Set());
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "review 실패", "danger");
+    }
+  }
+
+  const allSelected = items.length > 0 && selected.size === items.length;
+
+  return (
+    <article className="space-y-3">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium text-fg-default">샘플 review</h3>
+          <p className="text-xs text-fg-muted">
+            생성된 학습 데이터 sample 을 검토하고 승인/거부.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={statusFilter}
+            onChange={(e) =>
+              setStatusFilter(e.target.value as "pending" | "approved" | "rejected")
+            }
+            className="h-8 w-32 text-xs"
+          >
+            <option value="pending">대기</option>
+            <option value="approved">승인</option>
+            <option value="rejected">거부</option>
+          </Select>
+          <span className="text-xs text-fg-muted">
+            {selected.size > 0 ? `${selected.size}건 선택됨` : ""}
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onReview("approved")}
+            disabled={selected.size === 0 || review.isPending}
+          >
+            ✅ 승인
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onReview("rejected")}
+            disabled={selected.size === 0 || review.isPending}
+          >
+            ❌ 거부
+          </Button>
+        </div>
+      </header>
+      {list.isLoading ? (
+        <Skeleton className="h-32" />
+      ) : list.isError ? (
+        <ErrorFallback
+          title="학습 데이터를 불러올 수 없습니다"
+          error={list.error}
+          onRetry={() => list.refetch()}
+        />
+      ) : items.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-6 text-center text-xs text-fg-muted">
+          {statusFilter === "pending"
+            ? "검토 대기 sample 이 없습니다."
+            : "해당 상태의 sample 이 없습니다."}
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border-default">
+          <table className="min-w-full divide-y divide-border-default text-xs">
+            <thead className="bg-bg-subtle text-fg-muted">
+              <tr>
+                <th className="px-2 py-2 text-left font-semibold">
+                  <input
+                    type="checkbox"
+                    aria-label="전체 선택"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="h-3.5 w-3.5 accent-accent-default"
+                  />
+                </th>
+                <th className="px-2 py-2 text-left font-semibold">질문</th>
+                <th className="px-2 py-2 text-left font-semibold">답변</th>
+                <th className="px-2 py-2 text-left font-semibold">소스</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-default bg-bg-canvas">
+              {items.map((it) => (
+                <tr key={it.id}>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="checkbox"
+                      aria-label={`${it.id} 선택`}
+                      checked={selected.has(it.id)}
+                      onChange={() => toggle(it.id)}
+                      className="h-3.5 w-3.5 accent-accent-default"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-fg-default">
+                    <p className="line-clamp-2">{it.question}</p>
+                  </td>
+                  <td className="px-2 py-1.5 text-fg-muted">
+                    <p className="line-clamp-2">{it.answer}</p>
+                  </td>
+                  <td className="px-2 py-1.5 font-mono text-[10px] text-fg-subtle">
+                    {it.source_type ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
   );
 }
 

@@ -14,7 +14,9 @@ import {
   listBaseModels,
   listDistillBuilds,
   listDistillProfiles,
+  listTrainingData,
   requestEdgeUpdate,
+  reviewTrainingData,
   rollbackBuild,
   triggerGenerateTrainingData,
   triggerRetrain,
@@ -26,6 +28,7 @@ import {
   type DistillProfileCreateBody,
   type DistillProfileUpdateBody,
   type EdgeManifest,
+  type TrainingDataItem,
   type TrainingDataStats,
 } from "@/lib/api/endpoints";
 
@@ -155,6 +158,35 @@ export function useTriggerGenerateTrainingData() {
   return useMutation({
     mutationFn: (input: { profile_name: string; num_samples?: number }) =>
       triggerGenerateTrainingData(input),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "distill", "training-data"] }),
+  });
+}
+
+/** 학습 데이터 sample list — profile + status filter. */
+export function useTrainingData(params: {
+  profile_name: string | null;
+  status?: string;
+  limit?: number;
+}) {
+  return useQuery<{ items: TrainingDataItem[]; total: number }>({
+    queryKey: ["admin", "distill", "training-data", "list", params],
+    queryFn: () =>
+      listTrainingData({
+        profile_name: params.profile_name!,
+        status: params.status,
+        limit: params.limit ?? 50,
+      }),
+    enabled: Boolean(params.profile_name),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useReviewTrainingData() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { ids: string[]; status: "approved" | "rejected" }) =>
+      reviewTrainingData(input),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["admin", "distill", "training-data"] }),
   });

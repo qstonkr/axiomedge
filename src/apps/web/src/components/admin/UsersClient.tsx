@@ -18,14 +18,20 @@ import {
   useAssignAuthRole,
   useAuthRoles,
   useAuthUsers,
+  useCreateAbacPolicy,
   useCreateAuthUser,
+  useDeleteAbacPolicy,
   useDeleteAuthUser,
   useKbPermissions,
+  useRevokeKbPermission,
+  useSetKbPermission,
+  useUpdateAbacPolicy,
   useUpdateAuthUser,
 } from "@/hooks/admin/useOps";
 import { useSearchableKbs } from "@/hooks/useSearch";
 import type {
   AbacPolicy,
+  AbacPolicyUpsertBody,
   AuthUser,
   AuthUserUpsertBody,
   KbPermission,
@@ -406,9 +412,46 @@ function RoleAssignDialog({
  * owner) 목록 표시. 변경 (set/revoke) 은 후속 (현재는 read-only viewer).
  */
 function KbPermissionsTab() {
+  const toast = useToast();
   const kbs = useSearchableKbs();
   const [kbId, setKbId] = useState("");
   const perms = useKbPermissions(kbId || null);
+  const setPerm = useSetKbPermission();
+  const revoke = useRevokeKbPermission();
+  const [grantUserId, setGrantUserId] = useState("");
+  const [grantLevel, setGrantLevel] =
+    useState<KbPermission["permission_level"]>("reader");
+
+  async function onGrant() {
+    if (!kbId || !grantUserId.trim()) return;
+    try {
+      await setPerm.mutateAsync({
+        kbId,
+        body: {
+          user_id: grantUserId.trim(),
+          permission_level: grantLevel,
+        },
+      });
+      toast.push(`'${grantLevel}' 권한 부여됨`, "success");
+      setGrantUserId("");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "부여 실패", "danger");
+    }
+  }
+
+  async function onRevoke(p: KbPermission) {
+    if (!kbId) return;
+    if (
+      !confirm(`'${p.email ?? p.user_id}' 의 ${p.permission_level} 권한 회수?`)
+    )
+      return;
+    try {
+      await revoke.mutateAsync({ kbId, userId: p.user_id });
+      toast.push("회수됨", "success");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "회수 실패", "danger");
+    }
+  }
 
   const columns: Column<KbPermission>[] = [
     {
@@ -458,6 +501,21 @@ function KbPermissionsTab() {
         </span>
       ),
     },
+    {
+      key: "_actions",
+      header: "",
+      align: "right",
+      render: (p) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onRevoke(p)}
+          disabled={revoke.isPending}
+        >
+          회수
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -475,6 +533,48 @@ function KbPermissionsTab() {
           </Select>
         </label>
       </div>
+
+      {kbId && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onGrant();
+          }}
+          className="grid gap-3 rounded-lg border border-border-default bg-bg-subtle p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,180px)_auto]"
+        >
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            사용자 ID (또는 이메일)
+            <Input
+              value={grantUserId}
+              onChange={(e) => setGrantUserId(e.target.value)}
+              placeholder="user_id"
+              required
+            />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            권한 레벨
+            <Select
+              value={grantLevel}
+              onChange={(e) =>
+                setGrantLevel(
+                  e.target.value as KbPermission["permission_level"],
+                )
+              }
+            >
+              <option value="reader">reader</option>
+              <option value="contributor">contributor</option>
+              <option value="manager">manager</option>
+              <option value="owner">owner</option>
+            </Select>
+          </label>
+          <div className="flex items-end">
+            <Button type="submit" disabled={setPerm.isPending || !grantUserId.trim()}>
+              {setPerm.isPending ? "부여 중…" : "권한 부여"}
+            </Button>
+          </div>
+        </form>
+      )}
+
       {!kbId ? (
         <div className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-8 text-center text-xs text-fg-muted">
           KB 를 선택하면 그 KB 의 사용자 권한이 표시됩니다.
@@ -495,11 +595,6 @@ function KbPermissionsTab() {
           empty="이 KB 의 명시적 권한 부여가 없습니다 (조직 role 만 적용)."
         />
       )}
-      <p className="text-xs text-fg-subtle">
-        💡 권한 변경 (set/revoke) 은 backend
-        <code className="font-mono">POST /auth/kb/{`{kb_id}`}/permissions</code>{" "}
-        로 가능 — UI 는 후속 단계.
-      </p>
     </div>
   );
 }
@@ -510,7 +605,23 @@ function KbPermissionsTab() {
  * 후속.
  */
 function AbacPoliciesTab() {
+  const toast = useToast();
   const policies = useAbacPolicies();
+  const create = useCreateAbacPolicy();
+  const update = useUpdateAbacPolicy();
+  const del = useDeleteAbacPolicy();
+  const [editing, setEditing] = useState<AbacPolicy | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  async function onDelete(p: AbacPolicy) {
+    if (!confirm(`정책 '${p.name}' 삭제?`)) return;
+    try {
+      await del.mutateAsync(p.id);
+      toast.push("삭제됨", "success");
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "삭제 실패", "danger");
+    }
+  }
 
   const columns: Column<AbacPolicy>[] = [
     {
@@ -589,10 +700,30 @@ function AbacPoliciesTab() {
         );
       },
     },
+    {
+      key: "_actions",
+      header: "",
+      align: "right",
+      render: (p) => (
+        <div className="flex justify-end gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+            수정
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onDelete(p)}>
+            삭제
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   return (
     <div className="space-y-4">
+      <div className="flex items-end justify-end">
+        <Button size="sm" onClick={() => setCreating(true)}>
+          + 신규 정책
+        </Button>
+      </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard label="총 정책" value={(policies.data ?? []).length} />
         <MetricCard
@@ -622,11 +753,188 @@ function AbacPoliciesTab() {
           empty="등록된 ABAC 정책이 없습니다."
         />
       )}
-      <p className="text-xs text-fg-subtle">
-        💡 정책 작성 / 편집은 backend
-        <code className="font-mono">POST/PUT /auth/abac/policies</code> 로
-        가능 — UI 는 후속 단계.
-      </p>
+
+      <AbacPolicyDialog
+        key={editing?.id ?? (creating ? "create" : "closed")}
+        open={creating || editing !== null}
+        initial={editing}
+        onClose={() => {
+          setCreating(false);
+          setEditing(null);
+        }}
+        onSubmit={async (body) => {
+          try {
+            if (editing) {
+              await update.mutateAsync({ policyId: editing.id, body });
+              toast.push("수정되었습니다", "success");
+            } else {
+              await create.mutateAsync(body);
+              toast.push("신규 정책이 추가되었습니다", "success");
+            }
+            setCreating(false);
+            setEditing(null);
+          } catch (e) {
+            toast.push(e instanceof Error ? e.message : "저장 실패", "danger");
+          }
+        }}
+        pending={create.isPending || update.isPending}
+      />
     </div>
+  );
+}
+
+function AbacPolicyDialog({
+  open,
+  initial,
+  onClose,
+  onSubmit,
+  pending,
+}: {
+  open: boolean;
+  initial: AbacPolicy | null;
+  onClose: () => void;
+  onSubmit: (body: AbacPolicyUpsertBody) => void;
+  pending: boolean;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [resourceType, setResourceType] = useState(initial?.resource_type ?? "kb");
+  const [action, setAction] = useState(initial?.action ?? "*");
+  const [effect, setEffect] = useState<"allow" | "deny">(initial?.effect ?? "allow");
+  const [priority, setPriority] = useState(initial?.priority ?? 0);
+  const [isActive, setIsActive] = useState(initial?.is_active ?? true);
+  const [conditionsJson, setConditionsJson] = useState(
+    initial
+      ? typeof initial.conditions === "string"
+        ? initial.conditions
+        : JSON.stringify(initial.conditions, null, 2)
+      : "{}",
+  );
+  const [conditionsError, setConditionsError] = useState<string | null>(null);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    let conditions: Record<string, unknown> | string;
+    try {
+      conditions = JSON.parse(conditionsJson);
+      setConditionsError(null);
+    } catch (err) {
+      setConditionsError(
+        err instanceof Error ? err.message : "조건은 JSON 이어야 합니다",
+      );
+      return;
+    }
+    onSubmit({
+      name: name.trim(),
+      description: description.trim() || null,
+      resource_type: resourceType.trim(),
+      action: action.trim(),
+      conditions,
+      effect,
+      priority,
+      is_active: isActive,
+    });
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={initial ? `정책 수정 — ${initial.name}` : "신규 ABAC 정책"}
+      width="lg"
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            취소
+          </Button>
+          <Button type="submit" form="abac-form" disabled={pending || !name.trim()}>
+            {pending ? "저장 중…" : "저장"}
+          </Button>
+        </>
+      }
+    >
+      <form id="abac-form" onSubmit={submit} className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            이름
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+            />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            우선순위
+            <Input
+              type="number"
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+            />
+          </label>
+        </div>
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          설명
+          <Input
+            value={description ?? ""}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="(선택)"
+          />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            리소스 type
+            <Input
+              value={resourceType}
+              onChange={(e) => setResourceType(e.target.value)}
+              placeholder="예: kb, document, search"
+              required
+            />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            액션
+            <Input
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+              placeholder="예: read, write, *"
+              required
+            />
+          </label>
+          <label className="block space-y-1 text-xs font-medium text-fg-muted">
+            효과
+            <Select
+              value={effect}
+              onChange={(e) => setEffect(e.target.value as "allow" | "deny")}
+            >
+              <option value="allow">allow</option>
+              <option value="deny">deny</option>
+            </Select>
+          </label>
+        </div>
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          조건 (JSON)
+          <textarea
+            value={conditionsJson}
+            onChange={(e) => setConditionsJson(e.target.value)}
+            rows={6}
+            spellCheck={false}
+            className="block w-full rounded-md border border-border-default bg-bg-canvas px-3 py-2 font-mono text-xs text-fg-default focus:border-accent-default focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-default/40"
+          />
+          {conditionsError && (
+            <span className="block text-xs text-danger-default">
+              {conditionsError}
+            </span>
+          )}
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+          />
+          <span className="text-fg-default">활성</span>
+        </label>
+      </form>
+    </Dialog>
   );
 }

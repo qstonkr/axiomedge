@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   assignAuthRole,
   cancelIngestRun,
+  createAbacPolicy,
   createAuthUser,
+  deleteAbacPolicy,
   deleteAuthUser,
   expandGraphNode,
   getConfigWeights,
@@ -16,10 +18,16 @@ import {
   listEdgeServers,
   listIngestRuns,
   listKbPermissions,
+  resetConfigWeights,
   revokeAuthRole,
+  revokeKbPermission,
   searchGraphEntities,
+  setKbPermission,
+  updateAbacPolicy,
   updateAuthUser,
+  updateConfigWeights,
   type AbacPolicy,
+  type AbacPolicyUpsertBody,
   type AuthRole,
   type AuthUser,
   type AuthUserUpsertBody,
@@ -62,6 +70,60 @@ export function useKbPermissions(kbId: string | null) {
     queryFn: () => listKbPermissions(kbId!),
     enabled: Boolean(kbId),
     staleTime: 60 * 1000,
+  });
+}
+
+export function useSetKbPermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      kbId: string;
+      body: { user_id: string; permission_level: KbPermission["permission_level"] };
+    }) => setKbPermission(params.kbId, params.body),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "kb", vars.kbId, "permissions"] });
+    },
+  });
+}
+
+export function useRevokeKbPermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { kbId: string; userId: string }) =>
+      revokeKbPermission(params.kbId, params.userId),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "kb", vars.kbId, "permissions"] });
+    },
+  });
+}
+
+export function useCreateAbacPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AbacPolicyUpsertBody) => createAbacPolicy(body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "abac", "policies"] }),
+  });
+}
+
+export function useUpdateAbacPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      policyId: string;
+      body: Partial<AbacPolicyUpsertBody>;
+    }) => updateAbacPolicy(params.policyId, params.body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "abac", "policies"] }),
+  });
+}
+
+export function useDeleteAbacPolicy() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (policyId: string) => deleteAbacPolicy(policyId),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "abac", "policies"] }),
   });
 }
 
@@ -149,6 +211,24 @@ export function useConfigWeights() {
     queryFn: () => getConfigWeights(),
     staleTime: 5 * 60 * 1000,
     retry: 0, // backend 가 자주 500 — 재시도 시간 낭비
+  });
+}
+
+export function useUpdateConfigWeights() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Record<string, unknown>) => updateConfigWeights(body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "config", "weights"] }),
+  });
+}
+
+export function useResetConfigWeights() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => resetConfigWeights(),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["admin", "config", "weights"] }),
   });
 }
 

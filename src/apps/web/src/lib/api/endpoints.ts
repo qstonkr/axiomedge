@@ -690,6 +690,20 @@ export const listDiscoveredSynonyms = async (params?: {
   return { items, total: raw.total ?? items.length };
 };
 
+/** 동의어 후보 일괄 승인 — base term 의 synonyms 배열에 추가됨. */
+export const approveDiscoveredSynonyms = (synonymIds: string[]) =>
+  request<{ success: boolean; approved: number; errors: string[] }>(
+    "api/v1/admin/glossary/discovered-synonyms/approve",
+    { method: "POST", body: JSON.stringify({ synonym_ids: synonymIds }) },
+  );
+
+/** 동의어 후보 일괄 거부 — discovered 레코드만 status=rejected 로. */
+export const rejectDiscoveredSynonyms = (synonymIds: string[]) =>
+  request<{ success: boolean; rejected: number; errors: string[] }>(
+    "api/v1/admin/glossary/discovered-synonyms/reject",
+    { method: "POST", body: JSON.stringify({ synonym_ids: synonymIds }) },
+  );
+
 // ── /admin/dedup/conflicts (B-2 중복/모순) ──────────────────────────────
 
 export type DedupConflict = {
@@ -1116,6 +1130,53 @@ export const listKbPermissions = async (
   );
 };
 
+export const setKbPermission = (
+  kbId: string,
+  body: { user_id: string; permission_level: KbPermission["permission_level"] },
+) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/kb/${encodeURIComponent(kbId)}/permissions`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const revokeKbPermission = (kbId: string, userId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/kb/${encodeURIComponent(kbId)}/permissions/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+
+export type AbacPolicyUpsertBody = {
+  name: string;
+  description?: string | null;
+  resource_type: string;
+  action: string;
+  conditions: Record<string, unknown> | string;
+  effect: "allow" | "deny";
+  priority?: number;
+  is_active?: boolean;
+};
+
+export const createAbacPolicy = (body: AbacPolicyUpsertBody) =>
+  request<{ success: boolean; id: string }>("api/v1/auth/abac/policies", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateAbacPolicy = (
+  policyId: string,
+  body: Partial<AbacPolicyUpsertBody>,
+) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/abac/policies/${encodeURIComponent(policyId)}`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+
+export const deleteAbacPolicy = (policyId: string) =>
+  request<{ success: boolean }>(
+    `api/v1/auth/abac/policies/${encodeURIComponent(policyId)}`,
+    { method: "DELETE" },
+  );
+
 /**
  * 사용자 본인의 활동 로그. login / search / feedback / document / ingestion
  * 등 통합 timeline. Streamlit my_activities.py 가 호출하던 두 endpoint
@@ -1189,6 +1250,26 @@ export const getConfigWeights = () =>
     method: "POST", // backend 는 POST = 조회 (legacy quirk)
     body: JSON.stringify({}),
   });
+
+/**
+ * partial update — flat 키 ("section.field") 또는 nested 객체 둘 다 허용.
+ * 응답: `{applied: {...}, current: {...}}`.
+ */
+export const updateConfigWeights = (body: Record<string, unknown>) =>
+  request<{
+    applied: Record<string, unknown>;
+    current: Record<string, unknown>;
+  }>("api/v1/admin/config/weights", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+/** 전체 리셋 → defaults. */
+export const resetConfigWeights = () =>
+  request<{ status: string; current: Record<string, unknown> }>(
+    "api/v1/admin/config/weights/reset",
+    { method: "POST" },
+  );
 
 // ── /admin/graph/stats (B-2 그래프 탐색) ───────────────────────────────
 
@@ -1557,6 +1638,47 @@ export const triggerGenerateTrainingData = (body: {
     "api/v1/distill/training-data/generate",
     { method: "POST", body: JSON.stringify(body) },
   );
+
+/** 학습 데이터 sample row — backend `list_training_data` 가 반환. */
+export type TrainingDataItem = {
+  id: string;
+  question: string;
+  answer: string;
+  status?: "approved" | "pending" | "rejected" | string;
+  source_type?: string;
+  batch_id?: string;
+  kb_id?: string;
+  created_at?: string;
+};
+
+export const listTrainingData = async (params: {
+  profile_name: string;
+  status?: string;
+  source_type?: string;
+  batch_id?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ items: TrainingDataItem[]; total: number }> => {
+  const raw = await request<{
+    items?: TrainingDataItem[];
+    total?: number;
+  }>("api/v1/distill/training-data", {
+    method: "GET",
+    query: params,
+  });
+  const items = raw.items ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+/** 일괄 승인/거부 — Streamlit 의 review 패턴과 동일. */
+export const reviewTrainingData = (body: {
+  ids: string[];
+  status: "approved" | "rejected";
+}) =>
+  request<{ updated: number }>("api/v1/distill/training-data/review", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 
 // ── edge-servers (서버 운영 — list 는 useOps 의 useEdgeServers) ──
 

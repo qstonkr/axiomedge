@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  approveDiscoveredSynonyms,
   approveGlossaryTerm,
   createGlossaryTerm,
   createSearchGroup,
@@ -16,6 +17,7 @@ import {
   listGlossaryTerms,
   listPendingVerifications,
   listSearchGroups,
+  rejectDiscoveredSynonyms,
   rejectGlossaryTerm,
   resolveDedupConflict,
   triggerIngestion,
@@ -86,6 +88,26 @@ export function useDiscoveredSynonyms(params?: {
     queryKey: ["admin", "glossary", "discovered-synonyms", params],
     queryFn: () => listDiscoveredSynonyms(params),
     staleTime: 60 * 1000,
+  });
+}
+
+export function useApproveDiscoveredSynonyms() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (synonymIds: string[]) => approveDiscoveredSynonyms(synonymIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "glossary"] });
+    },
+  });
+}
+
+export function useRejectDiscoveredSynonyms() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (synonymIds: string[]) => rejectDiscoveredSynonyms(synonymIds),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "glossary"] });
+    },
   });
 }
 

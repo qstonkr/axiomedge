@@ -2,8 +2,18 @@
 
 import { useMemo, useState } from "react";
 
-import { Button, ErrorFallback, Input, Skeleton } from "@/components/ui";
-import { useConfigWeights } from "@/hooks/admin/useOps";
+import {
+  Button,
+  ErrorFallback,
+  Input,
+  Skeleton,
+  useToast,
+} from "@/components/ui";
+import {
+  useConfigWeights,
+  useResetConfigWeights,
+  useUpdateConfigWeights,
+} from "@/hooks/admin/useOps";
 
 type Leaf =
   | { kind: "number"; value: number; min: number; max: number; step: number }
@@ -12,10 +22,6 @@ type Leaf =
 
 type FlatRow = { path: string; leaf: Leaf };
 
-/**
- * 0.0 ~ 1.0 weight 값은 슬라이더 표시. 100 이상의 정수는 timeout/limit
- * 으로 추정해서 더 큰 max. 음수는 단순 number input.
- */
 function classify(v: unknown): Leaf | null {
   if (typeof v === "number" && Number.isFinite(v)) {
     if (v >= 0 && v <= 1) {
@@ -27,7 +33,7 @@ function classify(v: unknown): Leaf | null {
     if (v >= 0 && v <= 100) {
       return { kind: "number", value: v, min: 0, max: 100, step: 0.5 };
     }
-    return null; // out-of-range — fall back to JSON dump
+    return null;
   }
   if (typeof v === "boolean") return { kind: "bool", value: v };
   if (typeof v === "string" && v.length < 80) return { kind: "text", value: v };
@@ -51,41 +57,80 @@ function flatten(obj: unknown, prefix = ""): FlatRow[] {
   return out;
 }
 
-function ReadOnlyRow({ row }: { row: FlatRow }) {
+function leafValue(l: Leaf): number | string | boolean {
+  if (l.kind === "number") return l.value;
+  if (l.kind === "bool") return l.value;
+  return l.value;
+}
+
+function EditableRow({
+  row,
+  staged,
+  editMode,
+  onChange,
+}: {
+  row: FlatRow;
+  staged: Map<string, number | string | boolean>;
+  editMode: boolean;
+  onChange: (path: string, val: number | string | boolean) => void;
+}) {
   const { leaf } = row;
+  const cur = staged.has(row.path) ? staged.get(row.path)! : leafValue(leaf);
+  const dirty = staged.has(row.path);
+
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,260px)_60px] items-center gap-3 border-b border-border-default/60 px-3 py-2 text-xs">
+    <div
+      className={`grid grid-cols-[minmax(0,1fr)_minmax(0,260px)_80px] items-center gap-3 border-b border-border-default/60 px-3 py-2 text-xs ${dirty ? "bg-warning-subtle/50" : ""}`}
+    >
       <span
         className="truncate font-mono text-fg-muted"
         title={row.path}
       >
         {row.path}
+        {dirty && (
+          <span className="ml-1 text-[10px] font-semibold text-warning-default">
+            ●
+          </span>
+        )}
       </span>
       {leaf.kind === "number" ? (
         <input
           type="range"
-          value={leaf.value}
+          value={Number(cur)}
           min={leaf.min}
           max={leaf.max}
           step={leaf.step}
-          disabled
-          aria-label={`${row.path} (read-only)`}
-          className="h-1 w-full cursor-not-allowed accent-accent-default opacity-70"
+          disabled={!editMode}
+          aria-label={`${row.path}${editMode ? "" : " (read-only)"}`}
+          onChange={(e) => onChange(row.path, Number(e.target.value))}
+          className={`h-1 w-full accent-accent-default ${editMode ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}
         />
       ) : leaf.kind === "bool" ? (
-        <span className="text-fg-default">
-          {leaf.value ? "✅ true" : "❌ false"}
-        </span>
+        editMode ? (
+          <input
+            type="checkbox"
+            checked={Boolean(cur)}
+            onChange={(e) => onChange(row.path, e.target.checked)}
+            className="h-4 w-4 accent-accent-default"
+          />
+        ) : (
+          <span className="text-fg-default">{cur ? "✅ true" : "❌ false"}</span>
+        )
+      ) : editMode ? (
+        <Input
+          value={String(cur)}
+          onChange={(e) => onChange(row.path, e.target.value)}
+        />
       ) : (
-        <span className="truncate text-fg-default" title={leaf.value}>
-          {leaf.value}
+        <span className="truncate text-fg-default" title={String(cur)}>
+          {String(cur)}
         </span>
       )}
       <span className="text-right font-mono tabular-nums text-fg-default">
         {leaf.kind === "number"
           ? leaf.step < 1
-            ? leaf.value.toFixed(2)
-            : leaf.value
+            ? Number(cur).toFixed(2)
+            : cur
           : ""}
       </span>
     </div>
@@ -93,9 +138,20 @@ function ReadOnlyRow({ row }: { row: FlatRow }) {
 }
 
 export function ConfigClient() {
+  const toast = useToast();
   const { data, isLoading, isError, error, refetch } = useConfigWeights();
+  const update = useUpdateConfigWeights();
+  const reset = useResetConfigWeights();
   const [filter, setFilter] = useState("");
   const [showRaw, setShowRaw] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [staged, setStaged] = useState<
+    Map<string, number | string | boolean>
+  >(new Map());
+
+  // staged clear 는 apply / discard / reset / 닫기 시 명시적으로만.
+  // useEffect 안에서 setStaged 하면 React 19 Compiler 가 cascading rendering
+  // 으로 잡으므로 (set-state-in-effect rule), 사용자 액션 기반 clear 만 함.
 
   const rows = useMemo(() => flatten(data ?? {}), [data]);
   const filtered = useMemo(() => {
@@ -104,21 +160,106 @@ export function ConfigClient() {
     return rows.filter((r) => r.path.toLowerCase().includes(q));
   }, [rows, filter]);
 
+  function onChange(path: string, val: number | string | boolean) {
+    setStaged((prev) => {
+      const next = new Map(prev);
+      next.set(path, val);
+      return next;
+    });
+  }
+
+  function discard() {
+    setStaged(new Map());
+  }
+
+  async function apply() {
+    if (staged.size === 0) return;
+    const body: Record<string, unknown> = {};
+    for (const [k, v] of staged) body[k] = v;
+    try {
+      const res = await update.mutateAsync(body);
+      const applied = Object.keys(res.applied ?? {}).length;
+      toast.push(`${applied}건 반영되었습니다`, "success");
+      setStaged(new Map());
+      setEditMode(false);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "반영 실패", "danger");
+    }
+  }
+
+  async function onReset() {
+    if (!confirm("모든 가중치를 default 로 리셋하시겠습니까? (이전 설정 손실)"))
+      return;
+    try {
+      await reset.mutateAsync();
+      toast.push("default 로 리셋되었습니다", "success");
+      setStaged(new Map());
+      setEditMode(false);
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : "리셋 실패", "danger");
+    }
+  }
+
   return (
     <section className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold text-fg-default">가중치 설정</h1>
           <p className="text-sm text-fg-muted">
-            검색 파이프라인 가중치 + 임계값 — read-only 뷰. 0~1 범위 weight
-            는 슬라이더로 시각화. 변경은{" "}
-            <code className="font-mono text-xs">config/weights.yaml</code> 직접
-            수정 + API restart.
+            검색 파이프라인 가중치 + 임계값. 수정 모드에서 슬라이더 변경 후
+            &ldquo;반영&rdquo; 버튼으로 저장 (PUT /admin/config/weights). yaml
+            직접 편집도 가능 (재시작 필요).
           </p>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => setShowRaw((v) => !v)}>
-          {showRaw ? "슬라이더 보기" : "원본 JSON 보기"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setShowRaw((v) => !v)}>
+            {showRaw ? "슬라이더 보기" : "원본 JSON 보기"}
+          </Button>
+          {!editMode ? (
+            <Button size="sm" onClick={() => setEditMode(true)}>
+              ✏️ 수정
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={discard}
+                disabled={staged.size === 0}
+              >
+                되돌리기
+              </Button>
+              <Button
+                size="sm"
+                onClick={apply}
+                disabled={staged.size === 0 || update.isPending}
+              >
+                {update.isPending
+                  ? "반영 중…"
+                  : `반영 (${staged.size}건)`}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onReset}
+                disabled={reset.isPending}
+                title="default 로 전체 리셋"
+              >
+                🔄 리셋
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setEditMode(false);
+                  discard();
+                }}
+              >
+                닫기
+              </Button>
+            </>
+          )}
+        </div>
       </header>
 
       {isLoading ? (
@@ -143,9 +284,9 @@ export function ConfigClient() {
             placeholder="키 검색 (예: rerank, threshold, weight)"
           />
           <article className="overflow-hidden rounded-lg border border-border-default bg-bg-canvas">
-            <header className="grid grid-cols-[minmax(0,1fr)_minmax(0,260px)_60px] gap-3 border-b border-border-default bg-bg-subtle px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
+            <header className="grid grid-cols-[minmax(0,1fr)_minmax(0,260px)_80px] gap-3 border-b border-border-default bg-bg-subtle px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">
               <span>키</span>
-              <span>시각화</span>
+              <span>{editMode ? "편집" : "시각화"}</span>
               <span className="text-right">값</span>
             </header>
             {filtered.length === 0 ? (
@@ -153,9 +294,22 @@ export function ConfigClient() {
                 일치하는 키 없음
               </p>
             ) : (
-              filtered.map((row) => <ReadOnlyRow key={row.path} row={row} />)
+              filtered.map((row) => (
+                <EditableRow
+                  key={row.path}
+                  row={row}
+                  staged={staged}
+                  editMode={editMode}
+                  onChange={onChange}
+                />
+              ))
             )}
           </article>
+          {staged.size > 0 && (
+            <p className="text-xs text-warning-default">
+              ⚠️ {staged.size}건 변경 대기 중 — 반영 버튼 클릭 시 적용됩니다.
+            </p>
+          )}
         </>
       )}
     </section>
