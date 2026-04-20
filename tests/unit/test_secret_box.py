@@ -173,20 +173,214 @@ class TestProtocolInterface:
 
 
 # ---------------------------------------------------------------------------
-# Vault backend stub — Phase 4 에서 활성화 전까지 명시적 실패
+# Vault backend — settings/factory + 실제 동작 (mocked hvac client)
 # ---------------------------------------------------------------------------
 
 
-class TestVaultBackendStub:
-    def test_vault_backend_not_implemented_yet(
+def _install_fake_hvac(monkeypatch: pytest.MonkeyPatch, store: dict[str, dict]):
+    """sys.modules 에 가짜 hvac 주입 + 메서드별 in-memory store 동작.
+
+    실제 hvac 가 미설치여도 VaultBox 동작 검증 가능. store 를 호출자가 들여다
+    봐서 put/get/delete 결과 확인.
+    """
+    import sys
+    import types
+
+    captured: dict[str, object] = {"client_kwargs": None, "authenticated": True}
+
+    # 클래스 __name__ 이 hvac 의 실제 예외와 일치해야 VaultBox 의
+    # ``type(e).__name__ in ("InvalidPath", ...)`` 가 매칭됨.
+    InvalidPath = type("InvalidPath", (Exception,), {})
+    Forbidden = type("Forbidden", (Exception,), {})
+
+    class _KvV2:
+        def create_or_update_secret(self, *, mount_point, path, secret):
+            store[f"{mount_point}/{path}"] = secret
+
+        def read_secret_version(
+            self, *, mount_point, path, raise_on_deleted_version=True,
+        ):
+            key = f"{mount_point}/{path}"
+            if key not in store:
+                raise InvalidPath(f"missing: {path}")
+            return {"data": {"data": store[key]}}
+
+        def delete_metadata_and_all_versions(self, *, mount_point, path):
+            key = f"{mount_point}/{path}"
+            if key not in store:
+                raise InvalidPath(f"missing: {path}")
+            store.pop(key)
+
+    class _Kv:
+        v2 = _KvV2()
+
+    class _Secrets:
+        kv = _Kv()
+
+    class _Client:
+        def __init__(self, **kwargs):
+            captured["client_kwargs"] = kwargs
+            self.secrets = _Secrets()
+
+        def is_authenticated(self):
+            return captured["authenticated"]
+
+    fake_hvac = types.ModuleType("hvac")
+    fake_hvac.Client = _Client  # type: ignore[attr-defined]
+
+    fake_exc = types.ModuleType("hvac.exceptions")
+    fake_exc.InvalidPath = InvalidPath  # type: ignore[attr-defined]
+    fake_exc.Forbidden = Forbidden  # type: ignore[attr-defined]
+    fake_hvac.exceptions = fake_exc  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "hvac", fake_hvac)
+    monkeypatch.setitem(sys.modules, "hvac.exceptions", fake_exc)
+    return captured
+
+
+class TestVaultBackendValidation:
+    def test_missing_addr_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SECRET_BOX_BACKEND", "vault")
+        monkeypatch.setenv("SECRET_BOX_VAULT_ADDR", "")
+        monkeypatch.setenv("SECRET_BOX_VAULT_TOKEN", "tk")
+        from src.config.settings import reset_settings
+        reset_settings()
+        reset_secret_box()
+        with pytest.raises(SecretBoxError, match="VAULT_ADDR"):
+            get_secret_box()
+        reset_secret_box()
+        reset_settings()
+
+    def test_missing_token_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SECRET_BOX_BACKEND", "vault")
+        monkeypatch.setenv("SECRET_BOX_VAULT_ADDR", "https://vault.test:8200")
+        monkeypatch.setenv("SECRET_BOX_VAULT_TOKEN", "")
+        from src.config.settings import reset_settings
+        reset_settings()
+        reset_secret_box()
+        with pytest.raises(SecretBoxError, match="VAULT_TOKEN"):
+            get_secret_box()
+        reset_secret_box()
+        reset_settings()
+
+    def test_unknown_backend_raises(
         self, monkeypatch: pytest.MonkeyPatch, fresh_key: str,
     ) -> None:
-        monkeypatch.setenv("SECRET_BOX_BACKEND", "vault")
+        monkeypatch.setenv("SECRET_BOX_BACKEND", "azure-kv")  # 미지원
         monkeypatch.setenv("SECRET_BOX_KEY", fresh_key)
         from src.config.settings import reset_settings
         reset_settings()
         reset_secret_box()
-        with pytest.raises(SecretBoxError, match="Phase 4"):
+        with pytest.raises(SecretBoxError, match="Unknown SECRET_BOX_BACKEND"):
             get_secret_box()
+        reset_secret_box()
+        reset_settings()
+
+
+class TestVaultBox:
+    @pytest.mark.asyncio
+    async def test_put_get_delete_round_trip(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        store: dict[str, dict] = {}
+        _install_fake_hvac(monkeypatch, store)
+
+        from src.auth.secret_box import VaultBox
+        box = VaultBox(addr="https://vault.test", token="tk")
+        await box.put("org/o1/data-source/ds1", "ghp_xxx")
+        # path mapping: mount=secret + prefix=axiomedge + path
+        assert "secret/axiomedge/org/o1/data-source/ds1" in store
+        # value 가 {"value": "..."} payload 안에 들어감 (key=value 만 응답에 노출 안 됨)
+        assert store["secret/axiomedge/org/o1/data-source/ds1"] == {"value": "ghp_xxx"}
+
+        assert await box.get("org/o1/data-source/ds1") == "ghp_xxx"
+
+        await box.delete("org/o1/data-source/ds1")
+        assert await box.get("org/o1/data-source/ds1") is None
+
+    @pytest.mark.asyncio
+    async def test_get_missing_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        store: dict[str, dict] = {}
+        _install_fake_hvac(monkeypatch, store)
+
+        from src.auth.secret_box import VaultBox
+        box = VaultBox(addr="https://vault.test", token="tk")
+        assert await box.get("org/x/data-source/missing") is None
+
+    @pytest.mark.asyncio
+    async def test_delete_missing_idempotent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        store: dict[str, dict] = {}
+        _install_fake_hvac(monkeypatch, store)
+
+        from src.auth.secret_box import VaultBox
+        box = VaultBox(addr="https://vault.test", token="tk")
+        # 미존재 path 삭제 — InvalidPath 이지만 silent 통과
+        await box.delete("org/x/data-source/never-existed")
+
+    def test_unauthenticated_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import sys
+        import types
+
+        # is_authenticated() = False 시나리오
+        class _Client:
+            def __init__(self, **kwargs):
+                pass
+            def is_authenticated(self):
+                return False
+            secrets = None
+
+        fake_hvac = types.ModuleType("hvac")
+        fake_hvac.Client = _Client  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "hvac", fake_hvac)
+
+        from src.auth.secret_box import VaultBox
+        with pytest.raises(SecretBoxError, match="인증 실패"):
+            VaultBox(addr="https://vault.test", token="bad-token")
+
+    def test_namespace_passed_to_client(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        store: dict[str, dict] = {}
+        captured = _install_fake_hvac(monkeypatch, store)
+
+        from src.auth.secret_box import VaultBox
+        VaultBox(addr="https://vault.test", token="tk", namespace="team-a")
+        kwargs = captured["client_kwargs"]
+        assert kwargs is not None
+        assert kwargs["namespace"] == "team-a"  # type: ignore[index]
+
+    def test_no_namespace_when_empty(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        store: dict[str, dict] = {}
+        captured = _install_fake_hvac(monkeypatch, store)
+
+        from src.auth.secret_box import VaultBox
+        VaultBox(addr="https://vault.test", token="tk", namespace="")
+        kwargs = captured["client_kwargs"]
+        assert "namespace" not in kwargs  # type: ignore[operator]
+
+    @pytest.mark.asyncio
+    async def test_factory_returns_vault_box(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        store: dict[str, dict] = {}
+        _install_fake_hvac(monkeypatch, store)
+
+        monkeypatch.setenv("SECRET_BOX_BACKEND", "vault")
+        monkeypatch.setenv("SECRET_BOX_VAULT_ADDR", "https://vault.test")
+        monkeypatch.setenv("SECRET_BOX_VAULT_TOKEN", "tk")
+        from src.config.settings import reset_settings
+        reset_settings()
+        reset_secret_box()
+
+        box = get_secret_box()
+        from src.auth.secret_box import VaultBox
+        assert isinstance(box, VaultBox)
+
         reset_secret_box()
         reset_settings()

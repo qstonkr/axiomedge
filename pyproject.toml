@@ -83,6 +83,11 @@ ocr = [
     "paddleocr>=2.7.0",
     "paddlepaddle>=2.5.0",
 ]
+# HashiCorp Vault: 큰 고객사 (FIPS-140, HSM, BYOK) 대응 — SECRET_BOX_BACKEND=vault
+# 활성화 시 필요. on-prem 본업 / 작은 고객은 default LocalFernetBox 로 충분.
+vault = [
+    "hvac>=2.0",
+]
 
 [build-system]
 requires = ["hatchling"]

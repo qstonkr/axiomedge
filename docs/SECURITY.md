@@ -45,6 +45,152 @@ AUTH_JWT_ISSUER=axiomedge-api
 
 ---
 
+## Credential 처리 (SecretBox)
+
+**관련 코드**: `src/auth/secret_box.py`, `src/api/routes/data_sources.py`,
+`migrations/versions/0006_data_source_secret.py`
+
+**관련 마이그레이션 도구**: `scripts/migrate_data_source_secrets.py`
+
+### 무엇을 SecretBox 로 옮기는가
+
+| Secret 종류 | 위치 | 이유 |
+|---|---|---|
+| **사용자 입력 connector token** (Confluence PAT, Git auth_token, Wiki/Slack/Teams credential 등) | **SecretBox** (org-scoped path) | 멀티테넌트 격리 + DB 평문 누설 방지 |
+| JWT secret (`AUTH_JWT_SECRET`) | env / k8s secret | 프로세스 시작 시 1회 로드, scope 무관 |
+| Neo4j / DB password | env (`NEO4J_PASSWORD`, `DATABASE_URL`) | 인프라 credential, deploy 영역 |
+| Keycloak client secret | env (`AUTH_KEYCLOAK_CLIENT_SECRET`) | IdP 인프라 |
+| AWS / SageMaker | IAM role (boto3 자동) | 인프라 |
+
+**원칙**: *사람이 connector 단위로 입력하는* secret 만 SecretBox. *프로세스가
+시작 시 1회 로드하는* 인프라 secret 은 env / k8s secret.
+
+### Backend 선택
+
+```bash
+SECRET_BOX_BACKEND=fernet   # default. application-level Fernet, on-prem 친화
+SECRET_BOX_BACKEND=vault    # 옵션. HashiCorp Vault — FIPS-140/HSM/BYOK 요구 고객
+```
+
+#### LocalFernetBox (default)
+
+```bash
+# 1. 키 생성
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# 2. env 설정 (k8s 는 Secret 으로)
+SECRET_BOX_KEY=<위 출력값>
+```
+
+키 미설정 시 `get_secret_box()` 가 `SecretBoxError` 로 즉시 실패 — fail-closed.
+
+#### VaultBox (옵션)
+
+```bash
+# 1. hvac 설치 (옵션 dep group)
+uv pip install 'knowledge-local[vault]'
+
+# 2. env 설정
+SECRET_BOX_BACKEND=vault
+SECRET_BOX_VAULT_ADDR=https://vault.example:8200
+SECRET_BOX_VAULT_TOKEN=<vault token 또는 K8s SA bound token>
+SECRET_BOX_VAULT_MOUNT_POINT=secret      # default
+SECRET_BOX_VAULT_PATH_PREFIX=axiomedge   # default
+SECRET_BOX_VAULT_NAMESPACE=              # Vault Enterprise 시 (옵션)
+```
+
+Vault 측 KV v2 mount 가 필요 — `vault secrets enable -path=secret kv-v2`.
+
+### Path namespace
+
+모든 SecretBox path 는 org-scoped:
+
+```
+org/{organization_id}/data-source/{source_id}
+```
+
+라우트 핸들러가 `OrgContext` 의 `org.id` 를 그대로 prefix — cross-tenant
+누설 방지. data_source 가 삭제되면 cascade 로 SecretBox path 도 삭제.
+
+### Key 회전 (Fernet)
+
+```bash
+# 1. 새 키 생성 + 옛 키를 PREVIOUS 로 보관
+SECRET_BOX_KEY=<새 키>
+SECRET_BOX_KEY_PREVIOUS=<옛 키>     # MultiFernet 가 fallback decrypt
+
+# 2. 모든 row 를 새 키로 re-encrypt (script 작성 후 적용)
+#    참고: src.auth.secret_box.LocalFernetBox.rotate_token()
+
+# 3. 검증 후 PREVIOUS 제거
+unset SECRET_BOX_KEY_PREVIOUS
+```
+
+회전 중 cluster 가 두 키 모두 알고 있어야 — rolling deploy 시 PREVIOUS 를
+먼저 모든 노드에 배포 → 새 KEY 배포 → re-encrypt → PREVIOUS 제거.
+
+### Key 백업 / Escrow
+
+**KEY 분실 = 모든 secret 손실** (복구 불가).
+
+권장 절차:
+1. KEY 생성 즉시 **암호화된 backup** (예: `gpg --symmetric` + 다른 위치 보관).
+2. **Escrow**: 운영자 2인이 분할 보관 (Shamir's Secret Sharing 또는 단순 분할).
+3. **회전 시**: 옛 KEY 도 retire 시점까지 함께 backup 유지 (PREVIOUS 제거 전 모든 row 가 새 키로 재암호화 완료 검증 후).
+4. k8s 환경: SealedSecrets / external-secrets-operator 로 KEY 자체도 GitOps 안전 관리 가능.
+
+VaultBox 사용 시: Vault 의 unseal key / root token 백업 절차 (Shamir threshold)
+가 그대로 KEY escrow 역할 — 별도 application-level KEY 관리 불필요.
+
+### 기존 평문 token 마이그레이션
+
+0006 migration 이전에 생성된 data_source 는 `crawl_config.{auth_token,pat,
+password,api_key,token}` 에 평문 저장되어 있을 수 있음 (Git PAT 등).
+별도 마이그레이션 스크립트로 일괄 흡수:
+
+```bash
+# 1. dry-run — 무엇이 바뀔지 확인
+SECRET_BOX_KEY=<key> uv run python scripts/migrate_data_source_secrets.py
+
+# 2. 실제 적용
+SECRET_BOX_KEY=<key> uv run python scripts/migrate_data_source_secrets.py --apply
+
+# 3. 환경변수 (CONFLUENCE_PAT) 흡수 skip (DB 평문만 이동)
+SECRET_BOX_KEY=<key> uv run python scripts/migrate_data_source_secrets.py --apply --skip-env
+```
+
+스크립트는 idempotent — `has_secret=True` 인 row 는 건드리지 않음. 환경변수
+`CONFLUENCE_PAT` 는 default-org 에 confluence/wiki source 가 *정확히 1개* 일
+때만 자동 attach (모호한 경우 admin UI 에서 source 별 token 입력).
+
+마이그레이션 후 절차:
+1. `psql -c "SELECT id, has_secret, secret_path, crawl_config FROM data_sources LIMIT 10"` — 평문 token 이 strip 됐는지 검증.
+2. 환경변수 `CONFLUENCE_PAT` 등 deprecated env 제거 (인프라/k8s secret 정리).
+3. admin UI 에서 모든 connector source 가 `🔐` 표시인지 확인.
+
+### Audit log
+
+모든 secret event 는 `user_activity_log` 테이블에 기록:
+
+| `activity_type` | 트리거 |
+|---|---|
+| `secret_create` / `secret_update` | POST / PUT data-source 가 token 입력 |
+| `secret_delete` | PUT `secret_token=null` 또는 DELETE data-source cascade |
+| `secret_access` | (옵션) connector launcher 가 SecretBox.get 호출 시 |
+
+`details` JSONB 는 `{organization_id, success, error}` 만 — **token value 는
+절대 audit log 에 들어가지 않음** (`tests/unit/test_secret_audit.py` 가 강제).
+
+### Cross-tenant 격리 검증
+
+0005 migration 으로 `data_sources.organization_id` NOT NULL + FK 강제. 모든
+repository 메서드가 `organization_id` 인자를 받아 cross-org 접근 시 `None`
+/ `False` 반환 → 라우트가 404 매핑 (**존재 누설 X**).
+
+검증: `tests/unit/test_data_source_org_isolation.py` (10 케이스).
+
+---
+
 ## Prompt Injection 방어
 
 ### 공격 벡터

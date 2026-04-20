@@ -181,10 +181,14 @@ class SecretBoxSettings(BaseSettings):
     key: str = Field(default="")  # Fernet base64-url-safe 32byte. backend=fernet 시 필수.
     key_previous: str = Field(default="")  # 회전 진행 중 fallback decrypt 용
 
-    # Vault (backend=vault 시 필수)
+    # Vault (backend=vault 시 필수). hvac KV v2 기준.
+    # 최종 경로: ``{mount_point}/data/{path_prefix}/{path}`` — path 는 호출자가
+    # 넘기는 ``org/{org_id}/data-source/{source_id}`` 같은 namespace.
     vault_addr: str = Field(default="")
     vault_token: str = Field(default="")
-    vault_path_prefix: str = Field(default="secret/data/axiomedge")
+    vault_mount_point: str = Field(default="secret")
+    vault_path_prefix: str = Field(default="axiomedge")
+    vault_namespace: str = Field(default="")  # Vault Enterprise namespace (옵션)
 
 
 class ConfluenceSettings(BaseSettings):

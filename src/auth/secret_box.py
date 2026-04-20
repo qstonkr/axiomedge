@@ -6,24 +6,30 @@
 - JWT secret / Neo4j password / DB password 같은 인프라 secret 은 env var
   / k8s secret 에 그대로. 프로세스 시작 시 1회 로드 — 멀티테넌트 scope 무관.
 - backend default = ``LocalFernetBox`` (cryptography.fernet, on-prem 친화).
-  ``VaultBox`` 는 큰 고객사 (FIPS-140, BYOK) 대응으로 후속 (Phase 4).
+  ``VaultBox`` 는 큰 고객사 (FIPS-140, BYOK) 대응 (옵션).
 
 Path namespace 권장: ``org/{org_id}/data-source/{source_id}`` — org-scoped,
 immutable. 라우트 핸들러가 OrgContext 에서 ``org.id`` 를 추출해 자동 prefix.
 
-Key 회전: ``SECRET_BOX_KEY`` (current) + ``SECRET_BOX_KEY_PREVIOUS`` (옛 키
-fallback decrypt). MultiFernet 가 옛 키로 encrypt 된 토큰을 자동 풀어줌
+Key 회전 (Fernet): ``SECRET_BOX_KEY`` (current) + ``SECRET_BOX_KEY_PREVIOUS``
+(옛 키 fallback decrypt). MultiFernet 가 옛 키로 encrypt 된 토큰을 자동 풀어줌
 → 모든 row re-encrypt 후 PREVIOUS 제거하는 회전 절차.
+
+Vault backend (옵션): ``SECRET_BOX_BACKEND=vault`` 활성화 시 hvac KV v2 사용.
+설치: ``uv pip install 'knowledge-local[vault]'`` 또는 ``pip install hvac``.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from src.config import get_settings
+
+if TYPE_CHECKING:
+    import hvac  # noqa: F401  # 타입 힌트 전용; 런타임은 lazy import
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +128,124 @@ class LocalFernetBox:
 
 
 # ---------------------------------------------------------------------------
+# VaultBox — HashiCorp Vault KV v2 backend (옵션)
+# ---------------------------------------------------------------------------
+
+
+class VaultBox:
+    """HashiCorp Vault KV v2 backend — FIPS-140 / HSM / BYOK 요구 고객 대응.
+
+    경로 매핑:
+        Protocol path (``org/{org_id}/data-source/{source_id}``)
+        → Vault secret path (``{path_prefix}/{path}``)
+        → Vault HTTP API (``{addr}/v1/{mount_point}/data/{path_prefix}/{path}``)
+
+    secret payload 는 ``{"value": <plain>}`` 단일 키로 저장 — 호출자는 string
+    하나만 다루므로 단순 schema 가 충분.
+
+    인증: 현재는 ``VAULT_TOKEN`` 만 지원. K8s SA / AppRole 은 향후 hvac.auth.*
+    helper 추가로 확장 가능 (별도 settings 필드 + factory branch).
+
+    회전: Vault 가 KV v2 의 version 관리를 직접 제공 — application-side rotate
+    불필요. ``rotate_token`` 메서드 미구현 (Fernet 전용 회전 패턴).
+    """
+
+    def __init__(
+        self,
+        addr: str,
+        token: str,
+        mount_point: str = "secret",
+        path_prefix: str = "axiomedge",
+        namespace: str = "",
+    ) -> None:
+        if not addr:
+            raise SecretBoxError(
+                "SECRET_BOX_VAULT_ADDR 가 설정되지 않았습니다 (예: https://vault.example:8200).",
+            )
+        if not token:
+            raise SecretBoxError(
+                "SECRET_BOX_VAULT_TOKEN 이 설정되지 않았습니다 — "
+                "Vault token 또는 K8s SA bound token 을 env 에 주입하세요.",
+            )
+        try:
+            import hvac  # noqa: PLC0415
+        except ImportError as e:
+            raise SecretBoxError(
+                "hvac 라이브러리가 설치되지 않았습니다. "
+                "`uv pip install 'knowledge-local[vault]'` 또는 `pip install hvac>=2.0`.",
+            ) from e
+
+        self._mount_point = mount_point.strip("/")
+        self._path_prefix = path_prefix.strip("/")
+        kwargs: dict[str, Any] = {"url": addr, "token": token}
+        if namespace:
+            kwargs["namespace"] = namespace
+        self._client = hvac.Client(**kwargs)
+        # 시작 시 인증 검증 — fail-closed.
+        try:
+            if not self._client.is_authenticated():
+                raise SecretBoxError("Vault 인증 실패 — token 만료/권한 부족 가능성.")
+        except SecretBoxError:
+            raise
+        except Exception as e:  # hvac 가 raise 하는 다양한 예외 포괄
+            raise SecretBoxError(f"Vault 연결 실패: {e}") from e
+
+    def _full_path(self, path: str) -> str:
+        path = path.strip("/")
+        if self._path_prefix:
+            return f"{self._path_prefix}/{path}"
+        return path
+
+    async def put(self, path: str, value: str) -> None:
+        """KV v2 create_or_update — 같은 path 면 새 version 생성 (Vault 가 history 보관)."""
+        try:
+            self._client.secrets.kv.v2.create_or_update_secret(
+                mount_point=self._mount_point,
+                path=self._full_path(path),
+                secret={"value": value},
+            )
+        except Exception as e:
+            logger.exception("VaultBox.put 실패: path=%s", path)
+            raise SecretBoxError(f"Vault put 실패: {e}") from e
+
+    async def get(self, path: str) -> str | None:
+        """KV v2 read_secret_version — 미존재 시 None (404 → InvalidPath 흡수)."""
+        try:
+            resp = self._client.secrets.kv.v2.read_secret_version(
+                mount_point=self._mount_point,
+                path=self._full_path(path),
+                raise_on_deleted_version=False,
+            )
+        except Exception as e:
+            # hvac.exceptions.InvalidPath / Forbidden 등 — 미존재로 간주.
+            err_name = type(e).__name__
+            if err_name in ("InvalidPath", "Forbidden"):
+                return None
+            logger.exception("VaultBox.get 실패: path=%s", path)
+            raise SecretBoxError(f"Vault get 실패: {e}") from e
+
+        try:
+            return resp["data"]["data"]["value"]
+        except (KeyError, TypeError):
+            return None
+
+    async def delete(self, path: str) -> None:
+        """KV v2 delete_metadata_and_all_versions — 모든 version + metadata 영구 삭제."""
+        try:
+            self._client.secrets.kv.v2.delete_metadata_and_all_versions(
+                mount_point=self._mount_point,
+                path=self._full_path(path),
+            )
+        except Exception as e:
+            err_name = type(e).__name__
+            if err_name in ("InvalidPath",):
+                # 미존재는 idempotent — 조용히 통과.
+                return
+            logger.exception("VaultBox.delete 실패: path=%s", path)
+            raise SecretBoxError(f"Vault delete 실패: {e}") from e
+
+
+# ---------------------------------------------------------------------------
 # Factory + module cache
 # ---------------------------------------------------------------------------
 
@@ -134,7 +258,7 @@ def get_secret_box() -> SecretBox:
     backend=fernet (default): LocalFernetBox 인스턴스. KEY 미설정 시 startup
     실패 — fail-closed (running with no encryption 보다는 명시적 실패가 안전).
 
-    backend=vault: Phase 4 에서 VaultBox 추가 시 활성화.
+    backend=vault (옵션): VaultBox — hvac 미설치 또는 ADDR/TOKEN 미설정 시 raise.
     """
     global _box
     if _box is not None:
@@ -144,9 +268,12 @@ def get_secret_box() -> SecretBox:
     if s.backend == "fernet":
         _box = LocalFernetBox(s.key, s.key_previous)
     elif s.backend == "vault":
-        # Phase 4 — hvac client 설치 후 활성화.
-        raise SecretBoxError(
-            "VaultBox 는 Phase 4 에서 추가 예정. SECRET_BOX_BACKEND=fernet 사용.",
+        _box = VaultBox(
+            addr=s.vault_addr,
+            token=s.vault_token,
+            mount_point=s.vault_mount_point,
+            path_prefix=s.vault_path_prefix,
+            namespace=s.vault_namespace,
         )
     else:
         raise SecretBoxError(f"Unknown SECRET_BOX_BACKEND: {s.backend!r}")
