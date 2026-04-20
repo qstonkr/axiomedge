@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import {
   Button,
   EmptyState,
+  ErrorFallback,
   Input,
   Select,
   Skeleton,
@@ -20,7 +21,10 @@ export function SearchHistoryPage() {
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
 
-  const { data, isLoading } = useSearchHistory({ page, page_size: pageSize });
+  const { data, isLoading, isError, error, refetch } = useSearchHistory({
+    page,
+    page_size: pageSize,
+  });
 
   const filtered = useMemo(() => {
     const items = data?.items ?? [];
@@ -144,6 +148,12 @@ export function SearchHistoryPage() {
             <Skeleton key={idx} className="h-10" />
           ))}
         </div>
+      ) : isError ? (
+        <ErrorFallback
+          title="검색 이력을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon="🔎"

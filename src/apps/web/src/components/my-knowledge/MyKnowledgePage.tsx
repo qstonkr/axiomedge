@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Button,
   EmptyState,
+  ErrorFallback,
   Skeleton,
 } from "@/components/ui";
 import { useKbDocuments, useMyPersonalKbs } from "@/hooks/useMyKnowledge";
@@ -17,7 +18,7 @@ import { KbCard } from "./KbCard";
 const PERSONAL_KB_LIMIT = 10;
 
 export function MyKnowledgePage({ userId }: { userId: string }) {
-  const { data, isLoading } = useMyPersonalKbs(userId);
+  const { data, isLoading, isError, error, refetch } = useMyPersonalKbs(userId);
   const [creating, setCreating] = useState(false);
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
 
@@ -59,6 +60,12 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
             <Skeleton key={idx} className="h-32" />
           ))}
         </div>
+      ) : isError ? (
+        <ErrorFallback
+          title="내 KB 목록을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : kbs.length === 0 ? (
         <EmptyState
           icon="📚"

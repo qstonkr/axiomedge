@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import {
   Button,
   EmptyState,
+  ErrorFallback,
   Input,
   Select,
   Skeleton,
@@ -18,7 +19,7 @@ export function FindOwnerPage() {
   const [draft, setDraft] = useState("");
   const [committed, setCommitted] = useState({ query: "", kb_id: undefined as string | undefined });
   const { data: kbs } = useSearchableKbs();
-  const { data, isFetching, isError } = useOwnerSearch(committed);
+  const { data, isFetching, isError, error, refetch } = useOwnerSearch(committed);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -104,10 +105,10 @@ export function FindOwnerPage() {
       )}
 
       {committed.query !== "" && !isFetching && isError && (
-        <EmptyState
-          icon="⚠️"
-          title="검색에 실패했습니다"
-          description="잠시 후 다시 시도해 주세요."
+        <ErrorFallback
+          title="담당자 검색에 실패했습니다"
+          error={error}
+          onRetry={() => refetch()}
         />
       )}
 
@@ -119,29 +120,37 @@ export function FindOwnerPage() {
         />
       )}
 
-      {/* 부분 실패 — 일부 검색 source(graph/document_owner 등)가 실패해도
-          나머지 결과는 표시. 어떤 source 가 실패했는지 디버깅용으로 노출. */}
-      {partialErrors.length > 0 && (
-        <details className="rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs">
-          <summary className="cursor-pointer font-medium text-warning-default">
-            일부 검색 소스 실패 ({partialErrors.length}건) — 결과가 부분적일 수 있습니다
-          </summary>
-          <ul className="mt-2 list-disc space-y-1 pl-5 font-mono text-fg-muted">
-            {partialErrors.map((e, i) => (
-              <li key={i} className="break-words">
-                {e}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-
+      {/* 결과 있을 때 — 부분 실패 (있다면) + count + cards. */}
       {owners.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {owners.map((o) => (
-            <OwnerCard key={o.id} owner={o} />
-          ))}
-        </div>
+        <>
+          <header className="flex items-baseline gap-2">
+            <h2 className="text-sm font-medium text-fg-default">
+              검색 결과{" "}
+              <span className="ml-1 font-normal text-fg-muted">
+                {owners.length}명
+              </span>
+            </h2>
+          </header>
+          {partialErrors.length > 0 && (
+            <details className="rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs">
+              <summary className="cursor-pointer font-medium text-warning-default">
+                일부 검색 소스 실패 ({partialErrors.length}건) — 결과가 부분적일 수 있습니다
+              </summary>
+              <ul className="mt-2 list-disc space-y-1 pl-5 font-mono text-fg-muted">
+                {partialErrors.map((e, i) => (
+                  <li key={i} className="break-words">
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {owners.map((o) => (
+              <OwnerCard key={o.id} owner={o} />
+            ))}
+          </div>
+        </>
       )}
     </section>
   );

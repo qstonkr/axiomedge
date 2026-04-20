@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  ErrorFallback,
   Input,
   Select,
   Skeleton,
@@ -108,6 +109,12 @@ export function FeedbackTab() {
               <Skeleton key={idx} className="h-16" />
             ))}
           </div>
+        ) : list.isError ? (
+          <ErrorFallback
+            title="피드백 목록을 불러올 수 없습니다"
+            error={list.error}
+            onRetry={() => list.refetch()}
+          />
         ) : (list.data?.items ?? []).length === 0 ? (
           <EmptyState
             title="아직 제출한 피드백이 없습니다"
