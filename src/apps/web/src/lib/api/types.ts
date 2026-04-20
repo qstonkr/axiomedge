@@ -313,6 +313,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Dashboard Summary
+         * @description Admin 운영 대시보드용 요약 카운터.
+         *
+         *     Streamlit dashboard.py 의 6 카드 지표를 한 번에 묶어 반환:
+         *       - active_kbs: 활성 KB 수
+         *       - total_documents: 모든 KB 의 document_count 합
+         *       - total_chunks: 모든 KB 의 chunk_count 합
+         *       - feedback_pending: pending feedback 수
+         *       - error_reports_pending: pending error report 수
+         *       - search_history_24h: 최근 24h 검색 수
+         *
+         *     각 항목은 best-effort — repo 접근 실패해도 나머지는 채워서 반환.
+         *     실패한 카운터는 ``null`` 로 노출 (UI 가 "데이터 없음" 표시).
+         */
+        get: operations["admin_dashboard_summary_api_v1_admin_dashboard_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/qdrant/collections": {
         parameters: {
             query?: never;
@@ -371,7 +402,7 @@ export interface paths {
         put: operations["update_config_weights_api_v1_admin_config_weights_put"];
         /**
          * Get Config Weights
-         * @description Return current config weights.
+         * @description Return current config weights (JSON-safe).
          */
         post: operations["get_config_weights_api_v1_admin_config_weights_post"];
         delete?: never;
@@ -1057,8 +1088,36 @@ export interface paths {
          */
         get: operations["list_search_groups_api_v1_distill_search_groups_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Search Group
+         * @description 신규 검색 그룹 생성.
+         */
+        post: operations["create_search_group_api_v1_distill_search_groups_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/distill/search-groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Search Group
+         * @description 검색 그룹 수정 (name/kb_ids/description/is_default 덮어쓰기).
+         */
+        put: operations["update_search_group_api_v1_distill_search_groups__group_id__put"];
+        post?: never;
+        /**
+         * Delete Search Group
+         * @description 검색 그룹 삭제 — default 그룹이면 409.
+         */
+        delete: operations["delete_search_group_api_v1_distill_search_groups__group_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2132,6 +2191,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/knowledge/feedback/my": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Feedback
+         * @description 현재 사용자가 직접 제출한 피드백 목록.
+         *
+         *     `/admin/feedback/list` 는 ``feedback:review`` 권한 (ADMIN/OWNER) 필요해서
+         *     MEMBER role 이 호출 시 401/403. 사용자용 화면 (``/my-feedback``,
+         *     ``/my-documents 의 대기 작업 탭``) 은 본인 것만 표시하면 충분하므로
+         *     이 endpoint 로 user_id 필터된 결과를 받는다 (`feedback:submit` 권한이면 OK).
+         */
+        get: operations["list_my_feedback_api_v1_knowledge_feedback_my_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/knowledge/report-error": {
         parameters: {
             query?: never;
@@ -2146,6 +2230,29 @@ export interface paths {
          * @description Create error report.
          */
         post: operations["create_error_report_api_v1_knowledge_report_error_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge/error-reports/my": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Error Reports
+         * @description 현재 사용자가 직접 제출한 오류 신고 목록.
+         *
+         *     feedback/my 와 동일한 이유 — `/admin/error-reports` 는 admin 전용이므로
+         *     MEMBER role 이 본인 신고 보려면 이 endpoint 가 필요.
+         */
+        get: operations["list_my_error_reports_api_v1_knowledge_error_reports_my_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2681,6 +2788,30 @@ export interface paths {
          * @description List knowledge bases the caller's organization can see.
          */
         get: operations["list_kbs_api_v1_kb_list_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/kb/{kb_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Kb Documents
+         * @description List documents in a personal KB the caller owns.
+         *
+         *     Owner-only endpoint — used by ``/my-knowledge`` to show what the user
+         *     has uploaded into their own KB. Admin scope (other tiers) goes through
+         *     ``/api/v1/admin/kb/{kb_id}/documents`` instead.
+         */
+        get: operations["list_kb_documents_api_v1_kb__kb_id__documents_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3249,7 +3380,14 @@ export interface paths {
         };
         /**
          * Search Experts
-         * @description Search for experts by matching topic keywords.
+         * @description Search for experts by matching topic keywords + document ownership.
+         *
+         *     Two data sources, deduplicated by ``user_id``:
+         *       1. ``topic_owners`` — admin-curated SME mapping (often empty in MVP)
+         *       2. ``document_owners`` — auto-extracted from ingested docs (실데이터 풍부)
+         *
+         *     kb_id 없이 호출되면 모든 KB 의 owner 데이터를 합쳐서 검색. UI 가
+         *     "전체" 필터일 때도 결과가 나오도록 — 빈 결과로 silent fail 하지 않게.
          */
         get: operations["search_experts_api_v1_knowledge_experts_search_get"];
         put?: never;
@@ -4513,6 +4651,10 @@ export interface components {
             estimated_cost_usd: number;
             /** Confidence */
             confidence: number;
+            /** Failure Reason */
+            failure_reason?: string | null;
+            /** Errors */
+            errors?: string[];
         };
         /** AppVersionRequest */
         AppVersionRequest: {
@@ -5151,6 +5293,26 @@ export interface components {
             corrected_answers?: {
                 [key: string]: string;
             } | null;
+        };
+        /**
+         * SearchGroupUpsertRequest
+         * @description 검색 그룹 생성/수정 요청 (admin 화면에서 호출).
+         */
+        SearchGroupUpsertRequest: {
+            /** Name */
+            name: string;
+            /** Kb Ids */
+            kb_ids?: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
         };
         /** ServerUpdateRequest */
         ServerUpdateRequest: {
@@ -6498,6 +6660,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    admin_dashboard_summary_api_v1_admin_dashboard_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Internal Server Error */
@@ -10275,6 +10509,261 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_search_group_api_v1_distill_search_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchGroupUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_search_group_api_v1_distill_search_groups__group_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchGroupUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_search_group_api_v1_distill_search_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description Internal Server Error */
@@ -14988,6 +15477,91 @@ export interface operations {
             };
         };
     };
+    list_my_feedback_api_v1_knowledge_feedback_my_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_error_report_api_v1_knowledge_report_error_post: {
         parameters: {
             query?: never;
@@ -15061,6 +15635,91 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_my_error_reports_api_v1_knowledge_error_reports_my_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
             /** @description Service Unavailable */
             503: {
@@ -17400,6 +18059,88 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
+            };
+        };
+    };
+    list_kb_documents_api_v1_kb__kb_id__documents_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                kb_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller does not own this KB */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description KB not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Qdrant not initialized */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

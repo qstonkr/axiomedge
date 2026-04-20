@@ -14,8 +14,18 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import types
+
+# Suppress all logging (incl. route_discovery JSON line) BEFORE importing
+# src.api.app — otherwise structured-log lines pollute stdout and the
+# downstream openapi-typescript parser sees "two YAML documents" and dies.
+logging.basicConfig(
+    level=logging.CRITICAL + 1,
+    handlers=[logging.StreamHandler(sys.stderr)],
+    force=True,
+)
 
 # Stub `src.core.observability.tracing` before src.api.app imports it.
 # Tracing only matters at runtime; for spec generation it's noise.
