@@ -14,7 +14,12 @@ import pytest
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """매 호출마다 새 event loop — 다른 test 가 loop close 해도 영향 X."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _make_repo():

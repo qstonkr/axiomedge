@@ -14,7 +14,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.app import _get_state
-from src.auth.dependencies import OrgContext, get_current_org
+from src.auth.dependencies import OrgContext, get_current_org, get_current_user
+from src.auth.providers import AuthUser
 from src.auth.secret_box import SecretBoxError, get_secret_box
 
 logger = logging.getLogger(__name__)
@@ -36,30 +37,72 @@ def _secret_path(organization_id: str, source_id: str) -> str:
 
 
 async def _store_secret(
-    repo: Any, organization_id: str, source_id: str, value: str,
+    repo: Any,
+    organization_id: str,
+    source_id: str,
+    value: str,
+    actor_user_id: str | None = None,
+    activity_logger: Any = None,
 ) -> None:
-    """SecretBox.put + DB has_secret/secret_path 동기화. KEY 미설정 시 raise."""
-    box = get_secret_box()  # SECRET_BOX_KEY 미설정 시 SecretBoxError → 500.
+    """SecretBox.put + DB 동기화 + audit log (action=secret_create/update).
+
+    activity_logger 가 None 이면 audit skip — 라우트가 state 에서 가져와 전달.
+    SECRET_BOX_KEY 미설정 시 SecretBoxError → 500 + audit success=False.
+    """
+    box = get_secret_box()
     path = _secret_path(organization_id, source_id)
-    await box.put(path, value)
-    await repo.set_secret_path(source_id, organization_id, path)
+    error: str | None = None
+    try:
+        await box.put(path, value)
+        await repo.set_secret_path(source_id, organization_id, path)
+    except (SecretBoxError, RuntimeError) as e:
+        error = str(e)
+        raise
+    finally:
+        if activity_logger is not None and actor_user_id:
+            try:
+                await activity_logger.log_secret_event(
+                    actor_user_id=actor_user_id,
+                    action="secret_update",  # caller 가 신규/덮어쓰기 구분 X — 단일 action
+                    source_id=source_id,
+                    organization_id=organization_id,
+                    success=error is None,
+                    error=error,
+                )
+            except Exception:  # noqa: BLE001
+                logger.debug("audit log_secret_event (store) failed", exc_info=True)
 
 
 async def _delete_secret(
-    repo: Any, organization_id: str, source_id: str,
+    repo: Any,
+    organization_id: str,
+    source_id: str,
+    actor_user_id: str | None = None,
+    activity_logger: Any = None,
 ) -> None:
-    """SecretBox.delete + DB has_secret/secret_path 비우기. idempotent.
-
-    SECRET_BOX_KEY 미설정 환경 (dev / test 일부) 에서도 DB cleanup 은 진행 —
-    SecretBox 호출만 silently skip. 라우트가 secret 없는 source 도 삭제할 수 있어야 함.
-    """
+    """SecretBox.delete + DB 동기화 + audit (action=secret_delete). idempotent."""
     path = _secret_path(organization_id, source_id)
+    error: str | None = None
     try:
         box = get_secret_box()
         await box.delete(path)
     except SecretBoxError as e:
+        error = str(e)
         logger.warning("SecretBox.delete skipped for %s: %s", path, e)
     await repo.set_secret_path(source_id, organization_id, None)
+
+    if activity_logger is not None and actor_user_id:
+        try:
+            await activity_logger.log_secret_event(
+                actor_user_id=actor_user_id,
+                action="secret_delete",
+                source_id=source_id,
+                organization_id=organization_id,
+                success=error is None,
+                error=error,
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("audit log_secret_event (delete) failed", exc_info=True)
 
 
 def _mask_secret_fields(source: dict[str, Any]) -> dict[str, Any]:
@@ -102,14 +145,16 @@ async def list_data_sources(
 async def create_data_source(
     body: dict[str, Any],
     org: OrgContext = Depends(get_current_org),
+    user: AuthUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Create a data source — automatically scoped to caller's org.
 
     body 가 ``secret_token`` 가지면 SecretBox 에 저장 + crawl_config 의 평문
-    auth_token 자동 제거 (이중 저장 방지).
+    auth_token 자동 제거 (이중 저장 방지). audit log 자동.
     """
     state = _get_state()
     repo = state.get("data_source_repo")
+    activity_logger = state.get("activity_logger")
     source_id = body.get("id") or str(uuid.uuid4())
     secret_token = body.pop("secret_token", None)
     if repo:
@@ -118,8 +163,6 @@ async def create_data_source(
             data.setdefault("id", source_id)
             data.setdefault("status", "active")
             data.pop("organization_id", None)
-            # crawl_config 의 평문 token 키는 절대 DB 평문 저장 X — 사용자가
-            # body 에 넣었어도 SecretBox 로 redirect, plain 키는 strip.
             cfg = data.get("crawl_config")
             if isinstance(cfg, dict):
                 fallback_token = next(
@@ -133,7 +176,10 @@ async def create_data_source(
                 }
             await repo.register(data, organization_id=org.id)
             if isinstance(secret_token, str) and secret_token.strip():
-                await _store_secret(repo, org.id, source_id, secret_token.strip())
+                await _store_secret(
+                    repo, org.id, source_id, secret_token.strip(),
+                    actor_user_id=user.sub, activity_logger=activity_logger,
+                )
             return {"success": True, "source_id": source_id, "message": "Data source created"}
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.warning("Data source repo register failed: %s", e)
@@ -170,6 +216,7 @@ async def update_data_source(
     source_id: str,
     body: dict[str, Any],
     org: OrgContext = Depends(get_current_org),
+    user: AuthUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Update data source — cross-org 시 404.
 
@@ -196,11 +243,16 @@ async def update_data_source(
                 raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)
             # secret 변경 처리.
             if has_secret_key:
+                activity_logger = state.get("activity_logger")
                 if secret_token is None:
-                    await _delete_secret(repo, org.id, source_id)
+                    await _delete_secret(
+                        repo, org.id, source_id,
+                        actor_user_id=user.sub, activity_logger=activity_logger,
+                    )
                 elif isinstance(secret_token, str) and secret_token.strip():
                     await _store_secret(
                         repo, org.id, source_id, secret_token.strip(),
+                        actor_user_id=user.sub, activity_logger=activity_logger,
                     )
                 # 빈 string ("") 은 의도적 no-op — 옛 token 유지.
             return {"success": True, "source_id": source_id, "message": "Updated"}
@@ -219,14 +271,18 @@ async def update_data_source(
 async def delete_data_source(
     source_id: str,
     org: OrgContext = Depends(get_current_org),
+    user: AuthUser = Depends(get_current_user),
 ) -> dict[str, bool | str]:
-    """Delete data source — cross-org 시 404. SecretBox cascade delete."""
+    """Delete data source — cross-org 시 404. SecretBox cascade delete + audit."""
     state = _get_state()
     repo = state.get("data_source_repo")
+    activity_logger = state.get("activity_logger")
     if repo:
         try:
-            # secret 먼저 정리 (SecretBox.delete idempotent).
-            await _delete_secret(repo, org.id, source_id)
+            await _delete_secret(
+                repo, org.id, source_id,
+                actor_user_id=user.sub, activity_logger=activity_logger,
+            )
             deleted = await repo.delete(source_id, organization_id=org.id)
             if not deleted:
                 raise HTTPException(status_code=404, detail=_DS_NOT_FOUND)

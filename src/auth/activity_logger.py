@@ -49,6 +49,38 @@ class ActivityLogger:
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
             logger.debug("Activity log failed: %s", e)
 
+    async def log_secret_event(
+        self,
+        actor_user_id: str,
+        action: str,
+        source_id: str,
+        organization_id: str,
+        success: bool,
+        error: str | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> None:
+        """Connector secret 의 create/update/delete/access 감사 로그.
+
+        token value 자체는 절대 details 에 들어가지 않음. action 은
+        ``secret_create`` / ``secret_update`` / ``secret_delete`` /
+        ``secret_access`` / ``secret_rotate`` 중 하나.
+        """
+        await self.log_activity(
+            user_id=actor_user_id,
+            activity_type=action,
+            resource_type="data_source_secret",
+            resource_id=source_id,
+            kb_id=None,
+            details={
+                "organization_id": organization_id,
+                "success": success,
+                "error": error,
+            },
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+
     async def get_user_activities(
         self,
         user_id: str,
