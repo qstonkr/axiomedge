@@ -1,6 +1,9 @@
 # pyright: reportAttributeAccessIssue=false, reportGeneralTypeIssues=false
 """Data Source Repository - PostgreSQL backed.
 
+모든 메서드가 ``organization_id`` 를 필수로 받아 cross-tenant 누설 차단.
+KBConfigModel 의 0004 패턴과 동일 — 라우트 핸들러는 ``OrgContext`` 에서
+``org.id`` 를 받아 그대로 전달한다.
 """
 
 from __future__ import annotations
@@ -33,12 +36,20 @@ def _safe_json_loads(text: str | None, default: Any = None) -> Any:
 
 
 class DataSourceRepository(BaseRepository):
-    """Async PostgreSQL repository for data source registry."""
+    """Async PostgreSQL repository for data source registry.
 
-    async def register(self, data: dict[str, Any]) -> dict[str, Any]:
+    모든 mutation/query 가 ``organization_id`` 를 강제. cross-org 접근은
+    ``None`` / ``False`` 를 반환해 라우트 핸들러가 404 로 매핑 — 존재 누설 X.
+    """
+
+    async def register(
+        self, data: dict[str, Any], organization_id: str
+    ) -> dict[str, Any]:
+        """신규 data_source 등록. body 의 organization_id 는 항상 인자로 덮어씀."""
         async with await self._get_session() as session:
             try:
                 model_data = dict(data)
+                model_data["organization_id"] = organization_id
                 for field in ("crawl_config", "pipeline_config", "last_sync_result"):
                     if field in model_data and isinstance(model_data[field], dict):
                         model_data[field] = json.dumps(model_data[field])
@@ -47,32 +58,51 @@ class DataSourceRepository(BaseRepository):
                 model = DataSourceModel(**model_data)
                 session.add(model)
                 await session.commit()
-                return data
+                # 응답 dict 에도 org_id 보존.
+                data_with_org = dict(data)
+                data_with_org["organization_id"] = organization_id
+                return data_with_org
             except SQLAlchemyError:
                 await session.rollback()
                 raise
 
-    async def get(self, source_id: str) -> dict[str, Any] | None:
+    async def get(
+        self, source_id: str, organization_id: str
+    ) -> dict[str, Any] | None:
+        """org 미스매치 시 None — 라우트가 404 로 매핑 (존재 누설 방지)."""
         async with await self._get_session() as session:
-            stmt = select(DataSourceModel).where(DataSourceModel.id == source_id)
+            stmt = select(DataSourceModel).where(
+                DataSourceModel.id == source_id,
+                DataSourceModel.organization_id == organization_id,
+            )
             result = await session.execute(stmt)
             model = result.scalar_one_or_none()
             return self._to_dict(model) if model else None
 
-    async def get_by_name(self, name: str) -> dict[str, Any] | None:
+    async def get_by_name(
+        self, name: str, organization_id: str
+    ) -> dict[str, Any] | None:
+        """name 은 unique constraint 가 있지만 org scope 안에서 의미 있게 사용."""
         async with await self._get_session() as session:
-            stmt = select(DataSourceModel).where(DataSourceModel.name == name)
+            stmt = select(DataSourceModel).where(
+                DataSourceModel.name == name,
+                DataSourceModel.organization_id == organization_id,
+            )
             result = await session.execute(stmt)
             model = result.scalar_one_or_none()
             return self._to_dict(model) if model else None
 
     async def list(
         self,
+        organization_id: str,
         source_type: str | None = None,
         status: str | None = None,
     ) -> list[dict[str, Any]]:
+        """해당 org 의 data_source 만 반환."""
         async with await self._get_session() as session:
-            stmt = select(DataSourceModel)
+            stmt = select(DataSourceModel).where(
+                DataSourceModel.organization_id == organization_id,
+            )
             if source_type:
                 stmt = stmt.where(DataSourceModel.source_type == source_type)
             if status:
@@ -81,16 +111,27 @@ class DataSourceRepository(BaseRepository):
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
-    async def update_status(self, source_id: str, status: str, error_message: str | None = None) -> None:
+    async def update_status(
+        self,
+        source_id: str,
+        status: str,
+        organization_id: str,
+        error_message: str | None = None,
+    ) -> bool:
+        """org 미스매치 시 False — 0 row 업데이트."""
         async with await self._get_session() as session:
             try:
                 stmt = (
                     update(DataSourceModel)
-                    .where(DataSourceModel.id == source_id)
+                    .where(
+                        DataSourceModel.id == source_id,
+                        DataSourceModel.organization_id == organization_id,
+                    )
                     .values(status=status, error_message=error_message, updated_at=_utc_now())
                 )
-                await session.execute(stmt)
+                result = await session.execute(stmt)
                 await session.commit()
+                return result.rowcount > 0
             except SQLAlchemyError:
                 await session.rollback()
                 raise
@@ -99,10 +140,11 @@ class DataSourceRepository(BaseRepository):
         self,
         source_id: str,
         status: str,
+        organization_id: str,
         sync_result: dict[str, Any] | None = None,
         error_message: str | None = None,
-    ) -> None:
-        """Update data source after sync completion (success or failure)."""
+    ) -> bool:
+        """동기화 완료 후 상태 업데이트. org 미스매치 시 False."""
         async with await self._get_session() as session:
             try:
                 now = _utc_now()
@@ -116,19 +158,27 @@ class DataSourceRepository(BaseRepository):
                     values["last_sync_result"] = json.dumps(sync_result)
                 stmt = (
                     update(DataSourceModel)
-                    .where(DataSourceModel.id == source_id)
+                    .where(
+                        DataSourceModel.id == source_id,
+                        DataSourceModel.organization_id == organization_id,
+                    )
                     .values(**values)
                 )
-                await session.execute(stmt)
+                result = await session.execute(stmt)
                 await session.commit()
+                return result.rowcount > 0
             except SQLAlchemyError:
                 await session.rollback()
                 raise
 
-    async def delete(self, source_id: str) -> bool:
+    async def delete(self, source_id: str, organization_id: str) -> bool:
+        """org 미스매치 시 False (rowcount=0). 라우트는 404 응답."""
         async with await self._get_session() as session:
             try:
-                stmt = delete(DataSourceModel).where(DataSourceModel.id == source_id)
+                stmt = delete(DataSourceModel).where(
+                    DataSourceModel.id == source_id,
+                    DataSourceModel.organization_id == organization_id,
+                )
                 result = await session.execute(stmt)
                 await session.commit()
                 return result.rowcount > 0
@@ -143,6 +193,7 @@ class DataSourceRepository(BaseRepository):
             "name": model.name,
             "source_type": model.source_type,
             "kb_id": model.kb_id,
+            "organization_id": model.organization_id,
             "crawl_config": _safe_json_loads(model.crawl_config),
             "pipeline_config": _safe_json_loads(model.pipeline_config),
             "schedule": model.schedule,

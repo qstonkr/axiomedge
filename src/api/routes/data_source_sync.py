@@ -431,10 +431,15 @@ async def _update_sync_status(
     ds_repo: DataSourceRepository | None,
     run_repo: IngestionRunRepository | None,
     source_id: str, run_id: str,
+    organization_id: str,
     docs_ingested: int, documents_total: int, total_chunks: int,
     errors: list[str],
 ) -> None:
-    """Update data source and ingestion run records on success."""
+    """Update data source and ingestion run records on success.
+
+    organization_id 는 0005 이후 ds_repo.complete_sync 에 필수 — caller
+    (sync 함수) 가 source["organization_id"] 그대로 전달.
+    """
     sync_result = {
         "documents_synced": docs_ingested,
         "documents_total": documents_total,
@@ -444,7 +449,11 @@ async def _update_sync_status(
     }
 
     if ds_repo:
-        await ds_repo.complete_sync(source_id, "active", sync_result=sync_result)
+        await ds_repo.complete_sync(
+            source_id, "active",
+            organization_id=organization_id,
+            sync_result=sync_result,
+        )
 
     if run_repo:
         try:
@@ -463,14 +472,16 @@ async def _update_sync_status(
 async def _report_sync_failure(
     ds_repo: DataSourceRepository | None,
     run_repo: IngestionRunRepository | None,
-    source_id: str, run_id: str, exc: Exception,
+    source_id: str, run_id: str, organization_id: str, exc: Exception,
 ) -> None:
     """Update data source and ingestion run records on failure."""
     logger.error("Data source sync failed for %s: %s", source_id, exc)
     if ds_repo:
         try:
             await ds_repo.complete_sync(
-                source_id, "error", error_message=str(exc)[:500],
+                source_id, "error",
+                organization_id=organization_id,
+                error_message=str(exc)[:500],
             )
         except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
@@ -513,6 +524,7 @@ async def _run_confluence_source_sync(
     5. Update data source status with results
     """
     source_id = source["id"]
+    organization_id = source["organization_id"]  # 0005 이후 NOT NULL — KeyError = 마이그레이션 미적용
     kb_id = source.get("kb_id", "knowledge")
     source_name = source.get("name", "unknown")
     metadata = source.get("metadata") or {}
@@ -586,12 +598,14 @@ async def _run_confluence_source_sync(
 
         # Update sync status
         await _update_sync_status(
-            ds_repo, run_repo, source_id, run_id,
+            ds_repo, run_repo, source_id, run_id, organization_id,
             docs_ingested, len(documents), total_chunks, errors,
         )
 
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
-        await _report_sync_failure(ds_repo, run_repo, source_id, run_id, exc)
+        await _report_sync_failure(
+            ds_repo, run_repo, source_id, run_id, organization_id, exc,
+        )
     finally:
         if ocr_started:
             try:
@@ -607,6 +621,7 @@ async def _run_confluence_source_sync(
 async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
     """Clone/pull a git repo via GitConnector, then run the ingestion pipeline."""
     source_id = source["id"]
+    organization_id = source["organization_id"]  # 0005 이후 NOT NULL
     kb_id = source.get("kb_id", "knowledge")
     source_name = source.get("name", "unknown")
     metadata = source.get("metadata") or {}
@@ -652,6 +667,7 @@ async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
             if ds_repo:
                 await ds_repo.complete_sync(
                     source_id, "active",
+                    organization_id=organization_id,
                     sync_result={
                         "documents_synced": 0,
                         "chunks_stored": 0,
@@ -678,6 +694,7 @@ async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
             if ds_repo:
                 await ds_repo.complete_sync(
                     source_id, "active",
+                    organization_id=organization_id,
                     sync_result={
                         "documents_synced": 0, "chunks_stored": 0,
                         "version_fingerprint": result.version_fingerprint,
@@ -706,7 +723,11 @@ async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
             "completed_at": datetime.now(UTC).isoformat(),
         }
         if ds_repo:
-            await ds_repo.complete_sync(source_id, "active", sync_result=sync_result)
+            await ds_repo.complete_sync(
+                source_id, "active",
+                organization_id=organization_id,
+                sync_result=sync_result,
+            )
         if run_repo:
             try:
                 await run_repo.complete(run_id, {
@@ -721,4 +742,6 @@ async def _run_git_source_sync(source: dict[str, Any], state: AppState) -> None:
                 logger.warning("Failed to complete ingestion run record: %s", e)
 
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
-        await _report_sync_failure(ds_repo, run_repo, source_id, run_id, exc)
+        await _report_sync_failure(
+            ds_repo, run_repo, source_id, run_id, organization_id, exc,
+        )

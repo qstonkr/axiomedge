@@ -69,6 +69,7 @@ class TestRunDataSourceSync:
             "id": "test-source-id",
             "name": "test_wiki",
             "kb_id": "test-kb",
+            "organization_id": "test-org",  # 0005 이후 NOT NULL
             "source_type": "crawl_result",
             "metadata": {
                 "url": "https://wiki.gsretail.com/spaces/DXbot/pages/373865276/Home",
@@ -83,6 +84,7 @@ class TestRunDataSourceSync:
             "id": "src-1",
             "name": "no-page",
             "kb_id": "kb-1",
+            "organization_id": "test-org",  # 0005 이후 NOT NULL
             "metadata": {},
             "crawl_config": {},
         }
@@ -293,10 +295,18 @@ class TestDataSourceRepoCompleteSync:
         repo = DataSourceRepository.__new__(DataSourceRepository)
         repo._get_session = AsyncMock(return_value=mock_session)
 
-        await repo.complete_sync(
+        # rowcount mock — bool 반환을 위해 필요
+        result_mock = MagicMock()
+        result_mock.rowcount = 1
+        mock_session.execute = AsyncMock(return_value=result_mock)
+
+        # 0005 이후 organization_id 필수
+        ok = await repo.complete_sync(
             "src-1", "active",
+            organization_id="org-1",
             sync_result={"documents_synced": 5},
         )
+        assert ok is True
 
         mock_session.execute.assert_called_once()
         mock_session.commit.assert_called_once()
@@ -698,8 +708,9 @@ class TestReportSyncFailure:
         ds_repo = AsyncMock()
         run_repo = AsyncMock()
 
+        # 0005 이후 organization_id 필수 인자
         await _report_sync_failure(
-            ds_repo, run_repo, "src-1", "run-1", RuntimeError("boom"),
+            ds_repo, run_repo, "src-1", "run-1", "org-1", RuntimeError("boom"),
         )
         ds_repo.complete_sync.assert_awaited_once()
         assert ds_repo.complete_sync.call_args[0][1] == "error"
@@ -718,7 +729,7 @@ class TestReportSyncFailure:
 
         # Should not raise
         await _report_sync_failure(
-            ds_repo, run_repo, "src-1", "run-1", RuntimeError("boom"),
+            ds_repo, run_repo, "src-1", "run-1", "org-1", RuntimeError("boom"),
         )
 
     @pytest.mark.asyncio
@@ -726,7 +737,9 @@ class TestReportSyncFailure:
         from src.api.routes.data_source_sync import _report_sync_failure
 
         # Should not raise with None repos
-        await _report_sync_failure(None, None, "src-1", "run-1", RuntimeError("boom"))
+        await _report_sync_failure(
+            None, None, "src-1", "run-1", "org-1", RuntimeError("boom"),
+        )
 
 
 # ---------------------------------------------------------------------------

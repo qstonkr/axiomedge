@@ -152,6 +152,10 @@ class TestOnnxSparseEmbedder:
 # ===========================================================================
 # Data Sources routes (src/api/routes/data_sources.py)
 # ===========================================================================
+# 0005 이후 모든 data-sources 라우트가 OrgContext 강제. bypass_route_auth
+# fixture 가 get_current_org → fake org_id="default-org" 로 자동 주입.
+pytestmark = pytest.mark.usefixtures("bypass_route_auth")
+
 
 class TestDataSourceRoutes:
     def _make_app(self):

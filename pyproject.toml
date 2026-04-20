@@ -54,6 +54,9 @@ dependencies = [
     # Auth (JWT verification for Keycloak/AzureAD)
     "PyJWT[crypto]>=2.8.0",
     "bcrypt>=4.0.0",
+    # Secret-at-rest (Fernet for SecretBox; transitively from PyJWT[crypto]
+    # but declared explicitly so SecretBox stays portable).
+    "cryptography>=41",
     # MCP Server
     "mcp>=1.8.0",
     # Utilities

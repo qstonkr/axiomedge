@@ -46,7 +46,8 @@ class TestDataSourceRepository:
         repo = DataSourceRepository(maker)
 
         async def _go():
-            result = await repo.get("missing")
+            # 0005 이후 organization_id 필수 — cross-org 시 None
+            result = await repo.get("missing", organization_id="org-1")
             assert result is None
         _run(_go())
 

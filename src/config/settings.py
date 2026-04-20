@@ -162,6 +162,31 @@ class RedisSettings(BaseSettings):
     url: str = Field(default="redis://localhost:6379")
 
 
+class SecretBoxSettings(BaseSettings):
+    """Secret-at-rest 설정 — connector token 등 사용자 입력 secret 의 암호화 저장.
+
+    backend=fernet (default): application-level Fernet (cryptography) — KEY env
+    필요. on-prem 본업이라 별도 인프라 0 으로 작동.
+
+    backend=vault (옵션): HashiCorp Vault self-host — 큰 고객사 (FIPS-140,
+    HSM, BYOK) 대응. hvac client 자동 활성화.
+
+    KEY 회전: ``SECRET_BOX_KEY_PREVIOUS`` 에 옛 키 두면 MultiFernet 가 fallback
+    decrypt. 모든 row re-encrypt 후 PREVIOUS 제거.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="SECRET_BOX_")
+
+    backend: str = Field(default="fernet")  # fernet | vault
+    key: str = Field(default="")  # Fernet base64-url-safe 32byte. backend=fernet 시 필수.
+    key_previous: str = Field(default="")  # 회전 진행 중 fallback decrypt 용
+
+    # Vault (backend=vault 시 필수)
+    vault_addr: str = Field(default="")
+    vault_token: str = Field(default="")
+    vault_path_prefix: str = Field(default="secret/data/axiomedge")
+
+
 class ConfluenceSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CONFLUENCE_")
 
@@ -264,6 +289,7 @@ class Settings(BaseSettings):
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
+    secret_box: SecretBoxSettings = Field(default_factory=SecretBoxSettings)
     confluence: ConfluenceSettings = Field(default_factory=ConfluenceSettings)
     tei: TeiSettings = Field(default_factory=TeiSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)

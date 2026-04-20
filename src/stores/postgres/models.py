@@ -635,6 +635,10 @@ class DataSourceModel(KnowledgeBase):
     name = Column(String(255), nullable=False, unique=True)
     source_type = Column(String(50), nullable=False)
     kb_id = Column(String(100), nullable=False)
+    # 0005_data_source_org_required.py 에서 NOT NULL + FK(organizations.id)
+    # 강제. 모든 repo 메서드는 org_id 필터를 요구해 cross-tenant 누설 차단
+    # (KBConfigModel.organization_id 와 동일 패턴, 0004 참조).
+    organization_id = Column(String(100), nullable=False)
     crawl_config = Column(Text, default="{}")  # JSON
     pipeline_config = Column(Text, default="{}")  # JSON
     schedule = Column(String(50), default="daily")
@@ -652,6 +656,7 @@ class DataSourceModel(KnowledgeBase):
         Index("idx_kds_kb_id", "kb_id"),
         Index("idx_kds_status", "status"),
         Index("idx_kds_source_type", "source_type"),
+        Index("idx_kds_org_id", "organization_id"),
     )
 
 

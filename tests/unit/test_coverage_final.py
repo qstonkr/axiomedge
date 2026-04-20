@@ -98,8 +98,10 @@ class TestDataSourceRepository:
             "metadata": {"tag": "v1"},
         }
         with patch("src.stores.postgres.repositories.data_source.DataSourceModel"):
-            result = _run(repo.register(data))
-        assert result == data
+            # 0005 이후 organization_id 필수 — body 에 자동 주입됨
+            result = _run(repo.register(data, organization_id="org-1"))
+        assert result["id"] == data["id"]
+        assert result["organization_id"] == "org-1"
         session.add.assert_called_once()
         session.commit.assert_awaited_once()
 
@@ -110,7 +112,7 @@ class TestDataSourceRepository:
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
         with patch("src.stores.postgres.repositories.data_source.DataSourceModel"):
             with pytest.raises(SQLAlchemyError):
-                _run(repo.register({"id": "ds-1"}))
+                _run(repo.register({"id": "ds-1"}, organization_id="org-1"))
         session.rollback.assert_awaited_once()
 
     def test_get_found(self):
@@ -132,41 +134,53 @@ class TestDataSourceRepository:
         model.error_message = None
         model.metadata_ = None
         _mock_scalar_one_or_none(session, model)
-        result = _run(repo.get("ds-1"))
+        result = _run(repo.get("ds-1", organization_id="org-1"))
         assert result["id"] == "ds-1"
 
     def test_get_not_found(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalar_one_or_none(session, None)
-        result = _run(repo.get("nonexistent"))
+        result = _run(repo.get("nonexistent", organization_id="org-1"))
         assert result is None
 
     def test_get_by_name(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalar_one_or_none(session, None)
-        result = _run(repo.get_by_name("test"))
+        result = _run(repo.get_by_name("test", organization_id="org-1"))
         assert result is None
 
     def test_list_with_filters(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalars_all(session, [])
-        result = _run(repo.list(source_type="file", status="active"))
+        result = _run(
+            repo.list(organization_id="org-1", source_type="file", status="active"),
+        )
         assert result == []
 
     def test_list_no_filters(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
         _mock_scalars_all(session, [])
-        result = _run(repo.list())
+        result = _run(repo.list(organization_id="org-1"))
         assert result == []
 
     def test_update_status(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
         repo, session = _make_repo(DataSourceRepository)
-        _run(repo.update_status("ds-1", "error", "something broke"))
+        result_mock = MagicMock()
+        result_mock.rowcount = 1
+        session.execute = AsyncMock(return_value=result_mock)
+        ok = _run(
+            repo.update_status(
+                "ds-1", "error",
+                organization_id="org-1",
+                error_message="something broke",
+            ),
+        )
+        assert ok is True
         session.execute.assert_awaited_once()
         session.commit.assert_awaited_once()
 
@@ -176,7 +190,7 @@ class TestDataSourceRepository:
         repo, session = _make_repo(DataSourceRepository)
         session.commit = AsyncMock(side_effect=SQLAlchemyError("fail"))
         with pytest.raises(SQLAlchemyError):
-            _run(repo.update_status("ds-1", "error"))
+            _run(repo.update_status("ds-1", "error", organization_id="org-1"))
         session.rollback.assert_awaited_once()
 
     def test_delete_found(self):
@@ -185,7 +199,7 @@ class TestDataSourceRepository:
         result_mock = MagicMock()
         result_mock.rowcount = 1
         session.execute = AsyncMock(return_value=result_mock)
-        assert _run(repo.delete("ds-1")) is True
+        assert _run(repo.delete("ds-1", organization_id="org-1")) is True
 
     def test_delete_not_found(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
@@ -193,7 +207,7 @@ class TestDataSourceRepository:
         result_mock = MagicMock()
         result_mock.rowcount = 0
         session.execute = AsyncMock(return_value=result_mock)
-        assert _run(repo.delete("ds-1")) is False
+        assert _run(repo.delete("ds-1", organization_id="org-1")) is False
 
     def test_to_dict(self):
         from src.stores.postgres.repositories.data_source import DataSourceRepository
