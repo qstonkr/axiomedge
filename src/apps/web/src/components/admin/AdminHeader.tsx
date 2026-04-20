@@ -5,7 +5,10 @@ import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
+import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 import type { Membership } from "@/lib/auth/session";
+
+import { AdminQuickPalette } from "./AdminQuickPalette";
 
 /**
  * Admin sticky header — breadcrumb + 컨텍스트 액션 + OrgSwitcher.
@@ -82,8 +85,10 @@ export function AdminHeader({
           </span>
         ))}
       </nav>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {actions}
+        <AdminQuickPalette />
+        <NotificationBell />
         <OrgSwitcher
           activeOrgId={activeOrgId}
           memberships={memberships}
@@ -91,5 +96,33 @@ export function AdminHeader({
         />
       </div>
     </header>
+  );
+}
+
+function NotificationBell() {
+  // 대시보드 summary 의 pending counter 를 합쳐 alert badge — 새 endpoint 없이
+  // 기존 데이터 재사용. 30s polling 도 그대로.
+  const { data } = useAdminDashboardSummary();
+  const pending =
+    (data?.feedback_pending ?? 0) + (data?.error_reports_pending ?? 0);
+  return (
+    <Link
+      href={pending > 0 ? "/admin/errors" : "/admin"}
+      title={`대기 ${pending}건 (피드백 + 오류 신고)`}
+      aria-label={`알림 ${pending}건`}
+      className="relative flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-muted hover:text-fg-default"
+    >
+      <span aria-hidden className="text-base leading-none">
+        🔔
+      </span>
+      {pending > 0 && (
+        <span
+          aria-hidden
+          className="absolute right-0 top-0 flex h-3.5 min-w-[14px] items-center justify-center rounded-full border border-bg-canvas bg-danger-default px-0.5 font-mono text-[9px] font-medium text-fg-onAccent"
+        >
+          {pending > 99 ? "99+" : pending}
+        </span>
+      )}
+    </Link>
   );
 }

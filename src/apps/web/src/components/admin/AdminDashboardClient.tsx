@@ -5,8 +5,8 @@ import { useMemo } from "react";
 import { Skeleton } from "@/components/ui";
 import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 
+import { AreaChartHero, type HeroPoint } from "./AreaChartHero";
 import { MetricCard } from "./MetricCard";
-import { Sparkline } from "./Sparkline";
 
 function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
@@ -54,6 +54,19 @@ export function AdminDashboardClient() {
   const heroAvg = series.search.length
     ? Math.round(series.search.reduce((s, n) => s + n, 0) / series.search.length)
     : 0;
+
+  // recharts AreaChart 용 — t 라벨은 24h 시점 ("HH:00")
+  const heroPoints = useMemo<HeroPoint[]>(() => {
+    const len = series.search.length;
+    if (len < 2) return [];
+    const now = new Date();
+    return series.search.map((v, i) => {
+      const offsetH = len - 1 - i;
+      const d = new Date(now.getTime() - offsetH * 3_600_000);
+      const hh = String(d.getHours()).padStart(2, "0");
+      return { t: `${hh}:00`, v };
+    });
+  }, [series.search]);
 
   return (
     <section className="space-y-6">
@@ -133,16 +146,11 @@ export function AdminDashboardClient() {
                 </div>
               </dl>
             </header>
-            <div className="relative h-32 w-full bg-gradient-to-b from-accent-subtle/40 to-transparent">
-              {series.search.length > 1 ? (
-                <Sparkline
-                  points={series.search}
-                  width={1200}
-                  height={128}
-                  className="absolute inset-0 h-full w-full text-accent-default"
-                />
+            <div className="px-2 pt-2">
+              {heroPoints.length > 1 ? (
+                <AreaChartHero points={heroPoints} height={180} />
               ) : (
-                <div className="flex h-full items-center justify-center text-xs text-fg-subtle">
+                <div className="flex h-32 items-center justify-center text-xs text-fg-subtle">
                   데이터 없음 — search_log_repo 미초기화
                 </div>
               )}

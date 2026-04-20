@@ -113,14 +113,25 @@
 }
 
 [data-admin="true"][data-theme="dark"] {
-  --color-accent-default: #2dd4bf; /* teal-400 — dark bg 위 대비 */
-  --color-accent-emphasis: #14b8a6;
+  /* dark bg 위에서 teal 가 흐릿해 보이지 않도록 한 단계 더 vivid 하게.
+   * 400 → 300 (vivid), emphasis 는 400 으로 한 단계 위.
+   */
+  --color-accent-default: #5eead4; /* teal-300 */
+  --color-accent-emphasis: #2dd4bf; /* teal-400 */
   --color-accent-subtle: #134e4a; /* teal-900 */
 
   --color-admin-sidebar-bg: #0f172a; /* slate-900 */
-  --color-admin-sidebar-active-bg: #0d9488;
+  --color-admin-sidebar-active-bg: #0d9488; /* teal-600 */
+  --color-admin-sidebar-active-fg: #f0fdfa; /* teal-50 */
   --color-admin-sidebar-hover-bg: #1e293b; /* slate-800 */
   --color-admin-sidebar-border: #1e293b;
+
+  /* severity 도 dark 위에서 명도 한 단계 — 운영자가 바로 alert 인지 가능 */
+  --color-severity-info: #60a5fa; /* blue-400 */
+  --color-severity-warn: #f59e0b; /* amber-500 */
+  --color-severity-error: #f87171; /* red-400 */
+  --color-severity-critical: #fca5a5; /* red-300 (배경 color 와 텍스트 contrast) */
+  --color-severity-success: #4ade80; /* green-400 */
 }
 
 @theme inline {
