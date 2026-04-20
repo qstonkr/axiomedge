@@ -21,6 +21,8 @@ import { useSearchableKbs } from "@/hooks/useSearch";
 import type { GlossaryTerm, GlossaryUpsertBody } from "@/lib/api/endpoints";
 
 import { DataTable, type Column } from "./DataTable";
+import { DiscoveredSynonymsPanel } from "./DiscoveredSynonymsPanel";
+import { GlossarySimilarityPanel } from "./GlossarySimilarityPanel";
 import { MetricCard } from "./MetricCard";
 
 export function GlossaryClient() {
@@ -201,6 +203,9 @@ export function GlossaryClient() {
         }}
         pending={create.isPending || update.isPending}
       />
+
+      <GlossarySimilarityPanel />
+      <DiscoveredSynonymsPanel />
     </section>
   );
 }

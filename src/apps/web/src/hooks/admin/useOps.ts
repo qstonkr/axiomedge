@@ -9,19 +9,23 @@ import {
   deleteAuthUser,
   getConfigWeights,
   getGraphStats,
+  listAbacPolicies,
   listAuthRoles,
   listAuthUsers,
   listEdgeServers,
   listIngestRuns,
+  listKbPermissions,
   revokeAuthRole,
   searchGraphEntities,
   updateAuthUser,
+  type AbacPolicy,
   type AuthRole,
   type AuthUser,
   type AuthUserUpsertBody,
   type EdgeServer,
   type GraphStats,
   type IngestRun,
+  type KbPermission,
 } from "@/lib/api/endpoints";
 
 // ── /admin/users ──
@@ -38,6 +42,25 @@ export function useAuthRoles() {
     queryKey: ["admin", "roles"],
     queryFn: () => listAuthRoles(),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** ABAC 정책 list (admin/system 권한 필요). */
+export function useAbacPolicies() {
+  return useQuery<AbacPolicy[]>({
+    queryKey: ["admin", "abac", "policies"],
+    queryFn: () => listAbacPolicies(),
+    staleTime: 60 * 1000,
+  });
+}
+
+/** 한 KB 의 사용자 권한 목록. kbId 가 null/빈문자열이면 query 비활성화. */
+export function useKbPermissions(kbId: string | null) {
+  return useQuery<{ kb_id: string; permissions: KbPermission[] }>({
+    queryKey: ["admin", "kb", kbId, "permissions"],
+    queryFn: () => listKbPermissions(kbId!),
+    enabled: Boolean(kbId),
+    staleTime: 60 * 1000,
   });
 }
 

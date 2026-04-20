@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Select, Skeleton } from "@/components/ui";
+import { ErrorFallback, Select, Skeleton } from "@/components/ui";
 import { useKbLifecycle } from "@/hooks/admin/useLifecycle";
 import { useSearchableKbs } from "@/hooks/useSearch";
 import type { KbLifecycleEvent } from "@/lib/api/endpoints";
@@ -137,9 +137,11 @@ export function LifecycleClient() {
       ) : lifecycle.isLoading ? (
         <Skeleton className="h-48" />
       ) : lifecycle.isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-          라이프사이클을 불러올 수 없습니다
-        </div>
+        <ErrorFallback
+          title="라이프사이클을 불러올 수 없습니다"
+          error={lifecycle.error}
+          onRetry={() => lifecycle.refetch()}
+        />
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3">
@@ -159,20 +161,34 @@ export function LifecycleClient() {
             />
           </div>
 
-          {(lifecycle.data?.scheduled_archive ?? []).length > 0 && (
-            <article className="space-y-2">
+          <article className="space-y-2">
+            <header className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-medium text-fg-default">
                 자동 아카이브 예정 (
-                {lifecycle.data?.scheduled_archive?.length})
+                {lifecycle.data?.scheduled_archive?.length ?? 0})
               </h2>
-              <DataTable
-                columns={scheduledColumns}
-                rows={lifecycle.data?.scheduled_archive ?? []}
-                rowKey={(r, idx) => `${r.document_id}-${idx}`}
-                empty="예정 없음"
-              />
-            </article>
-          )}
+            </header>
+            {(lifecycle.data?.scheduled_archive ?? []).length > 0 ? (
+              <>
+                <p className="rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs text-warning-default">
+                  ⚠️ 아래 문서들은 신선도 (last update) 기준으로 자동 아카이브
+                  예정입니다. 게시 유지가 필요하면 lifecycle service 의
+                  유효 기간을 갱신하세요.
+                </p>
+                <DataTable
+                  columns={scheduledColumns}
+                  rows={lifecycle.data?.scheduled_archive ?? []}
+                  rowKey={(r, idx) => `${r.document_id}-${idx}`}
+                  empty="예정 없음"
+                />
+              </>
+            ) : (
+              <p className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-6 text-center text-xs text-fg-muted">
+                자동 아카이브 예정 문서가 없습니다 — 모두 신선합니다.
+              </p>
+            )}
+          </article>
+
 
           <article className="space-y-2">
             <h2 className="text-sm font-medium text-fg-default">상태 전이 이력</h2>

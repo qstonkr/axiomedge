@@ -6,20 +6,30 @@ import {
   Badge,
   Button,
   Dialog,
+  ErrorFallback,
   Input,
   Select,
   Skeleton,
+  Tabs,
   useToast,
 } from "@/components/ui";
 import {
+  useAbacPolicies,
   useAssignAuthRole,
   useAuthRoles,
   useAuthUsers,
   useCreateAuthUser,
   useDeleteAuthUser,
+  useKbPermissions,
   useUpdateAuthUser,
 } from "@/hooks/admin/useOps";
-import type { AuthUser, AuthUserUpsertBody } from "@/lib/api/endpoints";
+import { useSearchableKbs } from "@/hooks/useSearch";
+import type {
+  AbacPolicy,
+  AuthUser,
+  AuthUserUpsertBody,
+  KbPermission,
+} from "@/lib/api/endpoints";
 
 import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
@@ -126,20 +136,13 @@ export function UsersClient() {
     },
   ];
 
-  return (
-    <section className="space-y-6">
-      <header className="flex items-end justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold text-fg-default">사용자/권한</h1>
-          <p className="text-sm text-fg-muted">
-            시스템 등록 사용자 + provider + 활성 상태 + 시스템 role 할당.
-          </p>
-        </div>
+  const usersTab = (
+    <div className="space-y-4">
+      <div className="flex items-end justify-end">
         <Button size="sm" onClick={() => setCreating(true)}>
           + 신규 사용자
         </Button>
-      </header>
-
+      </div>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <MetricCard label="총 사용자" value={items.length} />
         <MetricCard
@@ -147,10 +150,7 @@ export function UsersClient() {
           value={items.filter((u) => u.is_active !== false).length}
           tone="success"
         />
-        <MetricCard
-          label="시스템 role"
-          value={(roles.data ?? []).length}
-        />
+        <MetricCard label="시스템 role" value={(roles.data ?? []).length} />
         <div className="rounded-lg border border-border-default bg-bg-canvas p-4">
           <label className="block space-y-1 text-xs font-medium text-fg-muted">
             검색
@@ -162,13 +162,14 @@ export function UsersClient() {
           </label>
         </div>
       </div>
-
       {users.isLoading ? (
         <Skeleton className="h-48" />
       ) : users.isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm text-danger-default">
-          사용자 목록을 불러올 수 없습니다
-        </div>
+        <ErrorFallback
+          title="사용자 목록을 불러올 수 없습니다"
+          error={users.error}
+          onRetry={() => users.refetch()}
+        />
       ) : (
         <DataTable<AuthUser>
           columns={columns}
@@ -177,6 +178,34 @@ export function UsersClient() {
           empty={filter ? "검색 결과 없음" : "등록된 사용자가 없습니다"}
         />
       )}
+    </div>
+  );
+
+  return (
+    <section className="space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-xl font-semibold text-fg-default">사용자/권한</h1>
+        <p className="text-sm text-fg-muted">
+          시스템 사용자 / KB 별 권한 / ABAC 정책. 사용자 탭에서 신규 추가
+          및 시스템 role 할당.
+        </p>
+      </header>
+
+      <Tabs
+        items={[
+          { id: "users", label: "사용자 관리", content: usersTab },
+          {
+            id: "kb_perms",
+            label: "KB 권한",
+            content: <KbPermissionsTab />,
+          },
+          {
+            id: "abac",
+            label: "ABAC 정책",
+            content: <AbacPoliciesTab />,
+          },
+        ]}
+      />
 
       <UserFormDialog
         key={editing?.id ?? (creating ? "create" : "closed")}
@@ -369,5 +398,235 @@ function RoleAssignDialog({
         </Select>
       </label>
     </Dialog>
+  );
+}
+
+/**
+ * KB 권한 탭 — KB 선택 후 그 KB 의 사용자 권한 (reader/contributor/manager/
+ * owner) 목록 표시. 변경 (set/revoke) 은 후속 (현재는 read-only viewer).
+ */
+function KbPermissionsTab() {
+  const kbs = useSearchableKbs();
+  const [kbId, setKbId] = useState("");
+  const perms = useKbPermissions(kbId || null);
+
+  const columns: Column<KbPermission>[] = [
+    {
+      key: "user_id",
+      header: "사용자",
+      render: (p) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-fg-default">
+            {p.email ?? p.user_id}
+          </span>
+          {p.display_name && (
+            <span className="text-[10px] text-fg-subtle">{p.display_name}</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "permission_level",
+      header: "권한",
+      render: (p) => {
+        const tone =
+          p.permission_level === "owner"
+            ? "danger"
+            : p.permission_level === "manager"
+              ? "warning"
+              : p.permission_level === "contributor"
+                ? "accent"
+                : "neutral";
+        return <Badge tone={tone}>{p.permission_level}</Badge>;
+      },
+    },
+    {
+      key: "granted_by",
+      header: "부여자",
+      render: (p) => (
+        <span className="font-mono text-[10px] text-fg-muted">
+          {p.granted_by ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "granted_at",
+      header: "부여 시각",
+      render: (p) => (
+        <span className="font-mono text-[10px] text-fg-muted">
+          {(p.granted_at ?? "").slice(0, 19).replace("T", " ")}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border-default bg-bg-canvas p-4">
+        <label className="block space-y-1 text-xs font-medium text-fg-muted">
+          KB 선택
+          <Select value={kbId} onChange={(e) => setKbId(e.target.value)}>
+            <option value="">— KB 선택 —</option>
+            {(kbs.data ?? []).map((kb) => (
+              <option key={kb.kb_id} value={kb.kb_id}>
+                {kb.name} ({kb.kb_id})
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
+      {!kbId ? (
+        <div className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-8 text-center text-xs text-fg-muted">
+          KB 를 선택하면 그 KB 의 사용자 권한이 표시됩니다.
+        </div>
+      ) : perms.isLoading ? (
+        <Skeleton className="h-32" />
+      ) : perms.isError ? (
+        <ErrorFallback
+          title="권한 목록을 불러올 수 없습니다"
+          error={perms.error}
+          onRetry={() => perms.refetch()}
+        />
+      ) : (
+        <DataTable<KbPermission>
+          columns={columns}
+          rows={perms.data?.permissions ?? []}
+          rowKey={(r) => r.user_id}
+          empty="이 KB 의 명시적 권한 부여가 없습니다 (조직 role 만 적용)."
+        />
+      )}
+      <p className="text-xs text-fg-subtle">
+        💡 권한 변경 (set/revoke) 은 backend
+        <code className="font-mono">POST /auth/kb/{`{kb_id}`}/permissions</code>{" "}
+        로 가능 — UI 는 후속 단계.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * ABAC 정책 탭 — 정책 list (read-only viewer). 조건 평가 자체는 backend
+ * 가, UI 는 정책 우선순위/effect/조건을 한눈에. 신규 정책 작성 form 은
+ * 후속.
+ */
+function AbacPoliciesTab() {
+  const policies = useAbacPolicies();
+
+  const columns: Column<AbacPolicy>[] = [
+    {
+      key: "name",
+      header: "정책",
+      render: (p) => (
+        <div className="flex flex-col">
+          <span className="font-medium text-fg-default">{p.name}</span>
+          {p.description && (
+            <span className="text-[10px] text-fg-subtle">
+              {p.description}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "effect",
+      header: "효과",
+      render: (p) => (
+        <Badge tone={p.effect === "allow" ? "success" : "danger"}>
+          {p.effect}
+        </Badge>
+      ),
+    },
+    {
+      key: "resource_type",
+      header: "리소스",
+      render: (p) => (
+        <span className="font-mono text-[10px] text-fg-default">
+          {p.resource_type}
+        </span>
+      ),
+    },
+    {
+      key: "action",
+      header: "액션",
+      render: (p) => (
+        <span className="font-mono text-[10px] text-fg-default">{p.action}</span>
+      ),
+    },
+    {
+      key: "priority",
+      header: "우선순위",
+      align: "right",
+      render: (p) => (
+        <span className="font-mono tabular-nums text-fg-default">
+          {p.priority}
+        </span>
+      ),
+    },
+    {
+      key: "is_active",
+      header: "상태",
+      render: (p) => (
+        <Badge tone={p.is_active ? "success" : "neutral"}>
+          {p.is_active ? "활성" : "비활성"}
+        </Badge>
+      ),
+    },
+    {
+      key: "conditions",
+      header: "조건",
+      render: (p) => {
+        const c =
+          typeof p.conditions === "string"
+            ? p.conditions
+            : JSON.stringify(p.conditions);
+        return (
+          <code
+            className="line-clamp-2 break-all font-mono text-[10px] text-fg-muted"
+            title={c}
+          >
+            {c}
+          </code>
+        );
+      },
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricCard label="총 정책" value={(policies.data ?? []).length} />
+        <MetricCard
+          label="allow"
+          value={(policies.data ?? []).filter((p) => p.effect === "allow").length}
+          tone="success"
+        />
+        <MetricCard
+          label="deny"
+          value={(policies.data ?? []).filter((p) => p.effect === "deny").length}
+          tone="danger"
+        />
+      </div>
+      {policies.isLoading ? (
+        <Skeleton className="h-32" />
+      ) : policies.isError ? (
+        <ErrorFallback
+          title="ABAC 정책을 불러올 수 없습니다"
+          error={policies.error}
+          onRetry={() => policies.refetch()}
+        />
+      ) : (
+        <DataTable<AbacPolicy>
+          columns={columns}
+          rows={policies.data ?? []}
+          rowKey={(r) => r.id}
+          empty="등록된 ABAC 정책이 없습니다."
+        />
+      )}
+      <p className="text-xs text-fg-subtle">
+        💡 정책 작성 / 편집은 backend
+        <code className="font-mono">POST/PUT /auth/abac/policies</code> 로
+        가능 — UI 는 후속 단계.
+      </p>
+    </div>
   );
 }

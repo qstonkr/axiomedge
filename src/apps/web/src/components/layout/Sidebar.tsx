@@ -17,6 +17,7 @@ const NAV: { href: string; key: string; icon: string }[] = [
   { href: "/my-documents", key: "my_documents", icon: "📄" },
   { href: "/my-feedback", key: "my_feedback", icon: "📝" },
   { href: "/search-history", key: "search_history", icon: "🕐" },
+  { href: "/my-activities", key: "my_activities", icon: "📋" },
 ];
 
 export function Sidebar() {

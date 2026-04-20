@@ -654,6 +654,42 @@ export const rejectGlossaryTerm = (termId: string, reason?: string) =>
     },
   );
 
+/**
+ * RapidFuzz 기반 유사도 분포 — 운영자가 글로서리 품질 (중복 가능 후보가
+ * 얼마나 많은지) 한눈에 보는 데이터. backend 가 500 sample top-K 매칭으로
+ * histogram bucket + summary 반환.
+ */
+export type SimilarityDistribution = {
+  distribution: Array<{ bucket: string; count: number }>;
+  total_pairs: number;
+  mean_similarity: number;
+  sample_size: number;
+  error?: string;
+};
+
+export const getGlossarySimilarityDistribution = () =>
+  request<SimilarityDistribution>(
+    "api/v1/admin/glossary/similarity-distribution",
+    { method: "GET" },
+  );
+
+/**
+ * 자동 발견된 동의어 후보 — 검색 패턴/co-occurrence 로 추론. 운영자
+ * 승인/거부 큐.
+ */
+export const listDiscoveredSynonyms = async (params?: {
+  status?: "pending" | "approved" | "rejected";
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: GlossaryTerm[]; total: number }> => {
+  const raw = await request<{ synonyms?: GlossaryTerm[]; total?: number }>(
+    "api/v1/admin/glossary/discovered-synonyms",
+    { method: "GET", query: params },
+  );
+  const items = raw.synonyms ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
 // ── /admin/dedup/conflicts (B-2 중복/모순) ──────────────────────────────
 
 export type DedupConflict = {
@@ -990,6 +1026,92 @@ export const cancelIngestRun = (runId: string) =>
     `api/v1/admin/knowledge/ingest/jobs/${encodeURIComponent(runId)}/cancel`,
     { method: "POST" },
   );
+
+/**
+ * ABAC 정책 — admin/system 권한 필요. resource_type/action/conditions
+ * 으로 정책 매칭, effect 가 allow|deny.
+ */
+export type AbacPolicy = {
+  id: string;
+  name: string;
+  description?: string | null;
+  resource_type: string;
+  action: string;
+  conditions: Record<string, unknown> | string;
+  effect: "allow" | "deny";
+  priority: number;
+  is_active: boolean;
+};
+
+export const listAbacPolicies = async (): Promise<AbacPolicy[]> => {
+  const raw = await request<{ policies?: AbacPolicy[] }>(
+    "api/v1/auth/abac/policies",
+    { method: "GET" },
+  );
+  return raw.policies ?? [];
+};
+
+/** KB-scoped 사용자 권한 (reader / contributor / manager / owner). */
+export type KbPermission = {
+  user_id: string;
+  email?: string;
+  display_name?: string | null;
+  permission_level: "reader" | "contributor" | "manager" | "owner" | string;
+  granted_by?: string;
+  granted_at?: string;
+};
+
+export const listKbPermissions = async (
+  kbId: string,
+): Promise<{ kb_id: string; permissions: KbPermission[] }> => {
+  return request<{ kb_id: string; permissions: KbPermission[] }>(
+    `api/v1/auth/kb/${encodeURIComponent(kbId)}/permissions`,
+    { method: "GET" },
+  );
+};
+
+/**
+ * 사용자 본인의 활동 로그. login / search / feedback / document / ingestion
+ * 등 통합 timeline. Streamlit my_activities.py 가 호출하던 두 endpoint
+ * (`/auth/my-activities/summary`, `/auth/my-activities`) 와 동일.
+ */
+export type MyActivity = {
+  id?: string;
+  activity_type?: string; // search / feedback / document / login / ingestion / ...
+  title?: string;
+  description?: string;
+  detail?: unknown;
+  metadata?: unknown;
+  created_at?: string;
+  timestamp?: string;
+};
+
+export type MyActivitySummary = {
+  period_days: number;
+  total: number;
+  by_type: Record<string, number>;
+};
+
+export const getMyActivitySummary = (days = 30) =>
+  request<MyActivitySummary>("api/v1/auth/my-activities/summary", {
+    method: "GET",
+    query: { days },
+  });
+
+export const getMyActivities = async (params?: {
+  activity_type?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ activities: MyActivity[]; total: number }> => {
+  const raw = await request<{
+    activities?: MyActivity[];
+    total?: number;
+  }>("api/v1/auth/my-activities", { method: "GET", query: params });
+  const activities = raw.activities ?? [];
+  return { activities, total: raw.total ?? activities.length };
+};
 
 /**
  * 수동 인제스천 트리거 — Streamlit ingestion_jobs.py 의 trigger_ingestion_form

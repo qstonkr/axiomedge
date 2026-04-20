@@ -8,8 +8,10 @@ import {
   createSearchGroup,
   deleteGlossaryTerm,
   deleteSearchGroup,
+  getGlossarySimilarityDistribution,
   getPipelineStatus,
   listDedupConflicts,
+  listDiscoveredSynonyms,
   listDocumentOwners,
   listGlossaryTerms,
   listPendingVerifications,
@@ -24,6 +26,7 @@ import {
   type GlossaryUpsertBody,
   type PipelineStatus,
   type SearchGroupUpsertBody,
+  type SimilarityDistribution,
   type TriggerIngestionBody,
 } from "@/lib/api/endpoints";
 
@@ -64,6 +67,28 @@ export function useGlossary(params?: {
 }
 
 // ── /admin/owners ──
+/** RapidFuzz 유사도 분포 — 글로서리 품질 모니터링 (장기 데이터, 5분 캐시). */
+export function useGlossarySimilarityDistribution() {
+  return useQuery<SimilarityDistribution>({
+    queryKey: ["admin", "glossary", "similarity-distribution"],
+    queryFn: () => getGlossarySimilarityDistribution(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** 자동 발견된 동의어 후보 큐 — 운영자 승인/거부 대상. */
+export function useDiscoveredSynonyms(params?: {
+  status?: "pending" | "approved" | "rejected";
+  page?: number;
+  page_size?: number;
+}) {
+  return useQuery<{ items: GlossaryTerm[]; total: number }>({
+    queryKey: ["admin", "glossary", "discovered-synonyms", params],
+    queryFn: () => listDiscoveredSynonyms(params),
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useDocumentOwners(kbId: string | null) {
   return useQuery({
     queryKey: ["admin", "owners", kbId],

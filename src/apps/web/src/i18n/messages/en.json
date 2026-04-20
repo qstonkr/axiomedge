@@ -6,7 +6,8 @@
     "my_knowledge": "My knowledge",
     "my_documents": "My documents",
     "my_feedback": "Feedback / report",
-    "search_history": "Search history"
+    "search_history": "Search history",
+    "my_activities": "My activities"
   },
   "common": {
     "logout": "Log out",
