@@ -172,11 +172,12 @@ SECRET_BOX_KEY=<key> uv run python scripts/migrate_data_source_secrets.py --appl
 
 모든 secret event 는 `user_activity_log` 테이블에 기록:
 
-| `activity_type` | 트리거 |
-|---|---|
-| `secret_create` / `secret_update` | POST / PUT data-source 가 token 입력 |
-| `secret_delete` | PUT `secret_token=null` 또는 DELETE data-source cascade |
-| `secret_access` | (옵션) connector launcher 가 SecretBox.get 호출 시 |
+| `activity_type` | 트리거 | 상태 |
+|---|---|---|
+| `secret_create` / `secret_update` | POST / PUT data-source 가 token 입력 | ✅ 구현됨 |
+| `secret_delete` | PUT `secret_token=null` 또는 DELETE data-source cascade | ✅ 구현됨 |
+| `secret_access` | connector launcher 가 SecretBox.get 호출 시 | ⏳ 예약어, 미구현 — 동기화 hot path 의 audit volume 부담 평가 후 추가 예정 |
+| `secret_rotate` | KEY rotation script 실행 | ⏳ 예약어, 미구현 — rotation 도구 작성 시점 추가 |
 
 `details` JSONB 는 `{organization_id, success, error}` 만 — **token value 는
 절대 audit log 에 들어가지 않음** (`tests/unit/test_secret_audit.py` 가 강제).

@@ -23,6 +23,11 @@ Safety:
 - ``--apply`` 없이는 어떤 변경도 일어나지 않음
 - 각 source 별 처리 결과 (action / source_id / org / type) 출력
 - SecretBox 저장 실패 시 그 source 만 skip — 다른 source 진행
+
+⚠️ 운영 중지 (또는 admin 이 data_sources 수정 안 하는) 상태에서 실행 권장.
+본 스크립트는 ``select`` 후 ``update`` 까지 row-level lock 을 잡지 않음 —
+동시에 admin UI 에서 같은 source 가 수정되면 last-write-wins 로
+``secret_path`` 가 덮어써질 수 있음. 가능하면 API 트래픽 freeze 후 실행.
 """
 
 from __future__ import annotations
@@ -52,15 +57,31 @@ def _secret_path(organization_id: str, source_id: str) -> str:
     return f"org/{organization_id}/data-source/{source_id}"
 
 
-def _extract_plain_token(crawl_config: Any) -> tuple[str | None, str | None]:
-    """crawl_config dict 에서 평문 token 후보 추출. (token, key) 또는 (None, None)."""
+def _extract_plain_token(
+    crawl_config: Any,
+) -> tuple[str | None, str | None, list[str]]:
+    """crawl_config dict 에서 평문 token 후보 추출.
+
+    Returns:
+        ``(primary_token, primary_key, other_keys_dropped)``
+
+        - primary 는 ``SECRET_KEYS`` 우선순위 (auth_token > pat > password >
+          api_key > token) 에서 첫 번째 발견된 것.
+        - other_keys_dropped 는 동시에 존재하는 다른 secret key 들 (이주 안
+          되고 strip 만 됨). 호출자가 ⚠️ 경고로 노출 — silent loss 방지.
+    """
     if not isinstance(crawl_config, dict):
-        return None, None
+        return None, None, []
+    found: list[tuple[str, str]] = []
     for key in SECRET_KEYS:
         val = crawl_config.get(key)
         if isinstance(val, str) and val.strip():
-            return val.strip(), key
-    return None, None
+            found.append((key, val.strip()))
+    if not found:
+        return None, None, []
+    primary_key, primary_val = found[0]
+    other_keys = [k for k, _ in found[1:]]
+    return primary_val, primary_key, other_keys
 
 
 async def _migrate_db_plaintext(
@@ -82,7 +103,7 @@ async def _migrate_db_plaintext(
             cfg = json.loads(cfg_text)
         except (json.JSONDecodeError, TypeError):
             cfg = {}
-        plain, key = _extract_plain_token(cfg)
+        plain, key, other_keys = _extract_plain_token(cfg)
         if not plain:
             continue
 
@@ -93,11 +114,16 @@ async def _migrate_db_plaintext(
             "organization_id": row.organization_id,
             "source_type": row.source_type,
             "from_key": key,
+            "other_keys_dropped": other_keys,
             "secret_path": path,
             "applied": False,
             "error": None,
         }
         actions.append(action)
+        if other_keys:
+            # 동시에 여러 secret key 가 있으면 첫 번째 (우선순위 최상위) 만 SecretBox 로
+            # 이주 — 나머지는 strip 되어 영구 손실. silent loss 방지 위해 카운터 증가.
+            summary["multi_secret_warnings"] += 1
         if not apply:
             summary["would_migrate_db"] += 1
             continue
@@ -105,11 +131,16 @@ async def _migrate_db_plaintext(
         try:
             await box.put(path, plain)
         except SecretBoxError as e:
+            logger.warning(
+                "SecretBox.put failed for source=%s org=%s: %s",
+                row.id, row.organization_id, e, exc_info=True,
+            )
             action["error"] = f"SecretBox.put failed: {e}"
             summary["errors"] += 1
             continue
 
-        # crawl_config 에서 평문 token 키 strip
+        # crawl_config 에서 평문 token 키 strip — primary 뿐 아니라 other_keys 도
+        # 함께 제거 (있어도 더 이상 의미 없는 데이터, secret 누설 위험).
         new_cfg = {k: v for k, v in cfg.items() if k not in SECRET_KEYS}
         async with session_factory() as session:
             try:
@@ -125,8 +156,12 @@ async def _migrate_db_plaintext(
                 await session.commit()
                 action["applied"] = True
                 summary["migrated_db"] += 1
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 — SQLAlchemy 다양한 예외 통합
                 await session.rollback()
+                logger.warning(
+                    "DB update failed for source=%s org=%s: %s",
+                    row.id, row.organization_id, e, exc_info=True,
+                )
                 action["error"] = f"DB update failed: {e}"
                 summary["errors"] += 1
 
@@ -185,6 +220,10 @@ async def _migrate_env_confluence_pat(
     try:
         await box.put(path, env_pat)
     except SecretBoxError as e:
+        logger.warning(
+            "SecretBox.put failed for env CONFLUENCE_PAT → source=%s: %s",
+            target.id, e, exc_info=True,
+        )
         info["error"] = f"SecretBox.put failed: {e}"
         summary["errors"] += 1
         return info
@@ -199,8 +238,12 @@ async def _migrate_env_confluence_pat(
             await session.commit()
             info["applied"] = True
             summary["migrated_env"] += 1
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 — SQLAlchemy 다양한 예외 통합
             await session.rollback()
+            logger.warning(
+                "DB update failed for env attach → source=%s: %s",
+                target.id, e, exc_info=True,
+            )
             info["error"] = f"DB update failed: {e}"
             summary["errors"] += 1
 
@@ -217,6 +260,7 @@ async def _run(apply: bool, skip_env: bool) -> int:
         "migrated_db": 0,
         "would_migrate_env": 0,
         "migrated_env": 0,
+        "multi_secret_warnings": 0,
         "errors": 0,
     }
 
@@ -246,6 +290,13 @@ async def _run(apply: bool, skip_env: bool) -> int:
                     f"  {marker} [{a['organization_id']}] {a['name']} "
                     f"({a['source_type']}, key={a['from_key']})",
                 )
+                if a.get("other_keys_dropped"):
+                    others = ", ".join(a["other_keys_dropped"])
+                    print(
+                        f"      ⚠️  추가 secret key 도 발견 — 첫 번째만 이주, "
+                        f"나머지는 strip 후 영구 손실: [{others}]. "
+                        f"필요하면 admin UI 에서 별도 source 분리 후 재입력.",
+                    )
                 if a["error"]:
                     print(f"      └─ {a['error']}")
 

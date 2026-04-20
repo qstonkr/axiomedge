@@ -175,6 +175,18 @@ class VaultBox:
                 "`uv pip install 'knowledge-local[vault]'` 또는 `pip install hvac>=2.0`.",
             ) from e
 
+        # hvac 의 sentinel 예외 클래스를 캐싱 — get/delete 에서 isinstance 로
+        # 안전하게 분기. ``type(e).__name__`` 문자열 비교는 hvac 가 클래스명
+        # 변경하면 silent break 라 isinstance 가 더 robust.
+        # ImportError 시점은 위 try 가 이미 보장 — 여기서는 attribute 접근만.
+        try:
+            self._exc_invalid_path: type[Exception] = hvac.exceptions.InvalidPath
+            self._exc_forbidden: type[Exception] = hvac.exceptions.Forbidden
+        except AttributeError:
+            # 매우 오래된/포크된 hvac — fallback 으로 일반 Exception 매칭.
+            self._exc_invalid_path = Exception
+            self._exc_forbidden = Exception
+
         self._mount_point = mount_point.strip("/")
         self._path_prefix = path_prefix.strip("/")
         kwargs: dict[str, Any] = {"url": addr, "token": token}
@@ -187,7 +199,7 @@ class VaultBox:
                 raise SecretBoxError("Vault 인증 실패 — token 만료/권한 부족 가능성.")
         except SecretBoxError:
             raise
-        except Exception as e:  # hvac 가 raise 하는 다양한 예외 포괄
+        except Exception as e:  # noqa: BLE001 — hvac 가 다양한 connection/auth 예외 raise (requests.ConnectionError, urllib3.exceptions.*, hvac.exceptions.*)
             raise SecretBoxError(f"Vault 연결 실패: {e}") from e
 
     def _full_path(self, path: str) -> str:
@@ -204,7 +216,7 @@ class VaultBox:
                 path=self._full_path(path),
                 secret={"value": value},
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — hvac 다양한 예외 통합 (Forbidden/InvalidPath/Connection)
             logger.exception("VaultBox.put 실패: path=%s", path)
             raise SecretBoxError(f"Vault put 실패: {e}") from e
 
@@ -216,11 +228,10 @@ class VaultBox:
                 path=self._full_path(path),
                 raise_on_deleted_version=False,
             )
-        except Exception as e:
-            # hvac.exceptions.InvalidPath / Forbidden 등 — 미존재로 간주.
-            err_name = type(e).__name__
-            if err_name in ("InvalidPath", "Forbidden"):
-                return None
+        except (self._exc_invalid_path, self._exc_forbidden):
+            # 미존재 / 권한 거부 — 라우트가 fallback 처리. SecretBox 입장에서는 None.
+            return None
+        except Exception as e:  # noqa: BLE001 — hvac 의 Connection/Server 예외 통합
             logger.exception("VaultBox.get 실패: path=%s", path)
             raise SecretBoxError(f"Vault get 실패: {e}") from e
 
@@ -236,11 +247,10 @@ class VaultBox:
                 mount_point=self._mount_point,
                 path=self._full_path(path),
             )
-        except Exception as e:
-            err_name = type(e).__name__
-            if err_name in ("InvalidPath",):
-                # 미존재는 idempotent — 조용히 통과.
-                return
+        except self._exc_invalid_path:
+            # 미존재는 idempotent — 조용히 통과.
+            return
+        except Exception as e:  # noqa: BLE001 — hvac 의 Connection/Forbidden 예외 통합
             logger.exception("VaultBox.delete 실패: path=%s", path)
             raise SecretBoxError(f"Vault delete 실패: {e}") from e
 
