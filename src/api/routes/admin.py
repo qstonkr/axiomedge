@@ -137,18 +137,18 @@ async def admin_dashboard_summary() -> dict:
         except Exception as e:  # noqa: BLE001
             out["errors"].append(f"error_report_repo: {type(e).__name__}: {e}")
 
-    # Search history 24h — search_log_repo
-    search_log_repo = state.get("search_log_repo")
-    if search_log_repo is not None:
+    # Search history 24h — usage_log_repo (state key is "usage_log_repo",
+    # backed by UsageLogRepository which exposes get_analytics(days=...).
+    # 24h ≒ days=1 — total_searches in the last day.)
+    usage_log_repo = state.get("usage_log_repo")
+    if usage_log_repo is not None:
         try:
-            from datetime import datetime, timedelta, timezone
-
-            since = datetime.now(timezone.utc) - timedelta(hours=24)
-            count_since = getattr(search_log_repo, "count_since", None)
-            if count_since:
-                out["search_history_24h"] = await count_since(since=since)
+            get_analytics = getattr(usage_log_repo, "get_analytics", None)
+            if get_analytics:
+                analytics = await get_analytics(days=1)
+                out["search_history_24h"] = int(analytics.get("total_searches") or 0)
         except Exception as e:  # noqa: BLE001
-            out["errors"].append(f"search_log_repo: {type(e).__name__}: {e}")
+            out["errors"].append(f"usage_log_repo: {type(e).__name__}: {e}")
 
     return out
 
