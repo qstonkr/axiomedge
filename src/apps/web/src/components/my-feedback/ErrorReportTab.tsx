@@ -12,7 +12,7 @@ import {
   Textarea,
   useToast,
 } from "@/components/ui";
-import { useErrorReportsList, useSubmitErrorReport } from "@/hooks/useFeedback";
+import { useMyErrorReportsList, useSubmitErrorReport } from "@/hooks/useFeedback";
 import type { ErrorReportBody, ErrorReportItem } from "@/lib/api/endpoints";
 
 const ERROR_TYPES: { id: ErrorReportBody["error_type"]; label: string }[] = [
@@ -43,7 +43,7 @@ export function ErrorReportTab() {
   const [description, setDescription] = useState("");
 
   const submit = useSubmitErrorReport();
-  const list = useErrorReportsList({ page: 1, page_size: 20 });
+  const list = useMyErrorReportsList({ page: 1, page_size: 20 });
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

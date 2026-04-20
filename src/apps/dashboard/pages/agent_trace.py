@@ -25,6 +25,72 @@ render_sidebar()
 st.title("🤖 Agent Trace Viewer")
 st.caption("Agentic RAG 실행 단계별 시각화 — plan → execute → reflect → retry.")
 
+
+# ---------------------------------------------------------------------------
+# Trace renderer — Section 2 의 "Trace 불러오기" 버튼이 호출하므로 정의가
+# 호출보다 위에 있어야 한다 (Streamlit page 는 top-down 실행, forward
+# reference 시 NameError).
+# ---------------------------------------------------------------------------
+def _render_trace(trace: dict[str, Any]) -> None:
+    """전체 trace 단계별 시각화."""
+    st.markdown(f"#### 질문: {trace.get('query', '?')}")
+    st.markdown(f"**최종 답변**: {trace.get('final_answer') or '_(없음)_'}")
+
+    # Top metrics row
+    cols = st.columns(5)
+    cols[0].metric("Provider", trace.get("llm_provider", "?"))
+    cols[1].metric("Iterations", len(trace.get("iterations") or []))
+    total_steps = sum(len(it) for it in (trace.get("iterations") or []))
+    cols[2].metric("Total Steps", total_steps)
+    tokens = trace.get("tokens") or {}
+    cols[3].metric("Tokens", tokens.get("prompt_tokens", 0) + tokens.get("completion_tokens", 0))
+    cols[4].metric("Cost", f"${tokens.get('estimated_cost_usd', 0):.4f}")
+
+    # Initial plan
+    st.markdown("### 🧠 초기 Plan")
+    plan = trace.get("plan") or {}
+    st.markdown(f"- **Sub-queries**: {plan.get('sub_queries') or []}")
+    st.markdown(f"- **Estimated complexity**: {plan.get('estimated_complexity', '?')} / 5")
+    st.markdown(f"- **Rationale**: {plan.get('rationale', '_(없음)_')}")
+
+    # Iterations
+    iterations = trace.get("iterations") or []
+    critiques = trace.get("critiques") or []
+    for i, (steps, critique) in enumerate(zip(iterations, critiques)):
+        with st.expander(
+            f"📍 Iteration {i + 1}  ·  steps={len(steps)}  ·  "
+            f"sufficient={'✅' if critique.get('is_sufficient') else '❌'}  ·  "
+            f"confidence={critique.get('confidence', 0):.2f}",
+            expanded=(i == 0),
+        ):
+            for j, step in enumerate(steps):
+                result = step.get("result") or {}
+                ok = "✅" if result.get("success") else "❌"
+                st.markdown(
+                    f"**Step {j + 1}** {ok} `{step.get('tool')}`  ·  "
+                    f"{step.get('duration_ms', 0):.0f}ms",
+                )
+                st.markdown(f"- **Rationale**: {step.get('rationale', '')}")
+                with st.popover("Args"):
+                    st.json(step.get("args") or {})
+                with st.popover("Result"):
+                    st.json(result.get("data"))
+                    if result.get("metadata"):
+                        st.caption("Metadata:")
+                        st.json(result.get("metadata"))
+                    if result.get("error"):
+                        st.error(result.get("error"))
+
+            st.markdown("**Critique**")
+            st.markdown(f"- next_action: `{critique.get('next_action')}`")
+            if critique.get("missing"):
+                st.markdown(f"- missing: {critique.get('missing')}")
+            if critique.get("revised_query"):
+                st.markdown(f"- revised_query: {critique.get('revised_query')}")
+            if critique.get("rationale"):
+                st.caption(critique.get("rationale"))
+
+
 # ---------------------------------------------------------------------------
 # Section 1 — Run new agent query
 # ---------------------------------------------------------------------------
@@ -137,66 +203,4 @@ else:
                     st.rerun()
 
 
-# ---------------------------------------------------------------------------
-# Trace renderer
-# ---------------------------------------------------------------------------
-
-
-def _render_trace(trace: dict[str, Any]) -> None:
-    """전체 trace 단계별 시각화."""
-    st.markdown(f"#### 질문: {trace.get('query', '?')}")
-    st.markdown(f"**최종 답변**: {trace.get('final_answer') or '_(없음)_'}")
-
-    # Top metrics row
-    cols = st.columns(5)
-    cols[0].metric("Provider", trace.get("llm_provider", "?"))
-    cols[1].metric("Iterations", len(trace.get("iterations") or []))
-    total_steps = sum(len(it) for it in (trace.get("iterations") or []))
-    cols[2].metric("Total Steps", total_steps)
-    tokens = trace.get("tokens") or {}
-    cols[3].metric("Tokens", tokens.get("prompt_tokens", 0) + tokens.get("completion_tokens", 0))
-    cols[4].metric("Cost", f"${tokens.get('estimated_cost_usd', 0):.4f}")
-
-    # Initial plan
-    st.markdown("### 🧠 초기 Plan")
-    plan = trace.get("plan") or {}
-    st.markdown(f"- **Sub-queries**: {plan.get('sub_queries') or []}")
-    st.markdown(f"- **Estimated complexity**: {plan.get('estimated_complexity', '?')} / 5")
-    st.markdown(f"- **Rationale**: {plan.get('rationale', '_(없음)_')}")
-
-    # Iterations
-    iterations = trace.get("iterations") or []
-    critiques = trace.get("critiques") or []
-    for i, (steps, critique) in enumerate(zip(iterations, critiques)):
-        with st.expander(
-            f"📍 Iteration {i + 1}  ·  steps={len(steps)}  ·  "
-            f"sufficient={'✅' if critique.get('is_sufficient') else '❌'}  ·  "
-            f"confidence={critique.get('confidence', 0):.2f}",
-            expanded=(i == 0),
-        ):
-            for j, step in enumerate(steps):
-                result = step.get("result") or {}
-                ok = "✅" if result.get("success") else "❌"
-                st.markdown(
-                    f"**Step {j + 1}** {ok} `{step.get('tool')}`  ·  "
-                    f"{step.get('duration_ms', 0):.0f}ms",
-                )
-                st.markdown(f"- **Rationale**: {step.get('rationale', '')}")
-                with st.popover("Args"):
-                    st.json(step.get("args") or {})
-                with st.popover("Result"):
-                    st.json(result.get("data"))
-                    if result.get("metadata"):
-                        st.caption("Metadata:")
-                        st.json(result.get("metadata"))
-                    if result.get("error"):
-                        st.error(result.get("error"))
-
-            st.markdown("**Critique**")
-            st.markdown(f"- next_action: `{critique.get('next_action')}`")
-            if critique.get("missing"):
-                st.markdown(f"- missing: {critique.get('missing')}")
-            if critique.get("revised_query"):
-                st.markdown(f"- revised_query: {critique.get('revised_query')}")
-            if critique.get("rationale"):
-                st.caption(critique.get("rationale"))
+# (_render_trace 정의는 page top 으로 이동 — Section 2 forward reference 회피)

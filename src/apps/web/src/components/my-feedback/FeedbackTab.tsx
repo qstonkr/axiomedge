@@ -12,7 +12,7 @@ import {
   Textarea,
   useToast,
 } from "@/components/ui";
-import { useFeedbackList, useSubmitFeedback } from "@/hooks/useFeedback";
+import { useMyFeedbackList, useSubmitFeedback } from "@/hooks/useFeedback";
 import type { FeedbackBody, FeedbackItem } from "@/lib/api/endpoints";
 
 const TYPES: { id: FeedbackBody["feedback_type"]; label: string; tone: "success" | "danger" | "accent" | "warning" | "neutral" }[] = [
@@ -31,7 +31,7 @@ export function FeedbackTab() {
   const [content, setContent] = useState("");
 
   const submit = useSubmitFeedback();
-  const list = useFeedbackList({ page: 1, page_size: 20 });
+  const list = useMyFeedbackList({ page: 1, page_size: 20 });
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

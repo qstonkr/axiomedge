@@ -250,6 +250,28 @@ class ErrorReportRepository(BaseRepository):
             result = await session.execute(stmt)
             return [self._to_dict(m) for m in result.scalars().all()]
 
+    async def get_by_user(
+        self,
+        user_id: str,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Reports submitted by ``user_id`` (sorted newest first).
+
+        Used by the user-facing ``GET /api/v1/knowledge/error-reports/my``
+        endpoint so MEMBER-role users can see their own reports without
+        needing the admin-scope `feedback:review` permission.
+        """
+        async with await self._get_session() as session:
+            stmt = select(DocumentErrorReportModel).where(
+                DocumentErrorReportModel.reporter_user_id == user_id,
+            )
+            if status:
+                stmt = stmt.where(DocumentErrorReportModel.status == status)
+            stmt = stmt.order_by(DocumentErrorReportModel.created_at.desc()).limit(limit)
+            result = await session.execute(stmt)
+            return [self._to_dict(m) for m in result.scalars().all()]
+
     async def get_open_reports(
         self, kb_id: str | None = None, limit: int = 1000,
     ) -> list[dict[str, Any]]:

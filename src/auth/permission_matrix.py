@@ -119,6 +119,12 @@ PERMISSION_RULES: list[PermissionRule] = [
     _rule(r"^/api/v1/admin/feedback(?:/.*)?$", "GET", "feedback", "review"),
     _rule(r"^/api/v1/admin/error-reports(?:/.*)?$", "*", "feedback", "review"),
 
+    # ── Feedback / error-report user-scope (본인 것만 조회) — `feedback:submit` 권한
+    # MEMBER/VIEWER 가 가지고 있어 /my-feedback 화면에서 사용. POST 는 이미
+    # /api/v1/knowledge/feedback (feedback:submit) 으로 처리됨.
+    _rule(r"^/api/v1/knowledge/feedback/my$", "GET", "feedback", "submit"),
+    _rule(r"^/api/v1/knowledge/error-reports/my$", "GET", "feedback", "submit"),
+
     # ── Quality / golden-set / verification
     _rule(r"^/api/v1/admin/golden-set(?:/.*)?$", "POST|PUT|DELETE|PATCH", "quality", "write"),
     _rule(r"^/api/v1/admin/golden-set(?:/.*)?$", "GET", "quality", "read"),

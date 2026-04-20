@@ -6,9 +6,11 @@ import logging
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.app import _get_state
+from src.auth.dependencies import get_current_user
+from src.auth.providers import AuthUser
 from src.core.models import FeedbackType
 
 logger = logging.getLogger(__name__)
@@ -110,6 +112,45 @@ async def create_feedback(body: dict[str, Any]) -> dict[str, Any]:
             logger.warning("Feedback repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to create feedback: {e}")
     return {"success": True, "feedback_id": feedback_id, "message": "Feedback recorded (stub - no DB)"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/knowledge/feedback/my  -- user-scope (자기 자신의 피드백만)
+# ---------------------------------------------------------------------------
+@knowledge_router.get("/feedback/my")
+async def list_my_feedback(
+    status: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """현재 사용자가 직접 제출한 피드백 목록.
+
+    `/admin/feedback/list` 는 ``feedback:review`` 권한 (ADMIN/OWNER) 필요해서
+    MEMBER role 이 호출 시 401/403. 사용자용 화면 (``/my-feedback``,
+    ``/my-documents 의 대기 작업 탭``) 은 본인 것만 표시하면 충분하므로
+    이 endpoint 로 user_id 필터된 결과를 받는다 (`feedback:submit` 권한이면 OK).
+    """
+    state = _get_state()
+    repo = state.get("feedback_repo")
+    if repo is None:
+        return {"feedback": [], "total": 0, "page": page, "page_size": page_size}
+
+    try:
+        # 페이지네이션은 클라이언트 사이드 — 사용자별 row 가 적어 cursor 보다 단순.
+        rows = await repo.get_by_user(user.sub, limit=page_size * page)
+        if status:
+            rows = [r for r in rows if r.get("status") == status]
+        start = (page - 1) * page_size
+        return {
+            "feedback": rows[start:start + page_size],
+            "total": len(rows),
+            "page": page,
+            "page_size": page_size,
+        }
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("My-feedback query failed: %s", e)
+        return {"feedback": [], "total": 0, "page": page, "page_size": page_size}
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +353,40 @@ async def create_error_report(body: dict[str, Any]) -> dict[str, Any]:
             logger.warning("Error report repo save failed: %s", e)
             raise HTTPException(status_code=500, detail=f"Failed to create error report: {e}")
     return {"success": True, "report_id": report_id, "message": "Error reported (stub - no DB)"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/knowledge/error-reports/my  -- user-scope
+# ---------------------------------------------------------------------------
+@knowledge_router.get("/error-reports/my")
+async def list_my_error_reports(
+    status: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """현재 사용자가 직접 제출한 오류 신고 목록.
+
+    feedback/my 와 동일한 이유 — `/admin/error-reports` 는 admin 전용이므로
+    MEMBER role 이 본인 신고 보려면 이 endpoint 가 필요.
+    """
+    state = _get_state()
+    repo = state.get("error_report_repo")
+    if repo is None:
+        return {"reports": [], "total": 0, "page": page, "page_size": page_size}
+
+    try:
+        rows = await repo.get_by_user(user.sub, status=status, limit=page_size * page)
+        start = (page - 1) * page_size
+        return {
+            "reports": rows[start:start + page_size],
+            "total": len(rows),
+            "page": page,
+            "page_size": page_size,
+        }
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("My-error-reports query failed: %s", e)
+        return {"reports": [], "total": 0, "page": page, "page_size": page_size}
 
 
 # ---------------------------------------------------------------------------

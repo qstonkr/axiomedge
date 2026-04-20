@@ -5,12 +5,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listErrorReports,
   listFeedback,
+  listMyErrorReports,
+  listMyFeedback,
   submitErrorReport,
   submitFeedback,
   type ErrorReportBody,
   type FeedbackBody,
 } from "@/lib/api/endpoints";
 
+/**
+ * Admin-scope — `/admin/errors` 등 운영자 화면 전용. 일반 사용자가 호출하면
+ * 401/403. 사용자 본인 것만 보려면 ``useMyFeedbackList`` 를 사용할 것.
+ */
 export function useFeedbackList(params: {
   status?: string;
   feedback_type?: string;
@@ -36,11 +42,39 @@ export function useErrorReportsList(params: {
   });
 }
 
+/** User-scope — 본인이 제출한 피드백/오류 신고만. MEMBER/VIEWER 호출 가능. */
+export function useMyFeedbackList(params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  return useQuery({
+    queryKey: ["my-feedback", "list", params],
+    queryFn: () => listMyFeedback(params),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useMyErrorReportsList(params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}) {
+  return useQuery({
+    queryKey: ["my-error-reports", "list", params],
+    queryFn: () => listMyErrorReports(params),
+    staleTime: 30 * 1000,
+  });
+}
+
 export function useSubmitFeedback() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: FeedbackBody) => submitFeedback(body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["feedback", "list"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feedback", "list"] });
+      qc.invalidateQueries({ queryKey: ["my-feedback", "list"] });
+    },
   });
 }
 
@@ -48,7 +82,9 @@ export function useSubmitErrorReport() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: ErrorReportBody) => submitErrorReport(body),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["error-reports", "list"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["error-reports", "list"] });
+      qc.invalidateQueries({ queryKey: ["my-error-reports", "list"] });
+    },
   });
 }

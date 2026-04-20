@@ -5,8 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getSearchHistory,
   listDocumentOwners,
-  listErrorReports,
-  listFeedback,
+  listMyErrorReports,
+  listMyFeedback,
   listPendingVerifications,
   listStaleOwners,
   type DocumentOwner,
@@ -37,14 +37,15 @@ export function usePendingTasks() {
     queryFn: () => listPendingVerifications(),
     staleTime: 60 * 1000,
   });
+  // user-scope endpoints — admin 권한 없이도 호출 가능 (본인 것만 반환).
   const feedback = useQuery({
     queryKey: ["my-documents", "pending", "feedback"],
-    queryFn: () => listFeedback({ status: "pending", page: 1, page_size: 50 }),
+    queryFn: () => listMyFeedback({ status: "pending", page: 1, page_size: 50 }),
     staleTime: 60 * 1000,
   });
   const errors = useQuery({
     queryKey: ["my-documents", "pending", "errors"],
-    queryFn: () => listErrorReports({ status: "pending", page: 1, page_size: 50 }),
+    queryFn: () => listMyErrorReports({ status: "pending", page: 1, page_size: 50 }),
     staleTime: 60 * 1000,
   });
   return {

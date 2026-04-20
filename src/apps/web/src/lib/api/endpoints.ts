@@ -262,14 +262,16 @@ export type ErrorReportItem = {
   user_id?: string;
 };
 
+/**
+ * Admin-scope feedback list — `feedback:review` 권한 (ADMIN/OWNER) 필요.
+ * 운영자 화면 (`/admin/errors` 등) 에서 호출.
+ */
 export const listFeedback = async (params?: {
   status?: string;
   feedback_type?: string;
   page?: number;
   page_size?: number;
 }): Promise<{ items: FeedbackItem[]; total: number }> => {
-  // Backend ships ``{feedback: [...], total?: number}`` — wrap into the
-  // {items,total} shape every consumer expects.
   const raw = await request<{
     feedback?: FeedbackItem[];
     total?: number;
@@ -283,11 +285,42 @@ export const listErrorReports = async (params?: {
   page?: number;
   page_size?: number;
 }): Promise<{ items: ErrorReportItem[]; total: number }> => {
-  // Backend ships ``{reports: [...]}`` — normalize to {items,total}.
   const raw = await request<{
     reports?: ErrorReportItem[];
     total?: number;
   }>("api/v1/admin/error-reports", { method: "GET", query: params });
+  const items = raw.reports ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+/**
+ * User-scope ("내 것만") feedback list — `feedback:submit` 권한이면 OK
+ * (MEMBER/VIEWER 도 호출 가능). `/my-feedback`, `/my-documents` 의 대기
+ * 작업 탭이 호출. backend 에서 `user_id == caller.sub` 필터링.
+ */
+export const listMyFeedback = async (params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: FeedbackItem[]; total: number }> => {
+  const raw = await request<{
+    feedback?: FeedbackItem[];
+    total?: number;
+  }>("api/v1/knowledge/feedback/my", { method: "GET", query: params });
+  const items = raw.feedback ?? [];
+  return { items, total: raw.total ?? items.length };
+};
+
+/** User-scope error-report list — listMyFeedback 와 같은 사유. */
+export const listMyErrorReports = async (params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<{ items: ErrorReportItem[]; total: number }> => {
+  const raw = await request<{
+    reports?: ErrorReportItem[];
+    total?: number;
+  }>("api/v1/knowledge/error-reports/my", { method: "GET", query: params });
   const items = raw.reports ?? [];
   return { items, total: raw.total ?? items.length };
 };
