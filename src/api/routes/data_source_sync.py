@@ -582,6 +582,21 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, GitHubIssuesConnector())
         return
+    if source_type == "asana":
+        from src.connectors.asana import AsanaConnector
+
+        await _run_generic_connector_sync(source, state, AsanaConnector())
+        return
+    if source_type == "dropbox":
+        from src.connectors.dropbox import DropboxConnector
+
+        await _run_generic_connector_sync(source, state, DropboxConnector())
+        return
+    if source_type == "box":
+        from src.connectors.box import BoxConnector
+
+        await _run_generic_connector_sync(source, state, BoxConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 

@@ -77,6 +77,46 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     scope: "admin",
     userTokenMode: "none",
   },
+  {
+    id: "dropbox",
+    label: "Dropbox",
+    category: "files",
+    icon: "📦",
+    description: "Dropbox 폴더 동기화 (PDF/DOCX/PPTX/MD, App access token)",
+    status: "available",
+    scope: "both",
+    userTokenMode: "shared",
+    configSchema: JSON.stringify(
+      {
+        folder_path: "/Documents/2026",
+        recursive: true,
+        max_files: 500,
+        include_extensions: [".pdf", ".docx", ".pptx", ".md", ".txt"],
+      },
+      null,
+      2,
+    ),
+  },
+  {
+    id: "box",
+    label: "Box",
+    category: "files",
+    icon: "🟦",
+    description: "Box 폴더 동기화 (PDF/DOCX/PPTX/MD, JWT/OAuth)",
+    status: "available",
+    scope: "both",
+    userTokenMode: "shared",
+    configSchema: JSON.stringify(
+      {
+        folder_id: "0 (root, 또는 specific folder ID)",
+        recursive: true,
+        max_files: 500,
+        include_extensions: [".pdf", ".docx", ".pptx", ".md", ".txt"],
+      },
+      null,
+      2,
+    ),
+  },
 
   // ===== Wiki / Documentation =====
   {
@@ -329,6 +369,28 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
   },
 
   // ===== Issue Tracker =====
+  {
+    id: "asana",
+    label: "Asana",
+    category: "issue",
+    icon: "✅",
+    description: "Asana tasks + comments (project_gids 또는 workspace, 본인 PAT)",
+    status: "available",
+    scope: "both",
+    userTokenMode: "per-user",
+    configSchema: JSON.stringify(
+      {
+        workspace_gid: "12345 (project_gids 사용 권장)",
+        project_gids: ["proj-gid-1", "proj-gid-2"],
+        days_back: 30,
+        include_comments: true,
+        include_completed: true,
+        max_tasks: 500,
+      },
+      null,
+      2,
+    ),
+  },
   {
     id: "jira",
     label: "Jira",

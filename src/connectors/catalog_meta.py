@@ -24,6 +24,7 @@ PER_USER_TOKEN_CONNECTORS: Final[frozenset[str]] = frozenset({
     "confluence",
     "jira",
     "github_issues",
+    "asana",
 })
 
 # Organization-wide bot token — admin 1회 등록, 사용자는 sub-resource 만.
@@ -36,6 +37,8 @@ SHARED_TOKEN_CONNECTORS: Final[frozenset[str]] = frozenset({
     "google_drive",
     "google_sheets",
     "gmail",
+    "dropbox",
+    "box",
 })
 
 # 토큰 불필요.

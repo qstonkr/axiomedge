@@ -1,6 +1,9 @@
 """Knowledge connectors for local ingestion."""
 
+from .asana import AsanaConnector, AsanaConnectorConfig
+from .box import BoxConnector, BoxConnectorConfig
 from .crawl_result import CrawlResultConnector
+from .dropbox import DropboxConnector, DropboxConnectorConfig
 from .file_upload import FileUploadConnector
 from .git import GitConnector, GitConnectorConfig
 from .github_issues import GitHubIssuesConnector, GitHubIssuesConnectorConfig
@@ -16,7 +19,13 @@ from .slack import SlackConnector, SlackConnectorConfig
 from .teams import TeamsConnector, TeamsConnectorConfig
 
 __all__ = [
+    "AsanaConnector",
+    "AsanaConnectorConfig",
+    "BoxConnector",
+    "BoxConnectorConfig",
     "CrawlResultConnector",
+    "DropboxConnector",
+    "DropboxConnectorConfig",
     "FileUploadConnector",
     "GitConnector",
     "GitConnectorConfig",
