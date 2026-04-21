@@ -152,7 +152,27 @@ async def _start_ocr_instance() -> str | None:
     """Start PaddleOCR EC2 instance and wait for health check.
 
     Returns the API base URL (with potentially new IP) or None if not configured.
+
+    **Env var auto-update**: EC2 stop/start 마다 public IP 가 바뀜. 기존 ``.env``
+    의 ``PADDLEOCR_API_URL`` 은 stale 일 가능성 — pipeline 의 ``_process_images_ocr``
+    가 ``os.getenv("PADDLEOCR_API_URL")`` 직접 읽으므로 새 IP 가 자동 반영되도록
+    ``os.environ`` override. 이전 버그: stale env 의 옛 IP 로 30s timeout 후
+    실패 (``_start_ocr_instance`` 가 새 URL 반환해도 caller 가 env 갱신 X).
     """
+    url = await _start_ocr_instance_inner()
+    if url:
+        prev = os.environ.get("PADDLEOCR_API_URL", "")
+        if prev != url:
+            os.environ["PADDLEOCR_API_URL"] = url
+            logger.info(
+                "PADDLEOCR_API_URL updated: %s -> %s (EC2 IP 변경 자동 반영)",
+                prev or "(unset)", url,
+            )
+    return url
+
+
+async def _start_ocr_instance_inner() -> str | None:
+    """실제 instance state 분기 — _start_ocr_instance wrapper 가 env 갱신 담당."""
     if not _PADDLEOCR_INSTANCE_ID:
         return _PADDLEOCR_API_URL or None
 
@@ -173,7 +193,13 @@ async def _start_ocr_instance() -> str | None:
 
 
 async def _wait_for_health(url: str, max_wait: int = 180) -> bool:
-    """Poll health endpoint until ready or max_wait seconds."""
+    """Poll health endpoint until ready or max_wait seconds.
+
+    httpx.HTTPError 는 모든 httpx 예외 (ConnectError/ReadError/Timeout 등)
+    의 base — 부팅 중 아직 listen 안 하는 상태도 caller 까지 전파 안 되도록
+    명시 catch. 이전 버그: ConnectError 가 narrow-except 통과 → bubble up →
+    _start_ocr_instance 까지 전파해 OCR 자동 기동 실패.
+    """
     deadline = asyncio.get_event_loop().time() + max_wait
     async with httpx.AsyncClient(timeout=httpx.Timeout(10)) as client:  # NOSONAR
         while asyncio.get_event_loop().time() < deadline:
@@ -182,7 +208,8 @@ async def _wait_for_health(url: str, max_wait: int = 180) -> bool:
                 if resp.status_code == 200:
                     logger.info("PaddleOCR healthy: %s", url)
                     return True
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+            except (httpx.HTTPError, RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+                # 부팅 중 ConnectError / Timeout / ReadError — 그냥 다음 tick 대기.
                 pass
             await asyncio.sleep(10)
     return False

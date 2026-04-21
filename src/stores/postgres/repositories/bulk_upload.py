@@ -152,6 +152,50 @@ class BulkUploadRepository(BaseRepository):
                 await session.rollback()
                 raise
 
+    async def list_orphan_pending(
+        self, *, cutoff: datetime,
+    ) -> list[dict[str, Any]]:
+        """Cleanup cron 용 — status='pending' AND created_at < cutoff.
+
+        finalize 못 한 채 abort 된 session 을 찾아 S3 + DB 정리 대상으로 반환.
+        idempotent — status 가 'failed' 로 바뀌면 다음 호출에서 자연 제외.
+        """
+        async with await self._get_session() as session:
+            stmt = (
+                select(BulkUploadSessionModel)
+                .where(
+                    BulkUploadSessionModel.status == "pending",
+                    BulkUploadSessionModel.created_at < cutoff,
+                )
+                .order_by(BulkUploadSessionModel.created_at.asc())
+                .limit(100)  # 한 tick 당 cap
+            )
+            result = await session.execute(stmt)
+            return [self._to_dict(m) for m in result.scalars().all()]
+
+    async def update_error(
+        self, session_id: str, *, error_message: str,
+    ) -> None:
+        """Cleanup cron / finalize 실패 시 호출. errors JSON 갱신."""
+        async with await self._get_session() as session:
+            try:
+                stmt = (
+                    update(BulkUploadSessionModel)
+                    .where(BulkUploadSessionModel.id == session_id)
+                    .values(
+                        errors=json.dumps(
+                            [{"filename": "", "error_message": error_message[:500]}],
+                            ensure_ascii=False,
+                        ),
+                        updated_at=_utc_now(),
+                    )
+                )
+                await session.execute(stmt)
+                await session.commit()
+            except SQLAlchemyError:
+                await session.rollback()
+                raise
+
     async def list_recent_for_user(
         self, *, organization_id: str, owner_user_id: str, limit: int = 20,
     ) -> list[dict[str, Any]]:

@@ -1,8 +1,11 @@
-"""Bulk upload arq jobs — S3 → ingest pipeline.
+"""Bulk upload arq jobs — S3 → ingest pipeline + orphan cleanup.
 
 1. ``ingest_from_object_storage(session_id, failed_indices)`` — finalize 시
    enqueue. session 의 모든 파일 (실패 idx 제외) 을 S3 download → parse →
    pipeline.ingest. partial failure 허용 (실패 카운트 누적).
+2. ``cleanup_orphan_uploads()`` — arq cron, 매일 1회. 24h 이상 status='pending'
+   세션의 S3 prefix 삭제 + DB status='failed' mark. orphan S3 비용 + DB row
+   누적 차단.
 
 DB 가 SSOT — increment_processed 가 status 자동 전이 (모두 처리 시 completed/
 failed). API 재시작 무관, worker 가 retry (max_tries=3 from WorkerSettings).
@@ -12,9 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Orphan cleanup TTL — 24h. env 로 override (테스트/긴급 시).
+_ORPHAN_TTL_HOURS = int(os.getenv("UPLOADS_ORPHAN_TTL_HOURS", "24"))
 
 
 def _get_state() -> Any:
@@ -177,3 +185,77 @@ async def ingest_from_object_storage(
         "processed": (final or {}).get("processed_files", 0),
         "failed": (final or {}).get("failed_files", 0),
     }
+
+
+async def cleanup_orphan_uploads(ctx: dict[str, Any]) -> dict[str, int]:
+    """매일 1회 — 24h 이상 status='pending' session 의 S3 prefix + DB row 정리.
+
+    원인: 사용자가 init 후 finalize 안 하고 abort (브라우저 종료 등). presigned
+    URL 은 1h 후 만료라 더 PUT 못 하고, S3 object 만 남음 (비용 + 보안 부담).
+
+    동작:
+    1. status='pending' AND created_at < now - 24h 인 session list
+    2. 각 session 의 s3_prefix 아래 모든 object list + 삭제
+    3. DB status='failed' + error_message='orphan cleanup' mark
+
+    idempotent — 다시 실행해도 동일 session 두 번 처리 안 됨 (status 가
+    'failed' 로 바뀌어 list 에서 제외).
+    """
+    job_id = ctx.get("job_id", "?")
+    repo = _get_repo()
+    cutoff = datetime.now(UTC) - timedelta(hours=_ORPHAN_TTL_HOURS)
+
+    # repo 에 list_orphan(cutoff) 메서드는 별도 — 일단 raw query 로 처리.
+    sessions = await repo.list_orphan_pending(cutoff=cutoff)
+    if not sessions:
+        return {"scanned": 0, "cleaned": 0, "errors": 0}
+
+    from src.config import get_settings
+    from src.storage import S3StorageError, get_s3_client
+
+    bucket = get_settings().aws.s3_uploads_bucket
+    s3 = get_s3_client()
+
+    cleaned = 0
+    errors = 0
+    for sess in sessions:
+        sid = sess["id"]
+        prefix = sess["s3_prefix"]
+        try:
+            # list_objects_v2 paged
+            paginator = s3.get_paginator("list_objects_v2")
+            keys_to_delete: list[dict[str, str]] = []
+            for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for obj in page.get("Contents") or []:
+                    keys_to_delete.append({"Key": obj["Key"]})
+                    if len(keys_to_delete) >= 1000:
+                        # delete_objects 는 한 번에 최대 1000개
+                        await asyncio.to_thread(
+                            s3.delete_objects,
+                            Bucket=bucket, Delete={"Objects": keys_to_delete},
+                        )
+                        keys_to_delete = []
+            if keys_to_delete:
+                await asyncio.to_thread(
+                    s3.delete_objects,
+                    Bucket=bucket, Delete={"Objects": keys_to_delete},
+                )
+            await repo.set_status(sid, "failed")
+            await repo.update_error(
+                sid, error_message=(
+                    f"orphan cleanup — {_ORPHAN_TTL_HOURS}h 이상 finalize 안 됨"
+                ),
+            )
+            cleaned += 1
+            logger.info(
+                "cleanup_orphan_uploads[%s] session=%s prefix=%s cleaned",
+                job_id, sid, prefix,
+            )
+        except S3StorageError as e:
+            logger.warning("orphan cleanup S3 실패 (sess=%s): %s", sid, e)
+            errors += 1
+        except Exception as e:  # noqa: BLE001 — boto/DB 예외 통합
+            logger.warning("orphan cleanup 실패 (sess=%s): %s", sid, e)
+            errors += 1
+
+    return {"scanned": len(sessions), "cleaned": cleaned, "errors": errors}

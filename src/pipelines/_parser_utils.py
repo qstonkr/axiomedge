@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from src.config.weights import weights as _w
 
 _EXT_PPTX = ".pptx"
@@ -215,14 +217,21 @@ def _resize_image(raw: bytes, scale: float = 0.75) -> bytes | None:
 
 
 def _ocr_request(client, endpoint: str, payload: bytes) -> dict | None:
-    """Send OCR request. Returns parsed JSON or None on failure."""
+    """Send OCR request. Returns parsed JSON or None on failure.
+
+    httpx.HTTPError 가 모든 httpx 예외 (ReadError/ConnectError/Timeout/HTTPStatusError)
+    의 base — caller 가 None 반환 보고 graceful skip 하도록 통합 catch.
+    이전 버그: httpx.ReadError 가 bubble up → caller 의 outer try 도 못 잡아
+    parse_file_enhanced 까지 전파 → CLI/route 전체 실패.
+    """
     import base64
     b64_image = base64.b64encode(payload).decode("utf-8")
     try:
         resp = client.post(endpoint, json={"image": b64_image}, timeout=_w.timeouts.httpx_ocr)
         resp.raise_for_status()
         return resp.json()
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+    except (httpx.HTTPError, RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        logger.warning("OCR request failed (%s): %s", endpoint, e)
         return None
 
 
@@ -354,7 +363,9 @@ def _process_single_image_ocr(
         if vision_enabled:
             _extract_vision_analysis(result, index, ocr_texts, visual_analyses)
 
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (httpx.HTTPError, RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        # httpx.HTTPError 방어층 — _ocr_request 가 이미 잡지만 helper (PIL/base64 등)
+        # 에서 올라오는 네트워크 예외도 caller 까지 전파 안 되도록.
         logger.warning("PaddleOCR API failed for image %d: %s", index, e)
 
 
@@ -362,7 +373,6 @@ def _process_images_ocr(
     images: list[bytes],
 ) -> tuple[str, list[dict[str, Any]]]:
     """Route extracted images through PaddleOCR Docker API server."""
-    import httpx
     import os
 
     if not images:
