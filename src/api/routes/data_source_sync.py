@@ -552,6 +552,21 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, TeamsConnector())
         return
+    if source_type == "google_drive":
+        from src.connectors.google_drive import GoogleDriveConnector
+
+        await _run_generic_connector_sync(source, state, GoogleDriveConnector())
+        return
+    if source_type == "google_sheets":
+        from src.connectors.google_sheets import GoogleSheetsConnector
+
+        await _run_generic_connector_sync(source, state, GoogleSheetsConnector())
+        return
+    if source_type == "gmail":
+        from src.connectors.gmail import GmailConnector
+
+        await _run_generic_connector_sync(source, state, GmailConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 

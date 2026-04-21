@@ -3,6 +3,9 @@
 from .crawl_result import CrawlResultConnector
 from .file_upload import FileUploadConnector
 from .git import GitConnector, GitConnectorConfig
+from .gmail import GmailConnector, GmailConnectorConfig
+from .google_drive import GoogleDriveConnector, GoogleDriveConnectorConfig
+from .google_sheets import GoogleSheetsConnector, GoogleSheetsConnectorConfig
 from .notion import NotionConnector, NotionConnectorConfig
 from .onedrive import OneDriveConnector, OneDriveConnectorConfig
 from .sharepoint import SharePointConnector, SharePointConnectorConfig
@@ -14,6 +17,12 @@ __all__ = [
     "FileUploadConnector",
     "GitConnector",
     "GitConnectorConfig",
+    "GmailConnector",
+    "GmailConnectorConfig",
+    "GoogleDriveConnector",
+    "GoogleDriveConnectorConfig",
+    "GoogleSheetsConnector",
+    "GoogleSheetsConnectorConfig",
     "NotionConnector",
     "NotionConnectorConfig",
     "OneDriveConnector",

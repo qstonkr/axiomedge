@@ -30,6 +30,9 @@ SHARED_TOKEN_CONNECTORS: Final[frozenset[str]] = frozenset({
     "sharepoint",
     "onedrive",
     "teams",
+    "google_drive",
+    "google_sheets",
+    "gmail",
 })
 
 # 토큰 불필요.
