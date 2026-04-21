@@ -22,7 +22,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.auth.dependencies import OrgContext, get_current_org, get_current_user
+from src.auth.dependencies import (
+    OrgContext,
+    get_current_org,
+    get_current_user,
+    require_role,
+)
 from src.auth.providers import AuthUser
 from src.auth.secret_box import SecretBoxError, get_secret_box
 from src.auth.secret_paths import shared_token_path
@@ -36,6 +41,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/v1/admin/shared-tokens",
     tags=["Shared Tokens"],
+    dependencies=[Depends(require_role("admin"))],
 )
 
 

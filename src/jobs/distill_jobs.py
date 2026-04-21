@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 # 24h SLA — 환경변수 override 가능. 자동 fail X — 알림만.
 _SWEEP_ALERT_HOURS = int(os.getenv("DISTILL_SWEEP_ALERT_HOURS", "24"))
 
+# Post-train (quantize/evaluate/deploy) 단계 — worker crash 탐지 임계.
+# updated_at 이 이 시간 이상 갱신 안 되면 worker 사망 간주. 자동 fail.
+_POST_TRAIN_STUCK_SECONDS = int(
+    os.getenv("DISTILL_POST_TRAIN_STUCK_SECONDS", str(2 * 3600)),  # 2h
+)
+
 
 def _get_distill_service() -> Any:
     """AppState 에서 distill_service singleton 가져옴 — API/worker 양쪽에서 동작."""
@@ -128,7 +134,6 @@ async def distill_sweep_training(ctx: dict[str, Any]) -> dict[str, int]:
     if not builds:
         return {"scanned": 0, "completed": 0, "failed": 0, "running": 0}
 
-    from src.connectors._google import resolve_access_token  # noqa: F401  # ensure imports OK
     from src.distill.gpu_trainer import check_gpu_training
 
     counts = {"scanned": 0, "completed": 0, "failed": 0, "running": 0, "skipped": 0}
@@ -231,5 +236,58 @@ async def distill_sweep_training(ctx: dict[str, Any]) -> dict[str, int]:
                         "sweeper: build %s training elapsed %s (>%dh) — manual review 권장",
                         build_id, now - started_dt, _SWEEP_ALERT_HOURS,
                     )
+
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# 4) Post-train sweeper: quantize/evaluate/deploy 중 worker crash detect
+# ---------------------------------------------------------------------------
+
+
+async def distill_sweep_post_train(ctx: dict[str, Any]) -> dict[str, int]:
+    """매 5분 — quantizing/evaluating/deploying 빌드 중 worker crash 로 멈춘 것 탐지.
+
+    탐지 기준: ``updated_at`` 이 ``DISTILL_POST_TRAIN_STUCK_SECONDS`` (default 2h)
+    이상 갱신 안 됨. 정상 worker 는 status 전환마다 update_build 호출하므로
+    updated_at 이 갱신됨. 갱신 없음 = worker 사망.
+
+    조치: status='failed' + error_message="post-train stuck (worker crash 추정)".
+    사용자가 dashboard 에서 retry 버튼으로 재시작.
+    """
+    repo = _get_distill_repo()
+    builds = await repo.list_in_progress_post_train(
+        stuck_threshold_seconds=_POST_TRAIN_STUCK_SECONDS,
+    )
+    if not builds:
+        return {"scanned": 0, "failed": 0, "skipped": 0}
+
+    counts = {"scanned": 0, "failed": 0, "skipped": 0}
+    now = datetime.now(UTC)
+
+    for build in builds:
+        build_id = build["id"]
+        if not await repo.claim_for_sweep(build_id, threshold_seconds=60):
+            counts["skipped"] += 1
+            continue
+
+        counts["scanned"] += 1
+        prev_status = build["status"]
+        await repo.update_build(
+            build_id,
+            status="failed",
+            error_message=(
+                f"post-train stuck in '{prev_status}' "
+                f"(worker crash 추정 — updated_at 이 "
+                f"{_POST_TRAIN_STUCK_SECONDS}s 이상 미갱신). 재시도 권장."
+            ),
+            error_step=prev_status,
+            gpu_finished_at=now,
+        )
+        counts["failed"] += 1
+        logger.warning(
+            "post-train sweeper: build %s stuck in %s — marked failed",
+            build_id, prev_status,
+        )
 
     return counts

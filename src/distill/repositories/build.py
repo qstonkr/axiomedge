@@ -141,6 +141,39 @@ class DistillBuildRepository:
             result = await session.execute(stmt)
             return [self._to_dict(r) for r in result.scalars().all()]
 
+    async def list_in_progress_post_train(
+        self,
+        *,
+        stuck_threshold_seconds: int,
+        sweep_threshold_seconds: int = 60,
+    ) -> list[dict[str, Any]]:
+        """post-train sweeper — quantizing/evaluating/deploying 상태에서 worker
+        crash 로 멈춘 빌드 탐지.
+
+        - status IN ('quantizing','evaluating','deploying')
+        - updated_at < now() - stuck_threshold (worker 가 작업 중이면 update_build 가
+          updated_at 갱신 — 갱신 없으면 worker 사망)
+        - last_sweep_at NULL or older than sweep_threshold (다중 worker idempotency)
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(DistillBuildModel)
+                .where(
+                    DistillBuildModel.status.in_(["quantizing", "evaluating", "deploying"]),
+                    DistillBuildModel.updated_at
+                    < text(f"NOW() - INTERVAL '{int(stuck_threshold_seconds)} seconds'"),
+                    or_(
+                        DistillBuildModel.last_sweep_at.is_(None),
+                        DistillBuildModel.last_sweep_at
+                        < text(f"NOW() - INTERVAL '{int(sweep_threshold_seconds)} seconds'"),
+                    ),
+                )
+                .order_by(DistillBuildModel.updated_at.asc())
+                .limit(50)
+            )
+            result = await session.execute(stmt)
+            return [self._to_dict(r) for r in result.scalars().all()]
+
     async def claim_for_sweep(
         self, build_id: str, *, threshold_seconds: int = 30,
     ) -> bool:

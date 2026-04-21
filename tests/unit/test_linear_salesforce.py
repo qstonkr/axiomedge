@@ -31,13 +31,17 @@ class TestCatalogMeta:
         assert "linear" in PER_USER_TOKEN_CONNECTORS
         assert is_per_user_token_connector("linear")
 
-    def test_salesforce_shared(self):
+    def test_salesforce_per_user(self):
+        # Salesforce 는 OAuth2 user-scoped (Connected App 사용자 소유) — per-user
+        # 가 의미상 정확. shared (1개 bot) 은 사용자별 권한/audit 안 맞음.
         from src.connectors.catalog_meta import (
+            PER_USER_TOKEN_CONNECTORS,
             SHARED_TOKEN_CONNECTORS,
-            is_shared_token_connector,
+            is_per_user_token_connector,
         )
-        assert "salesforce" in SHARED_TOKEN_CONNECTORS
-        assert is_shared_token_connector("salesforce")
+        assert "salesforce" in PER_USER_TOKEN_CONNECTORS
+        assert "salesforce" not in SHARED_TOKEN_CONNECTORS
+        assert is_per_user_token_connector("salesforce")
 
 
 # ---------------------------------------------------------------------------

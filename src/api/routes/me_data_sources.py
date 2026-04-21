@@ -145,7 +145,7 @@ async def create_user_source(
         created = await repo.register(
             data, organization_id=org.id, owner_user_id=user.sub,
         )
-    except Exception as e:
+    except (RuntimeError, OSError, ValueError, KeyError, AttributeError) as e:
         logger.exception("user source register failed")
         raise HTTPException(status_code=500, detail=f"register failed: {e}") from e
 

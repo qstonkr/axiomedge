@@ -222,7 +222,7 @@ async def cleanup_orphan_uploads(ctx: dict[str, Any]) -> dict[str, int]:
         sid = sess["id"]
         prefix = sess["s3_prefix"]
         try:
-            # list_objects_v2 paged
+            # 1) 완료된 object 정리 (single PUT 또는 complete_multipart 후 결과물).
             paginator = s3.get_paginator("list_objects_v2")
             keys_to_delete: list[dict[str, str]] = []
             for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -240,6 +240,25 @@ async def cleanup_orphan_uploads(ctx: dict[str, Any]) -> dict[str, int]:
                     s3.delete_objects,
                     Bucket=bucket, Delete={"Objects": keys_to_delete},
                 )
+            # 2) in-progress multipart upload 도 abort — list_objects 에 안 잡혀
+            #    별도 정리 필요 (S3 가 자동 cleanup 안 함, 비용 누적).
+            mp_paginator = s3.get_paginator("list_multipart_uploads")
+            mp_aborted = 0
+            for page in mp_paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for upload in page.get("Uploads") or []:
+                    try:
+                        await asyncio.to_thread(
+                            s3.abort_multipart_upload,
+                            Bucket=bucket,
+                            Key=upload["Key"],
+                            UploadId=upload["UploadId"],
+                        )
+                        mp_aborted += 1
+                    except Exception as me:  # noqa: BLE001 — abort 실패도 warning 만
+                        logger.warning(
+                            "multipart abort 실패 (key=%s, upload_id=%s): %s",
+                            upload.get("Key"), upload.get("UploadId"), me,
+                        )
             await repo.set_status(sid, "failed")
             await repo.update_error(
                 sid, error_message=(
@@ -248,8 +267,9 @@ async def cleanup_orphan_uploads(ctx: dict[str, Any]) -> dict[str, int]:
             )
             cleaned += 1
             logger.info(
-                "cleanup_orphan_uploads[%s] session=%s prefix=%s cleaned",
-                job_id, sid, prefix,
+                "cleanup_orphan_uploads[%s] session=%s prefix=%s cleaned "
+                "(multipart_aborted=%d)",
+                job_id, sid, prefix, mp_aborted,
             )
         except S3StorageError as e:
             logger.warning("orphan cleanup S3 실패 (sess=%s): %s", sid, e)

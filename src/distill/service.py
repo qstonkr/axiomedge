@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 _re_num_pattern = re.compile(r"^\d+[개월주년일편점]")
 
-# GPU 원격 학습 완료 마커 — 로컬 양자화/배포 스킵 판단에 사용
-_GPU_TRAINED = "__GPU_TRAINED__"
+# GPU 원격 학습 완료 마커 — SSOT 는 build_executor. 양쪽이 비교에 사용.
+from src.distill.build_executor import _GPU_TRAINED  # noqa: E402
 
 
 def _prefer_reformatted(rows: list[dict]) -> list[dict]:

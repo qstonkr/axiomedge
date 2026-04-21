@@ -380,7 +380,10 @@ def _process_images_ocr(
 
     ocr_texts: list[str] = []
     visual_analyses: list[dict[str, Any]] = []
-    base_url = os.getenv("PADDLEOCR_API_URL", "http://localhost:8866")
+    # Redis SSOT (cross-process EC2 IP) → env fallback. _start_ocr_instance 가
+    # IP 변경 시 Redis 갱신 — arq worker/CLI 가 stale env 안 보게 됨.
+    from src.services.ocr_url import get_paddleocr_url_sync
+    base_url = get_paddleocr_url_sync()
     if base_url.endswith("/ocr") or base_url.endswith("/analyze"):
         base_url = base_url.rsplit("/", 1)[0]
 

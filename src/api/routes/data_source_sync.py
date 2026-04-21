@@ -153,11 +153,13 @@ async def _start_ocr_instance() -> str | None:
 
     Returns the API base URL (with potentially new IP) or None if not configured.
 
-    **Env var auto-update**: EC2 stop/start 마다 public IP 가 바뀜. 기존 ``.env``
-    의 ``PADDLEOCR_API_URL`` 은 stale 일 가능성 — pipeline 의 ``_process_images_ocr``
-    가 ``os.getenv("PADDLEOCR_API_URL")`` 직접 읽으므로 새 IP 가 자동 반영되도록
-    ``os.environ`` override. 이전 버그: stale env 의 옛 IP 로 30s timeout 후
-    실패 (``_start_ocr_instance`` 가 새 URL 반환해도 caller 가 env 갱신 X).
+    **Cross-process URL 전파**: EC2 stop/start 마다 public IP 가 바뀜. 같은 API
+    프로세스는 ``os.environ`` override 로 충분하지만 arq worker / CLI ingest 는
+    별도 프로세스라 env 가 stale (옛 IP). 따라서:
+
+    1. ``os.environ["PADDLEOCR_API_URL"]`` set — 본 프로세스 즉시 반영
+    2. ``services.ocr_url.set_paddleocr_url`` — Redis SSOT (TTL 7d) →
+       worker/CLI 가 ``get_paddleocr_url_sync`` 로 조회 시 새 IP 자동 반영
     """
     url = await _start_ocr_instance_inner()
     if url:
@@ -168,6 +170,9 @@ async def _start_ocr_instance() -> str | None:
                 "PADDLEOCR_API_URL updated: %s -> %s (EC2 IP 변경 자동 반영)",
                 prev or "(unset)", url,
             )
+        # Redis 전파 — worker/CLI cross-process. 실패 안전 (warning only).
+        from src.services.ocr_url import set_paddleocr_url
+        await set_paddleocr_url(url)
     return url
 
 

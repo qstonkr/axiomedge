@@ -444,7 +444,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "Salesforce records (SOQL 기반, OAuth refresh 자동, Connected App)",
     status: "available",
     scope: "both",
-    userTokenMode: "shared",
+    userTokenMode: "per-user",
     configSchema: JSON.stringify(
       {
         soql: "SELECT Id, Name, Description FROM Account WHERE LastModifiedDate >= LAST_N_DAYS:30",

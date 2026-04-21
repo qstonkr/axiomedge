@@ -333,7 +333,7 @@ async def finalize_upload(
             "ingest_from_object_storage",
             session_id, sorted(failed_indices),
         )
-    except Exception as e:  # noqa: BLE001 — Redis 다양한 예외 통합
+    except (RuntimeError, OSError, ConnectionError, TimeoutError) as e:
         logger.exception("enqueue ingest_from_object_storage 실패")
         await repo.set_status(session_id, "failed")
         raise HTTPException(

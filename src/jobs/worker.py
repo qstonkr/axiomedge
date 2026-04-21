@@ -16,7 +16,7 @@ import os
 
 from arq.cron import cron
 
-from src.jobs.distill_jobs import distill_sweep_training
+from src.jobs.distill_jobs import distill_sweep_post_train, distill_sweep_training
 from src.jobs.queue import redis_settings_from_env
 from src.jobs.tasks import REGISTERED_TASKS
 from src.jobs.upload_jobs import cleanup_orphan_uploads
@@ -46,6 +46,8 @@ class WorkerSettings:
     cron_jobs = [
         # status='training' 빌드 스캔 — 매 분 실행.
         cron(distill_sweep_training, minute=set(range(60))),
+        # post-train (quantize/evaluate/deploy) worker crash 탐지 — 매 5분.
+        cron(distill_sweep_post_train, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
         # Bulk upload orphan 정리 — 매일 03:00 UTC 1회 (오프피크).
         cron(cleanup_orphan_uploads, hour={3}, minute={0}),
     ]
@@ -54,7 +56,8 @@ class WorkerSettings:
     async def on_startup(ctx: dict) -> None:
         logger.info(
             "Arq worker starting — max_jobs=%s max_tries=%s job_timeout=%ss "
-            "cron=[distill_sweep_training(60s), cleanup_orphan_uploads(daily 03:00)]",
+            "cron=[distill_sweep_training(60s), distill_sweep_post_train(5min), "
+            "cleanup_orphan_uploads(daily 03:00)]",
             WorkerSettings.max_jobs,
             WorkerSettings.max_tries,
             WorkerSettings.job_timeout,

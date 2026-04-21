@@ -302,15 +302,12 @@ async def _ocr_lifecycle():
     — GPU 비용 절약. stop 실패는 warning 만 (EC2 자체 boot script 의 shutdown
     -h now 가 fallback).
     """
-    from src.api.routes.data_source_sync import (
-        _start_ocr_instance,
-        _stop_ocr_instance,
-    )
+    from src.services.ocr_lifecycle import start_ocr_instance, stop_ocr_instance
 
     instance_id = os.getenv("PADDLEOCR_INSTANCE_ID", "")
     started = False
     if instance_id:
-        url = await _start_ocr_instance()
+        url = await start_ocr_instance()
         started = bool(url) and bool(instance_id)
         if started:
             logger.info("OCR EC2 가동 완료: %s", url)
@@ -321,7 +318,7 @@ async def _ocr_lifecycle():
     finally:
         if started:
             try:
-                await _stop_ocr_instance()
+                await stop_ocr_instance()
                 logger.info("OCR EC2 stop 요청 완료")
             except (RuntimeError, OSError, ValueError) as e:
                 logger.warning("OCR EC2 stop 실패: %s", e)
