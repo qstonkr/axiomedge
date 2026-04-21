@@ -597,6 +597,16 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, BoxConnector())
         return
+    if source_type == "linear":
+        from src.connectors.linear import LinearConnector
+
+        await _run_generic_connector_sync(source, state, LinearConnector())
+        return
+    if source_type == "salesforce":
+        from src.connectors.salesforce import SalesforceConnector
+
+        await _run_generic_connector_sync(source, state, SalesforceConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 

@@ -23,6 +23,7 @@ export type ConnectorCategory =
   | "office"
   | "chat"
   | "issue"
+  | "crm"
   | "crawl";
 
 export type UserTokenMode = "per-user" | "shared" | "none";
@@ -370,6 +371,26 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
 
   // ===== Issue Tracker =====
   {
+    id: "linear",
+    label: "Linear",
+    category: "issue",
+    icon: "🟣",
+    description: "Linear issues + comments (GraphQL, team_keys 필터, 본인 API key)",
+    status: "available",
+    scope: "both",
+    userTokenMode: "per-user",
+    configSchema: JSON.stringify(
+      {
+        team_keys: ["ENG", "DESIGN"],
+        days_back: 30,
+        include_comments: true,
+        max_issues: 500,
+      },
+      null,
+      2,
+    ),
+  },
+  {
     id: "asana",
     label: "Asana",
     category: "issue",
@@ -413,6 +434,30 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
       2,
     ),
   },
+
+  // ===== CRM / Sales =====
+  {
+    id: "salesforce",
+    label: "Salesforce",
+    category: "crm",
+    icon: "☁️",
+    description: "Salesforce records (SOQL 기반, OAuth refresh 자동, Connected App)",
+    status: "available",
+    scope: "both",
+    userTokenMode: "shared",
+    configSchema: JSON.stringify(
+      {
+        soql: "SELECT Id, Name, Description FROM Account WHERE LastModifiedDate >= LAST_N_DAYS:30",
+        object_name: "Account",
+        title_field: "Name",
+        body_fields: ["Description", "Industry"],
+        api_version: "v60.0",
+        max_records: 500,
+      },
+      null,
+      2,
+    ),
+  },
 ];
 
 export const CATEGORY_LABELS: Record<ConnectorCategory, string> = {
@@ -422,6 +467,7 @@ export const CATEGORY_LABELS: Record<ConnectorCategory, string> = {
   office: "Office Suite",
   chat: "Chat / Communication",
   issue: "Issue Tracker",
+  crm: "CRM / Sales",
   crawl: "크롤 결과",
 };
 
@@ -432,6 +478,7 @@ const CATEGORY_ORDER: ConnectorCategory[] = [
   "office",
   "chat",
   "issue",
+  "crm",
   "crawl",
 ];
 
