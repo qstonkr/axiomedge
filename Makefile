@@ -17,7 +17,7 @@ setup:
 # 가 버전 드리프트 있으면 신규 아키텍처 (EXAONE, Kanana2 등) 가 깨진다.
 # 업스트림 llama.cpp 에 새 아키텍처 지원 추가 시 재실행해서 갱신.
 setup-distill-toolchain:
-	@./scripts/setup_distill_toolchain.sh
+	@./scripts/ops/setup_distill_toolchain.sh
 
 # === Infrastructure ===
 start:

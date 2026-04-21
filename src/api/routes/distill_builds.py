@@ -35,6 +35,30 @@ def _get_distill_repo() -> Any:
     return repo
 
 
+def _preflight_or_400(steps: list[str] | None = None) -> None:
+    """Quantize 단계 포함된 빌드는 toolchain 사전 검증 — 빌드 row 생성 전 차단.
+
+    None / 빈 list / quantize 가 빠진 steps 면 skip (학습-only 케이스). 이렇게
+    하면 fine-tuning 만 다시 돌리는 등 quantize 안 거치는 시나리오는 영향 X.
+
+    환경 미구성 시 ``HTTPException(400)`` 으로 raise — message 에 setup 안내
+    포함. 503 안 쓰는 이유: 서버 자체는 정상이고 distill toolchain 환경만
+    누락 — operator action 으로 해결되므로 client-fixable 의미의 400.
+    """
+    needs_quantize = steps is None or "quantize" in steps
+    if not needs_quantize:
+        return
+    from src.distill.quantizer import (
+        ToolchainNotConfiguredError,
+        preflight_toolchain,
+    )
+
+    try:
+        preflight_toolchain()
+    except ToolchainNotConfiguredError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 
 class BuildTriggerRequest(BaseModel):
     profile_name: str
@@ -75,6 +99,10 @@ async def trigger_build(
         raise HTTPException(status_code=404, detail="Profile not found")
     if not profile.get("enabled"):
         raise HTTPException(status_code=400, detail="Profile is disabled")
+
+    # quantize 단계 포함된 파이프라인은 toolchain 사전 검증 — 빌드 row
+    # 생성 후 늦게 quantize 단계에서 죽으면 고아 row 가 남음.
+    _preflight_or_400(request.steps)
 
     build_id = str(uuid.uuid4())
     version = f"v{datetime.now(timezone.utc).strftime('%Y%m%d.%H%M')}"
@@ -347,6 +375,11 @@ async def reset_to_base_model(
     distill_service = _get_state().get("distill_service")
     if not distill_service:
         raise HTTPException(status_code=503, detail="Distill service not initialized")
+
+    # 베이스 모델 reset 은 항상 quantize 단계 포함 — 사전 검증.
+    # 환경 미설정 상태에서 row 생성 후 quantize 단계에서 crash 하면 status=
+    # failed 고아 row 누적 (2026-04-21 v20260421.0150-base 사례).
+    _preflight_or_400(["quantize", "deploy"])
 
     # 베이스 모델로 빌드 생성 (학습 없이 양자화 + 배포만)
     build_id = str(uuid.uuid4())

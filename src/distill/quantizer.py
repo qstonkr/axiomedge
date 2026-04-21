@@ -43,6 +43,43 @@ _SETUP_HINT = (
 )
 
 
+class ToolchainNotConfiguredError(RuntimeError):
+    """Distill toolchain (convert script + quantize binary) 환경 미구성.
+
+    라우트 layer 가 본 예외를 잡아 400 으로 매핑하고 사용자에게 ``make
+    setup-distill-toolchain`` 안내. **빌드 row 생성 전에 먼저 ``preflight_
+    toolchain()`` 호출하면 quantize 단계 도달 후 늦게 실패해서 고아 row 가
+    남는 이슈를 차단**.
+    """
+
+
+def preflight_toolchain() -> tuple[str, str]:
+    """Convert script + quantize binary 둘 다 확보 — 빌드 시작 전 차단용.
+
+    Returns:
+        ``(convert_script_path, quantize_bin_path)`` — 둘 다 파일/실행 권한 OK.
+
+    Raises:
+        ToolchainNotConfiguredError: 둘 중 하나라도 미설정/누락. message 에
+        어떤 env var 가 빠졌는지 + setup 명령 안내 포함.
+    """
+    convert = _resolve_convert_script()
+    quantize = _resolve_quantize_bin()
+    missing: list[str] = []
+    if convert is None:
+        missing.append("DISTILL_CONVERT_SCRIPT")
+    if quantize is None:
+        missing.append("DISTILL_QUANTIZE_BIN")
+    if missing:
+        raise ToolchainNotConfiguredError(
+            f"Distill toolchain 미구성 — env 누락: {', '.join(missing)}. "
+            f"{_SETUP_HINT}",
+        )
+    # mypy/pyright: convert/quantize 가 None 이 아님을 위 분기로 보장.
+    assert convert is not None and quantize is not None
+    return convert, quantize
+
+
 def _path_fallback_allowed() -> bool:
     """`$PATH` fallback 이 허용되는지 확인.
 

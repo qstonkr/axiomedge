@@ -198,6 +198,36 @@ with tab_settings:
                             "베이스 모델 레지스트리가 비어 있어 새 모델을 선택할 수 없습니다. "
                             "기존 legacy 값만 유지 가능합니다.",
                         )
+                    # base_model 변경 감지 — active 빌드가 있으면 toolchain 호환성
+                    # 경고. 새 base_model 은 새 llama.cpp 아키텍처 지원이 필요할
+                    # 수 있고, 변경 후 reset-to-base 는 이전 빌드와 무관하게
+                    # 새 base_model 의 toolchain 을 요구.
+                    if (
+                        current_model
+                        and form_model
+                        and form_model != current_model
+                    ):
+                        builds_resp = api_client.list_distill_builds(
+                            profile_name=editing.get("name"),
+                        )
+                        active_count = 0
+                        if not api_failed(builds_resp):
+                            active_count = sum(
+                                1 for b in (builds_resp.get("items") or [])
+                                if b.get("status") == "completed"
+                            )
+                        st.warning(
+                            f"⚠️ 베이스 모델 변경: `{current_model.split('/')[-1]}` → "
+                            f"`{form_model.split('/')[-1]}`. "
+                            + (
+                                f"현재 {active_count}개 active 빌드가 있습니다. "
+                                if active_count
+                                else ""
+                            )
+                            + "변경 후 reset-to-base / 신규 빌드는 새 모델의 "
+                              "llama.cpp toolchain (convert + quantize) 이 필요합니다. "
+                              "기존 빌드는 이전 모델 기준이므로 호환성 확인 권장."
+                        )
                 form_enabled = st.checkbox("활성화", value=editing.get("enabled", True))
 
                 st.markdown("**LoRA 설정**")

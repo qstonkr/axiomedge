@@ -484,6 +484,7 @@ class TestGetDistillRepoGuard:
 # =========================================================================
 
 _BUILDS_STATE = "src.api.routes.distill_builds._get_state"
+_BUILDS_PREFLIGHT = "src.api.routes.distill_builds._preflight_or_400"
 
 
 class TestTriggerBuild:
@@ -496,7 +497,7 @@ class TestTriggerBuild:
         svc = AsyncMock()
         svc.run_pipeline = AsyncMock()
         state = _state_dict(repo, svc=svc)
-        with patch(_BUILDS_STATE, return_value=state):
+        with patch(_BUILDS_STATE, return_value=state), patch(_BUILDS_PREFLIGHT):
             from src.api.routes.distill_builds import (
                 BuildTriggerRequest,
                 trigger_build,
@@ -543,7 +544,7 @@ class TestTriggerBuild:
             "search_group": "sg", "base_model": "g/m",
         }
         state = _state_dict(repo)  # no service
-        with patch(_BUILDS_STATE, return_value=state):
+        with patch(_BUILDS_STATE, return_value=state), patch(_BUILDS_PREFLIGHT):
             from src.api.routes.distill_builds import (
                 BuildTriggerRequest,
                 trigger_build,
@@ -992,7 +993,7 @@ class TestResetToBaseModel:
         svc = AsyncMock()
         svc.run_pipeline = AsyncMock()
         state = _state_dict(repo, svc=svc)
-        with patch(_BUILDS_STATE, return_value=state):
+        with patch(_BUILDS_STATE, return_value=state), patch(_BUILDS_PREFLIGHT):
             from src.api.routes.distill_builds import (
                 reset_to_base_model,
             )
