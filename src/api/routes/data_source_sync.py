@@ -537,6 +537,21 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, SlackConnector())
         return
+    if source_type == "sharepoint":
+        from src.connectors.sharepoint import SharePointConnector
+
+        await _run_generic_connector_sync(source, state, SharePointConnector())
+        return
+    if source_type == "onedrive":
+        from src.connectors.onedrive import OneDriveConnector
+
+        await _run_generic_connector_sync(source, state, OneDriveConnector())
+        return
+    if source_type == "teams":
+        from src.connectors.teams import TeamsConnector
+
+        await _run_generic_connector_sync(source, state, TeamsConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 
