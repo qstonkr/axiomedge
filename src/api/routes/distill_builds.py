@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/distill", tags=["Distill Builds"])
 
-_background_tasks: set[asyncio.Task] = set()
+# _background_tasks 패턴 제거됨 (2026-04-21) — arq worker 가 처리.
+# 과거 fire-and-forget 으로 API 재시작 시 task 소실되는 함정 + safety-net 이
+# 학습 instance 죽이는 함정 두 가지 모두 해소. SSOT = DB.
 
 
 def _get_state() -> Any:  # AppState (dict-compatible)
@@ -118,19 +120,28 @@ async def trigger_build(
         config_snapshot=_json.dumps(profile, ensure_ascii=False, default=str),
     )
 
-    # 학습 파이프라인 백그라운드 실행
-    distill_service = _get_state().get("distill_service")
-    if distill_service:
-        task = asyncio.create_task(
-            distill_service.run_pipeline(
-                build_id, request.profile_name, request.steps,
-                use_curated_data=request.use_curated_data,
-            )
+    # 학습 파이프라인 — arq worker 가 처리. asyncio.create_task 패턴 폐기
+    # (API 재시작 시 task 소실 + safety-net 이 학습 죽이는 함정).
+    # arq worker 가 안 떠있으면 build 가 status="pending" 으로 남고,
+    # 사용자가 worker 시작 시 자동 진행.
+    from src.jobs.queue import enqueue_job
+
+    try:
+        await enqueue_job(
+            "distill_pipeline_pre_train",
+            build_id, request.profile_name, request.steps,
+            request.use_curated_data,
         )
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
-    else:
-        logger.warning("Distill service not initialized, build %s will stay pending", build_id)
+    except Exception as e:  # noqa: BLE001 — Redis/network 다양한 예외 통합
+        logger.exception("enqueue distill_pipeline_pre_train failed")
+        await repo.update_build(
+            build_id, status="failed",
+            error_message=f"enqueue failed: {e}", error_step="enqueue",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enqueue build job: {e}",
+        ) from e
 
     return {"build_id": build_id, "version": version, "status": "pending"}
 
@@ -372,10 +383,6 @@ async def reset_to_base_model(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    distill_service = _get_state().get("distill_service")
-    if not distill_service:
-        raise HTTPException(status_code=503, detail="Distill service not initialized")
-
     # 베이스 모델 reset 은 항상 quantize 단계 포함 — 사전 검증.
     # 환경 미설정 상태에서 row 생성 후 quantize 단계에서 crash 하면 status=
     # failed 고아 row 누적 (2026-04-21 v20260421.0150-base 사례).
@@ -396,15 +403,25 @@ async def reset_to_base_model(
         config_snapshot=_json.dumps(profile, ensure_ascii=False, default=str),
     )
 
-    # 양자화 + 배포만 실행 (학습 스킵)
-    task = asyncio.create_task(
-        distill_service.run_pipeline(
-            build_id, profile_name,
-            steps=["quantize", "deploy"],
+    # arq worker 가 처리 — train step 없으니 pre_train 안에서 즉시 post_train
+    # (local 모드 분기) 로 진입. asyncio.create_task 패턴 폐기.
+    from src.jobs.queue import enqueue_job
+
+    try:
+        await enqueue_job(
+            "distill_pipeline_pre_train",
+            build_id, profile_name, ["quantize", "deploy"], False,
         )
-    )
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
+    except Exception as e:  # noqa: BLE001 — Redis/network 다양한 예외 통합
+        logger.exception("enqueue distill_pipeline_pre_train failed (reset)")
+        await repo.update_build(
+            build_id, status="failed",
+            error_message=f"enqueue failed: {e}", error_step="enqueue",
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to enqueue base reset job: {e}",
+        ) from e
 
     return {
         "build_id": build_id,

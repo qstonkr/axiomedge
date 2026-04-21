@@ -115,12 +115,23 @@ class DistillBuildModel(DistillBase):
     error_message = Column(Text, nullable=True)
     error_step = Column(String(30), nullable=True)
 
+    # 0008_distill_build_gpu_metadata.py — async sweeper 패턴 메타.
+    # gpu_instance_id NULL = 신구조 미적용 (기존 fire-and-forget build 보호 위해
+    # sweeper 가 NULL row 는 건드리지 않음).
+    gpu_instance_id = Column(String(64), nullable=True)
+    gpu_started_at = Column(DateTime(timezone=True), nullable=True)
+    s3_result_key = Column(String(255), nullable=True)
+    last_sweep_at = Column(DateTime(timezone=True), nullable=True)
+    gpu_finished_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now)
 
     __table_args__ = (
         Index("idx_distill_build_profile", "profile_name"),
         Index("idx_distill_build_status", "status"),
+        # sweeper hot query — status='training' 중 sweep 안 된 row 빠르게.
+        Index("idx_distill_build_status_sweep", "status", "last_sweep_at"),
     )
 
 

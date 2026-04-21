@@ -485,19 +485,22 @@ class TestGetDistillRepoGuard:
 
 _BUILDS_STATE = "src.api.routes.distill_builds._get_state"
 _BUILDS_PREFLIGHT = "src.api.routes.distill_builds._preflight_or_400"
+_ENQUEUE_JOB = "src.jobs.queue.enqueue_job"
 
 
 class TestTriggerBuild:
     async def test_success_with_service(self):
+        """trigger_build 가 arq enqueue_job 호출 + 200 반환 확인."""
         repo = _mock_repo()
         repo.get_profile.return_value = {
             "name": "p1", "enabled": True,
             "search_group": "sg", "base_model": "g/m",
         }
-        svc = AsyncMock()
-        svc.run_pipeline = AsyncMock()
-        state = _state_dict(repo, svc=svc)
-        with patch(_BUILDS_STATE, return_value=state), patch(_BUILDS_PREFLIGHT):
+        state = _state_dict(repo)
+        enqueue_mock = AsyncMock()
+        with patch(_BUILDS_STATE, return_value=state), patch(
+            _BUILDS_PREFLIGHT,
+        ), patch(_ENQUEUE_JOB, enqueue_mock):
             from src.api.routes.distill_builds import (
                 BuildTriggerRequest,
                 trigger_build,
@@ -506,9 +509,11 @@ class TestTriggerBuild:
             result = await trigger_build(req)
         assert result["status"] == "pending"
         assert "build_id" in result
-
-        # let background task run
-        await asyncio.sleep(0)
+        # arq job enqueue 검증 — pre_train 함수명 + build_id + profile.
+        enqueue_mock.assert_awaited_once()
+        call_args = enqueue_mock.await_args
+        assert call_args.args[0] == "distill_pipeline_pre_train"
+        assert call_args.args[2] == "p1"  # profile_name
 
     async def test_profile_not_found(self):
         repo = _mock_repo()
@@ -537,22 +542,33 @@ class TestTriggerBuild:
                 await trigger_build(req)
             assert exc.value.status_code == 400
 
-    async def test_no_service_still_creates_build(self):
+    async def test_enqueue_failure_marks_build_failed(self):
+        """arq enqueue 실패 시 build row 가 status='failed' 로 업데이트되고 500 raise."""
         repo = _mock_repo()
         repo.get_profile.return_value = {
             "name": "p1", "enabled": True,
             "search_group": "sg", "base_model": "g/m",
         }
-        state = _state_dict(repo)  # no service
-        with patch(_BUILDS_STATE, return_value=state), patch(_BUILDS_PREFLIGHT):
+        state = _state_dict(repo)
+        enqueue_mock = AsyncMock(side_effect=RuntimeError("redis connection refused"))
+        with patch(_BUILDS_STATE, return_value=state), patch(
+            _BUILDS_PREFLIGHT,
+        ), patch(_ENQUEUE_JOB, enqueue_mock):
             from src.api.routes.distill_builds import (
                 BuildTriggerRequest,
                 trigger_build,
             )
             req = BuildTriggerRequest(profile_name="p1")
-            result = await trigger_build(req)
-        assert result["status"] == "pending"
+            with pytest.raises(Exception) as exc:
+                await trigger_build(req)
+            assert exc.value.status_code == 500
+        # build row 는 생성됐고 failed 로 업데이트됨 — 고아 row 추적 가능.
         repo.create_build.assert_awaited_once()
+        repo.update_build.assert_awaited()
+        # update kwargs 에 status='failed' 포함
+        update_kwargs = repo.update_build.await_args.kwargs
+        assert update_kwargs.get("status") == "failed"
+        assert "enqueue" in update_kwargs.get("error_step", "")
 
 
 class TestListBuilds:
@@ -972,17 +988,9 @@ class TestResetToBaseModel:
                 await reset_to_base_model("nope")
             assert exc.value.status_code == 404
 
-    async def test_no_service(self):
-        repo = _mock_repo()
-        repo.get_profile.return_value = {"name": "p1"}
-        state = _state_dict(repo)
-        with patch(_BUILDS_STATE, return_value=state):
-            from src.api.routes.distill_builds import (
-                reset_to_base_model,
-            )
-            with pytest.raises(Exception) as exc:
-                await reset_to_base_model("p1")
-            assert exc.value.status_code == 503
+    # NOTE: 기존 ``test_no_service`` 는 reset_to_base_model 가 distill_service
+    # 를 직접 호출할 때만 의미. 신구조에서 라우트는 arq enqueue 만 함 — 503
+    # 분기 자체가 사라짐. enqueue 실패는 ``test_enqueue_failure`` 로 대체.
 
     async def test_success(self):
         repo = _mock_repo()
@@ -990,16 +998,22 @@ class TestResetToBaseModel:
             "name": "p1", "search_group": "sg",
             "base_model": "g/m",
         }
-        svc = AsyncMock()
-        svc.run_pipeline = AsyncMock()
-        state = _state_dict(repo, svc=svc)
-        with patch(_BUILDS_STATE, return_value=state), patch(_BUILDS_PREFLIGHT):
+        state = _state_dict(repo)
+        enqueue_mock = AsyncMock()
+        with patch(_BUILDS_STATE, return_value=state), patch(
+            _BUILDS_PREFLIGHT,
+        ), patch(_ENQUEUE_JOB, enqueue_mock):
             from src.api.routes.distill_builds import (
                 reset_to_base_model,
             )
             result = await reset_to_base_model("p1")
         assert "build_id" in result
         assert "base" in result["version"]
+        # arq enqueue 검증 — steps=["quantize", "deploy"] (train skip).
+        enqueue_mock.assert_awaited_once()
+        call_args = enqueue_mock.await_args
+        assert call_args.args[0] == "distill_pipeline_pre_train"
+        assert call_args.args[3] == ["quantize", "deploy"]  # steps
         await asyncio.sleep(0)
 
 

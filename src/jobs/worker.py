@@ -14,6 +14,9 @@ from __future__ import annotations
 import logging
 import os
 
+from arq.cron import cron
+
+from src.jobs.distill_jobs import distill_sweep_training
 from src.jobs.queue import redis_settings_from_env
 from src.jobs.tasks import REGISTERED_TASKS
 
@@ -37,10 +40,17 @@ class WorkerSettings:
     # Health
     health_check_interval = 30  # seconds
 
+    # Cron — distill_sweep_training: 매 분 실행 (status='training' 빌드 스캔).
+    # 동일 worker 가 다중 환경이면 arq 가 자체적으로 cron lock 보장.
+    cron_jobs = [
+        cron(distill_sweep_training, minute=set(range(60))),
+    ]
+
     @staticmethod
     async def on_startup(ctx: dict) -> None:
         logger.info(
-            "Arq worker starting — max_jobs=%s max_tries=%s job_timeout=%ss",
+            "Arq worker starting — max_jobs=%s max_tries=%s job_timeout=%ss "
+            "cron=distill_sweep_training(매 60s)",
             WorkerSettings.max_jobs,
             WorkerSettings.max_tries,
             WorkerSettings.job_timeout,

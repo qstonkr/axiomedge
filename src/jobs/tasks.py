@@ -12,6 +12,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.jobs.distill_jobs import (
+    distill_pipeline_post_train,
+    distill_pipeline_pre_train,
+    distill_sweep_training,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,4 +33,9 @@ async def example_task(ctx: dict[str, Any], message: str) -> str:
 
 
 # Authoritative list — referenced by WorkerSettings.functions
-REGISTERED_TASKS = [example_task]
+REGISTERED_TASKS = [
+    example_task,
+    distill_pipeline_pre_train,
+    distill_pipeline_post_train,
+    distill_sweep_training,
+]

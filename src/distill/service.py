@@ -510,7 +510,12 @@ class DistillService:
         steps: list[str] | None = None,
         use_curated_data: bool = False,
     ) -> None:
-        """전체 파이프라인 실행. BuildPipelineExecutor 에 위임."""
+        """전체 파이프라인 실행 (sync wrapper — local 모드 전용 또는 backward compat).
+
+        GPU 모드에서는 ``run_pipeline_pre_train`` 가 awaiting_gpu 반환 후 종료
+        — sweeper 가 ``run_pipeline_post_train`` 호출. 본 wrapper 는 단일 코드
+        경로로 양쪽 케이스 모두 처리.
+        """
         from src.distill.build_executor import BuildPipelineExecutor
         repo = DistillRepository(self.session_factory)
         executor = BuildPipelineExecutor(
@@ -518,6 +523,50 @@ class DistillService:
             use_curated_data=use_curated_data,
         )
         await executor.run(steps=steps)
+
+    async def run_pipeline_pre_train(
+        self,
+        build_id: str,
+        profile_name: str,
+        steps: list[str] | None = None,
+        use_curated_data: bool = False,
+    ) -> dict:
+        """generate + train 시작까지 실행. arq job 진입점.
+
+        Returns:
+            {"phase": "awaiting_gpu", "build_id": ...} — GPU 학습 시작, sweeper
+                가 이어받음.
+            {"phase": "post_train_ready", "train_result": {...}} — local mode
+                또는 train step 없음 → 즉시 post_train 실행 가능.
+        """
+        from src.distill.build_executor import BuildPipelineExecutor
+        repo = DistillRepository(self.session_factory)
+        executor = BuildPipelineExecutor(
+            self, repo, build_id, profile_name,
+            use_curated_data=use_curated_data,
+        )
+        return await executor.run_pre_train(steps=steps)
+
+    async def run_pipeline_post_train(
+        self,
+        build_id: str,
+        profile_name: str,
+        train_result: dict,
+        steps: list[str] | None = None,
+    ) -> None:
+        """evaluate + quantize + deploy. sweeper 또는 pre_train 가 호출.
+
+        train_result:
+            {"gpu_trained": True, "result_json": {...}} — GPU 학습 결과
+            {"gpu_trained": False, "model_path": "..."} — local 학습 결과
+            {"gpu_trained": False, "model_path": None} — train step 없음 (reset-to-base)
+        """
+        from src.distill.build_executor import BuildPipelineExecutor
+        repo = DistillRepository(self.session_factory)
+        executor = BuildPipelineExecutor(
+            self, repo, build_id, profile_name,
+        )
+        await executor.run_post_train(train_result, steps=steps)
 
     async def _generate_data(
         self, build_id: str, profile_name: str, profile: DistillProfile,
@@ -640,22 +689,26 @@ class DistillService:
         self, build_id: str, profile: DistillProfile,
         data_path: str, repo: DistillRepository, build_dir: Path,
     ) -> str:
-        """LoRA SFT 학습 (GPU EC2 우선, 없으면 로컬)."""
+        """LoRA SFT 학습 (GPU EC2 우선, 없으면 로컬).
+
+        GPU 경로: ``start_gpu_training`` 가 EC2 부팅만 트리거 + 즉시 return.
+        실제 완료 detection 은 arq sweeper (``distill_sweep_training``) 가 60s
+        주기로 S3 result.json 확인 → ``distill_pipeline_post_train`` enqueue.
+        train_loss / duration_sec / gguf_size_mb 등 메트릭은 sweeper 가 sweep
+        성공 시 result.json 에서 읽어 update_build 호출.
+
+        ``_GPU_TRAINED`` 반환은 executor.run_pre_train 이 "awaiting_gpu" 상태로
+        해석 — pipeline 정지 + sweeper 위임.
+        """
         import os
 
         gpu_instance = os.getenv("DISTILL_GPU_INSTANCE_ID", "")
 
         if gpu_instance:
-            # GPU EC2 원격 학습
-            logger.info("Using GPU EC2 instance for training: %s", gpu_instance)
-            from src.distill.gpu_trainer import run_gpu_training
+            logger.info("Starting GPU EC2 training (sweeper takes over): %s", gpu_instance)
+            from src.distill.gpu_trainer import start_gpu_training
 
-            profile_dict = await repo.get_profile(profile.search_group)
-            deploy_config = profile_dict.get("config", {}) if profile_dict else {}
-            if isinstance(deploy_config, str):
-                deploy_config = json.loads(deploy_config) if deploy_config else {}
-
-            result = await run_gpu_training(
+            started = await start_gpu_training(
                 build_id=build_id,
                 jsonl_path=data_path,
                 config={
@@ -674,20 +727,18 @@ class DistillService:
                 s3_prefix=profile.deploy.s3_prefix,
             )
 
-            if result.get("status") != "success":
-                raise RuntimeError(f"GPU training failed: {result.get('error', 'unknown')}")
+            if started.get("status") != "started":
+                raise RuntimeError(f"GPU start failed: {started.get('error', 'unknown')}")
 
-            # EC2에서 학습 + merge + GGUF까지 완료 → result.json에서 메타데이터 반영
+            # 신구조 marker — gpu_instance_id NOT NULL 이라야 sweeper 가 본 build 를 잡음.
             await repo.update_build(
                 build_id,
-                train_loss=result.get("train_loss"),
-                training_duration_sec=result.get("duration_sec"),
-                gguf_size_mb=result.get("gguf_size_mb"),
-                gguf_sha256=result.get("gguf_sha256"),
-                quantize_method=result.get("quantize_method"),
+                gpu_instance_id=started["gpu_instance_id"],
+                s3_result_key=started["s3_result_key"],
+                gpu_started_at=started["started_at"],
             )
 
-            # GPU 경로: 양자화/배포를 EC2가 처리 → 로컬 model_path 불필요
+            # GPU 경로 — 즉시 return. executor 가 _GPU_TRAINED 로 awaiting_gpu 로 해석.
             return _GPU_TRAINED
 
         # 로컬 학습 (fallback)

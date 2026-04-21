@@ -1,19 +1,26 @@
-"""GPU EC2 인스턴스 기반 원격 학습.
-
-EC2 시작 → S3에서 작업 자동 감지 → 학습 → 결과 업로드 → 자동 중지.
-SSM/SSH 미사용 — EC2 부팅 스크립트가 S3 작업을 자동 처리.
+"""GPU EC2 인스턴스 기반 원격 학습 — async sweeper 패턴.
 
 흐름:
-    [우리 API]
-    1. S3에 train/{build_id}/train.jsonl + config.json 업로드
+    [API/worker — start_gpu_training()]
+    1. S3 에 train/{build_id}/train.jsonl + config.json 업로드
     2. EC2 GPU 인스턴스 시작
-    3. S3에서 output/{build_id}/ 폴링 → 완료 확인
+    3. 즉시 return — DB 의 build row 에 (gpu_instance_id, gpu_started_at,
+       s3_result_key) 기록 (caller 가 set_gpu_metadata 호출).
+
+    [arq cron sweeper — check_gpu_training()]
+    1. S3 의 result.json 존재 확인 → 있으면 status="success" 또는 "failed"
+       (result.json 의 status 그대로) 반환.
+    2. EC2 가 stopped/terminated 인데 result 없으면 → status="failed".
+    3. 위 둘 다 아니면 → status="running" — sweeper 가 다음 tick 에 재시도.
 
     [EC2 부팅 스크립트 - systemd]
-    1. S3 전체 프로필 스캔 → 미완료 작업(output 없는 train/) 탐색
-    2. 학습 실행 (순차)
-    3. 결과 S3 업로드
-    4. shutdown -h now
+    1. S3 train/ 스캔 → output 없는 작업 탐색 → 학습.
+    2. 결과 S3 업로드 (output/result.json + model.gguf 등).
+    3. ``shutdown -h now`` — EC2 종료를 부팅 스크립트가 담당.
+
+**EC2 stop 호출은 본 모듈에서 안 함**. 과거 패턴 (``run_gpu_training`` 의
+timeout 후 강제 stop) 은 학습 중인 instance 도 죽여 GPU 비용 + 결과 손실
+유발 — 부팅 스크립트의 ``shutdown -h now`` 에 위임.
 
 환경변수:
     DISTILL_GPU_INSTANCE_ID: EC2 인스턴스 ID (g4dn.xlarge)
@@ -26,6 +33,8 @@ import asyncio
 import json
 import logging
 import os
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +44,7 @@ _AWS_PROFILE = os.getenv("AWS_PROFILE", "")
 
 
 # ---------------------------------------------------------------------------
-# EC2 lifecycle
+# EC2 lifecycle (start + state — stop 은 부팅 스크립트가 담당, 본 모듈 X)
 # ---------------------------------------------------------------------------
 
 async def _get_instance_state(instance_id: str) -> str:
@@ -78,20 +87,8 @@ async def _start_instance(instance_id: str) -> bool:
     return False
 
 
-async def _stop_instance(instance_id: str) -> None:
-    logger.info("Stopping GPU instance %s", instance_id)
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 stop-instances --instance-ids {instance_id} "
-        f"--region {_AWS_REGION} --profile {_AWS_PROFILE}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.communicate()
-    logger.info("GPU instance stop requested")
-
-
 # ---------------------------------------------------------------------------
-# S3 업로드 + 결과 폴링
+# S3 업로드 + 결과 확인
 # ---------------------------------------------------------------------------
 
 def _upload_training_data_sync(
@@ -99,7 +96,7 @@ def _upload_training_data_sync(
     jsonl_path: str, config: dict,
 ) -> str:
     """학습 데이터 + 설정을 S3에 업로드 (동기)."""
-    from src.distill.deployer import _s3_client
+    from src.distill.deployer import _s3_client  # noqa: PLC0415
     s3 = _s3_client()
 
     train_key = f"{s3_prefix}train/{build_id}/train.jsonl"
@@ -115,12 +112,15 @@ def _upload_training_data_sync(
     return f"s3://{s3_bucket}/{s3_prefix}train/{build_id}/"
 
 
-def _check_output_exists(s3_bucket: str, s3_prefix: str, build_id: str) -> dict | None:
-    """S3에 학습 결과가 있는지 확인."""
-    from src.distill.deployer import _s3_client
-    s3 = _s3_client()
+def _build_result_key(s3_prefix: str, build_id: str) -> str:
+    """sweeper 가 polling 할 결과 path (S3 key, bucket 제외)."""
+    return f"{s3_prefix}train/{build_id}/output/result.json"
 
-    result_key = f"{s3_prefix}train/{build_id}/output/result.json"
+
+def _check_output_exists_sync(s3_bucket: str, result_key: str) -> dict | None:
+    """result.json 한 번만 GET. None = 미존재."""
+    from src.distill.deployer import _s3_client  # noqa: PLC0415
+    s3 = _s3_client()
     try:
         obj = s3.get_object(Bucket=s3_bucket, Key=result_key)
         return json.loads(obj["Body"].read().decode())
@@ -131,68 +131,31 @@ def _check_output_exists(s3_bucket: str, s3_prefix: str, build_id: str) -> dict 
         return None
 
 
-async def _poll_s3_output(
-    s3_bucket: str, s3_prefix: str, build_id: str,
-    timeout: int = 7200,
-) -> dict:
-    """S3에서 학습 결과 폴링 (최대 2시간).
-
-    EC2가 stopped/terminated 되면 즉시 실패 처리 (무한 폴링 방지).
-    """
-    instance_id = _GPU_INSTANCE_ID
-    stopped_count = 0
-
-    for _ in range(timeout // 15):
-        result = await asyncio.to_thread(
-            _check_output_exists, s3_bucket, s3_prefix, build_id,
-        )
-        if result is not None:
-            status = result.get("status", "unknown")
-            if status == "completed":
-                logger.info("Training completed: %s", result)
-                # result.json 의 status ("completed") 가 wrapper 의 "success" 를
-                # dict merge 에서 덮어쓰지 않도록 status 를 마지막에 재설정.
-                # 과거 bug: {"status": "success", **result} 는 result 의
-                # "status": "completed" 가 이겨서 service.py 의
-                # `result["status"] != "success"` 체크가 실패 처리했다.
-                return {**result, "status": "success"}
-            if status == "failed":
-                logger.error("Training failed: %s", result.get("error", ""))
-                return {"status": "failed", "error": result.get("error", "unknown")}
-
-        # EC2가 꺼졌으면 result 없이 실패한 것
-        if instance_id:
-            ec2_state = await _get_instance_state(instance_id)
-            if ec2_state in ("stopped", "terminated"):
-                stopped_count += 1
-                if stopped_count >= 2:
-                    logger.error("EC2 %s without producing result.json", ec2_state)
-                    return {"status": "failed", "error": f"EC2 {ec2_state} without result"}
-            else:
-                stopped_count = 0
-
-        await asyncio.sleep(15)
-
-    return {"status": "timeout"}
-
-
 # ---------------------------------------------------------------------------
-# 메인 엔트리 포인트
+# 외부 API — start (one-shot, polling X) + check (one-shot, sweeper 호출)
 # ---------------------------------------------------------------------------
 
-async def run_gpu_training(
+async def start_gpu_training(
     build_id: str,
     jsonl_path: str,
     config: dict,
     s3_bucket: str,
     s3_prefix: str,
-) -> dict:
-    """GPU EC2에서 학습 실행.
+) -> dict[str, Any]:
+    """GPU EC2 학습 시작 — 즉시 return. polling X.
 
-    1. S3에 학습 데이터 업로드
-    2. EC2 시작 (부팅 스크립트가 S3 작업 자동 감지)
-    3. S3 output 폴링으로 완료 확인
-    4. EC2는 부팅 스크립트에서 자동 shutdown
+    Returns:
+        {
+            "status": "started",
+            "gpu_instance_id": "i-...",
+            "s3_result_key": "<prefix>train/<id>/output/result.json",
+            "started_at": datetime (UTC),
+        }
+        또는 ``{"status": "error", "error": ...}``.
+
+    Caller 가 ``DistillBuildRepository.set_gpu_metadata(build_id, ...)`` 호출
+    해서 DB 에 sweeper marker 등록해야 함. 등록 안 하면 sweeper 가 본 build
+    를 못 찾음 (gpu_instance_id IS NOT NULL 필터).
     """
     instance_id = _GPU_INSTANCE_ID
     if not instance_id:
@@ -212,22 +175,65 @@ async def run_gpu_training(
             if not started:
                 return {"status": "error", "error": "Failed to start GPU instance"}
 
-        logger.info("GPU instance started, polling S3 for results...")
-
-        # 3. S3 결과 폴링 (EC2 부팅 스크립트가 학습 완료 후 result.json 업로드)
-        result = await _poll_s3_output(s3_bucket, s3_prefix, build_id)
-
-        # EC2는 부팅 스크립트에서 자동 shutdown하지만, 안전망으로 중지 요청
-        if await _get_instance_state(instance_id) == "running":
-            await _stop_instance(instance_id)
-
-        return result
+        result_key = _build_result_key(s3_prefix, build_id)
+        logger.info(
+            "GPU training started: build=%s, instance=%s, result_key=%s",
+            build_id, instance_id, result_key,
+        )
+        return {
+            "status": "started",
+            "gpu_instance_id": instance_id,
+            "s3_result_key": result_key,
+            "started_at": datetime.now(UTC),
+        }
 
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-        logger.error("GPU training error: %s", e)
-        # 에러 시에도 EC2 중지 시도
-        try:
-            await _stop_instance(instance_id)
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
-            pass
+        logger.exception("GPU start error for build %s", build_id)
         return {"status": "error", "error": str(e)}
+
+
+async def check_gpu_training(
+    *,
+    gpu_instance_id: str,
+    s3_bucket: str,
+    s3_result_key: str,
+) -> dict[str, Any]:
+    """sweeper 가 호출 — 1회 check, polling X.
+
+    반환:
+        ``{"status": "success", **result_json}`` — result.json 발견 + status=completed
+        ``{"status": "failed", "error": ...}`` — result.json 의 status=failed
+                                                 또는 EC2 stopped + result 없음
+        ``{"status": "running"}``                — 아직 진행 중
+    """
+    # 1) result.json 우선 확인 — 학습 종료가 EC2 stop 보다 먼저
+    result = await asyncio.to_thread(
+        _check_output_exists_sync, s3_bucket, s3_result_key,
+    )
+    if result is not None:
+        rstatus = str(result.get("status", "unknown"))
+        if rstatus == "completed":
+            # result.json 의 ``status="completed"`` 가 wrapper 의 ``"success"`` 를
+            # dict merge 에서 덮어쓰지 않도록 status 를 마지막에 재설정. 과거 bug
+            # ({"status": "success", **result} 가 result 의 "completed" 가 이김).
+            return {**result, "status": "success"}
+        if rstatus == "failed":
+            return {"status": "failed", "error": result.get("error", "unknown")}
+        # unknown — caller 가 알아서 결정
+        return {"status": "failed", "error": f"unknown result status: {rstatus}"}
+
+    # 2) EC2 가 stopped/terminated 인데 result 없으면 부팅 스크립트 실패.
+    if gpu_instance_id:
+        ec2_state = await _get_instance_state(gpu_instance_id)
+        if ec2_state in ("stopped", "terminated"):
+            logger.error(
+                "EC2 %s without result.json — boot script likely crashed",
+                ec2_state,
+            )
+            return {
+                "status": "failed",
+                "error": f"EC2 {ec2_state} without result.json",
+            }
+
+    # 3) 아직 진행 중 — 다음 sweeper tick 에서 재확인
+    return {"status": "running"}
