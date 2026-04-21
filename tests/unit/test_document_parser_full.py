@@ -165,11 +165,13 @@ class TestParseFile:
         assert "key: val" in parse_file(str(f))
 
     def test_too_large(self, tmp_path):
-        from src.pipelines.document_parser import MAX_FILE_SIZE
+        # MAX_FILE_SIZE 가 GB 단위라 임의 patch 로 작은 값 사용 — 실제 5GB+1
+        # 파일 쓰기는 CI 디스크 + tmp_path 대용량 cleanup 부담.
         f = tmp_path / "huge.txt"
-        f.write_bytes(b"x" * (MAX_FILE_SIZE + 1))
-        with pytest.raises(ValueError, match="File too large"):
-            parse_file(str(f))
+        f.write_bytes(b"x" * 16)
+        with patch("src.pipelines.document_parser.MAX_FILE_SIZE", 8):
+            with pytest.raises(ValueError, match="File too large"):
+                parse_file(str(f))
 
 
 # =========================================================================
@@ -183,11 +185,12 @@ class TestParseFileEnhanced:
         assert result.text == ""
 
     def test_too_large(self, tmp_path):
-        from src.pipelines.document_parser import MAX_FILE_SIZE
+        # patched 작은 값 — 5GB temp file 생성 방지.
         f = tmp_path / "huge.pdf"
-        f.write_bytes(b"x" * (MAX_FILE_SIZE + 1))
-        with pytest.raises(ValueError, match="File too large"):
-            parse_file_enhanced(str(f))
+        f.write_bytes(b"x" * 16)
+        with patch("src.pipelines.document_parser.MAX_FILE_SIZE", 8):
+            with pytest.raises(ValueError, match="File too large"):
+                parse_file_enhanced(str(f))
 
     def test_txt_enhanced(self, tmp_path):
         f = tmp_path / "test.txt"

@@ -45,7 +45,11 @@ class PipelineConfig:
     qdrant_upsert_batch_size: int = 64
     neo4j_batch_size: int = 5000
 
-    max_file_size_mb: int = 200
+    # 200MB → 5GB (5120MB) — 대용량 PDF/PPTX 동영상 첨부 등 수용.
+    # ⚠️ 메모리 위험: ``ingest.py`` 의 ``await file.read()`` 가 전체를 RAM 로드 —
+    # 동시 업로드 N건 시 5N GB. 운영 시 streaming upload 또는 ASGI/nginx
+    # body cap 별도 검토 권장. ingestion_gate IG-07 은 본 값 그대로 사용.
+    max_file_size_mb: int = 5120
     max_workers: int = 4
 
 
