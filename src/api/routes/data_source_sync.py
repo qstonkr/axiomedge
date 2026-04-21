@@ -527,7 +527,153 @@ async def run_data_source_sync(
     if source_type == "git":
         await _run_git_source_sync(source, state)
         return
+    if source_type == "notion":
+        from src.connectors.notion import NotionConnector
+
+        await _run_generic_connector_sync(source, state, NotionConnector())
+        return
+    if source_type == "slack":
+        from src.connectors.slack import SlackConnector
+
+        await _run_generic_connector_sync(source, state, SlackConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
+
+
+# ---------------------------------------------------------------------------
+# Generic connector sync — Notion / Slack / 미래 확장
+# ---------------------------------------------------------------------------
+
+
+async def _run_generic_connector_sync(
+    source: dict[str, Any], state: AppState, connector: Any,
+) -> None:
+    """SecretBox token inject → connector.fetch → ingest → status update.
+
+    Git 처럼 IKnowledgeConnector 패턴 따르는 connector 의 공통 driver.
+    Confluence 만 별도 (PaddleOCR 등 부수 인프라 때문) — 그 외는 본 함수가 담당.
+    """
+    source_id = source["id"]
+    organization_id = source["organization_id"]
+    kb_id = source.get("kb_id", "knowledge")
+    source_name = source.get("name", "unknown")
+    source_type = str(source.get("source_type") or "")
+    metadata = source.get("metadata") or {}
+
+    ds_repo = state.get("data_source_repo")
+    run_repo = state.get("ingestion_run_repo")
+    run_id = str(uuid.uuid4())
+
+    last_fingerprint = (source.get("last_sync_result") or {}).get("version_fingerprint")
+
+    try:
+        logger.info(
+            "Starting %s sync for source %s (kb=%s)", source_type, source_name, kb_id,
+        )
+
+        if run_repo:
+            try:
+                await run_repo.create({
+                    "id": run_id, "kb_id": kb_id,
+                    "source_type": source_type, "source_name": source_name,
+                    "status": "running", "started_at": datetime.now(UTC),
+                })
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+                logger.warning("Failed to create ingestion run record: %s", e)
+
+        connector_config = dict(source.get("crawl_config") or {})
+        connector_config.setdefault("name", source_name)
+        connector_config.setdefault("id", source_id)
+
+        # SecretBox 우선 — has_secret=True 이면 SecretBox 에서 token fetch.
+        if source.get("has_secret") and source.get("secret_path"):
+            from src.auth.secret_box import SecretBoxError, get_secret_box
+
+            try:
+                box = get_secret_box()
+                token = await box.get(source["secret_path"])
+                if token:
+                    connector_config["auth_token"] = token
+            except SecretBoxError as e:
+                logger.warning(
+                    "SecretBox.get failed for %s source %s: %s",
+                    source_type, source_id, e,
+                )
+
+        result = await connector.fetch(
+            connector_config, force=False, last_fingerprint=last_fingerprint,
+        )
+        if not result.success:
+            raise RuntimeError(result.error or f"{source_type} connector failed")
+
+        documents = result.documents or []
+        if not documents:
+            logger.warning("%s source %s produced 0 documents", source_type, source_name)
+            if ds_repo:
+                await ds_repo.complete_sync(
+                    source_id, "active",
+                    organization_id=organization_id,
+                    sync_result={
+                        "documents_synced": 0, "chunks_stored": 0,
+                        "version_fingerprint": result.version_fingerprint,
+                    },
+                )
+            if run_repo:
+                try:
+                    await run_repo.complete(run_id, {
+                        "status": "completed", "documents_ingested": 0,
+                        "documents_fetched": 0, "chunks_stored": 0,
+                        "errors": [], "completed_at": datetime.now(UTC),
+                    })
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+                    logger.warning("Failed to complete ingestion run record: %s", e)
+            return
+
+        logger.info(
+            "%s connector produced %d documents, starting ingestion",
+            source_type, len(documents),
+        )
+
+        docs_ingested, total_chunks, errors = await _run_ingestion(
+            state, documents, kb_id,
+        )
+
+        await _ensure_kb_and_update_counts(
+            state, kb_id, source_name, metadata, docs_ingested, total_chunks,
+        )
+
+        sync_result = {
+            "documents_synced": docs_ingested,
+            "documents_total": len(documents),
+            "chunks_stored": total_chunks,
+            "errors": errors[:10],
+            "version_fingerprint": result.version_fingerprint,
+            "completed_at": datetime.now(UTC).isoformat(),
+            **{k: v for k, v in (result.metadata or {}).items() if k != "skipped"},
+        }
+        if ds_repo:
+            await ds_repo.complete_sync(
+                source_id, "active",
+                organization_id=organization_id,
+                sync_result=sync_result,
+            )
+        if run_repo:
+            try:
+                await run_repo.complete(run_id, {
+                    "status": "completed",
+                    "documents_ingested": docs_ingested,
+                    "documents_fetched": len(documents),
+                    "chunks_stored": total_chunks,
+                    "errors": errors[:10],
+                    "completed_at": datetime.now(UTC),
+                })
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+                logger.warning("Failed to complete ingestion run record: %s", e)
+
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        await _report_sync_failure(
+            ds_repo, run_repo, source_id, run_id, organization_id, exc,
+        )
 
 
 async def _run_confluence_source_sync(

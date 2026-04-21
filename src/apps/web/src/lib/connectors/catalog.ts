@@ -89,9 +89,18 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "Notion",
     category: "wiki",
     icon: "🗒️",
-    description: "Notion workspace — 로드맵",
-    status: "planned",
+    description: "Notion 페이지 트리 BFS 크롤링 (Internal Integration token)",
+    status: "available",
     scope: "admin",
+    configSchema: JSON.stringify(
+      {
+        root_page_id: "abcd1234abcd1234abcd1234abcd1234",
+        max_depth: 5,
+        include_archived: false,
+      },
+      null,
+      2,
+    ),
   },
   {
     id: "gwiki",
@@ -167,9 +176,19 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "Slack",
     category: "chat",
     icon: "💬",
-    description: "Slack 채널 메시지 — 로드맵",
-    status: "planned",
+    description: "Slack 채널 메시지 + thread 동기화 (Bot OAuth Token)",
+    status: "available",
     scope: "admin",
+    configSchema: JSON.stringify(
+      {
+        channel_ids: ["C0123ABC", "C0456DEF"],
+        days_back: 30,
+        include_threads: true,
+        include_bot_messages: false,
+      },
+      null,
+      2,
+    ),
   },
   {
     id: "teams",
