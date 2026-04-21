@@ -577,6 +577,11 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, JiraConnector())
         return
+    if source_type == "github_issues":
+        from src.connectors.github_issues import GitHubIssuesConnector
+
+        await _run_generic_connector_sync(source, state, GitHubIssuesConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 

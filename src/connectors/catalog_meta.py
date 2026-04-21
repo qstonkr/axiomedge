@@ -23,6 +23,7 @@ PER_USER_TOKEN_CONNECTORS: Final[frozenset[str]] = frozenset({
     "git",
     "confluence",
     "jira",
+    "github_issues",
 })
 
 # Organization-wide bot token — admin 1회 등록, 사용자는 sub-resource 만.

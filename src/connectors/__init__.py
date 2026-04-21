@@ -3,6 +3,7 @@
 from .crawl_result import CrawlResultConnector
 from .file_upload import FileUploadConnector
 from .git import GitConnector, GitConnectorConfig
+from .github_issues import GitHubIssuesConnector, GitHubIssuesConnectorConfig
 from .gmail import GmailConnector, GmailConnectorConfig
 from .google_drive import GoogleDriveConnector, GoogleDriveConnectorConfig
 from .google_sheets import GoogleSheetsConnector, GoogleSheetsConnectorConfig
@@ -19,6 +20,8 @@ __all__ = [
     "FileUploadConnector",
     "GitConnector",
     "GitConnectorConfig",
+    "GitHubIssuesConnector",
+    "GitHubIssuesConnectorConfig",
     "GmailConnector",
     "GmailConnectorConfig",
     "GoogleDriveConnector",

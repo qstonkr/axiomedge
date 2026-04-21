@@ -117,16 +117,10 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
       2,
     ),
   },
-  {
-    id: "gwiki",
-    label: "Google Sites",
-    category: "wiki",
-    icon: "📚",
-    description: "Google Sites / Wiki — 로드맵",
-    status: "planned",
-    scope: "admin",
-    userTokenMode: "per-user",
-  },
+  // NOTE: Google Sites entry 제거 (2026-04-21).
+  // Sites API v1 은 deprecated, modern Sites 콘텐츠는 Google Drive 안에 저장됨.
+  // 사용자는 Google Drive connector 로 Sites 페이지를 동기화 — folder_id
+  // 에 Sites 파일이 있는 폴더 지정. 별도 connector 만들 가치 X.
 
   // ===== Code Repository =====
   {
@@ -153,10 +147,23 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "GitHub Issues",
     category: "code",
     icon: "🐙",
-    description: "GitHub Issues / PR 본문 동기화 — 로드맵",
-    status: "planned",
-    scope: "admin",
+    description: "GitHub Issues + PR 본문 + comments (per-user PAT, Enterprise 지원)",
+    status: "available",
+    scope: "both",
     userTokenMode: "per-user",
+    configSchema: JSON.stringify(
+      {
+        repos: ["owner/repo-1", "owner/repo-2"],
+        state: "all",
+        days_back: 90,
+        include_prs: true,
+        include_comments: true,
+        max_issues_per_repo: 500,
+        api_base_url: "https://api.github.com",
+      },
+      null,
+      2,
+    ),
   },
 
   // ===== Office Suite =====
@@ -204,7 +211,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "Google Drive",
     category: "office",
     icon: "📁",
-    description: "Google Drive 파일 동기화 (Docs/Slides/PDF/DOCX, service account)",
+    description: "Google Drive 파일 동기화 (Docs/Slides/Sites/PDF/DOCX, service account)",
     status: "available",
     scope: "both",
     userTokenMode: "shared",
