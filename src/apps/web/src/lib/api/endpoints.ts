@@ -1979,3 +1979,47 @@ export const uploadDocumentToKb = async (kbId: string, file: File) => {
     },
   );
 };
+
+// ── /knowledge/uploads/* — bulk upload (presigned URL flow) ────────────
+
+export type BulkUploadInitFile = { name: string; size: number };
+export type BulkUploadInitEntry = {
+  file_idx: number;
+  filename: string;
+  s3_key: string;
+  presigned_url: string;
+};
+export type BulkUploadInitResponse = {
+  session_id: string;
+  expires_in: number;
+  uploads: BulkUploadInitEntry[];
+};
+
+export const initBulkUpload = (kbId: string, files: BulkUploadInitFile[]) =>
+  request<BulkUploadInitResponse>(
+    "api/v1/knowledge/uploads/init",
+    { method: "POST", body: JSON.stringify({ kb_id: kbId, files }) },
+  );
+
+export const finalizeBulkUpload = (
+  sessionId: string, failedIndices: number[],
+) =>
+  request<{ session_id: string; status: string }>(
+    `api/v1/knowledge/uploads/${encodeURIComponent(sessionId)}/finalize`,
+    { method: "POST", body: JSON.stringify({ failed_indices: failedIndices }) },
+  );
+
+export type BulkUploadStatus = {
+  session_id: string;
+  status: "pending" | "processing" | "completed" | "failed";
+  total_files: number;
+  processed_files: number;
+  failed_files: number;
+  errors: { filename: string; error_message: string }[];
+};
+
+export const getBulkUploadStatus = (sessionId: string) =>
+  request<BulkUploadStatus>(
+    `api/v1/knowledge/uploads/${encodeURIComponent(sessionId)}/status`,
+    { method: "GET" },
+  );

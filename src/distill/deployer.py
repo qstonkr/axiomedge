@@ -7,12 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any
-
-import boto3
-from botocore.config import Config
 
 from src.distill.config import DistillProfile
 
@@ -20,16 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def _s3_client() -> Any:
-    """V4 서명 + 명시적 region으로 S3 client 생성.
+    """V4 서명 + region/endpoint_url 통일된 S3 client.
 
-    STS 임시 자격증명(SSO/assume-role)은 V4 서명만 허용되므로
-    반드시 signature_version='s3v4' 를 강제해야 한다. region을 명시하지 않으면
-    boto3가 us-east-1 로 떨어지면서 V2 서명으로 fallback되는 버그가 있음.
+    내부 helper ``src/storage/s3.py:get_s3_client`` 로 위임 — bulk upload 와 같은
+    helper 사용 (MinIO endpoint_url 자동 적용). distill 모듈 caller 호환을 위해
+    wrapper 유지.
     """
-    return boto3.Session(
-        profile_name=os.getenv("AWS_PROFILE") or None,
-        region_name=os.getenv("AWS_REGION", "ap-northeast-2"),
-    ).client("s3", config=Config(signature_version="s3v4"))
+    from src.storage.s3 import get_s3_client  # noqa: PLC0415
+    return get_s3_client()
 
 
 def _parse_s3_uri(s3_uri: str) -> tuple[str, str]:

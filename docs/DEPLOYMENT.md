@@ -325,6 +325,90 @@ irm https://s3.../install.ps1 | iex
 
 ---
 
+## 대량 업로드 (Bulk Upload — Presigned URL Flow)
+
+수천 개 파일 / 수십 GB 같은 대량 업로드는 **사용자 브라우저 → S3/MinIO 직접
+PUT** 패턴 사용 — 백엔드는 metadata + arq job 등록만 담당. API 프로세스
+RAM/CPU 0 부담.
+
+**자동 분기**: `DocumentUploader.tsx` 가 파일 개수 ≥ 5 또는 누적 사이즈 ≥
+100 MB 면 bulk flow, 그 미만은 기존 multipart endpoint 사용 (1 round-trip
+이 더 빠름).
+
+**필요 인프라**: S3 호환 object storage (MinIO 또는 AWS S3).
+
+### MinIO (on-prem)
+
+`docker-compose.yml` 에 이미 포함 — `docker compose up -d minio`.
+
+**환경변수**:
+```bash
+AWS_S3_ENDPOINT_URL=http://localhost:9000   # docker net 안: http://minio:9000
+UPLOADS_S3_BUCKET=axiomedge-uploads
+UPLOADS_S3_PREFIX=uploads/
+UPLOADS_S3_URL_TTL=3600                     # presigned URL 유효 1h
+AWS_ACCESS_KEY_ID=minioadmin                # MINIO_ROOT_USER 와 동일
+AWS_SECRET_ACCESS_KEY=minioadmin            # MINIO_ROOT_PASSWORD 와 동일
+```
+
+**bucket 생성 (first-run)**:
+```bash
+docker exec axiomedge-minio mc alias set local http://localhost:9000 minioadmin minioadmin
+docker exec axiomedge-minio mc mb local/axiomedge-uploads
+```
+
+또는 MinIO Console (http://localhost:9001) 에서 생성.
+
+### AWS S3 (cloud)
+
+```bash
+# AWS_S3_ENDPOINT_URL 미설정 → AWS 표준 endpoint
+UPLOADS_S3_BUCKET=your-org-uploads
+UPLOADS_S3_PREFIX=axiomedge-uploads/
+AWS_REGION=ap-northeast-2
+AWS_PROFILE=your-profile     # 또는 AWS_ACCESS_KEY_ID/SECRET
+```
+
+**CORS 설정 필수** (브라우저가 직접 PUT 하므로):
+```json
+[
+  {
+    "AllowedMethods": ["PUT"],
+    "AllowedOrigins": ["https://your-frontend.example.com"],
+    "AllowedHeaders": ["*"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+### Migration
+
+```bash
+uv run alembic upgrade head    # 0009_bulk_upload_sessions 적용
+```
+
+### Worker
+
+bulk upload arq job (`ingest_from_object_storage`) 실행을 위해 worker 떠있어야:
+```bash
+uv run arq src.jobs.worker.WorkerSettings
+```
+
+worker 안 떠있어도 init/finalize 는 동작 (DB row 만 생성) — 사용자가 worker
+시작 시 자동 진행. presigned URL 1시간 유효 안에 업로드 + finalize 완료 필요.
+
+### Failure 시나리오
+
+- **사용자가 init 후 abort** → S3 orphan object → cleanup cron (별도, 24h 후
+  unfinalized session 의 S3 prefix 삭제) 권장. 현재는 운영자 수동 정리.
+- **arq worker crash** → arq retry (max_tries=3). 같은 파일 두 번 ingest 안
+  됨 — `RawDocument.sha256(s3_key)` 로 doc_id 계산하고 ingestion pipeline 의
+  content_hash dedup 가 차단.
+- **partial failure** — 일부 파일 ingest 실패 시 `bulk_upload_sessions.errors`
+  JSON 에 누적 + status="failed". 사용자가 status 폴링으로 확인.
+
+---
+
 ## 파일 업로드 한도 (5GB)
 
 `config/weights/pipeline.py:48` 의 `max_file_size_mb=5120` (5GB) — 사용자

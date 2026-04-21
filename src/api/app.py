@@ -97,6 +97,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
     from src.stores.postgres.repositories.trust_score import TrustScoreRepository
     from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
+    from src.stores.postgres.repositories.bulk_upload import BulkUploadRepository
     from src.stores.postgres.repositories.data_source import DataSourceRepository
     from src.stores.postgres.repositories.traceability import ProvenanceRepository
     from src.stores.postgres.repositories.category import CategoryRepository
@@ -112,6 +113,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     state["trust_score_repo"] = TrustScoreRepository(session_factory)
     state["lifecycle_repo"] = DocumentLifecycleRepository(session_factory)
     state["data_source_repo"] = DataSourceRepository(session_factory)
+    state["bulk_upload_repo"] = BulkUploadRepository(session_factory)
     state["provenance_repo"] = ProvenanceRepository(session_factory)
     state["category_repo"] = CategoryRepository(session_factory)
     state["search_group_repo"] = SearchGroupRepository(session_factory)

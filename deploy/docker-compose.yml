@@ -87,6 +87,28 @@ services:
       timeout: 3s
       retries: 5
 
+  # MinIO — bulk upload presigned URL flow 의 object storage.
+  # On-prem 환경에서 S3 호환 — boto3 가 endpoint_url override 만으로 동일 작동.
+  # 운영 시: AWS_S3_ENDPOINT_URL=http://localhost:9000 (또는 docker net 안 'http://minio:9000')
+  # bucket 생성: docker exec axiomedge-minio mc mb local/axiomedge-uploads
+  minio:
+    image: minio/minio:latest
+    container_name: axiomedge-minio
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console (web UI)
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   bge-m3:
     # NOTE: x86_64 only - uses Rosetta emulation on Apple Silicon (slower)
     # For Mac, Ollama embedding is faster. TEI is optimal on Linux amd64.
@@ -162,3 +184,4 @@ volumes:
   ollama_models:
   bge_model:
   redis_data:
+  minio_data:

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from src.stores.postgres.repositories.trust_score import TrustScoreRepository
     from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
     from src.stores.postgres.repositories.data_source import DataSourceRepository
+    from src.stores.postgres.repositories.bulk_upload import BulkUploadRepository
     from src.stores.postgres.repositories.traceability import ProvenanceRepository
     from src.stores.postgres.repositories.category import CategoryRepository
     from src.stores.postgres.repositories.search_group import SearchGroupRepository
@@ -102,6 +103,7 @@ class AppState:
     trust_score_repo: TrustScoreRepository | None = None
     lifecycle_repo: DocumentLifecycleRepository | None = None
     data_source_repo: DataSourceRepository | None = None
+    bulk_upload_repo: BulkUploadRepository | None = None
     provenance_repo: ProvenanceRepository | None = None
     category_repo: CategoryRepository | None = None
     search_group_repo: SearchGroupRepository | None = None

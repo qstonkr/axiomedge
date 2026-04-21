@@ -17,6 +17,7 @@ from src.jobs.distill_jobs import (
     distill_pipeline_pre_train,
     distill_sweep_training,
 )
+from src.jobs.upload_jobs import ingest_from_object_storage
 
 logger = logging.getLogger(__name__)
 
@@ -38,4 +39,5 @@ REGISTERED_TASKS = [
     distill_pipeline_pre_train,
     distill_pipeline_post_train,
     distill_sweep_training,
+    ingest_from_object_storage,
 ]

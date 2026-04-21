@@ -671,6 +671,54 @@ class DataSourceModel(KnowledgeBase):
 
 
 # =============================================================================
+# Bulk Upload Sessions — presigned URL flow 의 진행 상태 추적 (0009)
+# =============================================================================
+
+
+class BulkUploadSessionModel(KnowledgeBase):
+    """대량 파일 업로드 세션. 1 session = 사용자가 한 번 드래그한 N개 파일.
+
+    presigned URL flow:
+    1. POST /uploads/init → row 생성 (status='pending', total_files=N)
+    2. 브라우저 → S3 직접 PUT (백엔드 우회)
+    3. POST /uploads/{sid}/finalize → arq enqueue (status='processing')
+    4. arq job → 각 파일 download + ingest → increment processed_files
+    5. 완료 시 status='completed' 또는 'failed'
+    """
+
+    __tablename__ = "knowledge_bulk_upload_sessions"
+
+    id = Column(String(36), primary_key=True)
+    kb_id = Column(String(100), nullable=False)
+    organization_id = Column(String(100), nullable=False)
+    owner_user_id = Column(String(100), nullable=False)
+    s3_prefix = Column(String(255), nullable=False)
+    total_files = Column(Integer, nullable=False)
+    processed_files = Column(Integer, nullable=False, default=0)
+    failed_files = Column(Integer, nullable=False, default=0)
+    # pending → processing → completed / failed
+    status = Column(String(20), nullable=False, default="pending")
+    # JSON list: [{"filename": "...", "error_message": "..."}, ...]
+    errors = Column(Text, default="[]")
+    # JSON list: [{"file_idx": 0, "filename": "report.pdf", "s3_key": "...", "size": 12345}]
+    files = Column(Text, default="[]")
+    created_at = Column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_bus_owner_status", "owner_user_id", "status"),
+        Index("idx_bus_kb", "kb_id"),
+    )
+
+
+# =============================================================================
 # Knowledge Access Whitelist
 # =============================================================================
 

@@ -242,6 +242,24 @@ class AwsSettings(BaseSettings):
         default="", alias="DISTILL_S3_BUCKET",
         description="S3 bucket for edge model artifacts. Required for distill deploy.",
     )
+    # Bulk upload (presigned URL flow) 전용 설정 — distill 모델 bucket 과 분리.
+    # MinIO (on-prem) 또는 AWS S3 (cloud) — endpoint_url 만 다르고 코드 동일.
+    s3_endpoint_url: str = Field(
+        default="", alias="AWS_S3_ENDPOINT_URL",
+        description="S3 API endpoint override. MinIO 시 'http://minio:9000', AWS 시 빈 값.",
+    )
+    s3_uploads_bucket: str = Field(
+        default="axiomedge-uploads", alias="UPLOADS_S3_BUCKET",
+        description="Bulk upload presigned URL flow 의 S3 bucket.",
+    )
+    s3_uploads_prefix: str = Field(
+        default="uploads/", alias="UPLOADS_S3_PREFIX",
+        description="Bulk upload S3 key prefix (사용자 격리는 자동 user/{uid}/ 추가).",
+    )
+    s3_uploads_url_ttl: int = Field(
+        default=3600, alias="UPLOADS_S3_URL_TTL",
+        description="Presigned PUT URL 유효시간 (초). 기본 1시간.",
+    )
 
 
 class DistillSettings(BaseSettings):
