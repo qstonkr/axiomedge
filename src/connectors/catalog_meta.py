@@ -30,6 +30,7 @@ SHARED_TOKEN_CONNECTORS: Final[frozenset[str]] = frozenset({
     "sharepoint",
     "onedrive",
     "teams",
+    "outlook",
     "google_drive",
     "google_sheets",
     "gmail",

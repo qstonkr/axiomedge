@@ -567,6 +567,11 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, GmailConnector())
         return
+    if source_type == "outlook":
+        from src.connectors.outlook import OutlookConnector
+
+        await _run_generic_connector_sync(source, state, OutlookConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 

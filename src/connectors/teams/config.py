@@ -47,11 +47,14 @@ class TeamsConnectorConfig:
             raw_channels = [s.strip() for s in raw_channels.split(",") if s.strip()]
         channels = tuple(str(c).strip() for c in raw_channels if str(c).strip())
 
+        # ``days_back=0`` 은 "무한" — ``or`` 로 채우면 0 이 30 으로 변경됨.
+        days_back_raw = crawl_cfg.get("days_back")
+        days_back = int(days_back_raw) if days_back_raw is not None else 30
         return cls(
             auth_token=token,
             team_id=team_id,
             channel_ids=channels,
-            days_back=int(crawl_cfg.get("days_back") or 30),
+            days_back=days_back,
             include_replies=bool(crawl_cfg.get("include_replies", True)),
             max_messages=int(crawl_cfg.get("max_messages") or 500),
             name=str(source.get("name") or ""),

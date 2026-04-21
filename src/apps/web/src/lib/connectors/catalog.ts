@@ -257,6 +257,27 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
       2,
     ),
   },
+  {
+    id: "outlook",
+    label: "Outlook",
+    category: "office",
+    icon: "📧",
+    description: "Outlook 메일 (Microsoft 365, admin app-only token, Mail.Read scope)",
+    status: "available",
+    scope: "both",
+    userTokenMode: "shared",
+    configSchema: JSON.stringify(
+      {
+        user_id: "user@example.com (또는 'me')",
+        folder: "inbox",
+        days_back: 30,
+        include_body: true,
+        max_messages: 200,
+      },
+      null,
+      2,
+    ),
+  },
 
   // ===== Chat / Communication =====
   {

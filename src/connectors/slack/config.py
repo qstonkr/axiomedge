@@ -54,10 +54,15 @@ class SlackConnectorConfig:
                 "slack connector requires crawl_config.channel_ids (e.g. ['C0123ABC'])",
             )
 
+        # ``days_back=0`` 은 "무한" — ``or`` 로 채우면 0 이 30 으로 변경됨.
+        days_back_raw = crawl_cfg.get("days_back")
+        days_back = (
+            int(days_back_raw) if days_back_raw is not None else _DEFAULT_DAYS_BACK
+        )
         return cls(
             auth_token=token,
             channel_ids=channels,
-            days_back=int(crawl_cfg.get("days_back") or _DEFAULT_DAYS_BACK),
+            days_back=days_back,
             include_threads=bool(crawl_cfg.get("include_threads", True)),
             include_bot_messages=bool(crawl_cfg.get("include_bot_messages", False)),
             page_size=min(
