@@ -171,6 +171,109 @@ class TestUploadsRoutes:
                     repo.create.assert_awaited_once()
             _run(_t())
 
+    def test_init_uses_multipart_for_large_file(self):
+        """100MB 이상 파일은 multipart mode → upload_id + chunk URL list 발급."""
+        from httpx import ASGITransport, AsyncClient
+
+        kb_registry = AsyncMock()
+        kb_registry.get_kb = AsyncMock(return_value={"kb_id": "kb-1"})
+        repo = AsyncMock()
+        repo.create = AsyncMock()
+        state = {"kb_registry": kb_registry, "bulk_upload_repo": repo}
+
+        with patch(
+            "src.api.routes.uploads._get_state", return_value=state,
+        ), patch(
+            "src.storage.create_multipart_upload",
+            return_value="fake-upload-id",
+        ), patch(
+            "src.storage.generate_presigned_part_url",
+            side_effect=lambda **kw: f"https://s3-mock/part?n={kw['part_number']}",
+        ):
+            app = self._make_app()
+
+            async def _t():
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test",
+                ) as ac:
+                    big_size = 250 * 1024 * 1024  # 250MB → multipart
+                    resp = await ac.post(
+                        "/api/v1/knowledge/uploads/init",
+                        json={
+                            "kb_id": "kb-1",
+                            "files": [{"name": "big.pdf", "size": big_size}],
+                        },
+                    )
+                    assert resp.status_code == 201
+                    body = resp.json()
+                    entry = body["uploads"][0]
+                    assert entry["mode"] == "multipart"
+                    assert entry["upload_id"] == "fake-upload-id"
+                    assert entry["part_size"] == 5 * 1024 * 1024  # 5MB chunks
+                    # 250MB / 5MB = 50 parts
+                    assert len(entry["presigned_part_urls"]) == 50
+                    assert entry["presigned_url"] is None  # single URL 없음
+            _run(_t())
+
+    def test_finalize_completes_multipart_uploads(self):
+        """finalize 가 multipart_completes 받으면 backend 가 complete_multipart_upload 호출."""
+        from httpx import ASGITransport, AsyncClient
+
+        kb_registry = AsyncMock()
+        repo = AsyncMock()
+        repo.get = AsyncMock(return_value={
+            "id": "sess-1", "status": "pending",
+            "kb_id": "kb-1", "owner_user_id": "u-1",
+            "files": [
+                {"file_idx": 0, "filename": "big.pdf", "s3_key": "k0",
+                 "size": 250 * 1024 * 1024, "mode": "multipart",
+                 "upload_id": "u-id", "part_size": 5242880, "part_count": 50},
+            ],
+            "errors": [], "total_files": 1,
+            "processed_files": 0, "failed_files": 0,
+        })
+        repo.set_status = AsyncMock()
+        state = {"kb_registry": kb_registry, "bulk_upload_repo": repo}
+        enqueue_mock = AsyncMock()
+        complete_mock = AsyncMock()
+
+        with patch(
+            "src.api.routes.uploads._get_state", return_value=state,
+        ), patch("src.jobs.queue.enqueue_job", enqueue_mock), patch(
+            "src.storage.complete_multipart_upload", complete_mock,
+        ):
+            app = self._make_app()
+
+            async def _t():
+                async with AsyncClient(
+                    transport=ASGITransport(app=app), base_url="http://test",
+                ) as ac:
+                    resp = await ac.post(
+                        "/api/v1/knowledge/uploads/sess-1/finalize",
+                        json={
+                            "failed_indices": [],
+                            "multipart_completes": [{
+                                "file_idx": 0,
+                                "upload_id": "u-id",
+                                "parts": [
+                                    {"PartNumber": 1, "ETag": "abc"},
+                                    {"PartNumber": 2, "ETag": "def"},
+                                ],
+                            }],
+                        },
+                    )
+                    assert resp.status_code == 200
+            _run(_t())
+
+        # complete_multipart_upload 호출 + parts 전달 검증
+        complete_mock.assert_called_once()
+        kw = complete_mock.call_args.kwargs
+        assert kw["upload_id"] == "u-id"
+        assert kw["parts"] == [
+            {"PartNumber": 1, "ETag": "abc"},
+            {"PartNumber": 2, "ETag": "def"},
+        ]
+
     def test_finalize_enqueues_arq_job(self):
         from httpx import ASGITransport, AsyncClient
 

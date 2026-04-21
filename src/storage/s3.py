@@ -93,6 +93,76 @@ def generate_presigned_put_url(
         raise S3StorageError(f"presigned URL 발급 실패: {e}") from e
 
 
+def create_multipart_upload(*, bucket: str, key: str) -> str:
+    """Multipart upload 시작 — 5GB+ 파일용. 반환 ``upload_id``.
+
+    chunk 별 PUT 후 ``complete_multipart_upload`` 로 종료. abort 시 ``abort_
+    multipart_upload`` (S3 자동 cleanup 안 함 — orphan 방지 위해 명시 호출 필요).
+    """
+    s3 = get_s3_client()
+    try:
+        resp = s3.create_multipart_upload(Bucket=bucket, Key=key)
+    except Exception as e:  # noqa: BLE001
+        raise S3StorageError(f"multipart upload init 실패: {e}") from e
+    return str(resp["UploadId"])
+
+
+def generate_presigned_part_url(
+    *, bucket: str, key: str, upload_id: str, part_number: int,
+    ttl_seconds: int = 3600,
+) -> str:
+    """Multipart upload 의 1개 part 에 대한 presigned URL.
+
+    part_number 는 1-based (S3 API 규약). 각 part 5MB+ (마지막 제외).
+    """
+    s3 = get_s3_client()
+    try:
+        return s3.generate_presigned_url(
+            "upload_part",
+            Params={
+                "Bucket": bucket, "Key": key,
+                "UploadId": upload_id, "PartNumber": part_number,
+            },
+            ExpiresIn=ttl_seconds,
+        )
+    except Exception as e:  # noqa: BLE001
+        raise S3StorageError(
+            f"multipart presigned URL 발급 실패 (part={part_number}): {e}",
+        ) from e
+
+
+def complete_multipart_upload(
+    *, bucket: str, key: str, upload_id: str,
+    parts: list[dict[str, Any]],
+) -> None:
+    """모든 part PUT 완료 후 호출. ``parts`` = [{"PartNumber": 1, "ETag": "..."}, ...].
+
+    S3 가 part 들을 합쳐 최종 object 생성. 이후 일반 GetObject 가능.
+    """
+    s3 = get_s3_client()
+    try:
+        s3.complete_multipart_upload(
+            Bucket=bucket, Key=key, UploadId=upload_id,
+            MultipartUpload={"Parts": parts},
+        )
+    except Exception as e:  # noqa: BLE001
+        raise S3StorageError(f"multipart upload complete 실패: {e}") from e
+
+
+def abort_multipart_upload(*, bucket: str, key: str, upload_id: str) -> None:
+    """Multipart upload 중단 — orphan part 정리. idempotent."""
+    s3 = get_s3_client()
+    try:
+        s3.abort_multipart_upload(
+            Bucket=bucket, Key=key, UploadId=upload_id,
+        )
+    except Exception as e:  # noqa: BLE001 — 이미 abort 된 경우도 OK
+        logger.warning(
+            "multipart abort 실패 (key=%s, upload_id=%s): %s",
+            key, upload_id, e,
+        )
+
+
 def download_to_tempfile(*, bucket: str, key: str, suffix: str = "") -> Path:
     """S3 object → tempfile path 반환. caller 가 처리 후 unlink 책임.
 

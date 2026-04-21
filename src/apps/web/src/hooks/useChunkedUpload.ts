@@ -93,10 +93,59 @@ export function useChunkedUpload(opts?: {
         const byIdx = new Map<number, BulkUploadInitEntry>();
         for (const u of init.uploads) byIdx.set(u.file_idx, u);
 
-        // 2) concurrency-throttled PUT
+        // 2) concurrency-throttled PUT — single 또는 multipart 분기
         const failedIndices: number[] = [];
-        // per-file 누적 byte (XHR progress 가 cumulative 라 마지막 값만 더하면 됨)
+        // per-file 누적 byte (single 은 cumulative, multipart 는 chunk 별 합산)
         const perFileLoaded = new Map<number, number>();
+        // multipart 파일별 part ETag list — finalize 시 backend complete 호출에 전달
+        const multipartCompletes: {
+          file_idx: number;
+          upload_id: string;
+          parts: { PartNumber: number; ETag: string }[];
+        }[] = [];
+
+        async function putWithProgress(
+          url: string, body: Blob | File, idx: number,
+          chunkOffset: number, fileSize: number,
+        ): Promise<{ etag: string }> {
+          return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("PUT", url, true);
+            const contentType = body instanceof File ? body.type : "";
+            if (contentType) xhr.setRequestHeader("Content-Type", contentType);
+            xhr.upload.onprogress = (ev) => {
+              if (!ev.lengthComputable) return;
+              // multipart 케이스는 chunkOffset + ev.loaded 가 누적
+              const cumulative = chunkOffset + ev.loaded;
+              const prev = perFileLoaded.get(idx) ?? 0;
+              progress.uploaded = progress.uploaded - prev + cumulative;
+              perFileLoaded.set(idx, cumulative);
+              emit();
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                // 마지막 progress 보정 — chunkOffset + body.size 가 누적
+                const cumulative = chunkOffset + body.size;
+                const prev = perFileLoaded.get(idx) ?? 0;
+                progress.uploaded = progress.uploaded - prev + cumulative;
+                perFileLoaded.set(idx, cumulative);
+                // multipart 의 경우 ETag 헤더 추출 (S3 가 따옴표 포함 반환)
+                const etag = (xhr.getResponseHeader("ETag") || "").replace(
+                  /"/g, "",
+                );
+                resolve({ etag });
+              } else {
+                reject(new Error(`PUT ${xhr.status}: ${xhr.statusText}`));
+              }
+            };
+            xhr.onerror = () => reject(new Error("network error"));
+            xhr.onabort = () => reject(new Error("aborted"));
+            ctrl.signal.addEventListener("abort", () => xhr.abort());
+            xhr.send(body);
+            // unused fileSize — type system 만족용
+            void fileSize;
+          });
+        }
 
         async function putOne(idx: number, file: File): Promise<void> {
           const entry = byIdx.get(idx);
@@ -104,52 +153,80 @@ export function useChunkedUpload(opts?: {
             failedIndices.push(idx);
             return;
           }
-          const attempt = async () => {
-            await new Promise<void>((resolve, reject) => {
-              const xhr = new XMLHttpRequest();
-              xhr.open("PUT", entry.presigned_url, true);
-              if (file.type) xhr.setRequestHeader("Content-Type", file.type);
-              xhr.upload.onprogress = (ev) => {
-                if (!ev.lengthComputable) return;
-                const prev = perFileLoaded.get(idx) ?? 0;
-                progress.uploaded = progress.uploaded - prev + ev.loaded;
-                perFileLoaded.set(idx, ev.loaded);
-                emit();
-              };
-              xhr.onload = () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                  // 최종 사이즈 보정 (마지막 progress 가 누락될 수 있음)
-                  const prev = perFileLoaded.get(idx) ?? 0;
-                  progress.uploaded = progress.uploaded - prev + file.size;
-                  perFileLoaded.set(idx, file.size);
-                  resolve();
-                } else {
-                  reject(new Error(`PUT ${xhr.status}: ${xhr.statusText}`));
+
+          if (entry.mode === "multipart" && entry.upload_id
+              && entry.part_size && entry.presigned_part_urls) {
+            // Multipart — chunk 별 PUT + ETag 수집
+            const partSize = entry.part_size;
+            const partUrls = entry.presigned_part_urls;
+            const partCount = partUrls.length;
+            const parts: { PartNumber: number; ETag: string }[] = [];
+            for (let p = 0; p < partCount; p += 1) {
+              if (ctrl.signal.aborted) throw new Error("aborted");
+              const start = p * partSize;
+              const end = Math.min(start + partSize, file.size);
+              const blob = file.slice(start, end);
+              const url = partUrls[p];
+              const attempt = () =>
+                putWithProgress(url, blob, idx, start, file.size);
+              try {
+                const { etag } = await attempt();
+                parts.push({ PartNumber: p + 1, ETag: etag });
+              } catch (err) {
+                // 1회 retry — 같은 chunk 만 (single PUT 처럼 처음부터 X)
+                if (ctrl.signal.aborted) throw err;
+                try {
+                  const { etag } = await attempt();
+                  parts.push({ PartNumber: p + 1, ETag: etag });
+                } catch {
+                  failedIndices.push(idx);
+                  progress.errors.push({
+                    filename: file.name,
+                    error_message:
+                      err instanceof Error
+                        ? `part ${p + 1} failed: ${err.message}`
+                        : `part ${p + 1} failed`,
+                  });
+                  emit();
+                  return;
                 }
-              };
-              xhr.onerror = () => reject(new Error("network error"));
-              xhr.onabort = () => reject(new Error("aborted"));
-              ctrl.signal.addEventListener("abort", () => xhr.abort());
-              xhr.send(file);
+              }
+            }
+            // 모든 part 성공 — finalize 시 backend 가 complete 호출에 사용
+            multipartCompletes.push({
+              file_idx: idx,
+              upload_id: entry.upload_id,
+              parts,
             });
-          };
-          try {
-            await attempt();
-          } catch (err) {
-            // 1회 retry
-            if (ctrl.signal.aborted) throw err;
+          } else if (entry.mode === "single" && entry.presigned_url) {
+            // Single PUT
+            const attempt = () =>
+              putWithProgress(entry.presigned_url!, file, idx, 0, file.size);
             try {
               await attempt();
-            } catch {
-              failedIndices.push(idx);
-              progress.errors.push({
-                filename: file.name,
-                error_message:
-                  err instanceof Error ? err.message : "PUT failed",
-              });
-              emit();
-              return;
+            } catch (err) {
+              if (ctrl.signal.aborted) throw err;
+              try {
+                await attempt();
+              } catch {
+                failedIndices.push(idx);
+                progress.errors.push({
+                  filename: file.name,
+                  error_message:
+                    err instanceof Error ? err.message : "PUT failed",
+                });
+                emit();
+                return;
+              }
             }
+          } else {
+            failedIndices.push(idx);
+            progress.errors.push({
+              filename: file.name,
+              error_message: `unknown upload mode: ${entry.mode}`,
+            });
+            emit();
+            return;
           }
           progress.uploadedFiles += 1;
           emit();
@@ -175,10 +252,10 @@ export function useChunkedUpload(opts?: {
           throw new Error("upload aborted");
         }
 
-        // 3) finalize → arq enqueue
+        // 3) finalize → arq enqueue (multipart 파일은 part ETag list 포함)
         progress.status = "finalizing";
         emit();
-        await finalizeBulkUpload(sessionId, failedIndices);
+        await finalizeBulkUpload(sessionId, failedIndices, multipartCompletes);
         progress.status = "processing";
         emit();
 

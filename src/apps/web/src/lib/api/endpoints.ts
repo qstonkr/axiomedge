@@ -1987,12 +1987,24 @@ export type BulkUploadInitEntry = {
   file_idx: number;
   filename: string;
   s3_key: string;
-  presigned_url: string;
+  mode: "single" | "multipart";
+  // single 모드 전용
+  presigned_url?: string | null;
+  // multipart 모드 전용 — 100MB+ 파일은 chunk 별 PUT
+  upload_id?: string | null;
+  part_size?: number | null;
+  presigned_part_urls?: string[] | null;
 };
 export type BulkUploadInitResponse = {
   session_id: string;
   expires_in: number;
   uploads: BulkUploadInitEntry[];
+};
+
+export type MultipartCompleteEntry = {
+  file_idx: number;
+  upload_id: string;
+  parts: { PartNumber: number; ETag: string }[];
 };
 
 export const initBulkUpload = (kbId: string, files: BulkUploadInitFile[]) =>
@@ -2002,11 +2014,19 @@ export const initBulkUpload = (kbId: string, files: BulkUploadInitFile[]) =>
   );
 
 export const finalizeBulkUpload = (
-  sessionId: string, failedIndices: number[],
+  sessionId: string,
+  failedIndices: number[],
+  multipartCompletes: MultipartCompleteEntry[] = [],
 ) =>
   request<{ session_id: string; status: string }>(
     `api/v1/knowledge/uploads/${encodeURIComponent(sessionId)}/finalize`,
-    { method: "POST", body: JSON.stringify({ failed_indices: failedIndices }) },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        failed_indices: failedIndices,
+        multipart_completes: multipartCompletes,
+      }),
+    },
   );
 
 export type BulkUploadStatus = {

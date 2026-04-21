@@ -54,10 +54,23 @@ class InitUploadBody(BaseModel):
 
 
 class InitUploadEntry(BaseModel):
+    """파일 1개의 업로드 정보. mode 별 필드 구성:
+
+    - ``mode="single"``: ``presigned_url`` 한 개. 작은 파일 (<100MB) — 1 PUT.
+    - ``mode="multipart"``: ``upload_id`` + ``part_size`` + ``presigned_part_urls``
+      list. 5GB+ 같은 대형 파일 — chunk 별 재시도/resume 가능.
+    """
+
     file_idx: int
     filename: str
     s3_key: str
-    presigned_url: str
+    mode: str = "single"  # "single" | "multipart"
+    # single 모드 전용
+    presigned_url: str | None = None
+    # multipart 모드 전용
+    upload_id: str | None = None
+    part_size: int | None = None
+    presigned_part_urls: list[str] | None = None  # part_number 1-based
 
 
 class InitUploadResponse(BaseModel):
@@ -67,9 +80,28 @@ class InitUploadResponse(BaseModel):
 
 
 class FinalizeBody(BaseModel):
-    """브라우저가 PUT 완료 후 보내는 결과 — 실패한 파일 idx list (옵션)."""
+    """브라우저가 PUT 완료 후 보내는 결과.
+
+    - ``failed_indices``: 실패한 파일 idx list (single + multipart 공통)
+    - ``multipart_completes``: multipart 파일별 part ETag list — backend 가
+      ``complete_multipart_upload`` 호출에 사용.
+    """
 
     failed_indices: list[int] = Field(default_factory=list)
+    multipart_completes: list["MultipartCompleteEntry"] = Field(
+        default_factory=list,
+    )
+
+
+class MultipartPartETag(BaseModel):
+    PartNumber: int
+    ETag: str
+
+
+class MultipartCompleteEntry(BaseModel):
+    file_idx: int
+    upload_id: str
+    parts: list[MultipartPartETag]
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +182,16 @@ async def init_upload(
     from src.storage import (
         S3StorageError,
         build_object_key,
+        create_multipart_upload,
+        generate_presigned_part_url,
         generate_presigned_put_url,
     )
+
+    # Multipart 임계 — 100MB 이상은 chunk 별 재시도/resume 가능.
+    # 5GB single PUT 은 네트워크 끊기면 처음부터 → 큰 비용. multipart 는
+    # 5MB chunk 별 ETag 받고 1 chunk 만 재시도하면 됨.
+    _MULTIPART_THRESHOLD = 100 * 1024 * 1024
+    _PART_SIZE = 5 * 1024 * 1024  # S3 minimum (마지막 part 제외)
 
     session_id = str(uuid.uuid4())
     files_meta: list[dict[str, Any]] = []
@@ -162,23 +202,56 @@ async def init_upload(
             user_id=user.sub, session_id=session_id,
             file_idx=idx, filename=f.name, prefix=prefix,
         )
-        try:
-            url = generate_presigned_put_url(
-                bucket=bucket, key=s3_key, ttl_seconds=ttl,
-                content_length=f.size,
-            )
-        except S3StorageError as e:
-            logger.exception("presigned URL 발급 실패 (file_idx=%d)", idx)
-            raise HTTPException(
-                status_code=500, detail=f"presigned URL 발급 실패: {e}",
-            ) from e
-        files_meta.append({
-            "file_idx": idx, "filename": f.name,
-            "s3_key": s3_key, "size": f.size,
-        })
-        uploads.append(InitUploadEntry(
-            file_idx=idx, filename=f.name, s3_key=s3_key, presigned_url=url,
-        ))
+
+        if f.size >= _MULTIPART_THRESHOLD:
+            # Multipart — chunk 별 presigned URL 발급
+            try:
+                upload_id = create_multipart_upload(bucket=bucket, key=s3_key)
+                part_count = (f.size + _PART_SIZE - 1) // _PART_SIZE
+                part_urls = [
+                    generate_presigned_part_url(
+                        bucket=bucket, key=s3_key, upload_id=upload_id,
+                        part_number=p + 1, ttl_seconds=ttl,
+                    )
+                    for p in range(part_count)
+                ]
+            except S3StorageError as e:
+                logger.exception("multipart init 실패 (file_idx=%d)", idx)
+                raise HTTPException(
+                    status_code=500, detail=f"multipart init 실패: {e}",
+                ) from e
+            files_meta.append({
+                "file_idx": idx, "filename": f.name, "s3_key": s3_key,
+                "size": f.size, "mode": "multipart",
+                "upload_id": upload_id, "part_size": _PART_SIZE,
+                "part_count": part_count,
+            })
+            uploads.append(InitUploadEntry(
+                file_idx=idx, filename=f.name, s3_key=s3_key,
+                mode="multipart",
+                upload_id=upload_id, part_size=_PART_SIZE,
+                presigned_part_urls=part_urls,
+            ))
+        else:
+            # Single PUT — 작은 파일 (1 round-trip)
+            try:
+                url = generate_presigned_put_url(
+                    bucket=bucket, key=s3_key, ttl_seconds=ttl,
+                    content_length=f.size,
+                )
+            except S3StorageError as e:
+                logger.exception("presigned URL 발급 실패 (file_idx=%d)", idx)
+                raise HTTPException(
+                    status_code=500, detail=f"presigned URL 발급 실패: {e}",
+                ) from e
+            files_meta.append({
+                "file_idx": idx, "filename": f.name,
+                "s3_key": s3_key, "size": f.size, "mode": "single",
+            })
+            uploads.append(InitUploadEntry(
+                file_idx=idx, filename=f.name, s3_key=s3_key,
+                mode="single", presigned_url=url,
+            ))
 
     s3_prefix = f"{prefix.rstrip('/')}/user/{user.sub}/uploads/{session_id}/"
     await repo.create(
@@ -215,6 +288,41 @@ async def finalize_upload(
             "message": "session already finalized",
         }
 
+    # Multipart files — 사용자 보낸 part ETag list 로 complete_multipart_upload
+    # 호출. 한 multipart 라도 실패하면 abort + failed_indices 추가.
+    failed_indices = set(body.failed_indices or [])
+    if body.multipart_completes:
+        from src.storage import (
+            S3StorageError,
+            abort_multipart_upload,
+            complete_multipart_upload,
+        )
+        from src.config import get_settings
+        bucket = get_settings().aws.s3_uploads_bucket
+        files_by_idx = {f["file_idx"]: f for f in (sess.get("files") or [])}
+        for entry in body.multipart_completes:
+            file_meta = files_by_idx.get(entry.file_idx)
+            if not file_meta or file_meta.get("mode") != "multipart":
+                continue
+            s3_key = file_meta["s3_key"]
+            try:
+                complete_multipart_upload(
+                    bucket=bucket, key=s3_key, upload_id=entry.upload_id,
+                    parts=[
+                        {"PartNumber": p.PartNumber, "ETag": p.ETag}
+                        for p in entry.parts
+                    ],
+                )
+            except S3StorageError as e:
+                logger.warning(
+                    "multipart complete 실패 (file_idx=%d): %s — abort + skip",
+                    entry.file_idx, e,
+                )
+                abort_multipart_upload(
+                    bucket=bucket, key=s3_key, upload_id=entry.upload_id,
+                )
+                failed_indices.add(entry.file_idx)
+
     # status 전이 + arq enqueue.
     await repo.set_status(session_id, "processing")
 
@@ -223,7 +331,7 @@ async def finalize_upload(
     try:
         await enqueue_job(
             "ingest_from_object_storage",
-            session_id, list(body.failed_indices or []),
+            session_id, sorted(failed_indices),
         )
     except Exception as e:  # noqa: BLE001 — Redis 다양한 예외 통합
         logger.exception("enqueue ingest_from_object_storage 실패")

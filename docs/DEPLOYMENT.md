@@ -397,10 +397,23 @@ uv run arq src.jobs.worker.WorkerSettings
 worker 안 떠있어도 init/finalize 는 동작 (DB row 만 생성) — 사용자가 worker
 시작 시 자동 진행. presigned URL 1시간 유효 안에 업로드 + finalize 완료 필요.
 
+### Multipart 업로드 (100MB+ 자동)
+
+100MB 이상 파일은 **자동으로 multipart 모드** — 5MB chunk 별 PUT + 각 chunk
+ETag 수집 + finalize 시 backend 가 ``complete_multipart_upload`` 호출.
+
+- chunk 별 1회 retry — 한 chunk 실패해도 처음부터 X, 그 chunk 만 재시도.
+- 5GB single PUT 의 "네트워크 끊기면 처음부터" 함정 해결.
+- backend init 응답에 ``mode: "multipart"`` + ``upload_id`` + ``part_size``
+  + ``presigned_part_urls`` (모든 chunk 의 presigned URL 1회 발급).
+- finalize body 의 ``multipart_completes`` 로 part ETag list 전달.
+- 실패 시 backend 가 ``abort_multipart_upload`` 호출 → orphan part 정리.
+
 ### Failure 시나리오
 
-- **사용자가 init 후 abort** → S3 orphan object → cleanup cron (별도, 24h 후
-  unfinalized session 의 S3 prefix 삭제) 권장. 현재는 운영자 수동 정리.
+- **사용자가 init 후 abort** → S3 orphan object → ``cleanup_orphan_uploads``
+  cron job 이 매일 03:00 UTC 자동 정리 (24h 이상 ``status='pending'``
+  session 의 S3 prefix 삭제 + DB ``status='failed'`` mark, idempotent).
 - **arq worker crash** → arq retry (max_tries=3). 같은 파일 두 번 ingest 안
   됨 — `RawDocument.sha256(s3_key)` 로 doc_id 계산하고 ingestion pipeline 의
   content_hash dedup 가 차단.

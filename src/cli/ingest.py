@@ -18,6 +18,7 @@ import hashlib
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -291,6 +292,41 @@ async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False) -> None:
     await provider.close()
 
 
+@asynccontextmanager
+async def _ocr_lifecycle():
+    """OCR EC2 자동 기동 + 종료 — CLI ingest 의 모든 entry 가 통과.
+
+    PADDLEOCR_INSTANCE_ID 미설정 시 graceful skip (start 가 None 반환). 가동
+    실패 시 warning + text-only ingest 진행 (PDF 의 image OCR 는 누락되지만
+    text-extractable 부분은 정상 ingest). 정상 가동 시 종료 시점에 stop 호출
+    — GPU 비용 절약. stop 실패는 warning 만 (EC2 자체 boot script 의 shutdown
+    -h now 가 fallback).
+    """
+    from src.api.routes.data_source_sync import (
+        _start_ocr_instance,
+        _stop_ocr_instance,
+    )
+
+    instance_id = os.getenv("PADDLEOCR_INSTANCE_ID", "")
+    started = False
+    if instance_id:
+        url = await _start_ocr_instance()
+        started = bool(url) and bool(instance_id)
+        if started:
+            logger.info("OCR EC2 가동 완료: %s", url)
+        else:
+            logger.warning("OCR EC2 가동 실패 — text-only ingest 진행")
+    try:
+        yield
+    finally:
+        if started:
+            try:
+                await _stop_ocr_instance()
+                logger.info("OCR EC2 stop 요청 완료")
+            except (RuntimeError, OSError, ValueError) as e:
+                logger.warning("OCR EC2 stop 실패: %s", e)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Knowledge Ingestion CLI")
     parser.add_argument("--source", help="Source directory to ingest")
@@ -301,14 +337,19 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.source:
-        asyncio.run(ingest_directory(args.source, args.kb_id, args.force))
-    elif args.file:
-        asyncio.run(ingest_file(args.file, args.kb_id))
-    elif args.crawl_dir:
-        asyncio.run(ingest_crawl(args.crawl_dir, args.kb_id, args.force))
-    else:
-        parser.print_help()
+    async def _run() -> None:
+        # OCR EC2 wrap — PADDLEOCR_INSTANCE_ID 있으면 자동 start/stop, 없으면 no-op.
+        async with _ocr_lifecycle():
+            if args.source:
+                await ingest_directory(args.source, args.kb_id, args.force)
+            elif args.file:
+                await ingest_file(args.file, args.kb_id)
+            elif args.crawl_dir:
+                await ingest_crawl(args.crawl_dir, args.kb_id, args.force)
+            else:
+                parser.print_help()
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
