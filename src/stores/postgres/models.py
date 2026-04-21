@@ -656,12 +656,17 @@ class DataSourceModel(KnowledgeBase):
     # 보관. crawl_config 의 평문 token 필드는 deprecated — 절대 저장 X.
     secret_path = Column(String(255), nullable=True)
     has_secret = Column(Boolean, nullable=False, default=False)
+    # 0007_data_source_owner_user.py — 누가 등록한 source 인지 추적.
+    # NULL = admin 등록 (organization-wide). value = 사용자 self-service —
+    # 본인의 personal KB 에만 attach (라우트 권한 체크: kb.owner_id == owner_user_id).
+    owner_user_id = Column(String(100), nullable=True)
 
     __table_args__ = (
         Index("idx_kds_kb_id", "kb_id"),
         Index("idx_kds_status", "status"),
         Index("idx_kds_source_type", "source_type"),
         Index("idx_kds_org_id", "organization_id"),
+        Index("idx_kds_owner_user", "owner_user_id"),
     )
 
 

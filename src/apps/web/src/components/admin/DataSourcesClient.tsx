@@ -32,6 +32,7 @@ import {
 import { DataTable, type Column } from "./DataTable";
 import { MetricCard } from "./MetricCard";
 import { SeverityBadge, statusToSeverity } from "./SeverityBadge";
+import { SharedTokensDialog } from "./SharedTokensDialog";
 
 const SCHEDULES = ["수동", "hourly", "daily", "weekly"];
 
@@ -60,6 +61,7 @@ export function DataSourcesClient() {
   // ``presetType`` 으로 source_type 을 채워 form dialog 가 열림.
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [presetType, setPresetType] = useState<string | null>(null);
+  const [sharedTokensOpen, setSharedTokensOpen] = useState(false);
 
   function onPickConnector(entry: ConnectorEntry) {
     setCatalogOpen(false);
@@ -233,6 +235,14 @@ export function DataSourcesClient() {
           <Button variant="ghost" size="sm" onClick={() => refetch()}>
             새로고침
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSharedTokensOpen(true)}
+            title="Slack 같은 organization-wide bot 토큰 관리"
+          >
+            🤝 공유 토큰
+          </Button>
           <Button size="sm" onClick={() => setCatalogOpen(true)}>
             + 신규 소스
           </Button>
@@ -282,6 +292,11 @@ export function DataSourcesClient() {
         scope="admin"
         title="신규 데이터 소스 추가"
         description="추가할 connector 종류를 선택하세요. 회색 카드는 곧 출시 예정입니다."
+      />
+
+      <SharedTokensDialog
+        open={sharedTokensOpen}
+        onClose={() => setSharedTokensOpen(false)}
       />
 
       <DataSourceFormDialog

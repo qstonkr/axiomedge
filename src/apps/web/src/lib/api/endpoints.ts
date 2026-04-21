@@ -619,6 +619,80 @@ export const getDataSourceStatus = (sourceId: string) =>
     { method: "GET" },
   );
 
+// ── /me/knowledge/{kb_id}/data-sources — 사용자 self-service ────────────
+
+export type UserDataSourceCreateBody = {
+  name: string;
+  source_type: string;
+  schedule?: string | null;
+  crawl_config?: Record<string, unknown> | null;
+  pipeline_config?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+  /**
+   * Per-user 토큰 모드 (Notion/Git/Confluence) 일 때만 의미.
+   * Shared 모드 (Slack) 는 backend 가 무시.
+   */
+  secret_token?: string | null;
+};
+
+export const listUserDataSources = async (
+  kbId: string,
+): Promise<DataSource[]> => {
+  const raw = await request<{ sources?: DataSource[] }>(
+    `api/v1/me/knowledge/${encodeURIComponent(kbId)}/data-sources`,
+    { method: "GET" },
+  );
+  return raw.sources ?? [];
+};
+
+export const createUserDataSource = (
+  kbId: string,
+  body: UserDataSourceCreateBody,
+) =>
+  request<DataSource>(
+    `api/v1/me/knowledge/${encodeURIComponent(kbId)}/data-sources`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const deleteUserDataSource = (kbId: string, sourceId: string) =>
+  request<void>(
+    `api/v1/me/knowledge/${encodeURIComponent(kbId)}/data-sources/${encodeURIComponent(sourceId)}`,
+    { method: "DELETE" },
+  );
+
+export const triggerUserDataSource = (kbId: string, sourceId: string) =>
+  request<{ success: boolean; message?: string }>(
+    `api/v1/me/knowledge/${encodeURIComponent(kbId)}/data-sources/${encodeURIComponent(sourceId)}/trigger`,
+    { method: "POST" },
+  );
+
+// ── /admin/shared-tokens — admin 등록 organization-wide bot token ────────
+
+export type SharedTokenItem = {
+  connector_id: string;
+  configured: boolean;
+};
+
+export const listSharedTokens = async (): Promise<SharedTokenItem[]> => {
+  const raw = await request<{ items?: SharedTokenItem[] }>(
+    "api/v1/admin/shared-tokens",
+    { method: "GET" },
+  );
+  return raw.items ?? [];
+};
+
+export const upsertSharedToken = (connectorId: string, token: string) =>
+  request<void>(
+    `api/v1/admin/shared-tokens/${encodeURIComponent(connectorId)}`,
+    { method: "PUT", body: JSON.stringify({ token }) },
+  );
+
+export const deleteSharedToken = (connectorId: string) =>
+  request<void>(
+    `api/v1/admin/shared-tokens/${encodeURIComponent(connectorId)}`,
+    { method: "DELETE" },
+  );
+
 // ── /admin/pipeline/status (B-2 ingest) ─────────────────────────────────
 
 export type PipelineRun = {

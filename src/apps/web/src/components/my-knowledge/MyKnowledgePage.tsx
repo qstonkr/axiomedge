@@ -17,6 +17,7 @@ import { CreateKbDialog } from "./CreateKbDialog";
 import { DocumentList } from "./DocumentList";
 import { DocumentUploader } from "./DocumentUploader";
 import { KbCard } from "./KbCard";
+import { UserDataSourceDialog } from "./UserDataSourceDialog";
 
 const PERSONAL_KB_LIMIT = 10;
 
@@ -26,9 +27,12 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
   const [creating, setCreating] = useState(false);
   const [selectedKbId, setSelectedKbId] = useState<string | null>(null);
   // 카탈로그 dialog: 사용자가 connector 종류를 카드 grid 에서 선택.
-  // 현재 ``available`` 인 사용자용 connector 는 file_upload 뿐 — 카드 클릭 시
-  // 기존 DocumentUploader 영역으로 anchor scroll. 나머지는 planned.
+  // file_upload → 기존 DocumentUploader 영역으로 scroll. per-user/shared
+  // 토큰 모드 connector → UserDataSourceDialog 로 self-service 등록.
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [pickedConnector, setPickedConnector] = useState<ConnectorEntry | null>(
+    null,
+  );
 
   const kbs = data ?? [];
   const selected = kbs.find((kb) => kb.kb_id === selectedKbId) ?? kbs[0];
@@ -44,9 +48,14 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
       el?.focus();
       return;
     }
-    // 그 외 — 백엔드 connector 등록은 admin 권한 필요. 사용자에게 안내.
+    // per-user / shared token connector 는 사용자 form dialog 로.
+    if (entry.userTokenMode === "per-user" || entry.userTokenMode === "shared") {
+      setPickedConnector(entry);
+      return;
+    }
+    // 그 외 (admin-only / planned) — 안내.
     toast.push(
-      `${entry.label} 임포트는 관리자 권한이 필요합니다 — 관리자에게 요청해주세요.`,
+      `${entry.label} 임포트는 현재 관리자 권한이 필요합니다 — 관리자에게 요청해주세요.`,
       "warning",
     );
   }
@@ -175,6 +184,19 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
         title="데이터 가져오기"
         description="파일 업로드 또는 외부 소스에서 KB 로 가져옵니다. 회색 카드는 곧 출시 예정입니다."
       />
+
+      {pickedConnector && selected && (
+        <UserDataSourceDialog
+          open={true}
+          kbId={selected.kb_id}
+          connector={pickedConnector}
+          onClose={() => setPickedConnector(null)}
+          onCreated={() => {
+            // 등록 후 KB 카드의 source 카운트 등 갱신될 수 있도록.
+            refetch();
+          }}
+        />
+      )}
     </section>
   );
 }

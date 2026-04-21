@@ -43,13 +43,24 @@ class DataSourceRepository(BaseRepository):
     """
 
     async def register(
-        self, data: dict[str, Any], organization_id: str
+        self,
+        data: dict[str, Any],
+        organization_id: str,
+        owner_user_id: str | None = None,
     ) -> dict[str, Any]:
-        """신규 data_source 등록. body 의 organization_id 는 항상 인자로 덮어씀."""
+        """신규 data_source 등록. body 의 organization_id 는 항상 인자로 덮어씀.
+
+        owner_user_id:
+          - None — admin 등록 (organization-wide source)
+          - 값  — 사용자 self-service. 본인 personal KB 에만 attach 가능
+            (라우트 권한 체크에서 강제).
+        """
         async with await self._get_session() as session:
             try:
                 model_data = dict(data)
                 model_data["organization_id"] = organization_id
+                if owner_user_id is not None:
+                    model_data["owner_user_id"] = owner_user_id
                 for field in ("crawl_config", "pipeline_config", "last_sync_result"):
                     if field in model_data and isinstance(model_data[field], dict):
                         model_data[field] = json.dumps(model_data[field])
@@ -58,10 +69,55 @@ class DataSourceRepository(BaseRepository):
                 model = DataSourceModel(**model_data)
                 session.add(model)
                 await session.commit()
-                # 응답 dict 에도 org_id 보존.
                 data_with_org = dict(data)
                 data_with_org["organization_id"] = organization_id
+                if owner_user_id is not None:
+                    data_with_org["owner_user_id"] = owner_user_id
                 return data_with_org
+            except SQLAlchemyError:
+                await session.rollback()
+                raise
+
+    async def list_for_user(
+        self, organization_id: str, owner_user_id: str,
+    ) -> list[dict[str, Any]]:
+        """사용자 self-service 등록한 source 만 (owner_user_id 매칭)."""
+        async with await self._get_session() as session:
+            stmt = select(DataSourceModel).where(
+                DataSourceModel.organization_id == organization_id,
+                DataSourceModel.owner_user_id == owner_user_id,
+            ).order_by(DataSourceModel.created_at.desc()).limit(500)
+            result = await session.execute(stmt)
+            return [self._to_dict(m) for m in result.scalars().all()]
+
+    async def get_for_user(
+        self, source_id: str, organization_id: str, owner_user_id: str,
+    ) -> dict[str, Any] | None:
+        """사용자 본인 source 만 — cross-user 시 None (404 매핑)."""
+        async with await self._get_session() as session:
+            stmt = select(DataSourceModel).where(
+                DataSourceModel.id == source_id,
+                DataSourceModel.organization_id == organization_id,
+                DataSourceModel.owner_user_id == owner_user_id,
+            )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._to_dict(model) if model else None
+
+    async def delete_for_user(
+        self, source_id: str, organization_id: str, owner_user_id: str,
+    ) -> bool:
+        """사용자 본인 source 만 삭제 — cross-user 시 False."""
+        async with await self._get_session() as session:
+            try:
+                stmt = delete(DataSourceModel).where(
+                    DataSourceModel.id == source_id,
+                    DataSourceModel.organization_id == organization_id,
+                    DataSourceModel.owner_user_id == owner_user_id,
+                )
+                result = await session.execute(stmt)
+                await session.commit()
+                return result.rowcount > 0
             except SQLAlchemyError:
                 await session.rollback()
                 raise
@@ -240,4 +296,5 @@ class DataSourceRepository(BaseRepository):
             # plain token 은 절대 응답에 포함 X — 라우트가 응답 직전 mask.
             "secret_path": model.secret_path,
             "has_secret": bool(model.has_secret),
+            "owner_user_id": model.owner_user_id,
         }

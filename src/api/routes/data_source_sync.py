@@ -585,19 +585,36 @@ async def _run_generic_connector_sync(
         connector_config.setdefault("name", source_name)
         connector_config.setdefault("id", source_id)
 
-        # SecretBox 우선 — has_secret=True 이면 SecretBox 에서 token fetch.
-        if source.get("has_secret") and source.get("secret_path"):
-            from src.auth.secret_box import SecretBoxError, get_secret_box
+        # Token fetch — connector 가 shared-token 모드면 admin 의 organization-wide
+        # bot token 사용 (Slack), 그 외는 source 자체의 secret_path (per-user 또는
+        # admin-org). 두 경로 모두 SecretBox 에서 fetch 후 connector_config 에 inject.
+        from src.auth.secret_box import SecretBoxError, get_secret_box
+        from src.auth.secret_paths import shared_token_path
+        from src.connectors.catalog_meta import is_shared_token_connector
 
+        token_path: str | None = None
+        if is_shared_token_connector(source_type):
+            token_path = shared_token_path(organization_id, source_type)
+        elif source.get("has_secret") and source.get("secret_path"):
+            token_path = source["secret_path"]
+
+        if token_path:
             try:
                 box = get_secret_box()
-                token = await box.get(source["secret_path"])
+                token = await box.get(token_path)
                 if token:
                     connector_config["auth_token"] = token
+                elif is_shared_token_connector(source_type):
+                    # shared connector 인데 admin 이 token 등록 안 함 — 명시적 실패.
+                    raise RuntimeError(
+                        f"{source_type}: shared bot token 미등록. admin 이 "
+                        f"먼저 organization-wide token 을 등록해야 합니다 "
+                        f"(/admin/shared-tokens).",
+                    )
             except SecretBoxError as e:
                 logger.warning(
-                    "SecretBox.get failed for %s source %s: %s",
-                    source_type, source_id, e,
+                    "SecretBox.get failed for %s source %s (path=%s): %s",
+                    source_type, source_id, token_path, e,
                 )
 
         result = await connector.fetch(

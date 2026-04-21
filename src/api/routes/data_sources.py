@@ -32,8 +32,12 @@ router = APIRouter(prefix="/api/v1/admin/data-sources", tags=["Data Sources"])
 # ---------------------------------------------------------------------------
 
 def _secret_path(organization_id: str, source_id: str) -> str:
-    """Org-scoped immutable path."""
-    return f"org/{organization_id}/data-source/{source_id}"
+    """Admin route — org-scoped path. 사용자 라우트는 ``data_source_path()`` 직접 사용."""
+    from src.auth.secret_paths import data_source_path
+
+    return data_source_path(
+        organization_id=organization_id, source_id=source_id, owner_user_id=None,
+    )
 
 
 async def _store_secret(

@@ -25,6 +25,8 @@ export type ConnectorCategory =
   | "issue"
   | "crawl";
 
+export type UserTokenMode = "per-user" | "shared" | "none";
+
 export type ConnectorEntry = {
   /** 백엔드 ``source_type`` 키 — POST /data-sources 의 source_type 으로 그대로 전송. */
   id: string;
@@ -35,6 +37,15 @@ export type ConnectorEntry = {
   description: string;
   status: ConnectorStatus;
   scope: ConnectorScope;
+  /**
+   * 토큰 입력 모드 — 사용자 화면 form 동작 결정.
+   *  - ``per-user``: 사용자 본인 PAT 입력 (Notion/Git/Confluence)
+   *  - ``shared``: admin 이 등록한 organization-wide bot token 사용 (Slack)
+   *    — form 에서 token input hidden, "관리자가 등록한 bot 사용" 안내
+   *  - ``none``: 토큰 불필요 (file_upload, crawl_result)
+   * 백엔드 ``src/connectors/catalog_meta.py`` 와 sync 유지.
+   */
+  userTokenMode: UserTokenMode;
   /**
    * crawl_config JSON 입력 example placeholder.
    * available connector 에 권장 — 사용자가 schema 추측 안 해도 됨.
@@ -54,6 +65,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "PDF / DOCX / PPTX / MD / TXT 파일 직접 업로드",
     status: "available",
     scope: "both",
+    userTokenMode: "none",
   },
   {
     id: "crawl_result",
@@ -63,6 +75,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "기존 크롤 결과 (JSONL) 파일 직접 임포트",
     status: "available",
     scope: "admin",
+    userTokenMode: "none",
   },
 
   // ===== Wiki / Documentation =====
@@ -71,9 +84,10 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "Confluence",
     category: "wiki",
     icon: "📘",
-    description: "Atlassian Confluence 페이지 트리 BFS 크롤링",
+    description: "Atlassian Confluence 페이지 트리 BFS 크롤링 (본인 PAT 사용)",
     status: "available",
-    scope: "admin",
+    scope: "both",
+    userTokenMode: "per-user",
     configSchema: JSON.stringify(
       {
         base_url: "https://wiki.example.com",
@@ -91,7 +105,8 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     icon: "🗒️",
     description: "Notion 페이지 트리 BFS 크롤링 (Internal Integration token)",
     status: "available",
-    scope: "admin",
+    scope: "both",
+    userTokenMode: "per-user",
     configSchema: JSON.stringify(
       {
         root_page_id: "abcd1234abcd1234abcd1234abcd1234",
@@ -110,6 +125,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "Google Sites / Wiki — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "per-user",
   },
 
   // ===== Code Repository =====
@@ -120,7 +136,8 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     icon: "🔧",
     description: "Git 저장소 (GitHub / GitLab / Bitbucket) markdown 크롤링",
     status: "available",
-    scope: "admin",
+    scope: "both",
+    userTokenMode: "per-user",
     configSchema: JSON.stringify(
       {
         repo_url: "https://github.com/org/repo.git",
@@ -139,6 +156,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "GitHub Issues / PR 본문 동기화 — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "per-user",
   },
 
   // ===== Office Suite =====
@@ -150,6 +168,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "Microsoft SharePoint 사이트 — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "shared",
   },
   {
     id: "onedrive",
@@ -159,6 +178,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "OneDrive 파일 동기화 — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "shared",
   },
   {
     id: "google_drive",
@@ -168,6 +188,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "Google Drive 파일 동기화 — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "shared",
   },
 
   // ===== Chat / Communication =====
@@ -176,9 +197,10 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "Slack",
     category: "chat",
     icon: "💬",
-    description: "Slack 채널 메시지 + thread 동기화 (Bot OAuth Token)",
+    description: "Slack 채널 메시지 + thread 동기화 (admin 등록 bot 사용)",
     status: "available",
-    scope: "admin",
+    scope: "both",
+    userTokenMode: "shared",
     configSchema: JSON.stringify(
       {
         channel_ids: ["C0123ABC", "C0456DEF"],
@@ -198,6 +220,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "Teams 채널 메시지 — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "shared",
   },
 
   // ===== Issue Tracker =====
@@ -209,6 +232,7 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     description: "Atlassian Jira 이슈 동기화 — 로드맵",
     status: "planned",
     scope: "admin",
+    userTokenMode: "per-user",
   },
 ];
 
