@@ -327,10 +327,22 @@ export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [
     label: "Jira",
     category: "issue",
     icon: "🪪",
-    description: "Atlassian Jira 이슈 동기화 — 로드맵",
-    status: "planned",
-    scope: "admin",
+    description: "Atlassian Jira issue + comments (JQL 검색, 본인 PAT)",
+    status: "available",
+    scope: "both",
     userTokenMode: "per-user",
+    configSchema: JSON.stringify(
+      {
+        base_url: "https://your-domain.atlassian.net",
+        email: "user@example.com (Cloud only — Server/DC 는 omit)",
+        jql: "project = ENG AND updated >= -30d",
+        api_version: "3",
+        max_issues: 200,
+        include_comments: true,
+      },
+      null,
+      2,
+    ),
   },
 ];
 

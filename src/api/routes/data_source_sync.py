@@ -572,6 +572,11 @@ async def run_data_source_sync(
 
         await _run_generic_connector_sync(source, state, OutlookConnector())
         return
+    if source_type == "jira":
+        from src.connectors.jira import JiraConnector
+
+        await _run_generic_connector_sync(source, state, JiraConnector())
+        return
     await _run_confluence_source_sync(source, state, sync_mode=sync_mode)
 
 

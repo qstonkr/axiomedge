@@ -6,6 +6,7 @@ from .git import GitConnector, GitConnectorConfig
 from .gmail import GmailConnector, GmailConnectorConfig
 from .google_drive import GoogleDriveConnector, GoogleDriveConnectorConfig
 from .google_sheets import GoogleSheetsConnector, GoogleSheetsConnectorConfig
+from .jira import JiraConnector, JiraConnectorConfig
 from .notion import NotionConnector, NotionConnectorConfig
 from .onedrive import OneDriveConnector, OneDriveConnectorConfig
 from .outlook import OutlookConnector, OutlookConnectorConfig
@@ -24,6 +25,8 @@ __all__ = [
     "GoogleDriveConnectorConfig",
     "GoogleSheetsConnector",
     "GoogleSheetsConnectorConfig",
+    "JiraConnector",
+    "JiraConnectorConfig",
     "NotionConnector",
     "NotionConnectorConfig",
     "OneDriveConnector",
