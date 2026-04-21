@@ -1,0 +1,51 @@
+# Sample Ingress manifest — knowledge-api 의 5GB 파일 업로드 수용용.
+#
+# 이 repo 는 ingress controller 가정 안 함 (사이트마다 nginx-ingress / Traefik /
+# AWS ALB / GCP GLB 등 다양). 본 파일은 nginx-ingress-controller 기준 sample.
+# 사용자 환경의 ingress class / annotation 컨벤션에 맞춰 조정 후 적용.
+#
+# 적용 명령:
+#   kubectl apply -f deploy/k8s/api/ingress.example.yaml
+#
+# 핵심 annotation (5GB 업로드 지원):
+#   - nginx.ingress.kubernetes.io/proxy-body-size: 5g
+#       client_max_body_size 와 동등. 미설정 시 default 1m → 즉시 413.
+#   - proxy-read-timeout / proxy-send-timeout: 5GB 슬로우 네트워크 대비 600s.
+#   - nginx.ingress.kubernetes.io/proxy-request-buffering: off
+#       대용량 body 를 nginx 가 buffer 안 하고 streaming 으로 백엔드 전달.
+#       FastAPI 가 chunked read 하므로 nginx buffer 불필요.
+#
+# Other ingress controllers:
+#   - Traefik:    middleware "buffering" 의 ``maxRequestBodyBytes: 5368709120``
+#   - AWS ALB:    target group attribute (별도)
+#   - GCP GLB:    BackendConfig CRD ``timeoutSec / cdnPolicy``
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: knowledge-api
+  namespace: knowledge
+  annotations:
+    # 파일당 최대 업로드 사이즈 — backend ingestion_gate IG-07 (5120 MB) 와 sync.
+    nginx.ingress.kubernetes.io/proxy-body-size: "5g"
+    # 슬로우 네트워크 대비 — 5GB / 10MB/s = 500s.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # 대용량 body streaming — nginx 가 buffer 안 함, 백엔드로 직접 전달.
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: knowledge.example.com   # ← 환경별 hostname 으로 교체
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: knowledge-api
+                port:
+                  number: 8000
+  # tls:
+  #   - hosts: [knowledge.example.com]
+  #     secretName: knowledge-tls   # 별도 cert-manager 또는 secret

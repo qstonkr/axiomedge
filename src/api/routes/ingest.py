@@ -198,16 +198,45 @@ async def upload_file(
     if not store or not embedder:
         raise HTTPException(status_code=503, detail="Ingestion services not initialized")
 
-    # Save uploaded file to temp (use asyncio.to_thread for sync I/O)
-    # Sanitize filename to prevent XSS and path traversal
+    # Save uploaded file to temp via streaming — 5GB 파일을 통째 RAM 로드 안 함.
+    # ``await file.read()`` 는 전체 byte 메모리 로드 → 동시 N건 = 5N GB.
+    # ``file.read(chunk_size)`` 반복으로 1MB chunk 씩만 메모리 → constant RAM.
+    # 또한 ``ingestion_gate IG-07`` 의 max_file_size_mb 초과 시 즉시 중단해서
+    # 디스크 낭비도 차단.
     raw_name = file.filename or "uploaded_file"
-    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', raw_name)  # strip dangerous chars
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', raw_name)
     suffix = os.path.splitext(safe_name)[1]
-    content = await file.read()
-    tmp = await asyncio.to_thread(tempfile.NamedTemporaryFile, delete=False, suffix=suffix)
+
+    from src.config.weights import weights as _w
+    max_bytes = int(_w.pipeline.max_file_size_mb) * 1024 * 1024
+    chunk_size = 1024 * 1024  # 1MB
+
+    tmp = await asyncio.to_thread(
+        tempfile.NamedTemporaryFile, delete=False, suffix=suffix,
+    )
+    tmp_path = tmp.name
+    written = 0
     try:
-        await asyncio.to_thread(tmp.write, content)
-        tmp_path = tmp.name
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_bytes:
+                # 한도 초과 — 즉시 중단 + tempfile 정리.
+                await asyncio.to_thread(tmp.close)
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"File too large: 파일당 최대 "
+                        f"{_w.pipeline.max_file_size_mb} MB"
+                    ),
+                )
+            await asyncio.to_thread(tmp.write, chunk)
     finally:
         await asyncio.to_thread(tmp.close)
 

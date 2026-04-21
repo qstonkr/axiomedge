@@ -322,3 +322,34 @@ irm https://s3.../install.ps1 | iex
 | Qwen2.5-0.5B | 379MB | 2GB | 2코어 |
 | Gemma3-1B | 778MB | 2GB | 2코어 |
 | EXAONE-2.4B | 1.5GB | 4GB | 4코어 |
+
+---
+
+## 파일 업로드 한도 (5GB)
+
+`config/weights/pipeline.py:48` 의 `max_file_size_mb=5120` (5GB) — 사용자
+인제스션 (file_upload connector + KB 직접 업로드) 의 파일당 한도.
+
+**Frontend** (`DocumentUploader.tsx`): client-side 5GB pre-check 로 wasted
+upload 차단. 한도 초과 파일은 toast warning + skip.
+
+**Backend** (`ingest.py:upload_file`): streaming upload — 1MB chunk 씩 tempfile
+write. constant 메모리 사용 (전체 파일 RAM 로드 X). 한도 초과 시 즉시 413.
+
+**Reverse proxy / ingress** 가 5GB 까지 통과시키도록 별도 설정 필수:
+
+| Ingress | 설정 |
+|---|---|
+| nginx-ingress (k8s) | `nginx.ingress.kubernetes.io/proxy-body-size: "5g"` + read/send timeout 600s + `proxy-request-buffering: "off"` (sample: `deploy/k8s/api/ingress.example.yaml`) |
+| Traefik | middleware buffering `maxRequestBodyBytes: 5368709120` |
+| nginx (bare) | `client_max_body_size 5G;` + `client_body_timeout 600s;` |
+| AWS ALB | listener attribute — body size 자체는 unlimited 이나 idle timeout 600s 권장 |
+| GCP GLB | BackendConfig `timeoutSec: 600` |
+
+**값 변경 시 sync 위치 3곳**:
+1. `src/config/weights/pipeline.py:48` `max_file_size_mb`
+2. `src/apps/web/src/components/my-knowledge/DocumentUploader.tsx` `MAX_FILE_SIZE_BYTES`
+3. ingress / reverse proxy `client_max_body_size`
+
+⚠️ **운영 부담**: 동시 업로드 N건 시 N × 5GB tempfile 디스크 사용. 1MB chunk
+streaming 이라 RAM 은 안전 (chunk × concurrent ≈ 100 MB), 디스크는 별도 모니터링.

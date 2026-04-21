@@ -68,8 +68,8 @@ class TestIngestionGate:
     def test_oversized_file_rejected(self):
         """A file exceeding max_file_size_mb should be QUARANTINED (IG-07 is security)."""
         gate = IngestionGate()
-        # Use file_size_bytes metadata to simulate oversized file
-        doc = _doc(file_size_bytes=500 * 1024 * 1024)  # 500 MB
+        # max_file_size_mb=5120 (5GB) — 6GB 로 simulate (절대 통과 안 함)
+        doc = _doc(file_size_bytes=6 * 1024 * 1024 * 1024)
         result = gate.run_gates(doc, "kb-test")
 
         ig07 = next((c for c in result.checks if c.check_id == "IG-07"), None)
