@@ -85,6 +85,10 @@ class Neo4jSettings(BaseSettings):
     retry_time_s: int = Field(default=120, ge=0, le=600)
     max_connection_pool_size: int = Field(default=100, ge=1, le=1000)
     connection_acquisition_timeout_s: int = Field(default=60, ge=1, le=300)
+    # connection_timeout = TCP-level 새 소켓 establish timeout (pool 에서 가져오
+    # 는 것과 다름). Mac 슬립/NAT drop 후 재연결 시 30s default 가 짧아 실패 →
+    # 60s 로 여유 둠.
+    connection_timeout_s: int = Field(default=60, ge=5, le=300)
     # K8s NAT/load-balancer idle timeout 대응 — 장시간 ingestion 쿼리 중 connection
     # 이 silently drop 되는 것 방지.
     keep_alive: bool = Field(default=True)

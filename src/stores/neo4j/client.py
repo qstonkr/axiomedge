@@ -79,6 +79,7 @@ class Neo4jClient:
                 max_transaction_retry_time=neo4j_cfg.retry_time_s,
                 max_connection_pool_size=neo4j_cfg.max_connection_pool_size,
                 connection_acquisition_timeout=neo4j_cfg.connection_acquisition_timeout_s,
+                connection_timeout=neo4j_cfg.connection_timeout_s,
                 keep_alive=neo4j_cfg.keep_alive,
             )
             # 연결 테스트
@@ -132,7 +133,14 @@ class Neo4jClient:
         cypher: str,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """쓰기 트랜잭션 실행
+        """쓰기 트랜잭션 실행 — managed transaction 으로 retry 활성화.
+
+        ``session.execute_write(callable)`` 로 감싸야 driver 의
+        ``max_transaction_retry_time`` 이 실제로 작동한다. 과거 구현은
+        ``session.run`` 을 직접 호출해 retry 경로 밖에 있었고 (settings 만
+        있고 효과 없음), 일시적 leader election / GC pause 에도 즉시 실패했음.
+        본 메서드로 라우팅되는 쓰기 (ingestion 대부분) 는 이제 설정된 retry
+        window 안에서 자동 재시도된다.
 
         Args:
             cypher: Cypher 쿼리
@@ -141,8 +149,8 @@ class Neo4jClient:
         Returns:
             트랜잭션 결과 요약
         """
-        async with self.session() as session:
-            result = await session.run(cypher, params or {})
+        async def _work(tx):
+            result = await tx.run(cypher, params or {})
             summary = await result.consume()
             return {
                 "nodes_created": summary.counters.nodes_created,
@@ -151,6 +159,9 @@ class Neo4jClient:
                 "relationships_deleted": summary.counters.relationships_deleted,
                 "properties_set": summary.counters.properties_set,
             }
+
+        async with self.session() as session:
+            return await session.execute_write(_work)
 
     async def execute_batch(
         self,
