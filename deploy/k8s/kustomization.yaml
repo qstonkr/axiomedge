@@ -5,6 +5,7 @@ namespace: knowledge
 
 resources:
   - namespace.yaml
+  - llm-config.yaml
   - postgres/secret.yaml
   - postgres/deployment.yaml
   - qdrant/deployment.yaml

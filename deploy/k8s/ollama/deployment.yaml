@@ -42,17 +42,23 @@ spec:
               port: 11434
             initialDelaySeconds: 10
             periodSeconds: 15
-      # Init container: pull EXAONE model on first boot
+      # Init container: pull LLM model on first boot (name from llm-config ConfigMap)
       initContainers:
         - name: pull-model
           image: ollama/ollama:0.6.2
+          env:
+            - name: OLLAMA_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-config
+                  key: OLLAMA_MODEL
           command:
             - sh
             - -c
             - |
               /bin/ollama serve &
               sleep 5
-              ollama pull exaone3.5:7.8b
+              ollama pull "$OLLAMA_MODEL"
               kill %1
           volumeMounts:
             - name: models

@@ -280,11 +280,11 @@ grep -v "doc_001" stage1.jsonl > stage1.new.jsonl && mv stage1.new.jsonl stage1.
 
 ### Batch size
 
-- **Chunk-level**: `PipelineSettings.batch_size = 50` (한 번에 embed 요청할 chunk 수)
-- **Embedder forward**: `EmbeddingConfig.batch_size = 32` (embedder 내부)
+- **Chunk-level (ingest)**: `PipelineSettings.ingest_batch_size = 50` (한 번에 embed 요청할 chunk 수)
+- **Embedder forward**: `weights.pipeline.embedding_batch_size = 32` (embedder 내부 forward pass)
 - **Qdrant upsert**: `weights.pipeline.qdrant_upsert_batch_size = 64`
 
-**주의**: 같은 이름 `batch_size` 가 다른 개념이라 혼동 주의. `docs/CONFIGURATION.md` 참고.
+PR5 rename (`batch_size` → `ingest_batch_size`) — 같은 이름으로 embedding encode batch 와 혼동되던 문제를 해소.
 
 ### 병목 대응
 

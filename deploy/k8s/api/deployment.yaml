@@ -30,7 +30,10 @@ spec:
             - name: OLLAMA_BASE_URL
               value: "http://ollama.knowledge.svc:11434"
             - name: OLLAMA_MODEL
-              value: "exaone3.5:7.8b"
+              valueFrom:
+                configMapKeyRef:
+                  name: llm-config
+                  key: OLLAMA_MODEL
             - name: KNOWLEDGE_BGE_ONNX_MODEL_PATH
               value: "/models/bge-m3"
             - name: DATABASE_URL

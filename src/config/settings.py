@@ -113,7 +113,10 @@ class PipelineSettings(BaseSettings):
 
     runtime_base_dir: str = Field(default=DEFAULT_RUNTIME_BASE_DIR)
     max_workers: int = Field(default=4, ge=1, le=16)
-    batch_size: int = Field(default=50, ge=10, le=500)
+    # Ingest batch = 한 번에 처리할 문서/청크 묶음 크기. embedding encode batch
+    # (config.weights.pipeline.embedding_batch_size, 모델 forward pass 단위) 와
+    # 구분됨 — PR5 rename (PipelineSettings.batch_size → ingest_batch_size).
+    ingest_batch_size: int = Field(default=50, ge=10, le=500)
     incremental_mode: bool = Field(default=True)
     force_rebuild: bool = Field(default=False)
 

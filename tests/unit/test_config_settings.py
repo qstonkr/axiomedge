@@ -102,7 +102,7 @@ class TestPipelineSettings:
     def test_defaults(self):
         s = PipelineSettings()
         assert s.max_workers == 4
-        assert s.batch_size == 50
+        assert s.ingest_batch_size == 50
         assert s.incremental_mode is True
         assert s.force_rebuild is False
 

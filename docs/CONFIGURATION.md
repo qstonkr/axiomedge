@@ -107,7 +107,7 @@
 |---|---|---|
 | `KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR` | `/tmp/knowledge-local` | 파이프라인 작업 디렉토리 |
 | `KNOWLEDGE_PIPELINE_MAX_WORKERS` | `4` | 최대 워커 수 (1-16) |
-| `KNOWLEDGE_PIPELINE_BATCH_SIZE` | `50` | 배치 크기 (10-500) |
+| `KNOWLEDGE_PIPELINE_INGEST_BATCH_SIZE` | `50` | 인제스트 배치 크기 (10-500, embedding encode batch 와 구분) |
 | `KNOWLEDGE_PIPELINE_INCREMENTAL_MODE` | `true` | 증분 모드 |
 | `KNOWLEDGE_PIPELINE_FORCE_REBUILD` | `false` | 전체 재빌드 강제 |
 

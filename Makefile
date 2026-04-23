@@ -169,7 +169,7 @@ test-unit-fast:
 # PR 이 수정한 src/*.py 파일 각각 80% floor 검사. test-unit 이 먼저 실행돼
 # coverage.json 을 생성해야 한다.
 test-coverage-gate:
-	uv run python scripts/coverage_gate.py --base origin/main --threshold 80
+	uv run python scripts/ops/coverage_gate.py --base origin/main --threshold 80
 
 test-integration:
 	uv run pytest tests/integration/ -v --no-cov

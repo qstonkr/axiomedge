@@ -121,10 +121,12 @@ jobs:
       - name: Run tests with coverage
         run: |
           uv run pytest tests/unit/ --ignore=tests/unit/test_jobs.py \
-            --cov=src --cov=cli --cov-report=xml:coverage.xml -q --tb=no
+            --cov=src --cov=cli --cov-report=xml:coverage.xml --cov-report=json:coverage.json -q --tb=no
         env:
           DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
           REDIS_URL: redis://localhost:6379
+      - name: Touched-file coverage gate (PR6)
+        run: make test-coverage-gate
       - name: Fix coverage paths
         run: |
           python3 -c "

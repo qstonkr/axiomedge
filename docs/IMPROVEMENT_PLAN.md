@@ -237,13 +237,13 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] `src/config.py::QdrantSettings` — `dense_dimension`, `dense_vector_name`, `sparse_vector_name` 3개 dead fields 제거. NOTE 로 SSOT 위치 명시 (`config_weights.embedding.dimension`, `vectordb.client.DEFAULT_*_VECTOR_NAME`)
   - [x] `src/config_weights.py::EmbeddingConfig` — dimension/batch_size 의미 주석 추가 (pipeline batch 와 혼동 방지)
   - [x] 신규 `tests/unit/test_config_drift.py` (8 cases — dead field 제거, SSOT 참조 검증)
-- **Deferred to Phase C**:
-  - LLM 모델명 K8s/Helm templating (infra PR 영역)
-  - `PipelineSettings.batch_size` 개명 (깊은 리팩터)
+- **Deferred to Phase C (완료)**:
+  - [x] LLM 모델명 K8s/Helm templating (2026-04-23) — `deploy/k8s/llm-config.yaml` ConfigMap 신규 + `deploy/k8s/api/deployment.yaml` + `deploy/k8s/ollama/deployment.yaml` 에 `configMapKeyRef` 참조로 교체. Helm 은 `values.yaml::api.env.OLLAMA_MODEL` 이 이미 `range` 템플릿 통해 주입되고 있어 추가 작업 불필요.
+  - [x] `PipelineSettings.batch_size` → `ingest_batch_size` 개명 (2026-04-23) — embedding encode batch 와 혼동 방지. env var `KNOWLEDGE_PIPELINE_BATCH_SIZE` → `KNOWLEDGE_PIPELINE_INGEST_BATCH_SIZE`. 실제 코드 사용처 없어서 낮은 리스크 rename.
 
 ---
 
-### PR6. 테스트 커버리지 기준선 수립 ⏳
+### PR6. 테스트 커버리지 기준선 수립 ✅
 
 - **Severity**: — (인프라)
 - **축**: Quality (테스트)
@@ -251,16 +251,16 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **베이스라인**: **77.0%** (5,631 pass tests, 28,833 statements)
 - **Files**:
   - [x] `pyproject.toml::[tool.coverage.*]` — source=["src"], omit, exclude_lines (fail_under 는 Makefile/CI 에 명시)
-  - [x] 신규 `scripts/coverage_gate.py` — touched file 80% floor + missing file detection
+  - [x] 신규 `scripts/ops/coverage_gate.py` — touched file 80% floor + missing file detection (루트 정리 시 `scripts/ops/` 로 이동)
   - [x] 신규 `docs/TESTING.md` — 정책/실행/작성 가이드/pragma 기준/backfill 목록
   - [x] `Makefile` — `test-unit` coverage 통합 (`--cov-fail-under=75`), `test-unit-fast` 분리, `test-coverage-gate` target 신규
   - [x] `.gitignore` — `.coverage*`, `htmlcov/`, `coverage.json`
   - [x] 신규 `tests/unit/test_coverage_gate.py` (15 cases — filter/loader/main flow)
-- **Follow-up (Phase B 내)**:
-  - GitHub Actions CI 에 `make test-unit && make test-coverage-gate` 추가 (`.github/workflows/ci.yml`)
-- **Known issue** (별도 처리):
-  - `test_data_source_sync::TestRunIngestion` 2개, `test_document_parser_extended::TestParsePptx` 1개 — 기존부터 fail (main 머지 이전부터). Phase C 에서 fix.
-  - `test_summary_tree_builder` 7개 — flaky, seed 고정 필요. Phase C 에서 fix.
+- **Follow-up (완료)**:
+  - [x] GitHub Actions CI 에 `make test-coverage-gate` step 추가 (2026-04-23) — `sonarqube` job 의 coverage step 에 `--cov-report=json:coverage.json` 추가 후 "Touched-file coverage gate (PR6)" step 로 호출. Makefile 타겟 경로도 `scripts/ops/coverage_gate.py` 로 정합.
+- **Known issue** (해결됨 — 2026-04-23 재확인 시 전부 PASS):
+  - ~~`test_data_source_sync::TestRunIngestion` 2개, `test_document_parser_extended::TestParsePptx` 1개 — 기존부터 fail~~ → 현재 통과
+  - ~~`test_summary_tree_builder` 7개 — flaky, seed 고정 필요~~ → 12 tests 전부 통과
 
 ---
 
@@ -292,14 +292,14 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] `src/api/app.py::_init_llm` — registry 호출로 단순화 (22 → 5 줄)
   - [x] `src/api/app.py::_init_auth` — registry 호출로 if-elif 체인 (39 lines) 제거
   - [x] 신규 `tests/unit/test_providers_registry.py` (18 cases)
-- **Deferred**:
-  - `src/embedding/provider_factory.py` → `src/providers/embedding.py` 이동 (facade 유지로 deferred 가능, PR 작게 유지)
+- **Deferred (완료 반영)**:
+  - [x] `src/embedding/provider_factory.py` → `src/core/providers/embedding.py` 이동 완료 (구 파일 삭제, 신 파일 존재 확인 — 2026-04-23)
   - OCR / VectorDB / Graph provider registry (Phase D 장기 과제)
   - [x] `src/api/app.py` — `_init_auth` registry 패턴으로 단순화 완료 (PR8)
   - [x] `src/auth/providers.py::create_auth_provider` — registry 패턴으로 if-elif 제거 완료 (PR8)
 - **Effort**: 6~8h
 
-### PR9. `routes/distill.py` 분할 🔀 (partial)
+### PR9. `routes/distill.py` 분할 🔀
 
 - **Severity**: 🔴 Blocker (SRP)
 - **축**: SRP + Modularity
@@ -312,7 +312,12 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] distill_edge.py 추출 (13 endpoints, 406줄 — edge servers/heartbeat/manifest/fleet)
   - [x] distill_builds.py 추출 (builds/retrain/reset/delete/app-info, 440줄)
   - distill.py 최종: 313줄 (profiles + base-models + edge-logs + helpers)
-  - SPA admin prefix 검토
+  - [x] SPA admin prefix 검토 (2026-04-23) — 현재 prefix 경계 명확함:
+    - **Admin 영역**: `/api/v1/admin/*`, `/api/v1/distill/*` (SPA admin 라우팅 시 둘 다 admin 번들)
+    - **User 영역**: `/api/v1/knowledge/*`, `/api/v1/search`, `/api/v1/agentic`, `/api/v1/jobs`, `/api/v1/search-groups`
+    - **Auth 영역**: `/api/v1/auth/*` (admin/user 공통)
+    - 혼합 파일 (`feedback.py`/`rag.py`/`ownership.py`) 은 `knowledge_router` + `admin` router 로 깔끔히 분리됨
+    - 디렉터리 분리 (`routes/admin/`, `routes/knowledge/`) 는 SPA 도입 시점에 진행 — 현재 Streamlit 병행 운영 중이라 급하지 않음
 - **머지**: PR #27 (2026-04-16)
 
 ### PR10. Distill data generation Pipeline Stage Protocol 🔀
@@ -328,7 +333,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - **Effort**: 8~12h
 - **Test plan**: 기존 통합 테스트 pass + 단계별 unit 테스트 신규
 
-### PR11. Config 디렉터리 재편 ✅ (profiles.py 후속 1건)
+### PR11. Config 디렉터리 재편 ✅
 
 - **Severity**: 🟠 Major
 - **축**: SSOT
@@ -337,7 +342,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
   - [x] `src/config/__init__.py` — 모든 re-export (facade)
   - [x] `src/config/settings.py` ← 기존 `src/config.py` 이동
   - [x] `src/config_weights/` — Phase C에서 7 서브모듈 분할 완료
-  - [ ] `src/config/profiles.py` ← `src/distill/config.py::DistillProfile` 이동 (후속)
+  - [x] `src/config/profiles.py` ← `src/distill/config.py::DistillProfile` + sub-configs 이동 완료 (2026-04-23). `src/distill/config.py` 는 build 상태 상수 + YAML I/O + facade re-export 유지 (29개 import 경로 backward-compat).
   - [x] 기존 import 경로 `from src.config import ...` 유지 (facade)
 - **Effort**: 6~8h
 - **리스크**: import path 대량 변경 — facade 로 완화
@@ -476,7 +481,7 @@ PR6 측정 결과 기반으로 확정. 현재 예상 대상:
 | 2026-04-16 | #23 | Base model registry + admin UI + toolchain | Phase 0 완료 |
 | 2026-04-16 | #24 | IMPROVEMENT_PLAN + PR1 prompt injection + PR2 bare except + PR3 perf | Phase A batch 1 |
 | 2026-04-16 | #25 | PR4 toolchain env var strict + PR5 config drift | Phase A batch 2 |
-| 2026-04-16 | #26 (대기) | PR6 coverage baseline + PR7 blocker docs | Phase A batch 3 — **Phase A 완료** |
+| 2026-04-16 | #26 | PR6 coverage baseline + PR7 blocker docs | Phase A batch 3 — **Phase A 완료** |
 
 ---
 
