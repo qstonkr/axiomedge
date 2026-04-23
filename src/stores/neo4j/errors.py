@@ -1,8 +1,8 @@
-"""Shared exception tuples for Neo4j read paths.
+"""Shared exception tuple for Neo4j call sites.
 
 ### 배경
 
-과거 read path 22개 함수가 아래 tuple 을 복사-붙여넣기로 사용했다:
+과거 Neo4j read/write 함수들이 아래 tuple 을 복사-붙여넣기로 사용했다:
 
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError)
 
@@ -14,37 +14,42 @@ ClientError, ConstraintError, TransientError, ServiceUnavailable 등) 을
 
 ### 사용
 
-Read path 에서 실패를 ``[]`` / ``{}`` / ``0`` 로 degrade 하고 싶을 때::
+Neo4j 호출을 감쌀 때 일관된 tuple 로 잡고 싶을 때::
 
-    from src.stores.neo4j.errors import NEO4J_READ_FAILURE
+    from src.stores.neo4j.errors import NEO4J_FAILURE
 
     try:
         return await self._client.execute_query(cypher, params)
-    except NEO4J_READ_FAILURE as e:
+    except NEO4J_FAILURE as e:
         logger.warning("Neo4j foo failed: %s", e)
         return []
 
-### Write path 는 이 상수 쓰지 말 것
+### Read vs Write 시맨틱 (caller 책임)
 
-Write (load_nodes_batch, load_edges_batch 등) 에 Neo4jError 를 조용히 catch
-하면 데이터 누락 신호가 사라진다. Write path 는 per-call 에서 log + 재시도 +
-counter 업데이트 + caller 에게 실패 개수 반환 패턴을 유지해야 한다.
-(현재 ``src/pipelines/neo4j_loader.py`` 가 이 패턴 — tuple 만 Neo4jError
-포함으로 확장하되 "조용히 [] 반환" 으로 바꾸지 않음.)
+본 상수는 "어떤 예외를 잡을지" 만 정의한다. **잡은 후 어떻게 처리할지**
+는 caller 책임:
+
+- **Read**: ``[]`` / ``{}`` / ``0`` 반환 후 caller 는 degrade (그래프 없이
+  검색). `_read_ops.py` / `_search_ops.py` 가 이 패턴.
+- **Idempotent write (``IF NOT EXISTS`` / ``MERGE``)**: log + continue 가
+  안전. `_ensure_fulltext_index`, `load_nodes_batch` (내부 retry 있음) 이
+  이 패턴.
+- **비-idempotent write**: 이 상수로 catch 하지 말 것. 데이터 누락이
+  조용히 넘어감. Per-item counter + metric + re-raise 패턴 필요.
 
 ### Exception 을 쓰지 않는 이유
 
 ``Exception`` 은 ``AssertionError`` / ``ZeroDivisionError`` / ``TypeError``
-로직 버그까지 삼켜 디버깅 어렵게 만든다. Neo4jError 명시적 추가가 올바른
-범위.
+같은 로직 버그까지 삼켜 디버깅 어렵게 만든다. ``Neo4jError`` 명시적 추가가
+올바른 범위.
 """
 
 from __future__ import annotations
 
 from neo4j.exceptions import Neo4jError
 
-# Read path fallback — ``[]`` / ``{}`` 반환용.
-NEO4J_READ_FAILURE = (
+# Neo4j 호출 fallback — caller 가 read/write 시맨틱 책임.
+NEO4J_FAILURE = (
     Neo4jError,
     RuntimeError,
     OSError,
@@ -54,4 +59,8 @@ NEO4J_READ_FAILURE = (
     AttributeError,
 )
 
-__all__ = ["NEO4J_READ_FAILURE"]
+# Backward-compat alias — 기존 import `NEO4J_READ_FAILURE` 를 유지해 드리프트
+# 를 막는다. 신규 코드는 `NEO4J_FAILURE` 사용.
+NEO4J_READ_FAILURE = NEO4J_FAILURE
+
+__all__ = ["NEO4J_FAILURE", "NEO4J_READ_FAILURE"]

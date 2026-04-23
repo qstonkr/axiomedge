@@ -40,9 +40,11 @@ spec:
               value: "512m"
             - name: NEO4J_dbms_memory_transaction_total_max
               value: "500m"
-            # db.tx_timeout — LegalGraphExtractor 의 큰 UNWIND batch 가 기본
-            # 60s 내에 끝나지 못하는 경우 대비 (driver retry_time_s 와 다른 개념).
-            - name: NEO4J_db_tx__timeout
+            # db.transaction.timeout (Neo4j 5.x 표준 setting) — LegalGraphExtractor
+            # 의 큰 UNWIND batch 가 기본 60s 내에 끝나지 못하는 경우 대비
+            # (driver retry_time_s 와 다른 개념). 구 ``db.tx_timeout`` 은 Neo4j 5
+            # 에서 Unrecognized WARN 내고 silently 무시됨.
+            - name: NEO4J_db_transaction_timeout
               value: "120s"
           volumeMounts:
             - name: data

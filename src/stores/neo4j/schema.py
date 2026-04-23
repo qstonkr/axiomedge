@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .errors import NEO4J_FAILURE
 from .node_registry import (
     RELATION_TYPE_BY_KEY,
     NODE_TYPE_BY_KEY,
@@ -96,7 +97,7 @@ async def _apply_ddl_group(
         try:
             await client.execute_write(stmt.strip())
             results[count_key] += 1
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             if _ALREADY_EXISTS not in str(e).lower():
                 results["errors"].append(f"{label} error: {e}")
                 logger.warning("%s creation failed: %s", label, e)

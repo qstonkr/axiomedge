@@ -12,7 +12,7 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from .client import Neo4jClient
 
-from .errors import NEO4J_READ_FAILURE
+from .errors import NEO4J_FAILURE
 from .lucene_utils import build_lucene_or_query
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class SearchOpsMixin:
         try:
             records = await self._client.execute_query(cypher, params)
             return {r["source_uri"] for r in records if r.get("source_uri")}
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.warning(
                 "Neo4j find_related_chunks failed (entities=%s): %s",
                 entity_names[:3],
@@ -135,7 +135,7 @@ class SearchOpsMixin:
                 graphrag_cypher,
                 {"lucene_query": lucene_query, "max_facts": max_facts},
             ))
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.debug("GraphRAG entity search failed: %s", e)
 
         wiki_cypher = f"""
@@ -162,7 +162,7 @@ class SearchOpsMixin:
                     "rel_whitelist": self._FACT_RELATION_WHITELIST,
                 },
             ))
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.debug("Wiki entity search failed: %s", e)
 
         return results[:max_facts]
@@ -193,7 +193,7 @@ class SearchOpsMixin:
             return await self._client.execute_query(
                 cypher, {"keyword_nfc": keyword_nfc, "keyword_nfd": keyword_nfd, "max_facts": max_facts},
             )
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.warning("CONTAINS search failed: %s", e)
             return []
 
@@ -231,7 +231,7 @@ class SearchOpsMixin:
             results.extend(await self._client.execute_query(
                 cypher_docs, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.debug("Owner search path 1 (document_owner) failed: %s", e)
 
         cypher_entity = """
@@ -253,7 +253,7 @@ class SearchOpsMixin:
             results.extend(await self._client.execute_query(
                 cypher_entity, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.debug("Owner search path 2 (entity_expert) failed: %s", e)
 
         cypher_direct = """
@@ -271,7 +271,7 @@ class SearchOpsMixin:
             results.extend(await self._client.execute_query(
                 cypher_direct, {"topic_nfc": topic_nfc, "topic_nfd": topic_nfd, "limit": limit}
             ))
-        except NEO4J_READ_FAILURE as e:
+        except NEO4J_FAILURE as e:
             logger.debug("Owner search path 3 (direct_connection) failed: %s", e)
 
         merged: dict[str, dict] = {}

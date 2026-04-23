@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from .errors import NEO4J_FAILURE
 from .schema import apply_schema
 
 if TYPE_CHECKING:
@@ -44,6 +45,6 @@ async def ensure_indexes(client: "Neo4jClient") -> dict[str, Any]:
                 results["fulltext_indexes_created"],
             )
         return results
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except NEO4J_FAILURE as e:
         logger.error("Failed to ensure graph indexes: %s", e)
         return {"constraints_created": 0, "indexes_created": 0, "fulltext_indexes_created": 0, "errors": [str(e)]}

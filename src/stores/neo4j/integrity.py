@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from .client import Neo4jClient
     from .repository import Neo4jGraphRepository
 
+from .errors import NEO4J_FAILURE
+
 logger = logging.getLogger(__name__)
 
 
@@ -228,7 +230,7 @@ class GraphIntegrityChecker:
                     )
                 )
 
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Orphan node check failed: %s", e)
 
     async def _check_docs_without_kb(
@@ -263,7 +265,7 @@ class GraphIntegrityChecker:
                     )
                 )
 
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Docs without KB check failed: %s", e)
 
     async def _check_persons_no_authorship(
@@ -291,5 +293,5 @@ class GraphIntegrityChecker:
                 )
                 report.missing_relationships += 1
 
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Persons authorship check failed: %s", e)

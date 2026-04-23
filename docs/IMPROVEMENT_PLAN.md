@@ -391,6 +391,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
 - [x] SharePoint connector Document Library 지원 (2026-04-23) — `/sites/{id}/drives/*` driveItem 트리 BFS + `parse_file()` 로 PDF/DOCX/PPTX 본문 추출. OneDrive 와 공유 helper `src/connectors/_msgraph/driveitem.py::download_drive_item` 신규 (기존 `_download_and_build` 중복 제거). SharePoint 는 List text 만 긁던 반쪽 connector → 핵심 문서까지 벡터화 가능.
 - [x] Neo4j read path 안전망 통일 (2026-04-23) — `src/stores/neo4j/errors.py::NEO4J_READ_FAILURE` 상수 도입 후 32곳 narrow-tuple 일괄 치환. `neo4j.exceptions.Neo4jError` 계열 (CypherSyntaxError/ClientError/TransientError 등) 을 모두 catch 해 read 실패 시 500 대신 [] degrade. 과거 `search_section_titles` scope 버그가 이 갭으로 답변 실패까지 번진 사례 재발 방지.
+- [x] 코드 리뷰 후속 — Neo4j 안전망 scope 완결 (2026-04-24) — C1 (`db.tx_timeout` → `db.transaction.timeout`, Neo4j 5.x 표준), C2 (`test_execute_write` mock 을 managed tx 경로로 수정), M1 (`multi_hop_searcher`/`integrity`/`indexer`/`schema` 11건 추가 치환), M2 (상수명 `NEO4J_READ_FAILURE` → `NEO4J_FAILURE` — write path 에서도 안전 사용 가능, alias 유지 backward-compat). Mixed-call 파일 (graphrag/extractor, graph_expander, rag_pipeline, cli/ingest 등) 은 per-site 감사 follow-up 으로 유지.
 
 ### Neo4j 안정성 follow-up (별도 PR)
 

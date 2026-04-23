@@ -4,22 +4,18 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from src.stores.neo4j.client import (
     Neo4jClient,
     NoOpNeo4jClient,
     NoOpResult,
     NoOpSession,
-    NoOpSummary,
     NoOpTransaction,
 )
 from src.stores.neo4j.entity_resolver import (
-    NORMALIZATION_RULES,
     EntityResolver,
     EntityType,
     ResolutionStage,
-    ResolvedEntity,
     _basic_normalize,
 )
 from src.stores.neo4j.multi_hop_searcher import (
@@ -95,8 +91,15 @@ class TestNeo4jClient:
         assert records[0]["n"] == 1
 
     async def test_execute_write(self):
+        """Neo4jClient.execute_write 가 session.execute_write(callable) 를
+        쓰는지 검증 (PR#2 / a4f5ddd — bare session.run → managed tx).
+
+        ``_work(tx)`` 안에서 ``tx.run`` 을 호출하고 summary 를 consume 한 뒤
+        counter dict 를 반환한다. 테스트는 실제 callable 을 fake tx 로 실행해
+        결과를 그대로 돌려준다.
+        """
         client = Neo4jClient()
-        mock_session = AsyncMock()
+        mock_tx = AsyncMock()
         mock_result = AsyncMock()
         mock_summary = MagicMock()
         mock_summary.counters.nodes_created = 5
@@ -105,7 +108,14 @@ class TestNeo4jClient:
         mock_summary.counters.relationships_deleted = 0
         mock_summary.counters.properties_set = 10
         mock_result.consume.return_value = mock_summary
-        mock_session.run.return_value = mock_result
+        mock_tx.run.return_value = mock_result
+
+        async def _fake_execute_write(callable_):
+            # Driver managed tx 동작 모사: callable 을 _fake tx 로 1회 호출.
+            return await callable_(mock_tx)
+
+        mock_session = AsyncMock()
+        mock_session.execute_write = _fake_execute_write
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
@@ -115,6 +125,10 @@ class TestNeo4jClient:
         result = await client.execute_write("CREATE (n:Test)")
         assert result["nodes_created"] == 5
         assert result["relationships_created"] == 3
+        # tx.run 이 실제 cypher 를 받았는지 (callable 경로 검증)
+        mock_tx.run.assert_awaited_once()
+        args = mock_tx.run.call_args.args
+        assert args[0] == "CREATE (n:Test)"
 
 
 # ===========================================================================
@@ -265,7 +279,10 @@ class TestMultiHopSearcher:
     async def test_find_related_with_neo4j(self):
         neo4j = AsyncMock()
         neo4j.execute_query.return_value = [
-            {"id": "doc1", "name": "Doc 1", "type": "Document", "distance": 1, "relation_types": ["REFERENCES"], "properties": {}},
+            {
+                "id": "doc1", "name": "Doc 1", "type": "Document",
+                "distance": 1, "relation_types": ["REFERENCES"], "properties": {},
+            },
         ]
         searcher = MultiHopSearcher(neo4j_client=neo4j)
 
@@ -346,7 +363,6 @@ class TestGraphSchema:
             NODE_TYPES,
             RELATION_TYPES,
             GRAPH_CONSTRAINTS,
-            GRAPH_INDEXES,
             GRAPH_FULLTEXT_INDEXES,
             CARDINALITY_RULES,
         )
