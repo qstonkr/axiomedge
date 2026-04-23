@@ -66,11 +66,20 @@ class Neo4jClient:
         try:
             from neo4j import AsyncGraphDatabase
 
+            from src.config import get_settings
+            neo4j_cfg = get_settings().neo4j
+
             auth = None if self._auth_disabled else (self.user, self.password)
+            # retry_time_s 는 tx_timeout 보다 크게 설정 — 일시적 leader election/
+            # GC pause 가 retry 윈도우 내에 흡수됨. 과거 구현은 둘이 같아서 재
+            # 시도 효과 없었음 (1M 노드 스케일에서 timeout 이 바로 실패로).
             self._driver = AsyncGraphDatabase.driver(
                 self.uri,
                 auth=auth,
-                max_transaction_retry_time=self._query_timeout_ms / 1000,
+                max_transaction_retry_time=neo4j_cfg.retry_time_s,
+                max_connection_pool_size=neo4j_cfg.max_connection_pool_size,
+                connection_acquisition_timeout=neo4j_cfg.connection_acquisition_timeout_s,
+                keep_alive=neo4j_cfg.keep_alive,
             )
             # 연결 테스트
             async with self._driver.session(database=self.database) as session:

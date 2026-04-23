@@ -27,14 +27,33 @@ spec:
               value: "none"
             - name: NEO4J_PLUGINS
               value: '["apoc"]'
+            # Memory tuning — docker-compose 의 deploy/config/neo4j/neo4j.conf
+            # 와 동일한 프로파일을 env 로 주입 (K8s 는 conf 마운트 대신 env 사용).
+            # heap 1g + pagecache 512m ≈ 1.5GB 사용 → limits 2Gi 내 안전.
+            # 1M+ 노드 예상 시 limits 를 8Gi 로 bump + heap 4g / pagecache 4g
+            # 로 확장 필요 (별도 infra PR).
+            - name: NEO4J_server_memory_heap_initial__size
+              value: "1g"
+            - name: NEO4J_server_memory_heap_max__size
+              value: "1g"
+            - name: NEO4J_server_memory_pagecache_size
+              value: "512m"
+            - name: NEO4J_dbms_memory_transaction_total_max
+              value: "500m"
+            # db.tx_timeout — LegalGraphExtractor 의 큰 UNWIND batch 가 기본
+            # 60s 내에 끝나지 못하는 경우 대비 (driver retry_time_s 와 다른 개념).
+            - name: NEO4J_db_tx__timeout
+              value: "120s"
           volumeMounts:
             - name: data
               mountPath: /data
           resources:
             requests:
-              memory: "512Mi"
+              memory: "1Gi"
               cpu: "250m"
             limits:
+              # 2Gi 한도 내에서 heap 1g + pagecache 512m + JVM/OS overhead ~400m.
+              # 1M+ 노드 스케일 시 이 limits 를 우선 bump 한 뒤 env 도 같이 조정.
               memory: "2Gi"
               cpu: "1000m"
           livenessProbe:

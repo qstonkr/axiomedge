@@ -79,6 +79,15 @@ class Neo4jSettings(BaseSettings):
     password: str = Field(default="")
     database: str = Field(default="neo4j")
     query_timeout_ms: int = Field(default=30000, description="쿼리 타임아웃 (ms)")
+    # retry_time_s 는 tx_timeout 보다 충분히 커야 일시 장애 (leader election, GC
+    # pause 등) 가 retry 안에 흡수됨. 기존 구현은 ``query_timeout_ms / 1000`` 으
+    # 로 둘이 같아서 한 번 timeout 나면 retry 시간도 동시 소진 → 재시도 의미 X.
+    retry_time_s: int = Field(default=120, ge=0, le=600)
+    max_connection_pool_size: int = Field(default=100, ge=1, le=1000)
+    connection_acquisition_timeout_s: int = Field(default=60, ge=1, le=300)
+    # K8s NAT/load-balancer idle timeout 대응 — 장시간 ingestion 쿼리 중 connection
+    # 이 silently drop 되는 것 방지.
+    keep_alive: bool = Field(default=True)
 
 
 class OllamaSettings(BaseSettings):
