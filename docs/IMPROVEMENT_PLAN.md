@@ -390,6 +390,15 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] `_init_search_services()` → `SearchServicesFactory` 추출 (src/api/search_services_factory.py)
 - [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
 - [x] SharePoint connector Document Library 지원 (2026-04-23) — `/sites/{id}/drives/*` driveItem 트리 BFS + `parse_file()` 로 PDF/DOCX/PPTX 본문 추출. OneDrive 와 공유 helper `src/connectors/_msgraph/driveitem.py::download_drive_item` 신규 (기존 `_download_and_build` 중복 제거). SharePoint 는 List text 만 긁던 반쪽 connector → 핵심 문서까지 벡터화 가능.
+- [x] Neo4j read path 안전망 통일 (2026-04-23) — `src/stores/neo4j/errors.py::NEO4J_READ_FAILURE` 상수 도입 후 32곳 narrow-tuple 일괄 치환. `neo4j.exceptions.Neo4jError` 계열 (CypherSyntaxError/ClientError/TransientError 등) 을 모두 catch 해 read 실패 시 500 대신 [] degrade. 과거 `search_section_titles` scope 버그가 이 갭으로 답변 실패까지 번진 사례 재발 방지.
+
+### Neo4j 안정성 follow-up (별도 PR)
+
+- [ ] Client-layer error 핸들링 재설계 — `Neo4jClient.execute_query/write/batch` 에서 `Neo4jError` 를 metric + log 로 소화하고 호출자는 try/except 불필요한 구조. read vs write 시맨틱 분리 필요 (write 는 failure 를 counter 로 caller 에 리턴해야 데이터 누락 감지 가능).
+- [ ] `execute_batch` / `execute_unwind_batch` 도 managed transaction 전환 (현재 bare session.run + manual commit — retry 경로 밖).
+- [ ] `_neo4j_persistence.save_to_neo4j` 의 per-rel 루프 UNWIND batch 화 — 이력 보존 시맨틱 유지하며 2-pass 분리 구조 필요.
+- [ ] Neo4j write path 에 `nodes_failed` / `edges_failed` counter 반환 — 현재는 `logger.error` 로 남지만 caller 가 프로그램적으로 누락 개수 모름.
+- [ ] pagecache 증설 + K8s memory limits bump (1M 노드 벤치마크 기반).
 
 ### 테스트 커버리지 backfill
 

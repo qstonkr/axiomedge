@@ -14,6 +14,8 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
+from .errors import NEO4J_READ_FAILURE
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BOLT_URI = "bolt://localhost:7687"
@@ -244,7 +246,7 @@ class Neo4jClient:
                 result = await session.run("RETURN 1 as n")
                 await result.consume()
             return True
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.error(f"Neo4j health check failed: {e}")
             return False
 

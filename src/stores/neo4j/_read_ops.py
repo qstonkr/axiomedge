@@ -12,6 +12,7 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from .client import Neo4jClient
 
+from .errors import NEO4J_READ_FAILURE
 from .lucene_utils import sanitize_lucene
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class ReadOpsMixin:
             return await self._client.execute_query(
                 cypher, {"doc_id": doc_id, "limit": limit}
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j search_related_nodes failed: %s", e)
             return []
 
@@ -76,7 +77,7 @@ class ReadOpsMixin:
             return await self._client.execute_query(
                 cypher, {"entity_name": entity_name}
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j get_entity_neighbors failed: %s", e)
             return []
 
@@ -98,7 +99,7 @@ class ReadOpsMixin:
             return await self._client.execute_query(
                 cypher, {"from_id": source_id, "to_id": target_id}
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j get_knowledge_path failed: %s", e)
             return []
 
@@ -119,7 +120,7 @@ class ReadOpsMixin:
             return await self._client.execute_query(
                 cypher, {"doc1_id": doc_ids[0], "doc2_id": doc_ids[1]}
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j find_common_entities failed: %s", e)
             return []
 
@@ -145,7 +146,7 @@ class ReadOpsMixin:
             return await self._client.execute_query(
                 cypher, {"doc_id": doc_id, "limit": limit}
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j find_similar_documents failed: %s", e)
             return []
 
@@ -188,7 +189,7 @@ class ReadOpsMixin:
             return await self._client.execute_query(
                 cypher, {"keyword": keyword, "max_steps": max_steps}
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j query_process_chain failed: %s", e)
             return []
 
@@ -226,7 +227,7 @@ class ReadOpsMixin:
                 cypher, {"keyword": keyword}
             )
             return results[0] if results else {}
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j find_step_context failed: %s", e)
             return {}
 
@@ -262,7 +263,7 @@ class ReadOpsMixin:
                 source = r.pop("source_chunk_id", "")
                 grouped.setdefault(source, []).append(r)
             return grouped
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_READ_FAILURE as e:
             logger.warning("Neo4j find_tree_siblings_batch failed: %s", e)
             return {}
 
@@ -301,7 +302,9 @@ class ReadOpsMixin:
             params["kb_id"] = kb_id
         try:
             return await self._client.execute_query(cypher, params)
-        except Exception as e:  # noqa: BLE001 — neo4j.exceptions.Neo4jError 계열 (CypherSyntaxError 등) 을 소화 후 빈 결과 반환. 과거 tuple 이 Neo4jError 를 놓쳐 검색 전체 500 가던 갭 수정.
+        except NEO4J_READ_FAILURE as e:
+            # Neo4jError (CypherSyntaxError 포함) 도 NEO4J_READ_FAILURE 에 포함됨.
+            # exc_info=True 로 stack trace 남겨 scope 버그 재발 시 즉시 감지.
             logger.warning("Neo4j search_section_titles failed: %s", e, exc_info=True)
             return []
 
@@ -318,7 +321,7 @@ class ReadOpsMixin:
         try:
             results = await self._client.execute_query(cypher, {"chunk_ids": chunk_ids})
             return {r["chunk_id"]: r["section_path"] for r in results}
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except NEO4J_READ_FAILURE:
             return {}
 
     # -- Stats / Health ---------------------------------------------------
@@ -331,7 +334,7 @@ class ReadOpsMixin:
                 "RETURN count(n) AS count"
             )
             return results[0]["count"] if results else 0
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except NEO4J_READ_FAILURE:
             return 0
 
     async def get_document_count(self) -> int:
@@ -341,7 +344,7 @@ class ReadOpsMixin:
                 "MATCH (d:Document) RETURN count(d) AS count"
             )
             return results[0]["count"] if results else 0
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except NEO4J_READ_FAILURE:
             return 0
 
     async def get_stats(self) -> dict[str, Any]:
@@ -359,7 +362,7 @@ class ReadOpsMixin:
                 "node_types": {r["label"]: r["count"] for r in node_results},
                 "edge_types": {r["type"]: r["count"] for r in edge_results},
             }
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except NEO4J_READ_FAILURE:
             return {"node_types": {}, "edge_types": {}}
 
     async def health_check(self) -> bool:
