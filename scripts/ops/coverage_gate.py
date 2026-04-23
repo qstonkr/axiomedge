@@ -11,13 +11,15 @@ line 커버리지 80% 이상** 을 유지하도록 강제한다. 이렇게 해�
 
 Usage:
     # Local (main 과 비교)
-    uv run python scripts/coverage_gate.py
+    uv run python scripts/ops/coverage_gate.py
 
     # 다른 base 비교
-    uv run python scripts/coverage_gate.py --base origin/main --threshold 80
+    uv run python scripts/ops/coverage_gate.py --base origin/main --threshold 80
 
     # JSON 리포트 경로 지정
-    uv run python scripts/coverage_gate.py --report coverage.json
+    uv run python scripts/ops/coverage_gate.py --report coverage.json
+
+    # 간편 사용: ``make test-coverage-gate``
 
 전제:
     pytest-cov 를 ``--cov=src --cov-report=json:coverage.json`` 으로 돌려

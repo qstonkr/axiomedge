@@ -11,8 +11,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
-from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -21,6 +20,8 @@ from src.connectors._msgraph import (
     MSGraphAPIError,
     MSGraphClient,
     download_drive_item,
+    make_download_client,
+    parse_iso_date,
 )
 from src.core.models import ConnectorResult, RawDocument
 
@@ -64,9 +65,9 @@ class OneDriveConnector:
         last_modified_max: datetime | None = None
         files_visited = 0
 
-        async with MSGraphClient(cfg.auth_token) as client:
+        async with MSGraphClient(cfg.auth_token) as client, \
+                make_download_client(cfg.auth_token) as http:
             # Root path resolution: ``{drive_path}/root:/folder/path:/children``
-            # Graph 의 path-addressable child 패턴.
             queue: deque[tuple[str, int]] = deque()
             root_path = self._build_path(cfg, "")
             queue.append((root_path, 0))
@@ -98,17 +99,16 @@ class OneDriveConnector:
                         if "file" not in item:
                             continue
 
-                        name = str(item.get("name") or "")
-                        ext = Path(name).suffix.lower()
-                        if cfg.include_extensions and ext not in cfg.include_extensions:
-                            continue
-
+                        # 확장자 필터는 helper 에서 단일 지점 처리 (drift 방지)
                         files_visited += 1
+                        name = str(item.get("name") or "")
                         try:
                             doc = await download_drive_item(
                                 cfg.auth_token, item,
                                 source_type="onedrive",
                                 knowledge_type=cfg.name,
+                                include_extensions=cfg.include_extensions,
+                                http_client=http,
                             )
                         except (httpx.HTTPError, OSError, RuntimeError) as e:
                             logger.warning(
@@ -119,7 +119,7 @@ class OneDriveConnector:
                             continue
 
                         documents.append(doc)
-                        modified = _parse_iso_date(item.get("lastModifiedDateTime"))
+                        modified = parse_iso_date(item.get("lastModifiedDateTime"))
                         if modified and (
                             last_modified_max is None or modified > last_modified_max
                         ):
@@ -174,24 +174,8 @@ class OneDriveConnector:
         item_id = folder_item.get("id")
         if not item_id:
             return None
-        # parentReference 의 driveId 가 있으면 그걸로 reconstruct, 아니면 fallback.
         ref = folder_item.get("parentReference") or {}
         drive_id = ref.get("driveId")
         if drive_id:
             return f"/drives/{drive_id}/items/{item_id}/children"
         return None
-
-
-def _parse_iso_date(value: Any) -> datetime | None:
-    if not value:
-        return None
-    text = str(value).strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)

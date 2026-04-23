@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from src.config import (
-    DEFAULT_DATABASE_URL,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_LLM_MODEL,
-    DEFAULT_RUNTIME_BASE_DIR,
     ApiSettings,
     AuthSettings,
     DashboardSettings,

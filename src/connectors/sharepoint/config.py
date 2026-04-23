@@ -73,18 +73,30 @@ class SharePointConnectorConfig:
                 for e in include_exts_raw if e
             )
 
-        include_document_libraries = bool(
-            crawl_cfg.get("include_document_libraries", True),
-        )
+        raw_idl = crawl_cfg.get("include_document_libraries", True)
+        # YAML/JSON → 문자열 "false"/"0" 도 허용. bool("false") is True 함정 회피.
+        if isinstance(raw_idl, bool):
+            include_document_libraries = raw_idl
+        else:
+            include_document_libraries = (
+                str(raw_idl).strip().lower() not in ("false", "0", "no", "off", "")
+            )
+
+        # .get("max_items") or 1000 은 max_items=0 을 default 1000 으로 뒤집음.
+        # 명시적으로 ``None`` 체크 — 0 은 유효 (무의미하지만 의도적) 값.
+        max_items_raw = crawl_cfg.get("max_items")
+        max_items = int(max_items_raw) if max_items_raw is not None else 1000
+        max_files_raw = crawl_cfg.get("max_files")
+        max_files = int(max_files_raw) if max_files_raw is not None else 1000
 
         return cls(
             auth_token=token,
             site_id=site_id,
             list_ids=list_ids,
-            max_items=int(crawl_cfg.get("max_items") or 1000),
+            max_items=max_items,
             include_document_libraries=include_document_libraries,
             drive_ids=drive_ids,
-            max_files=int(crawl_cfg.get("max_files") or 1000),
+            max_files=max_files,
             include_extensions=include_extensions,
             name=str(source.get("name") or ""),
         )

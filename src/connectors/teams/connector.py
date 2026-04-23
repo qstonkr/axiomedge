@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from src.connectors._msgraph import MSGraphAPIError, MSGraphClient
+from src.connectors._msgraph import MSGraphAPIError, MSGraphClient, parse_iso_date
 from src.core.models import ConnectorResult, RawDocument
 
 from .config import TeamsConnectorConfig
@@ -157,7 +157,7 @@ class TeamsConnector:
                 )
                 break
 
-            created = _parse_iso_date(msg.get("createdDateTime"))
+            created = parse_iso_date(msg.get("createdDateTime"))
             if oldest_dt and created and created < oldest_dt:
                 continue
             if created and (latest is None or created > latest):
@@ -221,16 +221,3 @@ def _format_message(msg: dict[str, Any]) -> str:
     return content
 
 
-def _parse_iso_date(value: Any) -> datetime | None:
-    if not value:
-        return None
-    text = str(value).strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)

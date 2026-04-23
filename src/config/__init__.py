@@ -1,17 +1,29 @@
-"""Knowledge Local — Infrastructure Settings (SSOT).
+"""Knowledge Local — Config Package (SSOT facade).
 
-``from src.config import get_settings`` 한 줄로 모든 인프라 설정 접근.
-실제 구현은 ``src/config/settings.py`` 에 있다.
+``from src.config import get_settings`` / ``from src.config import DistillProfile`` —
+인프라 설정과 distill 프로필 Pydantic 모델을 한 곳에서 접근.
 
-### Config 3파일 경계
+### Config 경계 (PR11 재편)
 
-| 파일 | 역할 |
+| 위치 | 역할 |
 |---|---|
-| ``src/config/`` (이 패키지) | **인프라** — DB 주소, 포트, timeout, 연결 풀 (env var override) |
-| ``src/config_weights/`` | **하이퍼파라미터** — 검색 가중치, threshold, 캐시 TTL |
-| ``src/distill/config.py`` | **Distill 프로필** — LoRA, lr, epochs, QA style (YAML / DB override) |
+| ``src/config/settings.py`` | **인프라** — DB 주소, 포트, timeout, 연결 풀 (env var override) |
+| ``src/config/profiles.py`` | **Distill 프로필** Pydantic 모델 — LoRA, training, QA style, deploy |
+| ``src/config/weights/`` | **하이퍼파라미터** — 검색 가중치, threshold, 캐시 TTL |
+| ``src/distill/config.py`` | **Distill 운영** — build 상수 + YAML I/O + facade re-export. |
 """
 
+from src.config.profiles import (  # noqa: F401
+    DataQualityConfig,
+    DeployConfig,
+    DistillConfig,
+    DistillDefaults,
+    DistillProfile,
+    EvalThreshold,
+    LoRAConfig,
+    QAStyleConfig,
+    TrainingConfig,
+)
 from src.config.settings import (  # noqa: F401
     # Constants
     DEFAULT_DATABASE_URL,
@@ -54,16 +66,25 @@ __all__ = [
     "ConfluenceSettings",
     "DashboardSettings",
     "DatabaseSettings",
+    "DataQualityConfig",
+    "DeployConfig",
+    "DistillConfig",
+    "DistillDefaults",
+    "DistillProfile",
     "DistillSettings",
     "EmbeddingSettings",
+    "EvalThreshold",
+    "LoRAConfig",
     "Neo4jSettings",
     "OllamaSettings",
     "PipelineSettings",
+    "QAStyleConfig",
     "QdrantSettings",
     "QualitySettings",
     "RedisSettings",
     "Settings",
     "TeiSettings",
+    "TrainingConfig",
     "TreeIndexSettings",
     "get_settings",
     "reset_settings",
