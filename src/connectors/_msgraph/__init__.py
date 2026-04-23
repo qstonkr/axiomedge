@@ -11,8 +11,10 @@ wrapper 만 추가하면 됨.
 """
 
 from .client import MSGraphAPIError, MSGraphClient
+from .driveitem import download_drive_item
 
 __all__ = [
     "MSGraphAPIError",
     "MSGraphClient",
+    "download_drive_item",
 ]

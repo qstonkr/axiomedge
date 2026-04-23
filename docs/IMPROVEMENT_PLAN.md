@@ -389,6 +389,7 @@ Phase A PR6 에서 실제 측정 후 floor 확정.
 - [x] AttachmentParser module-level 함수 26개 → `_attachment_helpers.py` 분리 (1879→1419줄)
 - [x] `_init_search_services()` → `SearchServicesFactory` 추출 (src/api/search_services_factory.py)
 - [x] `run_pipeline()` → `BuildPipelineExecutor` 추출 (src/distill/build_executor.py)
+- [x] SharePoint connector Document Library 지원 (2026-04-23) — `/sites/{id}/drives/*` driveItem 트리 BFS + `parse_file()` 로 PDF/DOCX/PPTX 본문 추출. OneDrive 와 공유 helper `src/connectors/_msgraph/driveitem.py::download_drive_item` 신규 (기존 `_download_and_build` 중복 제거). SharePoint 는 List text 만 긁던 반쪽 connector → 핵심 문서까지 벡터화 가능.
 
 ### 테스트 커버리지 backfill
 

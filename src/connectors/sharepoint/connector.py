@@ -1,19 +1,35 @@
 """SharePointConnector — IKnowledgeConnector impl for SharePoint sites.
 
-각 list 의 items 를 fetch → Title + body content (textual fields) 결합
-→ RawDocument. 첨부 파일은 현 시점 미지원 (추후 driveItem 연동 예정).
+### 커버리지
 
-Version fingerprint: ``sharepoint:{site_id}:{lastModifiedDateTime_max}``.
+1. **Lists** (``/sites/{id}/lists/{list_id}/items``): Title + body textual field
+   (Body/Description/Comments/Content) 결합 → RawDocument.
+2. **Document Library** (``/sites/{id}/drives/*``): driveItem 트리 BFS, 각 파일
+   다운로드 + ``parse_file()`` 로 PDF/DOCX/PPTX/MD 본문 추출. OneDrive connector
+   와 공유 helper (``_msgraph.download_drive_item``) 사용.
+
+``include_document_libraries=False`` 로 Document Library 만 off 할 수 있음.
+``drive_ids`` 로 특정 drive 만 제한 가능 (빈 리스트면 site 의 모든 drive).
+
+Version fingerprint: ``sharepoint:{site_id}:{lastModifiedDateTime_max}`` —
+list items 와 drive items 중 max.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
-from src.connectors._msgraph import MSGraphAPIError, MSGraphClient
+import httpx
+
+from src.connectors._msgraph import (
+    MSGraphAPIError,
+    MSGraphClient,
+    download_drive_item,
+)
 from src.core.models import ConnectorResult, RawDocument
 
 from .config import SharePointConnectorConfig
@@ -94,6 +110,25 @@ class SharePointConnector:
                 if last_dt and (last_modified_max is None or last_dt > last_modified_max):
                     last_modified_max = last_dt
 
+            drive_files_visited = 0
+            drives_visited: list[str] = []
+            if cfg.include_document_libraries:
+                try:
+                    drive_docs, drive_last_dt, drive_files_visited, drives_visited = (
+                        await self._fetch_site_drives(client, cfg)
+                    )
+                except MSGraphAPIError as e:
+                    logger.warning(
+                        "sharepoint: drives fetch failed (%s) — returning list items only",
+                        e,
+                    )
+                else:
+                    documents.extend(drive_docs)
+                    if drive_last_dt and (
+                        last_modified_max is None or drive_last_dt > last_modified_max
+                    ):
+                        last_modified_max = drive_last_dt
+
         fingerprint = (
             f"{_FINGERPRINT_PREFIX}{cfg.site_id}:"
             f"{last_modified_max.isoformat() if last_modified_max else 'empty'}"
@@ -106,6 +141,8 @@ class SharePointConnector:
                 "site_id": cfg.site_id,
                 "lists_total": len(list_ids),
                 "lists_skipped": skipped_lists,
+                "drives_total": len(drives_visited),
+                "drive_files_visited": drive_files_visited,
                 "documents_emitted": len(documents),
             },
         )
@@ -188,6 +225,97 @@ class SharePointConnector:
             ))
 
         return documents, last_dt
+
+    async def _fetch_site_drives(
+        self,
+        client: MSGraphClient,
+        cfg: SharePointConnectorConfig,
+    ) -> tuple[list[RawDocument], datetime | None, int, list[str]]:
+        """Site 의 Document Library (drives) BFS → 각 file 다운로드 + parse.
+
+        Returns:
+            ``(documents, last_modified_max, files_visited, drive_ids_visited)``.
+        """
+        documents: list[RawDocument] = []
+        last_dt: datetime | None = None
+        files_visited = 0
+        drives_visited: list[str] = []
+
+        drive_ids = cfg.drive_ids
+        if not drive_ids:
+            # Site 전체 drives 열거
+            drives_path = f"/sites/{cfg.site_id}/drives"
+            drive_list: list[dict[str, Any]] = []
+            async for drv in client.iterate_pages(drives_path):
+                drive_list.append(drv)
+                if len(drive_list) >= 50:  # 안전 cap
+                    break
+            drive_ids = tuple(
+                str(d["id"]) for d in drive_list if d.get("id")
+            )
+
+        for drive_id in drive_ids:
+            drives_visited.append(drive_id)
+            queue: deque[str] = deque()
+            queue.append(f"/drives/{drive_id}/root/children")
+            try:
+                while queue and files_visited < cfg.max_files:
+                    folder_path = queue.popleft()
+                    try:
+                        children = [
+                            item async for item in client.iterate_pages(folder_path)
+                        ]
+                    except MSGraphAPIError as e:
+                        if e.status in (403, 404):
+                            logger.warning(
+                                "sharepoint: skip drive folder %s (%s)",
+                                folder_path, e.code,
+                            )
+                            continue
+                        raise
+
+                    for item in children:
+                        if files_visited >= cfg.max_files:
+                            break
+                        if "folder" in item:
+                            item_id = item.get("id")
+                            if item_id:
+                                queue.append(
+                                    f"/drives/{drive_id}/items/{item_id}/children",
+                                )
+                            continue
+                        if "file" not in item:
+                            continue
+
+                        files_visited += 1
+                        name = str(item.get("name") or "")
+                        try:
+                            doc = await download_drive_item(
+                                cfg.auth_token, item,
+                                source_type="sharepoint",
+                                knowledge_type=cfg.name,
+                                include_extensions=cfg.include_extensions,
+                            )
+                        except (httpx.HTTPError, OSError, RuntimeError) as e:
+                            logger.warning(
+                                "sharepoint: failed to download %s: %s", name, e,
+                            )
+                            continue
+                        if doc is None:
+                            continue
+
+                        documents.append(doc)
+                        modified = _parse_iso_date(item.get("lastModifiedDateTime"))
+                        if modified and (last_dt is None or modified > last_dt):
+                            last_dt = modified
+            except MSGraphAPIError as exc:
+                logger.warning(
+                    "sharepoint: drive %s aborted (%s) — partial result kept",
+                    drive_id, exc,
+                )
+                continue
+
+        return documents, last_dt, files_visited, drives_visited
 
 
 def _parse_iso_date(value: Any) -> datetime | None:
