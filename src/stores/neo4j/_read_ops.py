@@ -274,13 +274,20 @@ class ReadOpsMixin:
         limit: int = 10,
         min_score: float = 0.5,
     ) -> list[dict[str, Any]]:
-        """Fulltext section title search -> chunk IDs."""
+        """Fulltext section title search -> chunk IDs.
+
+        ``WHERE`` 는 ``WITH`` 뒤에 둬야 ``ts`` alias 가 scope 에 존재한다.
+        과거 구현은 ``WHERE ... AND ts.kb_id = $kb_id`` 를 YIELD 직후에 둬서
+        ``kb_id`` 지정 시 ``CypherSyntaxError: Variable 'ts' not defined``
+        로 검색이 전부 실패했다 (전역 질의는 kb_filter 가 빈 문자열이라 운
+        좋게 통과).
+        """
         kb_filter = "AND ts.kb_id = $kb_id" if kb_id else ""
         cypher = f"""
         CALL db.index.fulltext.queryNodes("tree_section_title_ft", $query)
         YIELD node, score
-        WHERE score > $min_score {kb_filter}
         WITH node AS ts, score
+        WHERE score > $min_score {kb_filter}
         MATCH (ts)-[:HAS_TREE_PAGE]->(tp:TreePage)
         RETURN tp.chunk_id AS chunk_id,
                ts.title AS section_title,
@@ -294,8 +301,8 @@ class ReadOpsMixin:
             params["kb_id"] = kb_id
         try:
             return await self._client.execute_query(cypher, params)
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-            logger.warning("Neo4j search_section_titles failed: %s", e)
+        except Exception as e:  # noqa: BLE001 — neo4j.exceptions.Neo4jError 계열 (CypherSyntaxError 등) 을 소화 후 빈 결과 반환. 과거 tuple 이 Neo4jError 를 놓쳐 검색 전체 500 가던 갭 수정.
+            logger.warning("Neo4j search_section_titles failed: %s", e, exc_info=True)
             return []
 
     async def get_chunk_section_paths_batch(
