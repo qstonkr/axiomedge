@@ -1,0 +1,17 @@
+# Web crawl result — similar to confluence but without author metadata.
+version: 1
+prompt_focus: "페이지, 주제, 용어, 문서"
+nodes:
+  - Page
+  - Document
+  - Topic
+  - Term
+relationships:
+  - COVERS
+  - MENTIONS
+  - PART_OF
+  - RELATED_TO
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100
