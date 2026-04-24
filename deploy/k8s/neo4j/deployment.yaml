@@ -40,12 +40,12 @@ spec:
               value: "512m"
             - name: NEO4J_dbms_memory_transaction_total_max
               value: "500m"
-            # db.transaction.timeout (Neo4j 5.x 표준 setting) — LegalGraphExtractor
-            # 의 큰 UNWIND batch 가 기본 60s 내에 끝나지 못하는 경우 대비
-            # (driver retry_time_s 와 다른 개념). 구 ``db.tx_timeout`` 은 Neo4j 5
-            # 에서 Unrecognized WARN 내고 silently 무시됨.
+            # db.transaction.timeout (Neo4j 5.x 표준 setting) — legal-kr
+            # tree_index 백필 시 큰 법령 (144~190 sections) batch UNWIND 가
+            # 60s 안에 안 끝나 timeout 발생. deploy/config/neo4j/neo4j.conf 와
+            # 동일 300s 유지. 구 ``db.tx_timeout`` 은 Neo4j 5 에서 Unrecognized.
             - name: NEO4J_db_transaction_timeout
-              value: "120s"
+              value: "300s"
           volumeMounts:
             - name: data
               mountPath: /data

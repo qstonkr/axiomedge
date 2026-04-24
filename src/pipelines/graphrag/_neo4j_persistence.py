@@ -11,6 +11,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from src.stores.neo4j.errors import NEO4J_FAILURE
+
 from .models import ExtractionResult, GraphRelationship
 from .prompts import HISTORY_RELATIONSHIP_MAP, _is_safe_cypher_label
 
@@ -380,7 +382,7 @@ class Neo4jPersistenceMixin:
         """Neo4j에서 최근 저장된 엔티티 조회."""
         try:
             driver = self._get_neo4j_driver()
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except NEO4J_FAILURE:
             return []
 
         try:
@@ -395,7 +397,7 @@ class Neo4jPersistenceMixin:
             with driver.session() as session:
                 result = session.run(query, limit=limit)
                 return [dict(record) for record in result]
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning(f"최근 엔티티 조회 실패: {e}")
             return []
 

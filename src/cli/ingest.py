@@ -71,12 +71,13 @@ async def _init_services() -> tuple:
     if settings.neo4j.enabled:
         try:
             from src.stores.neo4j.client import Neo4jClient
+            from src.stores.neo4j.errors import NEO4J_FAILURE
             from src.stores.neo4j.repository import Neo4jGraphRepository
 
             neo4j = Neo4jClient(uri=settings.neo4j.uri)
             await neo4j.connect()
             graph_repo = Neo4jGraphRepository(neo4j)
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Neo4j not available: %s", e)
 
     sparse_embedder = OnnxSparseEmbedder(embedder)

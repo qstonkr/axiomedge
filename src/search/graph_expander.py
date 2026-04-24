@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from src.config.weights import weights as _w
+from src.stores.neo4j.errors import NEO4J_FAILURE
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,7 @@ class GraphSearchExpander:
                     scope_kb_ids=scope_kb_ids,  # Respect KB scope from search group
                 )
                 cross_kb_uris -= related_uris  # Remove already found
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as _xkb_err:
+            except NEO4J_FAILURE as _xkb_err:
                 logger.debug("Cross-KB graph expansion failed (best-effort): %s", _xkb_err)
 
             all_related = related_uris | cross_kb_uris | person_uris
@@ -229,7 +230,7 @@ class GraphSearchExpander:
                 graph_related_count=graph_related_count,
             )
 
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Graph expansion failed: %s", e)
             return ExpandedSearchResult(
                 original_chunks=chunks,
@@ -389,7 +390,7 @@ class GraphSearchExpander:
                     korean_names[:3], date_tokens[:2], len(doc_names), list(doc_names)[:3],
                 )
             return doc_names
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Person MENTIONED_IN lookup failed: %s", e)
             return set()
 
@@ -485,7 +486,7 @@ class GraphSearchExpander:
                     doc = row.get("doc", "")
                     if doc:
                         doc_names.add(doc)
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            except NEO4J_FAILURE as e:
                 logger.debug("Entity doc name lookup failed: %s", e)
         return doc_names
 
@@ -526,7 +527,7 @@ class GraphSearchExpander:
                 new_person = person_docs - result.expanded_source_uris
                 result.expanded_source_uris |= new_person
                 result.graph_related_count += len(new_person)
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("Entity expansion failed: %s", e)
 
         return result

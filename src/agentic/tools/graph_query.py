@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from src.agentic.protocols import Tool, ToolResult
+from src.stores.neo4j.errors import NEO4J_FAILURE
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,6 @@ class GraphQueryTool(Tool):
                 success=True, data=entities or [],
                 metadata={"mode": "entities", "count": len(entities or [])},
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except NEO4J_FAILURE as e:
             logger.warning("graph_query failed: %s", e)
             return ToolResult(success=False, data=None, error=f"{type(e).__name__}: {e}")

@@ -122,13 +122,14 @@ class TestNeo4jClient:
         client._driver = MagicMock()
         client._driver.session.return_value = mock_session
 
-        result = await client.execute_write("CREATE (n:Test)")
+        result = await client.execute_write("CREATE (n:Test)", {"k": "v"})
         assert result["nodes_created"] == 5
         assert result["relationships_created"] == 3
-        # tx.run 이 실제 cypher 를 받았는지 (callable 경로 검증)
+        # tx.run 이 실제 cypher + params 를 받았는지 (callable 경로 검증)
         mock_tx.run.assert_awaited_once()
         args = mock_tx.run.call_args.args
         assert args[0] == "CREATE (n:Test)"
+        assert args[1] == {"k": "v"}
 
 
 # ===========================================================================

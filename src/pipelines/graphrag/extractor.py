@@ -10,6 +10,8 @@ import re as _re_mod
 from typing import Any
 
 from src.config.weights import weights as _w
+from src.stores.neo4j.errors import NEO4J_FAILURE
+
 from .models import ExtractionResult, GraphNode, GraphRelationship
 from .prompts import (
     ALLOWED_NODES,
@@ -593,7 +595,7 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
                         created += 1
                     else:
                         updated += 1
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            except NEO4J_FAILURE as e:
                 logger.error(f"노드 배치 생성 실패 (type={node_type}): {e}")
         return created, updated
 
