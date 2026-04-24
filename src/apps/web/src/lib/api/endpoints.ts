@@ -2043,3 +2043,89 @@ export const getBulkUploadStatus = (sessionId: string) =>
     `api/v1/knowledge/uploads/${encodeURIComponent(sessionId)}/status`,
     { method: "GET" },
   );
+
+// ── /admin/graph-schema ──
+export type GraphSchemaCandidate = {
+  id: string;
+  kb_id: string;
+  candidate_type: "node" | "relationship";
+  label: string;
+  frequency: number;
+  confidence_avg: number;
+  confidence_min: number;
+  confidence_max: number;
+  source_label: string | null;
+  target_label: string | null;
+  examples: Array<Record<string, unknown>>;
+  similar_labels: Array<Record<string, unknown>>;
+};
+
+export const listGraphSchemaCandidates = async (
+  kb_id: string,
+): Promise<{ candidates: GraphSchemaCandidate[] }> => {
+  return request<{ candidates: GraphSchemaCandidate[] }>(
+    `api/v1/admin/graph-schema/candidates?kb_id=${encodeURIComponent(kb_id)}`,
+    { method: "GET" },
+  );
+};
+
+export type GraphSchemaDecideBody = {
+  kb_id: string;
+  candidate_type: "node" | "relationship";
+  label: string;
+};
+
+export const approveGraphSchemaCandidate = async (
+  body: GraphSchemaDecideBody & { approved_by: string },
+) =>
+  request<{ status: string; yaml_path: string; git: unknown }>(
+    "api/v1/admin/graph-schema/candidates/approve",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const rejectGraphSchemaCandidate = async (
+  body: GraphSchemaDecideBody & { decided_by: string; reason?: string },
+) =>
+  request<{ status: string }>(
+    "api/v1/admin/graph-schema/candidates/reject",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const mergeGraphSchemaCandidate = async (
+  body: GraphSchemaDecideBody & { merge_into: string; decided_by: string },
+) =>
+  request<{ status: string; merged_into: string }>(
+    "api/v1/admin/graph-schema/candidates/merge",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const renameGraphSchemaCandidate = async (
+  body: GraphSchemaDecideBody & { new_label: string; approved_by: string },
+) =>
+  request<{ status: string; new_label: string; yaml_path: string }>(
+    "api/v1/admin/graph-schema/candidates/rename",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const triggerGraphSchemaBootstrap = async (
+  kb_id: string,
+  body: { triggered_by_user?: string } = {},
+) =>
+  request<{ status: string; job_id?: string }>(
+    `api/v1/admin/graph-schema/bootstrap/${encodeURIComponent(kb_id)}/run`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const triggerGraphSchemaReextract = async (
+  kb_id: string,
+  body: { triggered_by_user: string },
+) =>
+  request<{
+    status: string;
+    reextract_job_id: string;
+    schema_version_from: number;
+    schema_version_to: number;
+  }>(
+    `api/v1/admin/graph-schema/reextract/${encodeURIComponent(kb_id)}/run`,
+    { method: "POST", body: JSON.stringify(body) },
+  );

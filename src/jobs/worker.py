@@ -18,6 +18,7 @@ from arq.cron import cron
 
 from src.jobs.distill_jobs import distill_sweep_post_train, distill_sweep_training
 from src.jobs.queue import redis_settings_from_env
+from src.jobs.schema_alerts import schema_alerts_sweep
 from src.jobs.schema_bootstrap_jobs import schema_bootstrap_cleanup
 from src.jobs.tasks import REGISTERED_TASKS
 from src.jobs.upload_jobs import cleanup_orphan_uploads
@@ -53,6 +54,8 @@ class WorkerSettings:
         cron(cleanup_orphan_uploads, hour={3}, minute={0}),
         # Graph schema bootstrap stale lock 정리 — 매일 03:05 UTC (Phase 3).
         cron(schema_bootstrap_cleanup, hour={3}, minute={5}),
+        # Graph schema ops alerts sweep — 매 30분 (Phase 5b).
+        cron(schema_alerts_sweep, minute={0, 30}),
     ]
 
     @staticmethod
