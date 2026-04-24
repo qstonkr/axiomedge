@@ -1,0 +1,25 @@
+version: 1
+kb_id: drp
+prompt_focus: 점포, 당사자(사람), 정책/규정, 분쟁사건, 지역
+nodes:
+- Event
+- Location
+- Person
+- Policy
+- Store
+- Team
+relationships:
+- APPLIES_TO
+- LOCATED_IN
+- MANAGES
+- PARTICIPATES_IN
+- RELATED_TO
+- RESPONSIBLE_FOR
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100
+_metadata:
+  migrated_from: prompts.py::KB_SCHEMA_PROFILES
+  migrated_at: '2026-04-24'
+  approved_candidates: []
