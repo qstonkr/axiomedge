@@ -654,7 +654,10 @@ class GraphRAGBatchProcessor:
 
                 stats["success"] += 1
 
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            except NEO4J_FAILURE as e:
+                # save_to_neo4j() 가 transitive 하게 Neo4jError/DriverError
+                # (ServiceUnavailable 등) 를 전파할 가능성 대비. 한 문서 실패가
+                # 전체 배치 루프를 abort 하지 않도록 NEO4J_FAILURE 로 catch.
                 logger.error(f"문서 처리 실패: {e}")
                 stats["failed"] += 1
 
