@@ -26,12 +26,20 @@ def mock_run_repo():
 
 
 @pytest.fixture
-def app(mock_candidate_repo, mock_run_repo):
+def mock_reextract_repo():
+    repo = AsyncMock()
+    repo.has_active = AsyncMock(return_value=False)
+    repo.queue = AsyncMock(return_value=uuid4())
+    return repo
+
+
+@pytest.fixture
+def app(mock_candidate_repo, mock_run_repo, mock_reextract_repo):
     from src.api.routes.graph_schema import _get_repos, router
 
     fast = FastAPI()
     fast.dependency_overrides[_get_repos] = lambda: (
-        mock_candidate_repo, mock_run_repo,
+        mock_candidate_repo, mock_run_repo, mock_reextract_repo,
     )
     fast.include_router(router)
     return fast
@@ -207,3 +215,41 @@ class TestBootstrapRunTrigger:
             json={"triggered_by_user": "admin@test"},
         )
         assert resp.status_code == 409
+
+
+class TestReextractTrigger:
+    def test_trigger_returns_409_when_active(self, app, mock_reextract_repo):
+        mock_reextract_repo.has_active = AsyncMock(return_value=True)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/v1/admin/graph-schema/reextract/test/run",
+            json={"triggered_by_user": "admin@test"},
+        )
+        assert resp.status_code == 409
+
+    def test_trigger_enqueues_job(self, app, mock_reextract_repo):
+        fake_id = uuid4()
+        mock_reextract_repo.has_active = AsyncMock(return_value=False)
+        mock_reextract_repo.queue = AsyncMock(return_value=fake_id)
+
+        fake_schema = MagicMock()
+        fake_schema.version = 3
+
+        with patch(
+            "src.pipelines.graphrag.SchemaResolver.resolve",
+            return_value=fake_schema,
+        ), patch(
+            "src.api.routes.graph_schema._enqueue_reextract",
+            new=AsyncMock(return_value={"job_id": "arq-j1"}),
+        ) as enq:
+            client = TestClient(app)
+            resp = client.post(
+                "/api/v1/admin/graph-schema/reextract/test/run",
+                json={"triggered_by_user": "admin@test"},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["reextract_job_id"] == str(fake_id)
+        assert body["schema_version_to"] == 3
+        assert body["schema_version_from"] == 2
+        enq.assert_awaited_once()

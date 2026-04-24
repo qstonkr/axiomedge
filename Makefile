@@ -266,3 +266,10 @@ perf-update-baseline:
 import importlib.util; spec=importlib.util.spec_from_file_location('p','scripts/perf_check.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m);\
 b['$(SCENARIO)'].update(m.extract_metrics(s)); open('loadtest/baseline.json','w').write(json.dumps(b, indent=2))"
 	@echo "✓ Baseline updated for $(SCENARIO) from loadtest/results/$(SCENARIO).json"
+
+# === Graph schema operator commands (Phase 5) ===
+graph-schema-scaffold:
+	@uv run python -m src.cli.graph_schema_cli scaffold $(source)
+
+graph-schema-dry-run:
+	@uv run python -m src.cli.graph_schema_cli dry-run $(kb)
