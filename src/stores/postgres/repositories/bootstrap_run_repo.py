@@ -100,5 +100,42 @@ class BootstrapRunRepo(BaseRepository):
                 )
                 return result.rowcount or 0
 
+    async def recent_failure_streak(
+        self, *, window_hours: int = 24,
+    ) -> dict[str, int]:
+        """Return {kb_id: consecutive_recent_failures} for the given window.
+
+        Counts only the trailing run of failures — a success anywhere
+        in the window resets that KB's streak to 0. Rows without a
+        ``completed_at`` are ignored.
+        """
+        cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
+        async with self._session_maker() as session:
+            stmt = select(
+                BootstrapRunModel.kb_id,
+                BootstrapRunModel.status,
+                BootstrapRunModel.completed_at,
+            ).where(
+                BootstrapRunModel.completed_at.is_not(None),
+                BootstrapRunModel.completed_at >= cutoff,
+            ).order_by(
+                BootstrapRunModel.kb_id,
+                BootstrapRunModel.completed_at.desc(),
+            )
+            rows = (await session.execute(stmt)).all()
+
+        streak: dict[str, int] = {}
+        closed: set[str] = set()
+        for kb_id, status, _ in rows:
+            if kb_id in closed:
+                continue
+            if status == "failed":
+                streak[kb_id] = streak.get(kb_id, 0) + 1
+            else:
+                # First non-failure row (most recent → older) closes the streak.
+                streak.setdefault(kb_id, 0)
+                closed.add(kb_id)
+        return streak
+
 
 __all__ = ["BootstrapRunRepo"]

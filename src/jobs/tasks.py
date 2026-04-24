@@ -18,6 +18,7 @@ from src.jobs.distill_jobs import (
     distill_sweep_post_train,
     distill_sweep_training,
 )
+from src.jobs.schema_alerts import schema_alerts_sweep
 from src.jobs.schema_bootstrap_jobs import (
     schema_bootstrap_cleanup,
     schema_bootstrap_run,
@@ -54,4 +55,5 @@ REGISTERED_TASKS = [
     schema_bootstrap_run,
     schema_bootstrap_cleanup,
     schema_reextract_run,
+    schema_alerts_sweep,
 ]

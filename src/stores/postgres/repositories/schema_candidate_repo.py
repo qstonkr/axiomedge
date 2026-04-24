@@ -123,5 +123,19 @@ class SchemaCandidateRepo(BaseRepository):
                     ),
                 )
 
+    async def count_pending_by_kb(self) -> list[tuple[str, int]]:
+        """Return [(kb_id, pending_count)] grouped by kb_id."""
+        from sqlalchemy import func
+
+        async with self._session_maker() as session:
+            stmt = select(
+                SchemaCandidateModel.kb_id,
+                func.count(SchemaCandidateModel.id),
+            ).where(
+                SchemaCandidateModel.status == "pending",
+            ).group_by(SchemaCandidateModel.kb_id)
+            rows = await session.execute(stmt)
+            return [(r[0], int(r[1])) for r in rows.all()]
+
 
 __all__ = ["SchemaCandidateRepo"]
