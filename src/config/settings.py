@@ -315,6 +315,17 @@ class TreeIndexSettings(BaseSettings):
     adaptive_depth: bool = Field(default=True, description="쿼리 분류 연동 적응형 깊이")
 
 
+class NotificationSettings(BaseSettings):
+    """Slack + alert thresholds for ops notifications (Phase 5b)."""
+
+    model_config = SettingsConfigDict(env_prefix="NOTIF_", extra="ignore")
+
+    slack_webhook_url: str | None = Field(default=None)
+    candidate_pending_threshold: int = Field(default=50, ge=1)
+    yaml_pr_stale_hours: int = Field(default=48, ge=1)
+    bootstrap_failure_streak: int = Field(default=3, ge=1)
+
+
 class Settings(BaseSettings):
     """Top-level aggregated settings."""
 
@@ -335,6 +346,7 @@ class Settings(BaseSettings):
     aws: AwsSettings = Field(default_factory=AwsSettings)
     distill: DistillSettings = Field(default_factory=DistillSettings)
     tree_index: TreeIndexSettings = Field(default_factory=TreeIndexSettings)
+    notifications: NotificationSettings = Field(default_factory=NotificationSettings)
 
 
 @lru_cache(maxsize=1)
