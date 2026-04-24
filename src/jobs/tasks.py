@@ -22,6 +22,7 @@ from src.jobs.schema_bootstrap_jobs import (
     schema_bootstrap_cleanup,
     schema_bootstrap_run,
 )
+from src.jobs.schema_reextract import schema_reextract_run
 from src.jobs.upload_jobs import (
     cleanup_orphan_uploads,
     ingest_from_object_storage,
@@ -52,4 +53,5 @@ REGISTERED_TASKS = [
     cleanup_orphan_uploads,
     schema_bootstrap_run,
     schema_bootstrap_cleanup,
+    schema_reextract_run,
 ]

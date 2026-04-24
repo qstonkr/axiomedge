@@ -31,12 +31,16 @@ router = APIRouter(
 def _get_repos():
     """Late-bound — overridden in tests via dependency_overrides.
 
-    Returns (candidate_repo, run_repo). Production wiring binds via the
-    app_state session_maker; kept lazy to avoid app-startup order issues.
+    Returns (candidate_repo, run_repo, reextract_repo). Production wiring
+    binds via the app_state session_maker; kept lazy to avoid app-startup
+    order issues.
     """
     from src.api.state import get_app_state
     from src.stores.postgres.repositories.bootstrap_run_repo import (
         BootstrapRunRepo,
+    )
+    from src.stores.postgres.repositories.reextract_job_repo import (
+        ReextractJobRepo,
     )
     from src.stores.postgres.repositories.schema_candidate_repo import (
         SchemaCandidateRepo,
@@ -47,6 +51,7 @@ def _get_repos():
     return (
         SchemaCandidateRepo(session_maker),
         BootstrapRunRepo(session_maker),
+        ReextractJobRepo(session_maker),
     )
 
 
@@ -115,6 +120,19 @@ class BootstrapRunRequest(BaseModel):
     triggered_by_user: str | None = None
 
 
+class ReextractRunRequest(BaseModel):
+    triggered_by_user: str
+
+
+async def _enqueue_reextract(
+    job_id: str, kb_id: str,
+) -> dict[str, Any]:
+    """Late-bound enqueue — easy to patch in tests."""
+    from src.jobs.queue import enqueue_job
+
+    return await enqueue_job("schema_reextract_run", job_id, kb_id)
+
+
 # --- Routes ----------------------------------------------------------------
 
 
@@ -123,7 +141,7 @@ async def list_candidates(
     kb_id: str = Query(..., description="Knowledge base id"),
     repos=Depends(_get_repos),
 ) -> dict[str, Any]:
-    candidate_repo, _ = repos
+    candidate_repo, _, _ = repos
     rows = await candidate_repo.list_pending(kb_id)
     return {
         "candidates": [
@@ -151,7 +169,7 @@ async def approve_candidate(
     req: ApproveRequest,
     repos=Depends(_get_repos),
 ) -> dict[str, Any]:
-    candidate_repo, _ = repos
+    candidate_repo, _, _ = repos
     yaml_path = merge_label_into_yaml(
         kb_id=req.kb_id,
         candidate_type=req.candidate_type,
@@ -194,7 +212,7 @@ async def reject_candidate(
     req: RejectRequest,
     repos=Depends(_get_repos),
 ) -> dict[str, str]:
-    candidate_repo, _ = repos
+    candidate_repo, _, _ = repos
     await candidate_repo.decide(
         kb_id=req.kb_id,
         candidate_type=req.candidate_type,
@@ -211,7 +229,7 @@ async def merge_candidate(
     req: MergeRequest,
     repos=Depends(_get_repos),
 ) -> dict[str, str]:
-    candidate_repo, _ = repos
+    candidate_repo, _, _ = repos
     await candidate_repo.decide(
         kb_id=req.kb_id,
         candidate_type=req.candidate_type,
@@ -234,7 +252,7 @@ async def rename_candidate(
     and marks the candidate row approved with ``merged_into = new_label``
     so the history trail shows the rename.
     """
-    candidate_repo, _ = repos
+    candidate_repo, _, _ = repos
     yaml_path = merge_label_into_yaml(
         kb_id=req.kb_id,
         candidate_type=req.candidate_type,
@@ -262,7 +280,7 @@ async def trigger_bootstrap(
     req: BootstrapRunRequest,
     repos=Depends(_get_repos),
 ) -> dict[str, Any]:
-    _, run_repo = repos
+    _, run_repo, _ = repos
     if await run_repo.has_running(kb_id):
         raise HTTPException(
             status_code=409,
@@ -270,6 +288,42 @@ async def trigger_bootstrap(
         )
     result = await _enqueue_bootstrap(kb_id, req.triggered_by_user)
     return {"status": "queued", **result}
+
+
+@router.post("/reextract/{kb_id}/run")
+async def trigger_reextract(
+    kb_id: str,
+    req: ReextractRunRequest,
+    repos=Depends(_get_repos),
+) -> dict[str, Any]:
+    _, _, reextract_repo = repos
+    if await reextract_repo.has_active(kb_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Re-extract already queued/running for kb_id={kb_id}",
+        )
+
+    from src.pipelines.graphrag import SchemaResolver
+
+    current = SchemaResolver.resolve(kb_id=kb_id, source_type=None)
+    version_from = max(1, current.version - 1)
+    version_to = current.version
+
+    job_id = await reextract_repo.queue(
+        kb_id=kb_id,
+        triggered_by_user=req.triggered_by_user,
+        schema_version_from=version_from,
+        schema_version_to=version_to,
+    )
+    arq_result = await _enqueue_reextract(str(job_id), kb_id)
+
+    return {
+        "status": "queued",
+        "reextract_job_id": str(job_id),
+        "schema_version_from": version_from,
+        "schema_version_to": version_to,
+        **arq_result,
+    }
 
 
 __all__ = ["router"]
