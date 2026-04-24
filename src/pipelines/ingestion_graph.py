@@ -128,6 +128,12 @@ async def run_graphrag(
 
     try:
         _graphrag_content = _clean_chunk_text(raw.content)
+        # Phase 2: source_type 전파 → resolver 가 D-layer (connector default) 선택.
+        # Schema 는 한 번만 resolve 해서 extract + save 양쪽에 재사용.
+        from src.pipelines.graphrag.schema_resolver import SchemaResolver
+        resolved_schema = SchemaResolver.resolve(
+            kb_id=collection_name, source_type=raw.source_type,
+        )
         extraction_result = await asyncio.to_thread(
             lambda: graphrag_extractor.extract(
                 document=_graphrag_content,
@@ -135,11 +141,13 @@ async def run_graphrag(
                 source_page_id=raw.doc_id,
                 source_updated_at=raw.updated_at.isoformat() if raw.updated_at else None,
                 kb_id=collection_name,
+                source_type=raw.source_type,
+                schema=resolved_schema,
             )
         )
         if extraction_result.node_count > 0 or extraction_result.relationship_count > 0:
             save_stats = await asyncio.to_thread(
-                graphrag_extractor.save_to_neo4j, extraction_result,
+                graphrag_extractor.save_to_neo4j, extraction_result, resolved_schema,
             )
             stats = {
                 "nodes_extracted": extraction_result.node_count,
