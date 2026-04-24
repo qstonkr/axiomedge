@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from src.config import get_settings
+from src.stores.neo4j.errors import NEO4J_FAILURE
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ def _apply_single_classification(
                 parameters={"eid": eid},
             )
             stats["relabeled"] += 1
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning("AI classify apply error for %s: %s", eid, e)
         stats["errors"] += 1
 

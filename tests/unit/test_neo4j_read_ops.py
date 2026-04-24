@@ -114,3 +114,65 @@ class TestSearchSectionTitlesExceptionHandling:
         mixin = _make_mixin(payload)
         result = await mixin.search_section_titles("q", kb_id="g-espa")
         assert result == payload
+
+
+class TestNEO4JFailureTupleComposition:
+    """Regression: NEO4J_FAILURE 가 Neo4j 드라이버 전체 예외 계열을 catch.
+
+    MA1 에서 ``DriverError`` 추가한 이후 누군가 실수로 tuple 에서 빼면 즉시
+    fail. ``ServiceUnavailable`` / ``SessionExpired`` 는 실제 가장 흔한 연결
+    장애라 반드시 유지.
+    """
+
+    def test_catches_cypher_and_client_errors(self):
+        from neo4j.exceptions import (
+            ClientError,
+            CypherSyntaxError,
+            TransientError,
+        )
+        from src.stores.neo4j.errors import NEO4J_FAILURE
+
+        for cls in (CypherSyntaxError, ClientError, TransientError):
+            try:
+                raise cls("x")
+            except NEO4J_FAILURE:
+                pass
+            else:
+                pytest.fail(f"{cls.__name__} not caught by NEO4J_FAILURE")
+
+    def test_catches_driver_errors(self):
+        """DriverError / ServiceUnavailable / SessionExpired — MA1 regression."""
+        from neo4j.exceptions import (
+            DriverError,
+            ServiceUnavailable,
+            SessionExpired,
+        )
+        from src.stores.neo4j.errors import NEO4J_FAILURE
+
+        for cls in (DriverError, ServiceUnavailable, SessionExpired):
+            try:
+                raise cls("x")
+            except NEO4J_FAILURE:
+                pass
+            else:
+                pytest.fail(
+                    f"{cls.__name__} not caught — MA1 regression "
+                    "(DriverError dropped from NEO4J_FAILURE?)"
+                )
+
+    def test_read_failure_alias_points_to_same_object(self):
+        """NEO4J_READ_FAILURE (legacy) 와 NEO4J_FAILURE 는 동일 tuple."""
+        from src.stores.neo4j.errors import NEO4J_FAILURE, NEO4J_READ_FAILURE
+
+        assert NEO4J_READ_FAILURE is NEO4J_FAILURE
+
+    def test_does_not_swallow_logic_bugs(self):
+        """AssertionError / ZeroDivisionError 등 로직 버그는 그대로 propagate."""
+        from src.stores.neo4j.errors import NEO4J_FAILURE
+
+        for cls in (AssertionError, ZeroDivisionError):
+            with pytest.raises(cls):
+                try:
+                    raise cls("should propagate")
+                except NEO4J_FAILURE:
+                    pytest.fail(f"{cls.__name__} should NOT be caught")

@@ -10,6 +10,8 @@ import logging
 from typing import Any
 
 from src.core.models import RawDocument
+from src.stores.neo4j.errors import NEO4J_FAILURE
+
 from .ocr_corrector import clean_chunk_text as _clean_chunk_text
 
 logger = logging.getLogger(__name__)
@@ -99,10 +101,7 @@ async def create_graph_edges(
                 {"category": l1_category, "doc_id": raw.doc_id},
             )
 
-    except (  # noqa: BLE001
-        RuntimeError, OSError, ValueError, TypeError,
-        KeyError, AttributeError, ImportError,
-    ) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning(
             "Graph edge creation failed for doc_id=%s: %s",
             raw.doc_id, e,
@@ -151,10 +150,7 @@ async def run_graphrag(
                 "GraphRAG extraction completed for doc_id=%s: %d nodes, %d rels",
                 raw.doc_id, extraction_result.node_count, extraction_result.relationship_count,
             )
-    except (  # noqa: BLE001
-        RuntimeError, OSError, ValueError, TypeError,
-        KeyError, AttributeError, ImportError,
-    ) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning("GraphRAG extraction failed for doc_id=%s: %s", raw.doc_id, e)
         stats = {"error": str(e)}
     return stats
@@ -186,10 +182,7 @@ async def _run_legal_graph_extraction(
             extraction_result.node_count,
             extraction_result.relationship_count,
         )
-    except (  # noqa: BLE001
-        RuntimeError, OSError, ValueError, TypeError,
-        KeyError, AttributeError, ImportError,
-    ) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning(
             "Legal graph extraction failed for doc_id=%s: %s", raw.doc_id, e,
         )
@@ -227,10 +220,7 @@ async def run_tree_index_builder(
             return
         tree_data = build_tree_from_chunks(collection_name, raw.doc_id, chunks_for_tree)
         await persist_tree_to_neo4j(graph_store, tree_data)
-    except (  # noqa: BLE001
-        RuntimeError, OSError, ValueError, TypeError,
-        KeyError, AttributeError, ImportError,
-    ) as exc:
+    except (*NEO4J_FAILURE, ImportError) as exc:
         logger.warning("Tree index build failed for doc_id=%s: %s", raw.doc_id, exc)
 
 
@@ -307,8 +297,5 @@ async def run_summary_tree_builder(
             "Summary tree stored: doc_id=%s, summaries=%d",
             raw.doc_id, len(summary_items),
         )
-    except (  # noqa: BLE001
-        RuntimeError, OSError, ValueError, TypeError,
-        KeyError, AttributeError, ImportError,
-    ) as exc:
+    except (*NEO4J_FAILURE, ImportError) as exc:
         logger.warning("Summary tree build failed for doc_id=%s: %s", raw.doc_id, exc)

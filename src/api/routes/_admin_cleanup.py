@@ -13,6 +13,9 @@ from types import ModuleType
 
 from fastapi import APIRouter
 
+from src.stores.neo4j.errors import NEO4J_FAILURE
+
+
 def _get_admin() -> ModuleType:
     """Late-bound accessor to parent admin module — avoids circular import."""
     import src.api.routes.admin as _admin
@@ -72,7 +75,7 @@ async def graph_cleanup(body: dict[str, Any] | None = None) -> dict[str, Any]:
             "total_found": total_found,
             "total_fixed": total_fixed,
         }
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning("Graph cleanup failed: %s", e)
         return {
             "success": False,
@@ -116,7 +119,7 @@ async def graph_cleanup_analyze(body: dict[str, Any] | None = None) -> dict[str,
             "total_found": total_found,
             "total_fixed": 0,
         }
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning("Graph cleanup analysis failed: %s", e)
         return {
             "success": False,
@@ -177,7 +180,7 @@ async def graph_ai_classify(body: dict[str, Any] | None = None) -> dict[str, Any
             try:
                 batch_result = await _admin._classify_batch(llm, candidates[i : i + batch_size])
                 all_classifications.extend(batch_result)
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
+            except (*NEO4J_FAILURE, ImportError) as e:
                 logger.warning("AI classify LLM batch %d failed: %s", i // batch_size, e)
 
         stats: dict[str, int] = {"relabeled": 0, "deleted": 0, "skipped": 0, "errors": 0}
@@ -202,7 +205,7 @@ async def graph_ai_classify(body: dict[str, Any] | None = None) -> dict[str, Any
             ],
             "stats": stats,
         }
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, ImportError) as e:
+    except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning("AI classify failed: %s", e)
         return {
             "success": False,

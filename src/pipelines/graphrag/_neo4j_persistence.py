@@ -62,7 +62,11 @@ class Neo4jPersistenceMixin:
                     stats["relationships_updated"] += rel_stats.get("updated", 0)
                     stats["relationships_archived"] += rel_stats.get("archived", 0)
                     stats["relationships_skipped"] += rel_stats.get("skipped", 0)
-                except (OSError, RuntimeError, ValueError) as e:
+                except NEO4J_FAILURE as e:
+                    # 과거: (OSError, RuntimeError, ValueError) 로 narrow —
+                    # CypherSyntaxError/ClientError/ServiceUnavailable 모두 놓쳐
+                    # 단일 관계 실패가 배치 전체 abort. NEO4J_FAILURE 로 확장해
+                    # per-relationship 로그 후 다음 관계로 진행.
                     logger.error(f"관계 생성 실패 ({rel.source}->{rel.target}): {e}")
 
         logger.info(f"Neo4j 저장 완료: {stats}")
