@@ -51,7 +51,10 @@ const NAV: NavGroup[] = [
   },
   {
     label: "그래프",
-    items: [{ href: "/admin/graph", label: "엔티티 탐색", icon: "🕸️" }],
+    items: [
+      { href: "/admin/graph", label: "엔티티 탐색", icon: "🕸️" },
+      { href: "/admin/graph-schema", label: "스키마 검토", icon: "🧬" },
+    ],
   },
 ];
 
