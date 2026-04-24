@@ -82,6 +82,17 @@ _PLATFORM_NAMES = frozenset({
     '네이버쇼핑', '카카오커머스', 'SSG닷컴',
 })
 
+# 일반명사 Store 엔티티 — 실제 점포명이 아님.
+# LLM 이 문서 문맥에서 "경쟁점/자점/타점" 같은 대명사성 표현을 Store 로
+# 추출하면, name UNIQUE 제약 (store_name_unique) 으로 인해 서로 다른 문서에서
+# 온 "경쟁점" 들이 Neo4j 에서 충돌 (ConstraintValidationFailed). 저장 전에 제거.
+_GENERIC_STORE_TERMS = frozenset({
+    '경쟁점', '경쟁사', '경쟁업체', '경쟁매장',
+    '자점', '자사', '타점', '타사',
+    '점포', '매장', '가맹점', '본점', '지점',
+    '해당점', '해당매장',
+})
+
 # OCR 깨짐 탐지: 낱자모(ㄱ~ㅎ)가 포함되면 스캔 문서 노이즈.
 _LONE_JAMO_RE = _re_mod.compile(r'[\u3131-\u3163]')
 # OCR 깨짐 탐지: 동일 글자 3회 이상 반복 (예: "가가가") → 인식 오류.
@@ -177,12 +188,40 @@ def _validate_entity(node_id: str, node_type: str) -> tuple[str | None, str]:
         return corrected_id, new_type if new_type else node_type
 
     if node_type == "Store":
+        if node_id.strip() in _GENERIC_STORE_TERMS:
+            return None, node_type
         if node_id in _PLATFORM_NAMES:
             return node_id, "System"
         if _PRODUCT_PATTERN_RE.search(node_id):
             return None, node_type
 
     return node_id, node_type
+
+# =============================================================================
+# MERGE key registry lookup
+# =============================================================================
+# node_registry.ALL_NODE_TYPES 는 각 label 의 UNIQUE property 를 선언한다.
+# 예: Store(name), Team(name), System(name), Person(email), Document(id)...
+# extractor 는 ``id`` / ``name`` 만 항상 세팅하므로, ``unique_property`` 가
+# ``name`` 인 경우만 name 으로 MERGE 하고 나머지는 id 로 fallback.
+# email/phone 같은 property 는 extractor 가 세우지 않아서 MERGE 키로 쓰면
+# 매번 CREATE 로 빠진다.
+def _build_merge_key_map() -> dict[str, str]:
+    from src.stores.neo4j.node_registry import ALL_NODE_TYPES
+    out: dict[str, str] = {}
+    for config in ALL_NODE_TYPES.values():
+        if config.unique_property == "name":
+            out[config.label] = "name"
+    return out
+
+
+_MERGE_KEY_BY_LABEL: dict[str, str] = _build_merge_key_map()
+
+
+def _merge_key_for_label(label: str) -> str:
+    """Return the MERGE key property for a Neo4j label (default: 'id')."""
+    return _MERGE_KEY_BY_LABEL.get(label, "id")
+
 
 # Module-level shared executor for sync-in-async bridging (P2-5 perf fix)
 _SHARED_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=2)
@@ -490,6 +529,16 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
             node_id = node_data.get('id', '')
             node_type = node_data.get('type', 'Unknown')
 
+            # LLM 비결정적 출력 방어: id/type 이 str 이 아니면 해당 노드만 skip.
+            # (list/dict 가 오면 downstream 의 set/dict 키로 쓰이는 순간
+            # `TypeError: unhashable type: 'list'` 로 문서 전체가 손실된다.)
+            if not isinstance(node_id, str) or not isinstance(node_type, str):
+                logger.warning(
+                    "LLM returned non-string node field — skipping (id=%r, type=%r)",
+                    node_id, node_type,
+                )
+                continue
+
             if node_type not in ALLOWED_NODES:
                 logger.warning(f"허용되지 않은 노드 타입 무시: {node_type} (id={node_id})")
                 continue
@@ -518,6 +567,20 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
             source = rel_data.get('source', '')
             target = rel_data.get('target', '')
             rel_type = rel_data.get('type', 'RELATED_TO')
+
+            # LLM 비결정적 출력 방어 (see _parse_nodes). source/target/type 가
+            # str 이 아니면 set 멤버십 검사에서 unhashable TypeError 로 터진다.
+            if (
+                not isinstance(source, str)
+                or not isinstance(target, str)
+                or not isinstance(rel_type, str)
+            ):
+                logger.warning(
+                    "LLM returned non-string rel field — skipping "
+                    "(source=%r, target=%r, type=%r)",
+                    source, target, rel_type,
+                )
+                continue
 
             if rel_type not in ALLOWED_RELATIONSHIPS:
                 rel_type = 'RELATED_TO'
@@ -603,14 +666,22 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
     def _upsert_node_batches(
         self, session, nodes_by_type: dict[str, list[dict]], now: str,
     ) -> tuple[int, int]:
-        """Upsert node batches to Neo4j. Returns (created, updated) counts."""
+        """Upsert node batches to Neo4j. Returns (created, updated) counts.
+
+        MERGE 키는 node_registry 의 ``unique_property`` 와 일치해야 한다.
+        예: Store/Team/System 은 ``name`` 에 UNIQUE 제약이 걸려 있으므로 ``id``
+        로 MERGE 하면 다른 문서에서 같은 name 의 엔티티가 다른 id 로 들어올 때
+        ON CREATE 경로 → ConstraintValidationFailed. ``name`` 으로 MERGE 하면
+        같은 name 은 같은 노드로 정리된다.
+        """
         created = 0
         updated = 0
         for node_type, node_params in nodes_by_type.items():
+            merge_key = _merge_key_for_label(node_type)
             try:
                 batch_query = f"""
                     UNWIND $nodes AS props
-                    MERGE (n:{node_type} {{id: props.id}})
+                    MERGE (n:{node_type} {{{merge_key}: props.{merge_key}}})
                     ON CREATE SET n.created_at = $now, n.updated_at = $now, n += props
                     ON MATCH SET n.updated_at = $now, n += props
                     SET n:__Entity__
