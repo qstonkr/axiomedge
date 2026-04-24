@@ -1,0 +1,24 @@
+version: 1
+kb_id: partnertalk
+prompt_focus: 협력사(사람/회사), 상품, 점포, 문의절차, 용어
+nodes:
+- Event
+- Person
+- Process
+- Product
+- Store
+- Term
+relationships:
+- APPLIES_TO
+- FOLLOWS
+- MANAGES
+- RELATED_TO
+- SELLS
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100
+_metadata:
+  migrated_from: prompts.py::KB_SCHEMA_PROFILES
+  migrated_at: '2026-04-24'
+  approved_candidates: []

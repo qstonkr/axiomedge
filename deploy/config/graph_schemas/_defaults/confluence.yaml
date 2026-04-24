@@ -1,0 +1,21 @@
+# Confluence wiki-page corpus default.
+version: 1
+prompt_focus: "문서 페이지, 작성자, 팀/부서, 주제, 용어"
+nodes:
+  - Page
+  - Person
+  - Team
+  - Topic
+  - Term
+  - Document
+relationships:
+  - AUTHORED
+  - MEMBER_OF
+  - COVERS
+  - MENTIONS
+  - PART_OF
+  - RELATED_TO
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100

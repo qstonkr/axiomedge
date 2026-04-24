@@ -1,0 +1,27 @@
+version: 1
+kb_id: hax
+prompt_focus: 시스템, 팀/부서, 담당자, 프로세스, 프로젝트, 용어
+nodes:
+- Document
+- Person
+- Process
+- Project
+- System
+- Team
+- Term
+relationships:
+- DEFINES
+- IMPLEMENTS
+- MANAGES
+- MEMBER_OF
+- OWNS
+- PART_OF
+- RESPONSIBLE_FOR
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100
+_metadata:
+  migrated_from: prompts.py::KB_SCHEMA_PROFILES
+  migrated_at: '2026-04-24'
+  approved_candidates: []

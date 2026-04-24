@@ -1,0 +1,17 @@
+# Local file upload — heterogeneous; conservative default.
+version: 1
+prompt_focus: "문서, 작성자, 주제, 용어"
+nodes:
+  - Document
+  - Person
+  - Topic
+  - Term
+relationships:
+  - AUTHORED
+  - COVERS
+  - MENTIONS
+  - RELATED_TO
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100

@@ -1,0 +1,19 @@
+# Ultimate fallback schema — used when no KB-specific YAML and no source-type
+# default matches. Keep minimal to avoid noise.
+version: 1
+prompt_focus: "사람, 팀, 주제, 용어, 문서"
+nodes:
+  - Person
+  - Team
+  - Topic
+  - Term
+  - Document
+relationships:
+  - MEMBER_OF
+  - MENTIONS
+  - COVERS
+  - RELATED_TO
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100

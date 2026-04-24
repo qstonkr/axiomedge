@@ -1,0 +1,29 @@
+version: 1
+kb_id: g-espa
+prompt_focus: 점포(GS25/CU), 경영주/OFC(사람), ESPA활동/개선활동, 상품카테고리, 지역/상권, 매출성과, 경쟁점
+nodes:
+- Event
+- Location
+- Person
+- Process
+- Product
+- Store
+- Team
+- Term
+relationships:
+- LOCATED_IN
+- MANAGES
+- OPERATES
+- PARTICIPATES_IN
+- PART_OF
+- RELATED_TO
+- RESPONSIBLE_FOR
+- SELLS
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100
+_metadata:
+  migrated_from: prompts.py::KB_SCHEMA_PROFILES
+  migrated_at: '2026-04-24'
+  approved_candidates: []

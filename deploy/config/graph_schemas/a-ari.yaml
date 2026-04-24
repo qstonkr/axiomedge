@@ -1,0 +1,27 @@
+version: 1
+kb_id: a-ari
+prompt_focus: 점포, 절차/프로세스, 상품, 정책/규정, 용어
+nodes:
+- Location
+- Person
+- Policy
+- Process
+- Product
+- Store
+- Term
+relationships:
+- APPLIES_TO
+- FOLLOWS
+- LOCATED_IN
+- MANAGES
+- OPERATES
+- PART_OF
+- SELLS
+options:
+  disable_bootstrap: false
+  schema_evolution: batch
+  bootstrap_sample_size: 100
+_metadata:
+  migrated_from: prompts.py::KB_SCHEMA_PROFILES
+  migrated_at: '2026-04-24'
+  approved_candidates: []
