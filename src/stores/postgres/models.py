@@ -980,3 +980,132 @@ class KBSearchGroupModel(RegistryBase):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+# =============================================================================
+# Graph Schema Evolution (Phase 3)
+# =============================================================================
+
+
+class SchemaCandidateModel(KnowledgeBase):
+    """LLM-discovered entity/relationship type candidates (pre-approval).
+
+    Spec §4.3. Unique on (kb_id, candidate_type, label).
+    """
+
+    __tablename__ = "graph_schema_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "kb_id", "candidate_type", "label",
+            name="uq_schema_candidates_kb_type_label",
+        ),
+        Index("ix_schema_candidates_kb_status", "kb_id", "status", "frequency"),
+    )
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuidlib.uuid4,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    kb_id = Column(String(64), nullable=False)
+    candidate_type = Column(String(16), nullable=False)  # 'node'|'relationship'
+    label = Column(String(64), nullable=False)
+    frequency = Column(Integer, nullable=False, default=1)
+    confidence_avg = Column(Float, nullable=False)
+    confidence_min = Column(Float, nullable=False)
+    confidence_max = Column(Float, nullable=False)
+    source_label = Column(String(64), nullable=True)
+    target_label = Column(String(64), nullable=True)
+    examples = Column(JSONB, nullable=False, default=list)
+    status = Column(String(16), nullable=False, default="pending")
+    merged_into = Column(String(64), nullable=True)
+    rejected_reason = Column(Text, nullable=True)
+    similar_labels = Column(JSONB, nullable=False, default=list)
+    first_seen_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+    last_seen_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    decided_by = Column(String(128), nullable=True)
+
+
+class BootstrapRunModel(KnowledgeBase):
+    """Audit log + concurrent-safety anchor for schema bootstrap runs.
+
+    Spec §4.3 + §6.5. ``status='running'`` + ``started_at > now() - 1h``
+    rows block concurrent runs for the same kb_id.
+    """
+
+    __tablename__ = "graph_schema_bootstrap_runs"
+    __table_args__ = (
+        Index("ix_bootstrap_runs_kb_time", "kb_id", "started_at"),
+    )
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuidlib.uuid4,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    kb_id = Column(String(64), nullable=False)
+    # running|completed|failed|cancelled
+    status = Column(String(16), nullable=False)
+    # cron|kb_create|manual|volume_threshold
+    triggered_by = Column(String(32), nullable=False)
+    triggered_by_user = Column(String(128), nullable=True)
+    sample_size = Column(Integer, nullable=False)
+    sample_strategy = Column(String(16), nullable=False)  # stratified|random
+    docs_scanned = Column(Integer, default=0)
+    candidates_found = Column(Integer, default=0)
+    llm_calls = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+
+
+class ReextractJobModel(KnowledgeBase):
+    """On-demand re-extract job queue (Phase 5 consumer).
+
+    Phase 3 only creates the table so Phase 5 can push rows without a
+    second DB migration.
+    """
+
+    __tablename__ = "graph_schema_reextract_jobs"
+    __table_args__ = (
+        Index("ix_reextract_jobs_kb", "kb_id", "queued_at"),
+    )
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuidlib.uuid4,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    kb_id = Column(String(64), nullable=False)
+    triggered_by_user = Column(String(128), nullable=False)
+    schema_version_from = Column(Integer, nullable=False)
+    schema_version_to = Column(Integer, nullable=False)
+    status = Column(String(16), nullable=False, default="queued")
+    docs_total = Column(Integer, nullable=True)
+    docs_processed = Column(Integer, default=0)
+    docs_failed = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    queued_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
