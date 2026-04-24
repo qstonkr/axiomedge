@@ -16,6 +16,11 @@ from .schema import apply_schema
 from .entity_resolver import EntityResolver, ResolvedEntity, ResolutionStage, EntityType
 from .multi_hop_searcher import MultiHopSearcher, RelatedNode, Expert, KnowledgePath
 from .integrity import GraphIntegrityChecker, IntegrityReport, IntegrityIssue
+from .dynamic_schema import (
+    ensure_dynamic_constraints,
+    ensure_dynamic_constraints_sync,
+    reset_session_cache,
+)
 
 __all__ = [
     "Neo4jClient",
@@ -43,4 +48,7 @@ __all__ = [
     "GraphIntegrityChecker",
     "IntegrityReport",
     "IntegrityIssue",
+    "ensure_dynamic_constraints",
+    "ensure_dynamic_constraints_sync",
+    "reset_session_cache",
 ]
