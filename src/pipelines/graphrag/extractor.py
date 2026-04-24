@@ -20,6 +20,8 @@ from .prompts import (
     _is_safe_cypher_label,
     build_extraction_prompt,
 )
+from .schema_resolver import SchemaResolver
+from .schema_types import SchemaProfile
 
 logger = logging.getLogger(__name__)
 
@@ -382,6 +384,8 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
         source_updated_at: str | None = None,
         max_length: int = _w.chunking.graphrag_max_document_length,
         kb_id: str | None = None,
+        source_type: str | None = None,
+        schema: SchemaProfile | None = None,
     ) -> ExtractionResult:
         """문서에서 지식 그래프 추출
 
@@ -392,6 +396,8 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
             source_updated_at: 문서 수정일 (ISO 형식, 최신성 판단용)
             max_length: 최대 처리 길이
             kb_id: KB ID (KB별 스키마 적용)
+            source_type: connector source_type (schema D-layer 선택)
+            schema: pre-resolved SchemaProfile (있으면 resolver 호출 skip)
 
         Returns:
             ExtractionResult: 추출 결과
@@ -399,8 +405,17 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
         # 문서 길이 제한
         doc_text = document[:max_length] if len(document) > max_length else document
 
-        # KB별 프롬프트 선택
-        prompt = build_extraction_prompt(doc_text, kb_id) if kb_id else KOREAN_EXTRACTION_PROMPT
+        # Schema resolve (Phase 2): kb_id + source_type 로 SchemaProfile 확정
+        if schema is None and (kb_id or source_type):
+            schema = SchemaResolver.resolve(kb_id=kb_id, source_type=source_type)
+
+        # Prompt 선택 — schema 가 있으면 그걸, 없으면 kb_id, 그도 없으면 generic
+        if schema is not None:
+            prompt = build_extraction_prompt(doc_text, schema)
+        elif kb_id:
+            prompt = build_extraction_prompt(doc_text, kb_id)
+        else:
+            prompt = KOREAN_EXTRACTION_PROMPT
 
         # LLM 호출
         try:
@@ -424,6 +439,18 @@ class GraphRAGExtractor(Neo4jPersistenceMixin):
         result.source_updated_at = source_updated_at
         result.kb_id = kb_id
         result.raw_response = raw_content
+
+        # Phase 2: schema outside labels 제거 (LLM hallucination 방어).
+        # 기존 ALLOWED_NODES 필터는 _parse_response 내부에서 이미 걸리므로
+        # 여기선 schema 가 추가로 좁은 경우만 더 거름.
+        if schema is not None and schema.nodes:
+            allowed_nodes = set(schema.nodes)
+            result.nodes = [n for n in result.nodes if n.type in allowed_nodes]
+        if schema is not None and schema.relationships:
+            allowed_rels = set(schema.relationships)
+            result.relationships = [
+                r for r in result.relationships if r.type in allowed_rels
+            ]
 
         logger.info(f"추출 완료: {result.node_count} nodes, {result.relationship_count} relationships")
 
