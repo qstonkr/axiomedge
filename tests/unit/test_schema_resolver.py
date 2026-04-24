@@ -94,3 +94,95 @@ class TestYamlLoader:
         )
         schema = SchemaResolver.resolve(kb_id=None, source_type="nonexistent")
         assert "GenericNode" in schema.nodes
+
+
+class TestLayerMerge:
+    def test_only_generic_fallback(self, schema_dir: Path):
+        # No YAMLs present at all
+        schema = SchemaResolver.resolve(kb_id=None, source_type=None)
+        # Generic hardcoded fallback kicks in
+        assert "Person" in schema.nodes
+        assert schema.source_layers == ("generic",)
+
+    def test_only_d_layer(self, schema_dir: Path):
+        (schema_dir / "_defaults" / "confluence.yaml").write_text(
+            "nodes: [Page, Person]\n"
+            "relationships: [AUTHORED]\n"
+            "prompt_focus: conf\n"
+        )
+        schema = SchemaResolver.resolve(kb_id=None, source_type="confluence")
+        assert set(schema.nodes) == {"Page", "Person"}
+        assert set(schema.relationships) == {"AUTHORED"}
+        assert schema.prompt_focus == "conf"
+        assert schema.source_layers == ("D:confluence",)
+
+    def test_only_a_layer(self, schema_dir: Path):
+        (schema_dir / "g-espa.yaml").write_text(
+            "nodes: [Store, Person]\n"
+            "relationships: [OPERATES]\n"
+            "prompt_focus: espa\n"
+        )
+        schema = SchemaResolver.resolve(kb_id="g-espa", source_type=None)
+        assert set(schema.nodes) == {"Store", "Person"}
+        assert schema.prompt_focus == "espa"
+        assert schema.source_layers == ("A:g-espa",)
+
+    def test_a_plus_d_merge_union(self, schema_dir: Path):
+        (schema_dir / "_defaults" / "confluence.yaml").write_text(
+            "nodes: [Page, Person]\n"
+            "relationships: [AUTHORED, MENTIONS]\n"
+            "prompt_focus: conf\n"
+        )
+        (schema_dir / "g-espa.yaml").write_text(
+            "nodes: [Store, Person]\n"
+            "relationships: [OPERATES, MENTIONS]\n"
+            "prompt_focus: espa\n"
+        )
+        schema = SchemaResolver.resolve(kb_id="g-espa", source_type="confluence")
+        # Nodes: union of {Page, Person, Store}
+        assert set(schema.nodes) == {"Page", "Person", "Store"}
+        # Rels: union
+        assert set(schema.relationships) == {"AUTHORED", "MENTIONS", "OPERATES"}
+        # prompt_focus: A wins (last layer)
+        assert schema.prompt_focus == "espa"
+        # Provenance
+        assert schema.source_layers == ("D:confluence", "A:g-espa")
+
+    def test_nodes_sorted_deterministic(self, schema_dir: Path):
+        (schema_dir / "_defaults" / "confluence.yaml").write_text(
+            "nodes: [Zebra, Apple, Mango]\n"
+            "relationships: []\n"
+            "prompt_focus: c\n"
+        )
+        schema = SchemaResolver.resolve(kb_id=None, source_type="confluence")
+        assert schema.nodes == ("Apple", "Mango", "Zebra")  # sorted
+
+    def test_options_from_a_wins(self, schema_dir: Path):
+        (schema_dir / "_defaults" / "confluence.yaml").write_text(
+            "nodes: []\nrelationships: []\nprompt_focus: c\n"
+            "options:\n  schema_evolution: batch\n"
+        )
+        (schema_dir / "special.yaml").write_text(
+            "nodes: []\nrelationships: []\nprompt_focus: s\n"
+            "options:\n  schema_evolution: realtime\n"
+        )
+        schema = SchemaResolver.resolve(kb_id="special", source_type="confluence")
+        assert schema.options.schema_evolution == "realtime"
+
+    def test_index_spec_parsed(self, schema_dir: Path):
+        (schema_dir / "g-espa.yaml").write_text(
+            "nodes: [Meeting]\n"
+            "relationships: []\n"
+            "prompt_focus: x\n"
+            "indexes:\n"
+            "  Meeting:\n"
+            "    - property: scheduled_at\n"
+            "      index_type: btree\n"
+            "    - property: title\n"
+            "      index_type: fulltext\n"
+        )
+        schema = SchemaResolver.resolve(kb_id="g-espa", source_type=None)
+        specs = schema.indexes["Meeting"]
+        assert len(specs) == 2
+        assert specs[0].property == "scheduled_at"
+        assert specs[1].index_type == "fulltext"
