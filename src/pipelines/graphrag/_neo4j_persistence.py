@@ -9,12 +9,16 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from src.stores.neo4j.dynamic_schema import ensure_dynamic_constraints_sync
 from src.stores.neo4j.errors import NEO4J_FAILURE
 
 from .models import ExtractionResult, GraphRelationship
 from .prompts import HISTORY_RELATIONSHIP_MAP, _is_safe_cypher_label
+
+if TYPE_CHECKING:
+    from .schema_types import SchemaProfile
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +26,32 @@ logger = logging.getLogger(__name__)
 class Neo4jPersistenceMixin:
     """Neo4j save/query methods. Host must have _get_neo4j_driver()."""
 
-    def save_to_neo4j(self, result: ExtractionResult) -> dict[str, int]:
-        """추출 결과를 Neo4j에 저장 (이력 보존 + 최신성 기반 업데이트)"""
+    def save_to_neo4j(
+        self,
+        result: ExtractionResult,
+        schema: "SchemaProfile | None" = None,
+    ) -> dict[str, int]:
+        """추출 결과를 Neo4j에 저장 (이력 보존 + 최신성 기반 업데이트).
+
+        Phase 2: ``schema`` 전달되면 Tier-2 dynamic constraint 자동 생성.
+        schema=None 은 기존 호환 경로 (legacy caller).
+        """
         driver = self._get_neo4j_driver()
         now = datetime.now(UTC).isoformat()
         source_updated = result.source_updated_at or now
+
+        # Phase 2: 신규 domain label 에 Neo4j constraint 자동 생성 (idempotent).
+        # Prep 실패는 fail-open — ingestion 계속 진행 (다음 문서가 재시도).
+        if schema is not None:
+            try:
+                client = getattr(self, "_client", None)
+                if client is not None:
+                    ensure_dynamic_constraints_sync(client, schema)
+            except NEO4J_FAILURE as exc:
+                logger.warning(
+                    "Dynamic constraint prep failed (ingestion continues): %s",
+                    exc,
+                )
 
         stats = {
             "nodes_created": 0, "nodes_updated": 0,
