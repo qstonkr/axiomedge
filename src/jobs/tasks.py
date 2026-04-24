@@ -18,6 +18,10 @@ from src.jobs.distill_jobs import (
     distill_sweep_post_train,
     distill_sweep_training,
 )
+from src.jobs.schema_bootstrap_jobs import (
+    schema_bootstrap_cleanup,
+    schema_bootstrap_run,
+)
 from src.jobs.upload_jobs import (
     cleanup_orphan_uploads,
     ingest_from_object_storage,
@@ -46,4 +50,6 @@ REGISTERED_TASKS = [
     distill_sweep_post_train,
     ingest_from_object_storage,
     cleanup_orphan_uploads,
+    schema_bootstrap_run,
+    schema_bootstrap_cleanup,
 ]
