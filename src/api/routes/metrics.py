@@ -71,6 +71,18 @@ _rag_stage_duration_buckets: dict[tuple[str, float], int] = {}
 _rag_stage_duration_sum: dict[str, float] = {}
 _rag_stage_duration_count: dict[str, int] = {}
 
+# PR-10 (I) — Ingest metrics. Cardinality 가드:
+#   - kb_id: 64자 truncate (KB 수 < 1000)
+#   - status: {"success", "failed", "skipped"} (3종)
+#   - stage: 6종 bounded (stage1_parse … stage5_index)
+#   - error_class: 12종 bounded (KnowledgeBaseError 11 + unknown)
+_ingest_documents_total: dict[tuple[str, str], int] = {}  # (kb_id, status)
+_ingest_stage_duration_buckets: dict[tuple[str, float], int] = {}
+_ingest_stage_duration_sum: dict[str, float] = {}
+_ingest_stage_duration_count: dict[str, int] = {}
+_ingest_failures_total: dict[tuple[str, str], int] = {}  # (stage, error_class)
+_ingest_in_flight: int = 0
+
 # Gauge
 _active_connections: int = 0
 
@@ -162,6 +174,68 @@ def observe_rag_stage(stage: str, duration_seconds: float) -> None:
                 _rag_stage_duration_buckets[bkey] = 0
             if duration_seconds <= bucket:
                 _rag_stage_duration_buckets[bkey] += 1
+
+
+_INGEST_STATUSES = frozenset({"success", "failed", "skipped"})
+_INGEST_STAGES = frozenset({
+    "stage1_parse", "stage2_embed", "stage2_store",
+    "stage3_quality", "stage4_graph", "stage5_index",
+    # 기존 ingestion.py 의 _stage 명칭과 호환
+    "ingestion_gate", "dedup", "quality_check", "chunk", "embed",
+    "store", "graph_edges", "tree_index", "summary_tree",
+    "term_extraction", "synonym_discovery", "graphrag",
+    "pipeline", "caller", "init", "classify", "unknown",
+})
+
+
+def inc_ingest(kb_id: str | None, status: str) -> None:
+    """Increment ingest_documents_total counter (PR-10 I)."""
+    safe_kb = (kb_id or "_unknown")[:64]
+    safe_status = status if status in _INGEST_STATUSES else "unknown"
+    with _lock:
+        key = (safe_kb, safe_status)
+        _ingest_documents_total[key] = _ingest_documents_total.get(key, 0) + 1
+
+
+def observe_ingest_stage(stage: str, duration_seconds: float) -> None:
+    """Record ingest stage duration (PR-10 I)."""
+    safe_stage = (stage or "unknown")[:32]
+    with _lock:
+        _ingest_stage_duration_sum[safe_stage] = (
+            _ingest_stage_duration_sum.get(safe_stage, 0.0) + duration_seconds
+        )
+        _ingest_stage_duration_count[safe_stage] = (
+            _ingest_stage_duration_count.get(safe_stage, 0) + 1
+        )
+        for bucket in _DURATION_BUCKETS:
+            bkey = (safe_stage, bucket)
+            if bkey not in _ingest_stage_duration_buckets:
+                _ingest_stage_duration_buckets[bkey] = 0
+            if duration_seconds <= bucket:
+                _ingest_stage_duration_buckets[bkey] += 1
+
+
+def inc_ingest_failure(stage: str, error_class: str) -> None:
+    """Increment ingest_failures_total{stage, error_class} (PR-10 I)."""
+    safe_stage = (stage or "unknown")[:32]
+    safe_error = (error_class or "unknown")[:48]
+    with _lock:
+        key = (safe_stage, safe_error)
+        _ingest_failures_total[key] = _ingest_failures_total.get(key, 0) + 1
+
+
+def inc_ingest_in_flight() -> None:
+    """Increment ingest_in_flight gauge."""
+    global _ingest_in_flight
+    with _lock:
+        _ingest_in_flight += 1
+
+
+def dec_ingest_in_flight() -> None:
+    """Decrement ingest_in_flight gauge."""
+    global _ingest_in_flight
+    with _lock:
+        _ingest_in_flight -= 1
 
 
 def observe_llm_tokens(
@@ -377,6 +451,52 @@ def _render_prometheus() -> str:
                 lines.append(
                     f'llm_request_count_total{{kb_id="{kb_id}",model="{model}"}} {n}'
                 )
+
+        # -- PR-10 (I) Ingest metrics --
+        if _ingest_documents_total:
+            lines.append(
+                "# HELP ingest_documents_total_v2 "
+                "Documents processed by KB + status (success/failed/skipped)"
+            )
+            lines.append("# TYPE ingest_documents_total_v2 counter")
+            for (kb_id, status), val in sorted(_ingest_documents_total.items()):
+                lines.append(
+                    f'ingest_documents_total_v2{{kb_id="{kb_id}",status="{status}"}} {val}'
+                )
+
+        if _ingest_stage_duration_count:
+            lines.append(
+                "# HELP ingest_duration_seconds Ingestion stage latency"
+            )
+            lines.append("# TYPE ingest_duration_seconds histogram")
+            for stage, total in sorted(_ingest_stage_duration_count.items()):
+                for bucket in _DURATION_BUCKETS:
+                    le = "+Inf" if bucket == float("inf") else str(bucket)
+                    val = _ingest_stage_duration_buckets.get((stage, bucket), 0)
+                    lines.append(
+                        f'ingest_duration_seconds_bucket{{stage="{stage}",le="{le}"}} {val}'
+                    )
+                lines.append(
+                    f'ingest_duration_seconds_sum{{stage="{stage}"}} '
+                    f"{_ingest_stage_duration_sum.get(stage, 0.0):.4f}"
+                )
+                lines.append(
+                    f'ingest_duration_seconds_count{{stage="{stage}"}} {total}'
+                )
+
+        if _ingest_failures_total:
+            lines.append(
+                "# HELP ingest_failures_total Ingestion failures by stage + error class"
+            )
+            lines.append("# TYPE ingest_failures_total counter")
+            for (stage, err), val in sorted(_ingest_failures_total.items()):
+                lines.append(
+                    f'ingest_failures_total{{stage="{stage}",error_class="{err}"}} {val}'
+                )
+
+        lines.append("# HELP ingest_in_flight Currently in-flight ingest tasks")
+        lines.append("# TYPE ingest_in_flight gauge")
+        lines.append(f"ingest_in_flight {_ingest_in_flight}")
 
         # -- Gauges --
         lines.append("# HELP active_connections Current active connections")

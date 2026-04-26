@@ -21,8 +21,10 @@ from pathlib import Path
 
 import httpx
 
+from src.core.logging import configure_logging
+
+configure_logging(service="axiomedge-edge-sync")
 logger = logging.getLogger("edge.sync")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 MANIFEST_URL = os.getenv("MANIFEST_URL", "")
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "/models"))

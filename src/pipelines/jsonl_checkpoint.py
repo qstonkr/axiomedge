@@ -111,6 +111,68 @@ def get_jsonl_path(kb_id: str) -> Path:
     return path
 
 
+def get_status_sidecar_path(kb_id: str) -> Path:
+    """Sidecar JSON for stage2 status (PR-5 B).
+
+    JSONL 자체를 append-only 로 유지하기 위해, 별도 파일에서 doc_id 별
+    ``{"status": "stored"|"pending"|"failed", "stored_at": ISO,
+    "last_error": str, "last_attempt": int}`` 를 보존한다.
+    """
+    base = os.getenv("KNOWLEDGE_PIPELINE_RUNTIME_BASE_DIR", "/tmp/knowledge-local")
+    path = Path(base) / "uploads" / kb_id / "parsed_documents.status.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_status_sidecar(sidecar_path: str | Path) -> dict[str, dict[str, Any]]:
+    """Sidecar JSON 읽기 — 없으면 빈 dict."""
+    p = Path(sidecar_path)
+    if not p.exists():
+        return {}
+    try:
+        with p.open(encoding="utf-8") as f:
+            return json.load(f) or {}
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to load status sidecar %s: %s", p, e)
+        return {}
+
+
+def update_status_sidecar(
+    sidecar_path: str | Path, doc_id: str, *,
+    status: str, error: str = "", attempt: int | None = None,
+) -> None:
+    """Sidecar JSON 의 doc_id 항목을 atomic 업데이트 (temp + rename).
+
+    상태 ∈ {"stored", "pending", "failed"}.
+    """
+    p = Path(sidecar_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data = load_status_sidecar(p)
+    entry = data.get(doc_id, {})
+    entry.update({
+        "status": status,
+        "stored_at": datetime.now(timezone.utc).isoformat(),
+    })
+    if error:
+        entry["last_error"] = error[-512:]  # cap
+    if attempt is not None:
+        entry["last_attempt"] = max(1, int(attempt))
+    data[doc_id] = entry
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)  # atomic
+    except OSError as e:
+        logger.warning("Failed to write status sidecar %s: %s", p, e)
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def get_already_parsed_ids(jsonl_path: str | Path) -> set[str]:
     """Read existing JSONL and return set of doc_ids already parsed."""
     ids: set[str] = set()

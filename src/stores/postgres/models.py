@@ -354,6 +354,43 @@ class IngestionRunModel(KnowledgeBase):
     )
 
 
+class IngestionDocumentFailureModel(KnowledgeBase):
+    """Per-document ingestion failure detail (Alembic 0010).
+
+    `IngestionRunModel.errors` 의 head 10개 요약을 보완하여, 문서 단위로
+    stage/reason/traceback/attempt 을 영속화한다. `--retry-failed RUN_ID`
+    의 입력원 + Slack alert sweep 의 sample_failures 출처.
+    """
+
+    __tablename__ = "knowledge_ingestion_document_failures"
+
+    id = Column(String(36), primary_key=True)
+    run_id = Column(
+        String(36),
+        ForeignKey(_FK_INGESTION_RUN_ID, ondelete="CASCADE"),
+        nullable=False,
+    )
+    kb_id = Column(String(255), nullable=False)
+    doc_id = Column(String(64), nullable=False)
+    source_uri = Column(Text, nullable=True)
+    stage = Column(String(40), nullable=False)
+    reason = Column(Text, nullable=False)
+    traceback = Column(Text, nullable=True)
+    attempt = Column(Integer, nullable=False, default=1)
+    failed_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("idx_kif_kb_failed_at", "kb_id", "failed_at"),
+        Index("idx_kif_run", "run_id"),
+        Index("idx_kif_stage", "stage"),
+        Index("idx_kif_doc", "kb_id", "doc_id"),
+    )
+
+
 # =============================================================================
 # Provenance
 # =============================================================================
@@ -774,6 +811,30 @@ class ApprovedKnowledgeEventModel(KnowledgeBase):
         Index("idx_approved_events_pending", "ingested_at"),
         Index("idx_approved_events_source", "source_system", "approval_type"),
         Index("idx_approved_events_created", "created_at"),
+    )
+
+
+class FeatureFlagModel(KnowledgeBase):
+    """Runtime feature flag (PR-11 N).
+
+    PK = (name, scope). Scope precedence resolved at read time:
+    ``kb:<id>`` > ``org:<id>`` > ``_global``.
+    """
+
+    __tablename__ = "knowledge_feature_flags"
+
+    name = Column(String(100), primary_key=True)
+    scope = Column(String(64), primary_key=True, default="_global")
+    enabled = Column(Boolean, nullable=False, default=False)
+    payload = Column(Text, nullable=False, default="{}")
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_by = Column(String(100), nullable=True)
+
+    __table_args__ = (
+        Index("idx_ff_name", "name"),
     )
 
 

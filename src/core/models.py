@@ -197,6 +197,7 @@ class IngestionResult:
     stage: str | None = None
     chunks_stored: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
+    traceback: str | None = None
 
     @classmethod
     def success_result(
@@ -219,6 +220,7 @@ class IngestionResult:
         reason: str,
         stage: str,
         metadata: dict[str, Any] | None = None,
+        traceback: str | None = None,
     ) -> IngestionResult:
         return cls(
             success=False,
@@ -226,4 +228,5 @@ class IngestionResult:
             reason=reason,
             stage=stage,
             metadata=metadata or {},
+            traceback=traceback,
         )

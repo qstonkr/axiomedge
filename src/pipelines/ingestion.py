@@ -170,51 +170,74 @@ class IngestionPipeline:
             ) as e:
                 logger.warning("Ingestion gate init failed: %s", e)
 
-    _EMBED_MAX_RETRIES = 3
-    _EMBED_RETRY_DELAY = 5
+    # 기본값 — settings 로드 실패 시 fallback. 테스트에서 overridable.
+    _EMBED_MAX_RETRIES = 4
+    _EMBED_RETRY_DELAY = 1.0
+    _EMBED_MAX_DELAY = 30.0
+
+    def _get_retry_policy(self) -> tuple[int, float, float]:
+        """Read retry policy from settings, falling back to class defaults."""
+        try:
+            from src.config import get_settings
+            p = get_settings().pipeline
+            return (
+                int(getattr(p, "embed_max_retries",
+                            self._EMBED_MAX_RETRIES)),
+                float(getattr(p, "embed_initial_backoff_seconds",
+                              self._EMBED_RETRY_DELAY)),
+                float(getattr(p, "embed_max_backoff_seconds",
+                              self._EMBED_MAX_DELAY)),
+            )
+        except (ImportError, AttributeError, ValueError, RuntimeError):
+            return (
+                self._EMBED_MAX_RETRIES,
+                self._EMBED_RETRY_DELAY,
+                self._EMBED_MAX_DELAY,
+            )
 
     async def _embed_dense(
         self, texts: list[str],
     ) -> list[list[float]]:
-        """Embed texts with retry on timeout/connection errors."""
-        max_retries = max(self._EMBED_MAX_RETRIES, 1)
-        for attempt in range(1, max_retries + 1):
-            try:
-                encode_fn = getattr(self.embedder, "encode", None)
-                if encode_fn is not None:
-                    result = await asyncio.to_thread(
-                        lambda: encode_fn(texts, return_dense=True)
-                    )
-                    return result["dense_vecs"]
-                return await self.embedder.embed_documents(texts)
-            except Exception as e:  # noqa: BLE001
-                if attempt < self._EMBED_MAX_RETRIES:
-                    logger.warning(
-                        "Embed attempt %d/%d failed: %s",
-                        attempt, self._EMBED_MAX_RETRIES, e,
-                    )
-                    await asyncio.sleep(self._EMBED_RETRY_DELAY)
-                else:
-                    raise
-        raise RuntimeError("unreachable: loop exits via return or raise")  # for type checker
+        """Embed texts with exponential backoff retry (PR-2 D)."""
+        from src.pipelines._retry import retry_with_backoff
+
+        max_retries, initial, max_delay = self._get_retry_policy()
+
+        async def _call() -> list[list[float]]:
+            encode_fn = getattr(self.embedder, "encode", None)
+            if encode_fn is not None:
+                result = await asyncio.to_thread(
+                    lambda: encode_fn(texts, return_dense=True)
+                )
+                return result["dense_vecs"]
+            return await self.embedder.embed_documents(texts)
+
+        return await retry_with_backoff(
+            _call,
+            max_attempts=max_retries,
+            initial_delay=initial,
+            max_delay=max_delay,
+            op_name="embed_dense",
+        )
 
     async def _embed_sparse_with_retry(
         self, texts: list[str],
     ) -> list[dict[str, list]]:
-        """Embed sparse vectors with retry logic."""
-        for attempt in range(1, self._EMBED_MAX_RETRIES + 1):
-            try:
-                return await self.sparse_embedder.embed_sparse(texts)
-            except Exception as e:  # noqa: BLE001
-                if attempt < self._EMBED_MAX_RETRIES:
-                    logger.warning(
-                        "Sparse embed attempt %d/%d failed: %s",
-                        attempt, self._EMBED_MAX_RETRIES, e,
-                    )
-                    await asyncio.sleep(self._EMBED_RETRY_DELAY)
-                else:
-                    raise
-        raise RuntimeError("unreachable: loop exits via return or raise")  # for type checker
+        """Embed sparse vectors with exponential backoff retry (PR-2 D)."""
+        from src.pipelines._retry import retry_with_backoff
+
+        max_retries, initial, max_delay = self._get_retry_policy()
+
+        async def _call() -> list[dict[str, list]]:
+            return await self.sparse_embedder.embed_sparse(texts)
+
+        return await retry_with_backoff(
+            _call,
+            max_attempts=max_retries,
+            initial_delay=initial,
+            max_delay=max_delay,
+            op_name="embed_sparse",
+        )
 
     # -- Backward-compat delegation methods --
 
@@ -457,8 +480,24 @@ class IngestionPipeline:
         parse_result: ParseResult | None = None,
     ) -> IngestionResult:
         """Execute the ingestion pipeline for a single document."""
+        # Stage tracker — except 블록의 traceback 보고에 사용. 각 stage 진입
+        # 직전 갱신해 어느 단계에서 raise 됐는지 식별 (PR-1).
+        _stage = "init"
+        # PR-10 (I) — in-flight gauge + per-status counter (best-effort import).
+        try:
+            from src.api.routes.metrics import (
+                inc_ingest, inc_ingest_failure,
+                inc_ingest_in_flight, dec_ingest_in_flight,
+            )
+            inc_ingest_in_flight()
+            _metrics_active = True
+        except (ImportError, AttributeError):
+            inc_ingest = inc_ingest_failure = None  # type: ignore
+            dec_ingest_in_flight = None  # type: ignore
+            _metrics_active = False
         try:
             # Stage 0: Ingestion gate
+            _stage = "ingestion_gate"
             gate_failure = check_ingestion_gate(
                 raw, collection_name, self._ingestion_gate,
             )
@@ -471,6 +510,7 @@ class IngestionPipeline:
             ).hexdigest()[:32]
 
             # 0. Dedup check
+            _stage = "dedup"
             dedup_failure, dedup_result_info = await check_dedup(
                 raw, collection_name, _content_hash,
                 self.dedup_pipeline, self.dedup_cache,
@@ -479,6 +519,7 @@ class IngestionPipeline:
                 return dedup_failure
 
             # 1. Quality check
+            _stage = "quality_check"
             quality_tier, quality_metrics, quality_failure = (
                 check_quality(
                     raw, self.enable_quality_filter,
@@ -488,6 +529,7 @@ class IngestionPipeline:
             if quality_failure is not None:
                 return quality_failure
 
+            _stage = "classify"
             doc_type = classify_document_type(raw.title, raw.content)
             owner = extract_owner(raw)
             l1_category = classify_l1_category(
@@ -498,6 +540,7 @@ class IngestionPipeline:
             )
 
             # 2-4. Parse, chunk, clean
+            _stage = "chunk"
             chunk_result = await build_typed_chunks(
                 raw, parse_result, self.chunker,
             )
@@ -510,11 +553,18 @@ class IngestionPipeline:
                 add_context_prefixes(raw, typed_chunks, doc_summary)
             )
 
-            # 6. Embed (dense + sparse)
-            dense_vectors, sparse_vectors = await asyncio.gather(
-                self._embed_dense(prefixed),
-                self._embed_sparse_with_retry(prefixed),
-            )
+            # 6. Embed (dense + sparse) — wrap in OTel span (PR-9 H)
+            _stage = "embed"
+            from src.core.observability.tracing import trace_ingest_stage
+            with trace_ingest_stage(
+                "stage2_embed",
+                kb_id=collection_name, doc_id=raw.doc_id,
+                chunks=len(prefixed),
+            ):
+                dense_vectors, sparse_vectors = await asyncio.gather(
+                    self._embed_dense(prefixed),
+                    self._embed_sparse_with_retry(prefixed),
+                )
             if len(dense_vectors) != len(prefixed):
                 raise ValueError(
                     f"Embedding count mismatch: "
@@ -569,22 +619,29 @@ class IngestionPipeline:
             if title_item is not None:
                 items.append(title_item)
 
-            # 9-10. Store
-            await asyncio.gather(
-                self.vector_store.upsert_batch(
-                    collection_name, items,
-                ),
-                self.graph_store.upsert_document(
-                    doc_id=raw.doc_id,
-                    title=raw.title,
-                    kb_id=collection_name,
-                    source_type=raw.metadata.get(
-                        "source_type", "file",
+            # 9-10. Store — wrap in OTel span (PR-9 H)
+            _stage = "store"
+            with trace_ingest_stage(
+                "stage2_store",
+                kb_id=collection_name, doc_id=raw.doc_id,
+                items=len(items),
+            ):
+                await asyncio.gather(
+                    self.vector_store.upsert_batch(
+                        collection_name, items,
                     ),
-                ),
-            )
+                    self.graph_store.upsert_document(
+                        doc_id=raw.doc_id,
+                        title=raw.title,
+                        kb_id=collection_name,
+                        source_type=raw.metadata.get(
+                            "source_type", "file",
+                        ),
+                    ),
+                )
 
             # 11. Graph edges
+            _stage = "graph_edges"
             await create_graph_edges(
                 raw, collection_name, self.graph_store,
                 _extract_cross_references,
@@ -592,12 +649,14 @@ class IngestionPipeline:
             )
 
             # 12. Tree index
+            _stage = "tree_index"
             await run_tree_index_builder(
                 raw, items, chunk_heading_paths,
                 collection_name, self.graph_store,
             )
 
             # 13. Summary tree
+            _stage = "summary_tree"
             await run_summary_tree_builder(
                 raw, items, dense_vectors, prefixed,
                 collection_name, chunk_heading_paths,
@@ -607,16 +666,19 @@ class IngestionPipeline:
             )
 
             # 14. Term extraction + synonym discovery + GraphRAG
+            _stage = "term_extraction"
             term_stats = await run_term_extraction(
                 raw, typed_chunks, collection_name,
                 self.enable_term_extraction,
                 self.term_extractor,
             )
+            _stage = "synonym_discovery"
             synonym_stats = await run_synonym_discovery(
                 raw, collection_name,
                 self.enable_term_extraction,
                 self.term_extractor,
             )
+            _stage = "graphrag"
             graphrag_stats = await run_graphrag(
                 raw, collection_name, self.enable_graphrag,
                 self.graphrag_extractor,
@@ -649,19 +711,34 @@ class IngestionPipeline:
                 dedup_result_info=dedup_result_info,
             )
 
+            if _metrics_active and inc_ingest is not None:
+                inc_ingest(collection_name, "success")
             return IngestionResult.success_result(
                 chunks_stored=len(items),
                 metadata=result_metadata,
             )
 
         except Exception as exc:  # noqa: BLE001
+            import traceback as _tb
+            tb_text = _tb.format_exc()
             logger.exception(
-                "Ingestion pipeline failed for doc_id=%s",
-                raw.doc_id,
+                "Ingestion pipeline failed for doc_id=%s stage=%s",
+                raw.doc_id, _stage,
             )
+            if _metrics_active:
+                if inc_ingest is not None:
+                    inc_ingest(collection_name, "failed")
+                if inc_ingest_failure is not None:
+                    inc_ingest_failure(_stage or "pipeline", type(exc).__name__)
+            # _stage 가 아직 init/None 이면 fallback 으로 'pipeline' 기록
             return IngestionResult.failure_result(
-                reason=str(exc), stage="pipeline",
+                reason=str(exc),
+                stage=_stage or "pipeline",
+                traceback=tb_text[-4096:],
             )
+        finally:
+            if _metrics_active and dec_ingest_in_flight is not None:
+                dec_ingest_in_flight()
 
 
 __all__ = [

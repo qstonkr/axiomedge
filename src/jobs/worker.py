@@ -17,6 +17,7 @@ import os
 from arq.cron import cron
 
 from src.jobs.distill_jobs import distill_sweep_post_train, distill_sweep_training
+from src.jobs.ingestion_alerts import ingestion_failure_alert_sweep
 from src.jobs.queue import redis_settings_from_env
 from src.jobs.schema_alerts import schema_alerts_sweep
 from src.jobs.schema_bootstrap_jobs import schema_bootstrap_cleanup
@@ -56,6 +57,9 @@ class WorkerSettings:
         cron(schema_bootstrap_cleanup, hour={3}, minute={5}),
         # Graph schema ops alerts sweep — 매 30분 (Phase 5b).
         cron(schema_alerts_sweep, minute={0, 30}),
+        # Ingestion failure alert sweep — 매 30분 (PR-6 E). schema_alerts 와
+        # 15분 offset 으로 부하 분산.
+        cron(ingestion_failure_alert_sweep, minute={15, 45}),
     ]
 
     @staticmethod

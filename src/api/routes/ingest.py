@@ -7,6 +7,9 @@ import logging
 import os
 import re
 import tempfile
+import traceback as _tb
+import uuid as _uuid
+from datetime import datetime, timezone
 from typing import Annotated, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -70,6 +73,84 @@ def _tally_results(
     return documents_processed, chunks_created, errors
 
 
+async def _start_ingest_run(
+    state: "AppState", *, kb_id: str, source_type: str, source_name: str
+) -> str | None:
+    """Run row 발급 — best-effort. repo 없거나 실패 시 None 반환."""
+    run_repo = state.get("ingestion_run_repo")
+    if run_repo is None:
+        return None
+    run_id = str(_uuid.uuid4())
+    try:
+        await run_repo.create({
+            "id": run_id,
+            "kb_id": kb_id,
+            "source_type": source_type,
+            "source_name": source_name[:255],
+            "started_at": datetime.now(timezone.utc),
+            "status": "running",
+        })
+        return run_id
+    except (RuntimeError, OSError, ValueError, TypeError) as e:
+        logger.warning("Failed to start ingestion run: %s", e)
+        return None
+
+
+async def _finalize_ingest_run(
+    state: "AppState",
+    run_id: str | None,
+    *,
+    status: str,
+    docs_fetched: int,
+    docs_ingested: int,
+    chunks_stored: int,
+    errors: list[str] | None = None,
+) -> None:
+    """Run row complete — best-effort."""
+    if run_id is None:
+        return
+    run_repo = state.get("ingestion_run_repo")
+    if run_repo is None:
+        return
+    try:
+        await run_repo.complete(run_id, {
+            "status": status,
+            "documents_fetched": docs_fetched,
+            "documents_ingested": docs_ingested,
+            "chunks_stored": chunks_stored,
+            "errors": errors or [],
+        })
+    except (RuntimeError, OSError, ValueError, TypeError) as e:
+        logger.warning("Failed to complete ingestion run %s: %s", run_id, e)
+
+
+async def _record_ingest_failure(
+    state: "AppState",
+    *,
+    run_id: str | None,
+    kb_id: str,
+    doc_id: str,
+    source_uri: str | None,
+    stage: str,
+    reason: str,
+    traceback: str | None = None,
+) -> None:
+    """failure_repo.record graceful wrapper."""
+    if run_id is None:
+        return
+    failure_repo = state.get("ingestion_failure_repo")
+    if failure_repo is None:
+        return
+    try:
+        await failure_repo.record(
+            run_id=run_id, kb_id=kb_id, doc_id=doc_id,
+            source_uri=source_uri, stage=stage, reason=reason,
+            traceback=traceback,
+        )
+    except (RuntimeError, OSError, ValueError, TypeError) as e:
+        logger.warning("Failed to persist ingest failure: %s", e)
+
+
 def _collect_files(source_dir: str) -> list[tuple[str, str]]:
     """Collect all file paths and names from source directory."""
     result = []
@@ -90,6 +171,43 @@ async def _update_kb_counts(state: AppState, kb_id: str, docs: int, chunks: int)
         await kb_registry.update_counts(kb_id, docs, chunks)
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as _e:
         logger.warning("KB count update failed: %s", _e)
+
+
+@router.post(
+    "/admin/ingest/runs/{run_id}/retry",
+    responses={
+        404: {"description": "Run not found or no failures"},
+        503: {"description": "Run-tracking unavailable"},
+    },
+)
+async def retry_failed_run(run_id: str) -> dict:
+    """PR-10 (I) — Admin UI 의 'Retry failed' 버튼 endpoint.
+
+    Failures 테이블의 해당 run_id 항목을 background task 로 재시도.
+    실제 재처리는 별도 prompt 로 trigger (현재는 fail/sample count 만 반환).
+    """
+    state = _get_state()
+    failure_repo = state.get("ingestion_failure_repo")
+    if failure_repo is None:
+        raise HTTPException(
+            status_code=503, detail="ingestion_failure_repo not initialized",
+        )
+    failures = await failure_repo.list_by_run(run_id)
+    if not failures:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No failures found for run {run_id}",
+        )
+    # 실제 재실행은 CLI `--retry-failed` 또는 future arq job 으로.
+    # 본 endpoint 는 운영자에게 "재시도 가능 항목 N개" 를 응답.
+    return {
+        "run_id": run_id,
+        "failure_count": len(failures),
+        "kb_id": failures[0].get("kb_id"),
+        "next_action": (
+            f"Run: uv run python -m src.cli.ingest --retry-failed {run_id}"
+        ),
+    }
 
 
 @router.post("/ingest", response_model=IngestResponse, responses={503: {"description": "Ingestion services not initialized"}, 400: {"description": "Directory not found"}, 500: {"description": "Ingestion failed"}})  # noqa: E501
@@ -139,22 +257,44 @@ async def ingest_directory(request: IngestRequest) -> "IngestResponse":
         )
 
         semaphore = asyncio.Semaphore(4)
+        run_id = await _start_ingest_run(
+            state, kb_id=request.kb_id, source_type="file",
+            source_name=request.source_dir,
+        )
 
         async def _ingest_one(fpath: str, fname: str) -> tuple[int, str | None]:
+            doc_id = RawDocument.sha256(fpath)
             async with semaphore:
-                parse_result = await asyncio.to_thread(parse_file_enhanced, fpath)
-                text = parse_result.full_text if hasattr(parse_result, 'full_text') else str(parse_result)
-                if not text:
-                    return 0, None
-                raw = RawDocument(
-                    doc_id=RawDocument.sha256(fpath),
-                    title=fname,
-                    content=text,
-                    source_uri=fpath,
-                    metadata={"force_rebuild": request.force_rebuild},
-                )
-                result = await pipeline.ingest(raw, collection_name=request.kb_id)
-                return result.chunks_stored, None
+                try:
+                    parse_result = await asyncio.to_thread(parse_file_enhanced, fpath)
+                    text = parse_result.full_text if hasattr(parse_result, 'full_text') else str(parse_result)
+                    if not text:
+                        return 0, None
+                    raw = RawDocument(
+                        doc_id=doc_id,
+                        title=fname,
+                        content=text,
+                        source_uri=fpath,
+                        metadata={"force_rebuild": request.force_rebuild},
+                    )
+                    result = await pipeline.ingest(raw, collection_name=request.kb_id)
+                    if not result.success:
+                        await _record_ingest_failure(
+                            state, run_id=run_id, kb_id=request.kb_id,
+                            doc_id=doc_id, source_uri=fpath,
+                            stage=result.stage or "unknown",
+                            reason=result.reason or "(no reason)",
+                            traceback=result.traceback,
+                        )
+                    return result.chunks_stored, None
+                except Exception as exc:  # noqa: BLE001
+                    await _record_ingest_failure(
+                        state, run_id=run_id, kb_id=request.kb_id,
+                        doc_id=doc_id, source_uri=fpath, stage="caller",
+                        reason=str(exc),
+                        traceback=_tb.format_exc()[-4096:],
+                    )
+                    raise
 
         file_paths = _collect_files(request.source_dir)
         tasks = [_ingest_one(fp, fn) for fp, fn in file_paths]
@@ -167,6 +307,13 @@ async def ingest_directory(request: IngestRequest) -> "IngestResponse":
         metrics_inc("ingest_chunks", chunks_created)
 
         await _update_kb_counts(state, request.kb_id, documents_processed, chunks_created)
+        await _finalize_ingest_run(
+            state, run_id, status="completed",
+            docs_fetched=len(file_paths),
+            docs_ingested=documents_processed,
+            chunks_stored=chunks_created,
+            errors=errors,
+        )
 
         return IngestResponse(
             success=True,
@@ -177,6 +324,13 @@ async def ingest_directory(request: IngestRequest) -> "IngestResponse":
         )
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.error("Ingestion failed: %s", e)
+        # 본 catch는 run_id 발급 전에도 도달 가능하므로 run_id 변수 가드.
+        if "run_id" in locals():
+            await _finalize_ingest_run(
+                state, locals()["run_id"], status="failed",
+                docs_fetched=0, docs_ingested=0, chunks_stored=0,
+                errors=[str(e)],
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 

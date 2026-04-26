@@ -18,7 +18,9 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from src.core.logging import configure_logging
+
+configure_logging(service="axiomedge-cli-crawl")
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".md", ".json", ".yaml", ".yml"}

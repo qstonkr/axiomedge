@@ -27,8 +27,10 @@ from fastapi.responses import HTMLResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
+from src.core.logging import configure_logging
+
+configure_logging(service="axiomedge-edge-server")
 logger = logging.getLogger("edge.server")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # ---------------------------------------------------------------------------
 # Configuration

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select, update
@@ -83,6 +83,51 @@ class IngestionRunRepository(BaseRepository):
                 return [self._to_dict(m) for m in result.scalars().all()]
             except SQLAlchemyError:
                 return []
+
+    async def recent_failure_streak(
+        self, *, window_hours: int = 24,
+    ) -> dict[str, int]:
+        """KB 별 최근 연속 실패 run 수 (PR-6 E).
+
+        BootstrapRunRepo.recent_failure_streak 동일 시맨틱: 가장 최근 →
+        과거 순 스캔, 첫 success 만나면 streak 마감.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            hours=max(1, int(window_hours))
+        )
+        async with await self._get_session() as session:
+            try:
+                result = await session.execute(
+                    select(
+                        IngestionRunModel.kb_id,
+                        IngestionRunModel.status,
+                        IngestionRunModel.completed_at,
+                    )
+                    .where(
+                        IngestionRunModel.completed_at.is_not(None),
+                        IngestionRunModel.completed_at >= cutoff,
+                    )
+                    .order_by(
+                        IngestionRunModel.kb_id,
+                        IngestionRunModel.completed_at.desc(),
+                    )
+                )
+                rows = result.all()
+            except SQLAlchemyError as e:
+                logger.warning("recent_failure_streak failed: %s", e)
+                return {}
+
+        streaks: dict[str, int] = {}
+        closed: set[str] = set()
+        for kb_id, status, _completed in rows:
+            if kb_id in closed:
+                continue
+            if status == "failed":
+                streaks[kb_id] = streaks.get(kb_id, 0) + 1
+            else:
+                streaks.setdefault(kb_id, 0)
+                closed.add(kb_id)
+        return streaks
 
     async def list_recent(self, limit: int = 50) -> list[dict[str, Any]]:
         async with await self._get_session() as session:

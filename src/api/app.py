@@ -6,11 +6,9 @@ Standalone knowledge management API server.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
 from dotenv import load_dotenv
@@ -33,29 +31,13 @@ def _default_redis_url() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Structured JSON logging
+# Structured JSON logging — delegated to src.core.logging (PR-7 G)
 # ---------------------------------------------------------------------------
-class JSONFormatter(logging.Formatter):
-    """Emit log records as single-line JSON objects."""
+from src.core.logging import configure_logging, JsonFormatter as _JsonFormatter  # noqa: E402
 
-    def format(self, record: logging.LogRecord) -> str:
-        log_entry: dict = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "level": record.levelname,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-        }
-        if record.exc_info:
-            log_entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(log_entry, ensure_ascii=False)
-
-
-_handler = logging.StreamHandler()
-_handler.setFormatter(JSONFormatter())
-logging.root.handlers = [_handler]
-logging.root.setLevel(logging.INFO)
-
+configure_logging(service="axiomedge-api")
+# Backward-compat alias — older tests import ``JSONFormatter`` from this module.
+JSONFormatter = _JsonFormatter
 logger = logging.getLogger(__name__)
 
 # Shared state for lazy-initialized singletons
@@ -95,6 +77,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     )
     from src.stores.postgres.repositories.feedback import FeedbackRepository
     from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
+    from src.stores.postgres.repositories.ingestion_failures import IngestionFailureRepository
     from src.stores.postgres.repositories.trust_score import TrustScoreRepository
     from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
     from src.stores.postgres.repositories.bulk_upload import BulkUploadRepository
@@ -110,6 +93,7 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     state["error_report_repo"] = ErrorReportRepository(session_factory)
     state["feedback_repo"] = FeedbackRepository(session_factory)
     state["ingestion_run_repo"] = IngestionRunRepository(session_factory)
+    state["ingestion_failure_repo"] = IngestionFailureRepository(session_factory)
     state["trust_score_repo"] = TrustScoreRepository(session_factory)
     state["lifecycle_repo"] = DocumentLifecycleRepository(session_factory)
     state["data_source_repo"] = DataSourceRepository(session_factory)
@@ -782,6 +766,11 @@ if os.getenv("RATE_LIMIT_ENABLED", "true" if _is_prod else "false").lower() == "
 from src.api.route_discovery import discover_and_register_routes  # noqa: E402
 discover_and_register_routes(app)
 
+# Request-ID middleware (PR-7 G) — must be inner so that trace_id ContextVar
+# is set before downstream middleware/handler logging.
+from src.api.middleware.request_id import RequestIDMiddleware  # noqa: E402
+app.add_middleware(RequestIDMiddleware)
+
 # Auth middleware (adds user context + activity logging)
 from src.auth.middleware import AuthMiddleware  # noqa: E402
 app.add_middleware(AuthMiddleware)
@@ -812,4 +801,5 @@ app.add_middleware(
     allow_credentials=True if cors_origins and "*" not in cors_origins else False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Requested-With"],
+    expose_headers=["X-Request-ID"],
 )

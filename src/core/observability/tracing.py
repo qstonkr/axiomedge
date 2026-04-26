@@ -62,6 +62,27 @@ def trace_rag_stage(stage: str, **attributes: Any) -> Iterator[None]:
             observe_rag_stage(stage, time.perf_counter() - started)
 
 
+@contextmanager
+def trace_ingest_stage(stage: str, **attributes: Any) -> Iterator[None]:
+    """Wrap an ingestion stage with OTel span + Prometheus histogram (PR-9 H + PR-10 I).
+
+    Stage 분류: stage1_parse, stage2_embed, stage2_store, stage3_quality,
+    stage4_graph, stage5_index. ``observe_ingest_stage`` 가 metrics 모듈에 없으면
+    histogram 은 skip (PR-10 머지 후 자동 활성).
+    """
+    started = time.perf_counter()
+    with tracer.start_as_current_span(f"ingest.{stage}", attributes=attributes):
+        try:
+            yield
+        finally:
+            try:
+                from src.api.routes.metrics import observe_ingest_stage
+                observe_ingest_stage(stage, time.perf_counter() - started)
+            except (ImportError, AttributeError):
+                # PR-10 미머지 시: span 만 발생, metric 은 no-op
+                pass
+
+
 _initialized = False
 
 
@@ -103,6 +124,23 @@ def init_tracing(app: Any | None = None) -> bool:
     # Auto-instrument outgoing HTTP calls (TEI, Ollama, SageMaker via httpx)
     HTTPXClientInstrumentor().instrument()
 
+    # PR-9 (H) — asyncpg auto-instrument (PG repo 모든 쿼리 span). env 토글.
+    if os.getenv("OTEL_INSTRUMENT_ASYNCPG", "1").lower() in ("1", "true", "yes"):
+        try:
+            from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
+            AsyncPGInstrumentor().instrument()
+            logger.info("OTel: asyncpg instrumented")
+        except ImportError:
+            logger.debug(
+                "OTel: opentelemetry-instrumentation-asyncpg not installed — skipped"
+            )
+        except (RuntimeError, ValueError, AttributeError) as e:
+            logger.warning("OTel asyncpg instrument failed: %s", e)
+
+    # PR-9 (H) — Neo4j: official instrumentor 미존재. driver 사용 시점에 manual
+    # span 으로 보강 (별도 헬퍼). env 토글로 enable.
+    # (Qdrant 도 official instrumentor 없음 — 기존 httpx 자동계측으로 cover.)
+
     # Auto-instrument FastAPI request lifecycle (when app provided)
     if app is not None:
         FastAPIInstrumentor.instrument_app(app, excluded_urls="/health,/ready,/metrics")
@@ -113,3 +151,10 @@ def init_tracing(app: Any | None = None) -> bool:
         service_name, environment, endpoint,
     )
     return True
+
+
+def neo4j_query_enabled() -> bool:
+    """Whether to wrap Neo4j queries in manual spans (PR-9 H, env-toggled)."""
+    return os.getenv("OTEL_INSTRUMENT_NEO4J", "1").lower() in (
+        "1", "true", "yes",
+    )

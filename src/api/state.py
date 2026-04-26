@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     )
     from src.stores.postgres.repositories.feedback import FeedbackRepository
     from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
+    from src.stores.postgres.repositories.ingestion_failures import IngestionFailureRepository
     from src.stores.postgres.repositories.trust_score import TrustScoreRepository
     from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
     from src.stores.postgres.repositories.data_source import DataSourceRepository
@@ -100,6 +101,7 @@ class AppState:
     error_report_repo: ErrorReportRepository | None = None
     feedback_repo: FeedbackRepository | None = None
     ingestion_run_repo: IngestionRunRepository | None = None
+    ingestion_failure_repo: IngestionFailureRepository | None = None
     trust_score_repo: TrustScoreRepository | None = None
     lifecycle_repo: DocumentLifecycleRepository | None = None
     data_source_repo: DataSourceRepository | None = None

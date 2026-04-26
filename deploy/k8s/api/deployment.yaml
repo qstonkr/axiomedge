@@ -5,6 +5,13 @@ metadata:
   namespace: knowledge
 spec:
   replicas: 1
+  # PR-8 (M) — zero-downtime rolling update.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 10
   selector:
     matchLabels:
       app: knowledge-api

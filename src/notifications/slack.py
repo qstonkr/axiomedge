@@ -74,8 +74,32 @@ async def notify_yaml_pr_stale(*, branch: str, hours: int) -> bool:
     )
 
 
+async def notify_ingestion_failure_streak(
+    *,
+    kb_id: str,
+    count: int,
+    sample_failures: list[dict] | None = None,
+) -> bool:
+    """Ingest run 이 N회 연속 실패했을 때 운영팀에 통지 (PR-6 E)."""
+    samples = ""
+    if sample_failures:
+        lines = []
+        for f in sample_failures[:3]:
+            doc_id = (f.get("doc_id") or "?")[:12]
+            stage = f.get("stage", "?")
+            reason = (f.get("reason") or "")[:60].replace("\n", " ")
+            lines.append(f"  • `{doc_id}…` stage=`{stage}` reason={reason}")
+        if lines:
+            samples = "\n" + "\n".join(lines)
+    return await send(
+        f":rotating_light: Ingestion failed {count} runs in a row "
+        f"for `{kb_id}` (last 24h).{samples}"
+    )
+
+
 __all__ = [
     "notify_bootstrap_failure_streak",
+    "notify_ingestion_failure_streak",
     "notify_pending_threshold",
     "notify_yaml_pr_stale",
     "send",

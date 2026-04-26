@@ -75,6 +75,9 @@ class CheckpointMixin:
             "source_key": source_key,
             "kb_id": self.kb_id,
             "visited_pages": list(self.visited_pages),
+            # PR-5 (B) — fetch/parse 실패 페이지를 visited 와 분리하여 다음 run
+            # 에서 재시도 가능하도록 한다. visited 에 들어간 page 는 영구 skip.
+            "failed_pages": list(getattr(self, "failed_pages", set())),
             "pages_count": self._total_pages_crawled,
             "last_page_id": self.all_pages[-1].page_id if self.all_pages else None,
             "last_page_title": self.all_pages[-1].title if self.all_pages else None,
@@ -126,6 +129,12 @@ class CheckpointMixin:
             # Restore visited pages (merge with already-loaded incremental data)
             checkpoint_visited = set(checkpoint_data.get("visited_pages", []))
             self.visited_pages = self.visited_pages | checkpoint_visited
+            # PR-5 (B) — failed_pages restore (옵션). 호스트 클래스에 attr 없으면 set
+            failed_pages = set(checkpoint_data.get("failed_pages", []))
+            if hasattr(self, "failed_pages"):
+                self.failed_pages = self.failed_pages | failed_pages
+            else:
+                self.failed_pages = failed_pages
             self._total_pages_crawled = checkpoint_data.get("pages_count", 0)
 
             saved_at = checkpoint_data.get("saved_at", "unknown")

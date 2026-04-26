@@ -1212,7 +1212,12 @@ class TestIngestAdditionalPaths:
         assert result.success is True  # Should still succeed
 
     async def test_ingest_pipeline_exception_caught(self) -> None:
-        """Covers the outer try/except in ingest()."""
+        """Covers the outer try/except in ingest().
+
+        PR-1 (A) 의 stage tracking 개선으로 raise 가 일어난 정확한 단계
+        ("embed") 가 stage 에 기록됨. 이전에는 일괄 "pipeline" 이었음.
+        traceback 도 함께 채워진다.
+        """
         p = _pipeline_with_mocks()
         p.embedder.encode = MagicMock(
             side_effect=RuntimeError("catastrophic"),
@@ -1222,7 +1227,9 @@ class TestIngestAdditionalPaths:
         raw = _make_raw(content="문서 내용. " * 20)
         result = await p.ingest(raw, collection_name="kb-test")
         assert result.success is False
-        assert result.stage == "pipeline"
+        assert result.stage == "embed"
+        assert result.traceback is not None
+        assert "catastrophic" in result.traceback
 
     async def test_ingest_with_graphrag_enabled(self) -> None:
         """Covers the graphrag path during ingest."""

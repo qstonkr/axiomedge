@@ -83,6 +83,29 @@ class _OcrManagerMixin:
     _ocr_pool_lock = __import__("threading").Lock()
 
     @classmethod
+    def _resolve_pool_workers(cls) -> int:
+        """Settings 의 ``pipeline.ocr_pool_workers`` 를 읽어 결정 (PR-3 F).
+
+        - 0 (default) → ``min(4, cpu_count)``. GPU 사용 시 1 강제 (OOM 방지).
+        - >=1 → 그대로 사용.
+        - 환경 변수 ``PADDLE_USE_GPU=1`` 이면 GPU 1장 공유로 1 worker 강제.
+        """
+        import os as _os
+        if _os.getenv("PADDLE_USE_GPU", "").lower() in ("1", "true", "yes"):
+            return 1
+
+        try:
+            from src.config import get_settings
+            cfg = int(getattr(
+                get_settings().pipeline, "ocr_pool_workers", 0,
+            ))
+        except (ImportError, AttributeError, ValueError, RuntimeError):
+            cfg = 0
+        if cfg > 0:
+            return cfg
+        return min(4, _os.cpu_count() or 1)
+
+    @classmethod
     def _ocr_extract_safe(
         cls, image_bytes: bytes, file_name: str = "",
         timeout: int = 1800,
@@ -96,8 +119,10 @@ class _OcrManagerMixin:
         with cls._ocr_pool_lock:
             if cls._ocr_process_pool is None:
                 ctx = mp.get_context("fork")
+                workers = cls._resolve_pool_workers()
+                logger.info("[OCR] ProcessPool starting with %d worker(s)", workers)
                 cls._ocr_process_pool = ProcessPoolExecutor(
-                    max_workers=1, mp_context=ctx,
+                    max_workers=workers, mp_context=ctx,
                 )
             pool = cls._ocr_process_pool
 

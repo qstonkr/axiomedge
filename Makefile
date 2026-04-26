@@ -116,7 +116,11 @@ k8s-install-k3s:
 	@echo "  curl -sfL https://get.k3s.io | sh -"
 	@echo "  export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
 
-k8s-deploy:
+k8s-deploy:  ## Server-side dry-run (PR-8 M) — manifest validate only
+	kubectl apply -k k8s/ --dry-run=server
+	@echo "[dry-run] OK. To apply for real: make k8s-apply"
+
+k8s-apply:  ## Apply manifests for real (PR-8 M)
 	kubectl apply -k k8s/
 	@echo ""
 	@echo "Dashboard: http://localhost:30501"
@@ -176,6 +180,12 @@ test-integration:
 
 test-e2e:
 	uv run pytest tests/e2e/ -v --no-cov -m e2e
+
+# PR-13 (K) — ingest pipeline 성능 회귀 가드 (nightly)
+perf-ingest:
+	@echo "[PR-13] Running ingest performance regression suite..."
+	uv run pytest tests/integration/test_pipeline_*.py -v --no-cov -m perf || \
+		(echo "FAIL: perf regression detected"; exit 1)
 
 # === DB Schema Migrations (Alembic) ===
 db-init:

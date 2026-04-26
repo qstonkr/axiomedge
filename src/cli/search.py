@@ -15,7 +15,9 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from src.core.logging import configure_logging  # noqa: E402
+
+configure_logging(service="axiomedge-cli-search")
 logger = logging.getLogger(__name__)
 
 

@@ -132,6 +132,14 @@ class PipelineSettings(BaseSettings):
     ingest_batch_size: int = Field(default=50, ge=10, le=500)
     incremental_mode: bool = Field(default=True)
     force_rebuild: bool = Field(default=False)
+    # PR-2 (D) — embedding retry 정책. exponential backoff with jitter.
+    embed_max_retries: int = Field(default=4, ge=1, le=10)
+    embed_initial_backoff_seconds: float = Field(default=1.0, ge=0.1, le=10.0)
+    embed_max_backoff_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+    # PR-4 (C) — 파일 단위 동시 ingest 개수 (CLI/Crawl). API 는 별도 Sem(4).
+    file_parallel: int = Field(default=4, ge=1, le=32)
+    # PR-3 (F) — OCR ProcessPool worker 수. 0 = min(4, cpu_count).
+    ocr_pool_workers: int = Field(default=0, ge=0, le=16)
 
     @property
     def output_dir(self) -> str:
@@ -324,6 +332,10 @@ class NotificationSettings(BaseSettings):
     candidate_pending_threshold: int = Field(default=50, ge=1)
     yaml_pr_stale_hours: int = Field(default=48, ge=1)
     bootstrap_failure_streak: int = Field(default=3, ge=1)
+    # PR-6 (E) — Ingestion failure alert thresholds.
+    ingestion_failure_streak: int = Field(default=3, ge=1)
+    ingestion_failure_window_hours: int = Field(default=24, ge=1)
+    ingestion_alert_dedup_minutes: int = Field(default=120, ge=10)
 
 
 class Settings(BaseSettings):
