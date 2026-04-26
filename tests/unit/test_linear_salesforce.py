@@ -72,10 +72,14 @@ class TestLinearConfig:
 
 class TestLinearAuth:
     def test_raw_key_no_bearer_prefix(self):
-        """Linear 는 ``Authorization: {key}`` (Bearer 없음)."""
+        """Linear 는 ``Authorization: {key}`` (Bearer 없음).
+
+        F3: BaseConnectorClient 마이그레이션 후 _default_headers 에 raw key
+        세팅. base 의 Bearer auto-prefix 회피를 위해 config.auth_token=None.
+        """
         from src.connectors.linear.client import LinearClient
         client = LinearClient("lin_api_xyz")
-        assert client._headers["Authorization"] == "lin_api_xyz"
+        assert client._default_headers["Authorization"] == "lin_api_xyz"
         _run(client.aclose())
 
     def test_empty_token_raises(self):
@@ -111,11 +115,11 @@ class TestLinearFetch:
                 }],
             }}
 
-        client_instance = LinearClient.__new__(LinearClient)
+        # F3: BaseConnectorClient 상속 → 정상 인스턴스화 + 메서드만 mock.
+        # __aenter__/__aexit__ 는 magic method 라 instance attribute 패치 무력
+        # — base 의 라이프사이클 사용 (httpx.AsyncClient 만들지만 외부 호출 X).
+        client_instance = LinearClient(auth_token="lin_x_test")
         client_instance.query = _query
-        client_instance.aclose = AsyncMock()
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         with patch(
             "src.connectors.linear.connector.LinearClient",

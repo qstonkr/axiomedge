@@ -19,6 +19,12 @@ api:
   replicas: 1
   port: 8000
 
+  # F1 — zero-downtime rolling update (synced with deploy/k8s/api/deployment.yaml).
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+  minReadySeconds: 10
+
   resources:
     requests:
       memory: "1Gi"
@@ -74,6 +80,12 @@ dashboard:
   port: 8501
   serviceType: NodePort
   nodePort: 30501
+
+  # F1 — zero-downtime rolling update (synced with deploy/k8s/dashboard/).
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+  minReadySeconds: 10
 
   resources:
     requests:

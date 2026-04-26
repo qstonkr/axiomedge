@@ -1,0 +1,155 @@
+# Prometheus alert rules — axiomedge (F2).
+#
+# 적용:
+#   prometheus 의 ``rule_files:`` 에 본 파일을 등록.
+#   alertmanager 가 receivers (Slack/Pagerduty) 로 routing.
+#
+# 메트릭 시리즈:
+#   - audit_unauthenticated_total       (P2-5)
+#   - ingest_failures_total             (PR-10 I + P1-7)
+#   - ingest_documents_total_v2         (PR-10 I)
+#   - ingest_in_flight                  (PR-10 I)
+#   - ingest_duration_seconds_bucket    (P1-1 / P1-7)
+#
+groups:
+  - name: axiomedge.audit
+    interval: 30s
+    rules:
+      - alert: AuditUnauthenticatedSpike
+        expr: rate(audit_unauthenticated_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: >-
+            Mutating events are being recorded with actor=_system
+          description: |
+            audit_log middleware 가 mutating endpoint 응답에서 actor 를
+            식별하지 못해 ``unauth.`` prefix 로 기록한 비율이 5분 평균
+            0.1/s 를 넘었습니다. 가능한 원인:
+              1) AuthMiddleware 가 라우트에서 빠짐 (등록 누락)
+              2) request.state.auth_user 미세팅 (auth provider 장애)
+              3) 인증 우회 시도 (보안 사건)
+            대응: ``GET /admin/audit-logs?event_type=unauth.`` 로 최근
+            row 확인 + auth middleware 로그 검토.
+
+  - name: axiomedge.ingest
+    interval: 60s
+    rules:
+      - alert: IngestionFailureBurst
+        expr: |
+          sum by (kb_id) (
+            increase(ingest_documents_total_v2{status="failed"}[15m])
+          ) > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: ingest-ops
+        annotations:
+          summary: >-
+            KB ``{{ $labels.kb_id }}`` 의 인제스트 실패가 폭증
+          description: |
+            최근 15 분간 실패 문서가 20 건을 초과했습니다.
+            대시보드 → Ingestion Runs 페이지에서 traceback 확인.
+            CLI 재시도: ``uv run python -m src.cli.ingest --retry-failed RUN_ID``
+
+      - alert: IngestionFailureStageHotspot
+        expr: |
+          topk(3,
+            sum by (stage) (rate(ingest_failures_total[10m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: info
+          team: ingest-ops
+        annotations:
+          summary: >-
+            인제스트 실패가 특정 stage (``{{ $labels.stage }}``) 에 집중
+          description: |
+            최근 10 분간 ``{{ $labels.stage }}`` stage 의 실패율이
+            높습니다. 코드 변경 후 회귀 또는 외부 의존성 (TEI/SageMaker
+            embedding, Neo4j 등) 장애 가능성. canonical 6-stage:
+            stage1_parse / stage2_embed / stage2_store / stage3_quality /
+            stage4_graph / stage5_index.
+
+      - alert: IngestionInFlightStuck
+        expr: ingest_in_flight > 10
+        for: 30m
+        labels:
+          severity: warning
+          team: ingest-ops
+        annotations:
+          summary: >-
+            ingest_in_flight 게이지가 30 분간 10 초과 — 작업 stuck 가능성
+          description: |
+            정상 운영에서는 N (Sem 한도, default 4) 안에 수렴해야 합니다.
+            10 초과가 30 분간 유지되면 hung task 또는 metric over-inc
+            (P2-4 잔여 잔여) 가능. ``GET /metrics`` 로 KB 별 in-flight
+            확인.
+
+      - alert: IngestionLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (stage, le) (rate(ingest_duration_seconds_bucket[10m]))
+          ) > 30
+        for: 15m
+        labels:
+          severity: info
+          team: ingest-ops
+        annotations:
+          summary: >-
+            Stage ``{{ $labels.stage }}`` p95 latency > 30s
+          description: |
+            embed/store stage 가 30 초 초과는 외부 서비스 (TEI / Qdrant /
+            Neo4j) 응답 저하 가능성. 분산 추적
+            (``OTEL_EXPORTER_OTLP_ENDPOINT``) 으로 root cause 분석.
+
+  - name: axiomedge.health
+    interval: 30s
+    rules:
+      - alert: ApiServerErrors5xx
+        expr: |
+          sum(rate(request_count{status=~"5.."}[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          team: oncall
+        annotations:
+          summary: API 5xx error rate > 0.5/s
+          description: |
+            지속적으로 5xx 응답이 발생합니다. ``/health`` endpoint 점검 후
+            의존 서비스 (PG/Qdrant/Neo4j/TEI/Ollama) 헬스 확인.
+
+      - alert: SearchLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(search_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: search-ops
+        annotations:
+          summary: Search p95 latency > 5s
+          description: |
+            검색 응답 p95 가 5 초 초과. 캐시 hit 율 (``cache_hits_total`` vs
+            ``cache_misses_total``) 과 RAG stage 별 latency
+            (``rag_stage_duration_seconds_bucket``) 검토.
+
+  - name: axiomedge.llm
+    interval: 60s
+    rules:
+      - alert: LlmCostBurnRate
+        expr: |
+          sum(rate(llm_estimated_cost_usd_total[1h])) > 5
+        for: 30m
+        labels:
+          severity: warning
+          team: finops
+        annotations:
+          summary: LLM 추정 비용 > $5/h
+          description: |
+            시간당 추정 비용이 임계치를 초과. 모델/KB 별 분포
+            (``llm_estimated_cost_usd_total{model,kb_id}``) 로 hot KB
+            식별. 캐시 적용 여부 점검.

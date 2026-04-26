@@ -8,6 +8,13 @@ metadata:
     {{- include "knowledge-local.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.dashboard.replicas }}
+  # F1 — sync with deploy/k8s/dashboard/deployment.yaml
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.dashboard.rollingUpdate.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.dashboard.rollingUpdate.maxUnavailable | default 0 }}
+  minReadySeconds: {{ .Values.dashboard.minReadySeconds | default 10 }}
   selector:
     matchLabels:
       app: knowledge-dashboard

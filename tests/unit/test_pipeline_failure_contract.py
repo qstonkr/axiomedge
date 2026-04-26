@@ -1,7 +1,9 @@
-"""Integration smoke — failures repo + ingestion pipeline contract (PR-13 K).
+"""Pipeline failure contract — mock-only (F5: moved from tests/integration/).
 
-DB 미연결 환경에서도 통과하는 가벼운 contract 테스트.
-실제 PG 연결은 docker compose fixture 가 가능한 CI 에서만 활성화.
+DB/HTTP 호출 없이 IngestionResult.failure_result + IngestionFailureRepository
+.record + Slack alert 의 인터페이스 일관성을 검증한다. 실제 PG 연결을 쓰는
+true integration 은 ``tests/integration/test_failure_repo_real_db.py`` (P1-3,
+``@pytest.mark.requires_postgres``) 가 담당.
 """
 
 from __future__ import annotations

@@ -150,9 +150,11 @@ class TestAuthHeaders:
         _run(client.aclose())
 
     def test_box_bearer(self):
+        # F3: BoxClient 가 BaseConnectorClient 패턴으로 — _default_headers
+        # 에 Authorization Bearer 가 들어가도록 base 가 자동 처리.
         from src.connectors.box.client import BoxClient
         client = BoxClient("box_xyz")
-        assert client._headers["Authorization"] == "Bearer box_xyz"
+        assert client._default_headers["Authorization"] == "Bearer box_xyz"
         _run(client.aclose())
 
     def test_empty_tokens_raise(self):

@@ -36,9 +36,42 @@ def _default_redis_url() -> str:
 from src.core.logging import configure_logging, JsonFormatter as _JsonFormatter  # noqa: E402
 
 configure_logging(service="axiomedge-api")
-# Backward-compat alias — older tests import ``JSONFormatter`` from this module.
-JSONFormatter = _JsonFormatter
 logger = logging.getLogger(__name__)
+
+
+# F4 — DEPRECATED alias.
+#
+# 다음 release (≥ v1.5) 에서 제거 예정. 신규 코드는 항상
+# ``from src.core.logging import JsonFormatter`` 를 사용해야 한다. 본 alias
+# 는 PR-7 (G) 통합 로깅 마이그레이션 직후 작성된 외부 테스트 호환성용이며,
+# 의존하는 위치를 모두 갱신한 시점에 삭제한다.
+#
+# 제거 plan:
+#   1. grep -rn "from src.api.app import JSONFormatter" 로 호출처 수집
+#   2. 각 호출처를 ``from src.core.logging import JsonFormatter`` 로 교체
+#   3. 본 라인 + DeprecationWarning 삭제
+#
+# 의존하는 코드가 import 시점에 경고를 인지하도록 module-level
+# DeprecationWarning 발행. ``-W error::DeprecationWarning`` 환경에서는 실패
+# → 호출처 마이그레이션 강제.
+import warnings as _warnings  # noqa: E402
+
+
+class _DeprecatedJSONFormatter(_JsonFormatter):
+    """Deprecated alias — emits a warning when subclassed/instantiated."""
+
+    def __init__(self, *args, **kwargs):
+        _warnings.warn(
+            "src.api.app.JSONFormatter is deprecated; "
+            "use src.core.logging.JsonFormatter instead. "
+            "This alias will be removed in v1.5.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
+
+
+JSONFormatter = _DeprecatedJSONFormatter
 
 # Shared state for lazy-initialized singletons
 _state = AppState()

@@ -8,6 +8,13 @@ metadata:
     {{- include "knowledge-local.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.api.replicas }}
+  # F1 — sync with deploy/k8s/api/deployment.yaml: zero-downtime RollingUpdate
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.api.rollingUpdate.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.api.rollingUpdate.maxUnavailable | default 0 }}
+  minReadySeconds: {{ .Values.api.minReadySeconds | default 10 }}
   selector:
     matchLabels:
       app: knowledge-api
