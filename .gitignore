@@ -81,3 +81,6 @@ deploy/docker/paddleocr/wheels/
 
 # 정부 R&D 신청 작업 공간 — 비공개 (개인사업체 정보, 전략 등)
 _grant/
+
+# DB dump 백업 — 사용자 데이터 포함, 원격에 올리면 안 됨
+backups/
