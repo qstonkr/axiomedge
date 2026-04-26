@@ -752,8 +752,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state._ff_listener_task = None
     try:
         from src.core.feature_flags import invalidation_listener
-        from src.jobs.queue import get_arq_pool
-        redis = await get_arq_pool()
+        from src.jobs.queue import get_pool
+        redis = await get_pool()
         if redis is not None:
             app.state._ff_listener_task = asyncio.create_task(
                 invalidation_listener(redis),

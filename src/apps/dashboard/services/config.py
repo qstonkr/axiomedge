@@ -12,6 +12,11 @@ load_dotenv()
 # --- Local FastAPI server (single endpoint) ---
 DASHBOARD_API_URL = os.getenv("DASHBOARD_API_URL", "http://localhost:8000")
 
+# B4 — Static admin token for dashboard → API. Optional in dev (AUTH_ENABLED
+# 미설정), 필수 in production (AuthMiddleware 가 401 반환 회피).
+# Streamlit session_state.token 도 fallback 으로 시도.
+DASHBOARD_API_TOKEN = os.getenv("DASHBOARD_API_TOKEN", "").strip()
+
 
 def _safe_int(env_key: str, default: int) -> int:
     """Parse env var as int with fallback."""

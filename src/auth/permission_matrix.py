@@ -74,6 +74,12 @@ PERMISSION_RULES: list[PermissionRule] = [
     # ── Data sources — data_source:manage
     _rule(r"^/api/v1/admin/data-sources(?:/.*)?$", "*", "data_source", "manage"),
 
+    # ── Feature flags (S5 — VIEWER 권한 escalation 차단). 토글은 admin only.
+    _rule(r"^/api/v1/admin/feature-flags(?:/.*)?$", "*", "org", "manage"),
+
+    # ── Audit logs (S5 — 정보 누출 차단). audit_log:read 권한.
+    _rule(r"^/api/v1/admin/audit-logs(?:/.*)?$", "GET", "audit_log", "read"),
+
     # ── Ingestion / pipeline (admin)
     _rule(r"^/api/v1/admin/pipeline(?:/.*)?$", "*", "pipeline", "execute"),
     _rule(r"^/api/v1/admin/knowledge/ingest(?:/.*)?$", "*", "pipeline", "execute"),

@@ -12,7 +12,7 @@ import logging
 import re  # noqa: F401 — re-export for backward compat
 from typing import Annotated, Any  # noqa: F401
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from fastapi import Query  # noqa: F401 — re-export for backward compat
 
@@ -263,11 +263,14 @@ async def list_feature_flags() -> list[dict]:
     "/feature-flags",
     responses={503: {"description": "feature_flag_repo not initialized"}},
 )
-async def upsert_feature_flag(body: dict[str, Any]) -> dict:
+async def upsert_feature_flag(
+    body: dict[str, Any], request: Request,
+) -> dict:
     """Upsert a feature flag — admin UI toggle save.
 
     Body: ``{name, scope, enabled, payload}``. Triggers Redis pub/sub
-    invalidation if redis is wired (P1-6).
+    invalidation if redis is wired (P1-6) + writes ``feature_flag.update``
+    audit row (S6).
     """
     state = _get_state()
     repo = state.get("feature_flag_repo")
@@ -284,12 +287,22 @@ async def upsert_feature_flag(body: dict[str, Any]) -> dict:
 
     redis = None
     try:
-        from src.jobs.queue import get_arq_pool
-        redis = await get_arq_pool()
+        from src.jobs.queue import get_pool
+        redis = await get_pool()
     except (ImportError, RuntimeError, OSError, AttributeError):
         redis = None
 
-    actor = "admin-ui"  # FIXME: use request.state.auth_user.sub when wired
+    # S6 — actor 자동 추출 + audit 기록 세팅 (middleware 가 후처리).
+    actor = _resolve_actor_from_request(request)
+    request.state.audit = {
+        "event_type": "feature_flag.update",
+        "knowledge_id": "_global",
+        "actor": actor,
+        "details": {
+            "name": name, "scope": scope, "enabled": enabled,
+            "payload_keys": sorted(list(payload.keys())),
+        },
+    }
     ok = await repo.upsert(
         name=name, scope=scope, enabled=enabled, payload=payload,
         updated_by=actor, redis=redis,
@@ -357,3 +370,23 @@ async def list_run_failures(run_id: str, limit: int = 1000) -> list[dict]:
     if repo is None:
         raise HTTPException(503, "ingestion_failure_repo not initialized")
     return await repo.list_by_run(run_id, limit=max(1, min(limit, 5000)))
+
+
+def _resolve_actor_from_request(request: Request) -> str:
+    """S6 — pull authenticated user id from auth middleware state.
+
+    Mirrors ``src/api/middleware/audit_log.py:_resolve_actor`` to keep the
+    contract aligned (``auth_user`` 우선, ``user`` legacy fallback).
+    """
+    for attr in ("auth_user", "user"):
+        try:
+            user = getattr(request.state, attr, None)
+        except (AttributeError, RuntimeError):
+            user = None
+        if user is None:
+            continue
+        for key in ("sub", "user_id", "id", "email"):
+            value = getattr(user, key, None)
+            if value:
+                return str(value)
+    return "_system"

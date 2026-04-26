@@ -74,10 +74,17 @@ def render_sidebar(show_admin: bool = False, _user_role: str | None = None):
         if ff.operations_enabled:
             with st.expander("시스템 운영", expanded=False):
                 st.page_link("pages/ingestion_jobs.py", label="📥 인제스천 작업")
+                # S7 — PR-1/PR-10 신규 페이지: 실패 추적 + 재시도 안내
+                st.page_link(
+                    "pages/ingestion_runs.py", label="🧾 Ingestion Runs (실패 추적)",
+                )
                 st.page_link("pages/job_monitor.py", label="⚙️ Job Monitor")
                 st.page_link("pages/config_weights.py", label="⚖️ Config Weights")
                 st.page_link("pages/ingestion_gate.py", label="🚦 인제스천 게이트")
                 st.page_link("pages/auth_management.py", label="🔐 Auth/RBAC")
+                # S7 — PR-12 audit log + PR-11 feature flag admin pages
+                st.page_link("pages/audit_logs.py", label="📜 Audit Logs")
+                st.page_link("pages/feature_flags.py", label="🚦 Feature Flags")
 
         st.markdown("---")
 
