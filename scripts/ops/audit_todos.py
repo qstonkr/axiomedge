@@ -42,12 +42,17 @@ class Item:
 
 
 def _git_grep(root: Path) -> list[tuple[str, int, str]]:
-    """git grep -nE 결과 (path, line, raw_text)."""
+    """git grep -nE 결과 (path, line, raw_text).
+
+    Note: ``-E`` (POSIX ERE) does not support ``\\b`` word boundary on most
+    git builds. We use a plain alternation and rely on Python ``TAG_RE``
+    in the caller to enforce word boundary semantics post-filter.
+    """
     try:
         out = subprocess.check_output(
             [
                 "git", "-C", str(root), "grep", "-nE",
-                r"\b(TODO|FIXME|HACK|XXX)\b", "--",
+                r"(TODO|FIXME|HACK|XXX)", "--",
                 "src/", "scripts/",
             ],
             text=True,
@@ -99,9 +104,15 @@ def _priority(age_days: int, category: str) -> str:
     return "P2"
 
 
+_SELF_PATH = "scripts/ops/audit_todos.py"
+
+
 def collect(root: Path = REPO_ROOT) -> list[Item]:
     items: list[Item] = []
     for path, line, raw in _git_grep(root):
+        # Skip self-matches — this script defines the regex it greps for.
+        if path == _SELF_PATH:
+            continue
         m = TAG_RE.search(raw)
         if not m:
             continue
@@ -156,11 +167,13 @@ def check_delta(base: str, max_delta: int) -> int:
         print(f"[audit_todos] base ref {base} not found — skipping delta check")
         return 0
 
-    # Count via base by checking out a worktree-free pathspec grep on the ref
+    # Count via base by checking out a worktree-free pathspec grep on the ref.
+    # ``-E`` lacks ``\b`` so we use plain alternation; word-boundary fidelity
+    # only matters for the per-file audit, not the aggregate delta.
     try:
         bcount_text = subprocess.check_output(
             ["git", "-C", str(REPO_ROOT), "grep", "-cE",
-             r"\b(TODO|FIXME|HACK|XXX)\b", out, "--",
+             r"(TODO|FIXME|HACK|XXX)", out, "--",
              "src/", "scripts/"],
             text=True, stderr=subprocess.DEVNULL,
         )
