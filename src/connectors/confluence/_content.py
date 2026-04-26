@@ -433,6 +433,13 @@ class ContentMixin:
                 "continuing with children",
                 page_id,
             )
+            # PR-5 (B) — fetch 실패한 page 는 visited 와 별도로 추적해 다음
+            # run / --retry-confluence-failed 에서 재시도 가능하게 함.
+            try:
+                self.failed_pages.add(page_id)
+            except AttributeError:
+                # legacy host class — failed_pages 미정의 시 no-op
+                pass
             child_ids = await self.get_child_pages(page_id)
             return None, child_ids
 

@@ -318,7 +318,7 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False) -> 
             logger.info("Incremental mode: %d documents already ingested", len(ingested_hashes))
 
     # PR-4 (C) — Settings 기반 파일 단위 병렬화. API의 Sem(4) 패턴을 동일하게 적용.
-    parallel = _resolve_file_parallel()
+    parallel = await _resolve_file_parallel(kb_id=kb_id)
     semaphore = asyncio.Semaphore(parallel)
     logger.info("Parallel ingest workers: %d", parallel)
 
@@ -335,28 +335,32 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False) -> 
             file_paths.append((os.path.join(root, fname), fname))
     total_fetched = len(file_paths)
 
-    async def _one(fpath: str, fname: str) -> int:
-        """파일 1개를 sem 보호 하에 ingest. 0 반환 = skip 또는 실패."""
-        nonlocal skipped
+    # P0-5 (race fix): nonlocal counter 대신 (chunks, was_skipped) 튜플 반환
+    # → asyncio.gather 결과를 단일 thread 에서 sequential 합산. yield point
+    # 사이의 race window 제거.
+    async def _one(fpath: str, fname: str) -> tuple[int, bool]:
+        """파일 1개를 sem 보호 하에 ingest. (chunks_stored, was_skipped) 반환."""
         async with semaphore:
             try:
                 if await _should_skip_file(fpath, force, ingested_hashes):
-                    skipped += 1
-                    return 0
-                return await _ingest_single_file(
+                    return 0, True
+                chunks = await _ingest_single_file(
                     fpath, fname, kb_id, pipeline,
                     run_id=run_id, failure_repo=failure_repo,
                 )
+                return chunks, False
             except Exception:  # noqa: BLE001 — _ingest_single_file 이 swallow 하지만 안전망
-                return 0
+                return 0, False
 
     try:
-        results = await asyncio.gather(
+        outcomes = await asyncio.gather(
             *[_one(fp, fn) for fp, fn in file_paths],
             return_exceptions=False,
         )
-        for chunks_stored in results:
-            if chunks_stored:
+        for chunks_stored, was_skipped in outcomes:
+            if was_skipped:
+                skipped += 1
+            elif chunks_stored:
                 total_docs += 1
                 total_chunks += chunks_stored
     except Exception:
@@ -378,8 +382,30 @@ async def ingest_directory(source_dir: str, kb_id: str, force: bool = False) -> 
     await provider.close()
 
 
-def _resolve_file_parallel() -> int:
-    """PipelineSettings.file_parallel — fallback 1 if config 실패 (직렬)."""
+async def _resolve_file_parallel(kb_id: str | None = None) -> int:
+    """Resolve effective parallelism — feature-flag aware.
+
+    Decision precedence:
+      1. ``ENABLE_INGESTION_FILE_PARALLEL`` feature flag (kb_id > _global).
+         If disabled → force serial (returns 1, regardless of settings).
+      2. Settings fallback (``PipelineSettings.file_parallel``, default 4).
+      3. Hard fallback 1 on any error.
+    """
+    # 1. Feature flag check — kill switch for parallel ingest
+    try:
+        from src.core.feature_flags import get_flag
+        enabled = await get_flag(
+            "ENABLE_INGESTION_FILE_PARALLEL",
+            kb_id=kb_id,
+            default=True,  # backward-compat: parallel by default
+        )
+        if not enabled:
+            logger.info("Parallel ingest disabled via feature flag")
+            return 1
+    except (ImportError, AttributeError, RuntimeError) as e:
+        logger.debug("Feature flag check skipped: %s", e)
+
+    # 2. Settings
     try:
         from src.config import get_settings
         return max(1, int(get_settings().pipeline.file_parallel))
@@ -456,7 +482,7 @@ async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False) -> None:
     run_status = "completed"
 
     # PR-4 (C) — 문서 단위 동시 처리. crawl 결과는 메모리상 list 이므로 단순 gather.
-    parallel = _resolve_file_parallel()
+    parallel = await _resolve_file_parallel(kb_id=kb_id)
     semaphore = asyncio.Semaphore(parallel)
     logger.info("Parallel crawl ingest workers: %d", parallel)
 
@@ -573,7 +599,7 @@ async def retry_failed(target_run_id: str, kb_id: str | None = None) -> None:
         len(failures), target_run_id, new_run_id or "-",
     )
 
-    parallel = _resolve_file_parallel()
+    parallel = await _resolve_file_parallel(kb_id=kb_id)
     semaphore = asyncio.Semaphore(parallel)
     total_chunks = 0
     succeeded_doc_ids: list[str] = []

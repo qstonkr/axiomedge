@@ -78,6 +78,8 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     from src.stores.postgres.repositories.feedback import FeedbackRepository
     from src.stores.postgres.repositories.ingestion_run import IngestionRunRepository
     from src.stores.postgres.repositories.ingestion_failures import IngestionFailureRepository
+    from src.stores.postgres.repositories.audit_log import AuditLogRepository
+    from src.stores.postgres.repositories.feature_flags import FeatureFlagRepository
     from src.stores.postgres.repositories.trust_score import TrustScoreRepository
     from src.stores.postgres.repositories.lifecycle import DocumentLifecycleRepository
     from src.stores.postgres.repositories.bulk_upload import BulkUploadRepository
@@ -94,6 +96,8 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     state["feedback_repo"] = FeedbackRepository(session_factory)
     state["ingestion_run_repo"] = IngestionRunRepository(session_factory)
     state["ingestion_failure_repo"] = IngestionFailureRepository(session_factory)
+    state["audit_log_repo"] = AuditLogRepository(session_factory)
+    state["feature_flag_repo"] = FeatureFlagRepository(session_factory)
     state["trust_score_repo"] = TrustScoreRepository(session_factory)
     state["lifecycle_repo"] = DocumentLifecycleRepository(session_factory)
     state["data_source_repo"] = DataSourceRepository(session_factory)
@@ -770,6 +774,13 @@ discover_and_register_routes(app)
 # is set before downstream middleware/handler logging.
 from src.api.middleware.request_id import RequestIDMiddleware  # noqa: E402
 app.add_middleware(RequestIDMiddleware)
+
+# Audit-log middleware (PR-12 J) — must run AFTER auth middleware so that
+# request.state.user 는 이미 세팅되어 actor 식별 가능. Starlette 의
+# add_middleware 는 LIFO 순서로 wrapping — 따라서 Auth 보다 먼저 등록해야
+# Auth 가 inner (먼저 실행) 가 됨.
+from src.api.middleware.audit_log import AuditLogMiddleware  # noqa: E402
+app.add_middleware(AuditLogMiddleware)
 
 # Auth middleware (adds user context + activity logging)
 from src.auth.middleware import AuthMiddleware  # noqa: E402

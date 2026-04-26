@@ -28,6 +28,12 @@ def _reset():
 
 
 class TestEnvOverride:
+    @pytest.fixture(autouse=True)
+    def _no_prod(self, monkeypatch):
+        # 기본은 non-production
+        monkeypatch.delenv("APP_ENV", raising=False)
+        monkeypatch.delenv("FF_ALLOW_ENV_OVERRIDE", raising=False)
+
     @pytest.mark.asyncio
     async def test_env_true_wins(self, monkeypatch):
         monkeypatch.setenv("FF_FOO", "true")
@@ -40,6 +46,42 @@ class TestEnvOverride:
         monkeypatch.setenv("FF_FOO", "0")
         loader = AsyncMock(return_value={"enabled": True})
         assert await get_flag("FOO", default=True, loader=loader) is False
+
+
+class TestProductionEnvHardening:
+    @pytest.mark.asyncio
+    async def test_production_ignores_env_by_default(self, monkeypatch):
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.setenv("FF_DANGER", "true")
+        loader = AsyncMock(return_value={"enabled": False})
+        # production 에서 allowlist 미설정 → ENV 무시, DB 값 사용
+        assert await get_flag("DANGER", default=False, loader=loader) is False
+        loader.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_production_allowlist_permits_override(self, monkeypatch):
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.setenv("FF_ALLOW_ENV_OVERRIDE", "DEBUG_X,SAFE_FLAG")
+        monkeypatch.setenv("FF_SAFE_FLAG", "true")
+        loader = AsyncMock(return_value={"enabled": False})
+        assert await get_flag("SAFE_FLAG", default=False, loader=loader) is True
+
+    @pytest.mark.asyncio
+    async def test_production_allowlist_rejects_unlisted(self, monkeypatch):
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.setenv("FF_ALLOW_ENV_OVERRIDE", "ONLY_X")
+        monkeypatch.setenv("FF_DANGER", "true")
+        loader = AsyncMock(return_value={"enabled": False})
+        # DANGER 는 allowlist 에 없음 → ENV 무시
+        assert await get_flag("DANGER", default=False, loader=loader) is False
+
+    @pytest.mark.asyncio
+    async def test_dev_env_keeps_override(self, monkeypatch):
+        monkeypatch.setenv("APP_ENV", "development")
+        monkeypatch.setenv("FF_X", "true")
+        loader = AsyncMock(return_value={"enabled": False})
+        # dev 에서는 항상 ENV override 유효
+        assert await get_flag("X", default=False, loader=loader) is True
 
 
 class TestScopePrecedence:

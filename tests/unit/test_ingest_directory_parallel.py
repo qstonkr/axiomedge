@@ -68,8 +68,10 @@ class TestParallelIngestDirectory:
         async def _no_run(*_a, **_kw):
             return (None, None, None)
         monkeypatch.setattr(cli_mod, "_init_run_tracking", _no_run)
-        # 병렬도를 2 로 강제
-        monkeypatch.setattr(cli_mod, "_resolve_file_parallel", lambda: 2)
+        # 병렬도를 2 로 강제 — async 함수
+        async def _force_two(kb_id=None):  # noqa: ARG001
+            return 2
+        monkeypatch.setattr(cli_mod, "_resolve_file_parallel", _force_two)
         # _should_skip_file 무력화
         async def _no_skip(*_a, **_kw):
             return False
@@ -85,11 +87,12 @@ class TestParallelIngestDirectory:
     async def test_resolve_file_parallel_uses_settings(self):
         from src.cli.ingest import _resolve_file_parallel
 
-        n = _resolve_file_parallel()
+        n = await _resolve_file_parallel()
         assert isinstance(n, int)
         assert n >= 1
 
-    def test_resolve_file_parallel_fallback_on_settings_error(
+    @pytest.mark.asyncio
+    async def test_resolve_file_parallel_fallback_on_settings_error(
         self, monkeypatch,
     ):
         from src.cli import ingest as cli_mod
@@ -97,7 +100,23 @@ class TestParallelIngestDirectory:
         def _raising():
             raise RuntimeError("settings broken")
         monkeypatch.setattr("src.config.get_settings", _raising)
+        # Feature flag check 도 같은 RuntimeError 로 무력화 → settings fallback → 1
+        async def _ff_off(*_a, **_kw):
+            raise RuntimeError("ff broken")
+        monkeypatch.setattr("src.core.feature_flags.get_flag", _ff_off)
 
-        # ImportError 가 아닌 RuntimeError 도 fallback 처리
-        n = cli_mod._resolve_file_parallel()
+        n = await cli_mod._resolve_file_parallel()
+        assert n == 1
+
+    @pytest.mark.asyncio
+    async def test_feature_flag_disable_forces_serial(self, monkeypatch):
+        """ENABLE_INGESTION_FILE_PARALLEL=false 면 settings 와 무관하게 1 반환."""
+        from src.cli import ingest as cli_mod
+
+        async def _flag_disabled(name, **_kw):  # noqa: ARG001
+            return False
+        monkeypatch.setattr(
+            "src.core.feature_flags.get_flag", _flag_disabled,
+        )
+        n = await cli_mod._resolve_file_parallel(kb_id="kb-x")
         assert n == 1

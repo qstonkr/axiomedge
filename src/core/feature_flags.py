@@ -82,10 +82,34 @@ def reset_cache_for_testing() -> None:
 
 
 def _env_override(name: str) -> bool | None:
-    """Return ENV override (FF_<NAME>) or None if unset."""
+    """Return ENV override (``FF_<NAME>``) or None if unset.
+
+    **Production hardening (P0-4)**:
+    - In ``APP_ENV=production`` the env override is rejected unless ``name``
+      appears in the comma-separated allowlist ``FF_ALLOW_ENV_OVERRIDE``.
+    - This prevents an attacker who can edit ConfigMap/env from bypassing
+      the audit-logged admin UI kill switch on dangerous flags
+      (``ENABLE_GRAPHRAG_BATCH_NEO4J``, ``ENABLE_INGESTION_FILE_PARALLEL``,
+      etc.).
+    - Non-production environments (dev/staging) keep the override active for
+      debugging convenience.
+    """
     raw = os.getenv(f"FF_{name}")
     if raw is None:
         return None
+
+    if os.getenv("APP_ENV", "").lower() == "production":
+        allowlist_raw = os.getenv("FF_ALLOW_ENV_OVERRIDE", "")
+        allowlist = {
+            x.strip() for x in allowlist_raw.split(",") if x.strip()
+        }
+        if name not in allowlist:
+            logger.warning(
+                "FF_%s env override IGNORED in production "
+                "(not in FF_ALLOW_ENV_OVERRIDE). Use admin UI to toggle.",
+                name,
+            )
+            return None
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 

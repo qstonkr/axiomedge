@@ -81,6 +81,10 @@ class ConfluenceFullClient(
         )
         self.all_pages: list[FullPageContent] = []
         self.visited_pages: set[str] = set()
+        # PR-5 (B) — fetch/parse 가 실패한 page_id 를 visited 와 별도로 추적.
+        # checkpoint 에 저장되어 다음 run 또는 ``--retry-confluence-failed`` 로
+        # 재시도 가능. visited 는 영구 skip, failed 는 재시도 후보.
+        self.failed_pages: set[str] = set()
         self.kb_id = kb_id
 
         # Parallel crawling settings
