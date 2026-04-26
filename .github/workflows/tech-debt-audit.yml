@@ -1,0 +1,53 @@
+name: Tech Debt Audit
+on:
+  schedule:
+    # 매주 월요일 09:00 UTC (한국 18:00) — 주간 리포트
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # delta check needs base ref
+
+      - name: Setup uv + Python
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+
+      - name: Install minimal deps (audit only)
+        run: |
+          # audit_todos.py 는 stdlib + git 만 사용 — 의존성 설치 최소화
+          uv venv
+          source .venv/bin/activate
+          python --version
+
+      - name: Run TODO audit (full report)
+        if: github.event_name != 'pull_request'
+        run: |
+          source .venv/bin/activate
+          python scripts/ops/audit_todos.py --write
+          cat docs/TECH_DEBT.md
+
+      - name: Upload tech-debt report (weekly)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tech-debt-report
+          path: docs/TECH_DEBT.md
+          retention-days: 90
+
+      - name: Delta check (PR-only)
+        if: github.event_name == 'pull_request'
+        run: |
+          source .venv/bin/activate
+          # Base ref vs PR HEAD: 신규 TODO 50개 초과 시 fail.
+          python scripts/ops/audit_todos.py \
+            --check-delta \
+            --base origin/${{ github.base_ref }} \
+            --max-delta 50

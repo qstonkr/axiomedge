@@ -32,10 +32,16 @@ def _make_async_iter(items: list[dict[str, Any]]):
 
 
 def _make_mock_client(responses: dict[str, list[dict[str, Any]]]):
-    """MSGraphClient mock — iterate_pages(path) lookup."""
+    """MSGraphClient mock — iterate_pages(path) lookup.
+
+    A1: BaseConnectorClient 상속 후 ``__new__`` 우회는 ``_base_url`` 등 base
+    인스턴스 속성을 누락. 정상 인스턴스화 + 메서드만 mock 으로 교체.
+    __aenter__/__aexit__ 는 magic method 라 base 의 라이프사이클 사용
+    (httpx.AsyncClient 만들지만 외부 호출 X — get/iterate_pages mock).
+    """
     from src.connectors._msgraph.client import MSGraphClient
 
-    client = MSGraphClient.__new__(MSGraphClient)
+    client = MSGraphClient(access_token="test-token-stub")
 
     def _iter(path: str, **kwargs):
         for prefix, items in responses.items():
@@ -45,9 +51,6 @@ def _make_mock_client(responses: dict[str, list[dict[str, Any]]]):
 
     client.iterate_pages = _iter
     client.get = AsyncMock()
-    client.aclose = AsyncMock()
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=None)
     return client
 
 

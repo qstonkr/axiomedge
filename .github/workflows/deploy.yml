@@ -23,9 +23,14 @@ jobs:
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
 
+      # A3 — Use dry-run first to surface manifest errors before any apply.
+      - name: Validate manifests (server-side dry-run)
+        run: |
+          kubectl apply -k deploy/k8s/ --dry-run=server
+
       - name: Deploy to K8s (${{ inputs.environment }})
         run: |
-          kubectl apply -k k8s/
+          kubectl apply -k deploy/k8s/
 
       - name: Verify rollout
         run: |

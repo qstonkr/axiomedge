@@ -138,9 +138,11 @@ class TestBoxConfig:
 
 class TestAuthHeaders:
     def test_asana_bearer(self):
+        # A2: AsanaClient 가 BaseConnectorClient 패턴으로 — _default_headers 에
+        # base 가 자동으로 Bearer prefix 추가.
         from src.connectors.asana.client import AsanaClient
         client = AsanaClient("pat_xyz")
-        assert client._headers["Authorization"] == "Bearer pat_xyz"
+        assert client._default_headers["Authorization"] == "Bearer pat_xyz"
         _run(client.aclose())
 
     def test_dropbox_bearer(self):

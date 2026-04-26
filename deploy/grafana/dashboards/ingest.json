@@ -1,0 +1,162 @@
+{
+  "annotations": {"list": []},
+  "description": "axiomedge — Ingestion pipeline dashboard (A5).",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 5},
+            {"color": "red", "value": 20}
+          ]}
+        }
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [{"expr": "ingest_in_flight", "refId": "A"}],
+      "title": "In-flight ingestion tasks",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "ops"}},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "graphMode": "none"
+      },
+      "targets": [{
+        "expr": "sum(rate(ingest_documents_total_v2{status=\"success\"}[5m]))",
+        "refId": "A"
+      }],
+      "title": "Successful ingest rate (docs/s, 5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 0.5},
+            {"color": "red", "value": 2}
+          ]},
+          "unit": "ops"
+        }
+      },
+      "targets": [{
+        "expr": "sum(rate(ingest_documents_total_v2{status=\"failed\"}[5m]))",
+        "refId": "A"
+      }],
+      "title": "Failure rate (docs/s, 5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "red", "value": 1}
+          ]}
+        }
+      },
+      "targets": [{
+        "expr": "sum(rate(audit_unauthenticated_total[5m]))",
+        "refId": "A"
+      }],
+      "title": "audit_unauthenticated rate (P2-5)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 5,
+      "options": {"legend": {"displayMode": "table"}},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (stage, le) (rate(ingest_duration_seconds_bucket[5m])))",
+        "legendFormat": "p95 {{stage}}",
+        "refId": "A"
+      }, {
+        "expr": "histogram_quantile(0.50, sum by (stage, le) (rate(ingest_duration_seconds_bucket[5m])))",
+        "legendFormat": "p50 {{stage}}",
+        "refId": "B"
+      }],
+      "title": "Ingest stage latency (p95 / p50) — canonical 6 stages",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "id": 6,
+      "options": {"legend": {"displayMode": "table"}},
+      "targets": [{
+        "expr": "sum by (stage, error_class) (rate(ingest_failures_total[10m]))",
+        "legendFormat": "{{stage}} / {{error_class}}",
+        "refId": "A"
+      }],
+      "title": "Failures by stage + error class (10m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
+      "id": 7,
+      "options": {"legend": {"displayMode": "table"}},
+      "targets": [{
+        "expr": "sum by (kb_id, status) (rate(ingest_documents_total_v2[10m]))",
+        "legendFormat": "{{kb_id}} / {{status}}",
+        "refId": "A"
+      }],
+      "title": "Per-KB ingest rate (success/failed/skipped)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["axiomedge", "ingest"],
+  "templating": {
+    "list": [{
+      "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+      "label": "datasource",
+      "name": "DS_PROMETHEUS",
+      "type": "datasource",
+      "query": "prometheus"
+    }]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "title": "axiomedge — Ingestion",
+  "uid": "axiomedge-ingest",
+  "version": 1,
+  "weekStart": ""
+}

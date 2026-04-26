@@ -66,7 +66,8 @@ class TestAppState:
 
 class TestJSONFormatter:
     def test_format_produces_valid_json(self):
-        from src.api.app import JSONFormatter
+        # A7 — canonical 위치 사용 (DeprecationWarning 회피)
+        from src.core.logging import JsonFormatter as JSONFormatter
 
         formatter = JSONFormatter()
         record = logging.LogRecord(
@@ -87,7 +88,8 @@ class TestJSONFormatter:
         assert "function" in parsed
 
     def test_format_with_exception(self):
-        from src.api.app import JSONFormatter
+        # A7 — canonical 위치 사용 (DeprecationWarning 회피)
+        from src.core.logging import JsonFormatter as JSONFormatter
 
         formatter = JSONFormatter()
         try:

@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.api.app import JSONFormatter, _get_state
+from src.api.app import _get_state
 from src.api.state import AppState
+# A7 — DeprecationWarning 회피: 새 canonical 위치에서 직접 import.
+from src.core.logging import JsonFormatter as JSONFormatter
 
 
 # ---------------------------------------------------------------------------

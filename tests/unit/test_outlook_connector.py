@@ -130,11 +130,9 @@ class TestOutlookFetch:
             for m in messages:
                 yield m
 
-        client_instance = MSGraphClient.__new__(MSGraphClient)
+        # A1: BaseConnectorClient 상속 → 정상 인스턴스화 + iterate_pages mock.
+        client_instance = MSGraphClient(access_token="test-token-stub")
         client_instance.iterate_pages = _iter
-        client_instance.aclose = AsyncMock()
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         connector = OutlookConnector()
         with patch(
@@ -172,11 +170,9 @@ class TestOutlookFetch:
             return
             yield  # pragma: no cover (empty generator)
 
-        client_instance = MSGraphClient.__new__(MSGraphClient)
+        # A1: BaseConnectorClient 상속 → 정상 인스턴스화 + iterate_pages mock.
+        client_instance = MSGraphClient(access_token="test-token-stub")
         client_instance.iterate_pages = _iter
-        client_instance.aclose = AsyncMock()
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(return_value=None)
 
         with patch(
             "src.connectors.outlook.connector.MSGraphClient",

@@ -1,20 +1,26 @@
 """Microsoft Graph API base client — async httpx + paging + throttle.
 
+A1 (L-3 Phase 2 — OneDrive 트랙): ``BaseConnectorClient`` 표준 base 로 마이
+그레이션. retry, ``Retry-After`` aware backoff, keep-alive pool, 401/403
+헤더 마스킹은 base 가 담당하고 본 모듈은 Microsoft Graph 특화 paging
+(``@odata.nextLink``) 과 error mapping 만 책임.
+
 지원 기능:
 - Bearer token auth (admin app-only or delegated)
 - Auto-paging via ``@odata.nextLink`` (``iterate_pages()`` async generator)
-- 429 retry with ``Retry-After`` header
+- 429 retry with ``Retry-After`` header (base 가 처리)
 - 공통 exception (``MSGraphAPIError``) — 호출자가 status/code 분기
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
+
+from src.connectors._base import BaseConnectorClient, BaseConnectorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +37,12 @@ class MSGraphAPIError(RuntimeError):
         self.code = code
 
 
-class MSGraphClient:
+class MSGraphClient(BaseConnectorClient):
     """Stateless Microsoft Graph wrapper — 한 connector run 내 instance 1개 재사용.
 
     인증: Bearer token (admin app-only 또는 user delegated). 토큰 갱신은 호출자
-    책임 — 본 client 는 주어진 token 그대로 사용. 만료되면 401 → MSGraphAPIError.
+    책임 — 본 client 는 주어진 token 그대로 사용. 만료되면 401 → 즉시
+    ``MSGraphAPIError`` (base 의 401/403 즉시 raise + header 마스킹).
     """
 
     def __init__(
@@ -44,64 +51,75 @@ class MSGraphClient:
         *,
         base_url: str = _BASE_URL,
         timeout: float = _DEFAULT_TIMEOUT,
+        max_concurrent: int = 8,
     ) -> None:
         if not access_token:
             raise ValueError("MSGraphClient requires non-empty access_token")
-        self._headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept": "application/json",
-        }
-        self._client = httpx.AsyncClient(
-            base_url=base_url, headers=self._headers, timeout=timeout,
+        config = BaseConnectorConfig(
+            auth_token=access_token,
+            timeout_seconds=timeout,
+            max_concurrent=max_concurrent,
+        )
+        super().__init__(
+            base_url=base_url,
+            config=config,
+            default_headers={"Accept": "application/json"},
         )
 
-    async def __aenter__(self) -> MSGraphClient:
-        return self
-
-    async def __aexit__(self, *_: Any) -> None:
-        await self.aclose()
-
     async def aclose(self) -> None:
-        await self._client.aclose()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
-    async def _request(
+    async def _ensure_client(self) -> None:
+        if self._client is None:
+            await self.__aenter__()
+
+    async def _graph_request(
         self, method: str, path: str, **kwargs: Any,
     ) -> dict[str, Any]:
-        """1회 요청 + 1회 retry on 429 (Retry-After 존중)."""
-        for attempt in range(2):
+        """Graph 특화 wrapper — base 의 ``_request`` 결과를 dict 로 반환."""
+        await self._ensure_client()
+        try:
+            resp = await self._request(method, path, **kwargs)
+        except httpx.TimeoutException as e:
+            raise MSGraphAPIError(f"timeout: {e}") from e
+        except httpx.HTTPStatusError as e:
             try:
-                resp = await self._client.request(method, path, **kwargs)
-            except httpx.TimeoutException as e:
-                raise MSGraphAPIError(f"timeout: {e}") from e
-            except httpx.RequestError as e:
-                raise MSGraphAPIError(f"network error: {e}") from e
-
-            if resp.status_code == 429 and attempt == 0:
-                wait = float(resp.headers.get("Retry-After", "1"))
-                logger.warning("msgraph rate-limited (%s), sleeping %.1fs", path, wait)
-                await asyncio.sleep(wait)
-                continue
-
-            if 200 <= resp.status_code < 300:
-                if not resp.content:
-                    return {}
-                return resp.json()
-
-            try:
-                payload = resp.json()
+                payload = e.response.json()
             except ValueError:
                 payload = {}
             err = payload.get("error") or {}
-            code = str(err.get("code") or "")
-            message = str(err.get("message") or resp.text[:200])
             raise MSGraphAPIError(
-                f"msgraph {resp.status_code} ({code}): {message}",
-                status=resp.status_code, code=code,
-            )
-        raise MSGraphAPIError("msgraph: max retries exceeded")
+                f"msgraph {e.response.status_code} "
+                f"({err.get('code', '')}): "
+                f"{err.get('message', e.response.text[:200])}",
+                status=e.response.status_code,
+                code=str(err.get("code") or ""),
+            ) from e
+        except httpx.RequestError as e:
+            raise MSGraphAPIError(f"network error: {e}") from e
 
-    async def get(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self._request("GET", path, params=params)
+        if 200 <= resp.status_code < 300:
+            if not resp.content:
+                return {}
+            return resp.json()
+        try:
+            payload = resp.json()
+        except ValueError:
+            payload = {}
+        err = payload.get("error") or {}
+        code = str(err.get("code") or "")
+        message = str(err.get("message") or resp.text[:200])
+        raise MSGraphAPIError(
+            f"msgraph {resp.status_code} ({code}): {message}",
+            status=resp.status_code, code=code,
+        )
+
+    async def get(
+        self, path: str, *, params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return await self._graph_request("GET", path, params=params)
 
     async def iterate_pages(
         self, path: str, *, params: dict[str, Any] | None = None,
@@ -115,12 +133,13 @@ class MSGraphClient:
         first_call = True
         while next_url:
             if first_call:
-                page = await self._request("GET", next_url, params=params)
+                page = await self._graph_request(
+                    "GET", next_url, params=params,
+                )
                 first_call = False
             else:
-                # @odata.nextLink 는 absolute URL — base_url 무시하고 직접 호출.
-                # httpx 가 absolute URL 자동 처리.
-                page = await self._request("GET", next_url)
+                # @odata.nextLink 는 absolute URL — httpx 자동 처리.
+                page = await self._graph_request("GET", next_url)
             for item in page.get("value") or []:
                 yield item
             next_url = page.get("@odata.nextLink")
