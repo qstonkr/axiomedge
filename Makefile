@@ -20,14 +20,18 @@ setup-distill-toolchain:
 	@./scripts/ops/setup_distill_toolchain.sh
 
 # === Infrastructure ===
+# IMPORTANT: -p knowledge-local 명시 — 이 prefix 가 없으면 docker compose 가
+# cwd (또는 -f 경로의 dir) 기반으로 project 명을 자동 추정해 새 빈 볼륨이
+# 생성될 수 있다. 기존 데이터 볼륨은 ``knowledge-local_*`` 이름이므로 반드시
+# 동일 project 명을 명시해 마운트되도록 한다.
 start:
-	docker compose -f deploy/docker-compose.yml up -d
+	docker compose -p knowledge-local -f deploy/docker-compose.yml up -d
 	@echo "Qdrant: http://localhost:6333"
 	@echo "Neo4j:  http://localhost:7474"
 	@echo "Ollama: http://localhost:11434"
 
 stop:
-	docker compose -f deploy/docker-compose.yml down
+	docker compose -p knowledge-local -f deploy/docker-compose.yml down
 
 # === Services ===
 # `tei-refresh` 는 AWS 사용 시에만 필요. AWS 접근 가능한 환경이면 수동 호출:
