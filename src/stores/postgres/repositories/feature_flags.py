@@ -58,8 +58,13 @@ class FeatureFlagRepository(BaseRepository):
         self, *, name: str, scope: str = "_global",
         enabled: bool, payload: dict[str, Any] | None = None,
         updated_by: str | None = None,
+        redis: Any = None,
     ) -> bool:
-        """Atomic INSERT … ON CONFLICT DO UPDATE (PG dialect)."""
+        """Atomic INSERT … ON CONFLICT DO UPDATE (PG dialect).
+
+        ``redis`` 가 주어지면 P1-6 invalidation channel 로 publish 하여
+        모든 worker 의 ``FeatureFlagCache`` 항목을 즉시 비운다.
+        """
         async with await self._get_session() as session:
             try:
                 stmt = pg_insert(FeatureFlagModel).values(
@@ -79,7 +84,6 @@ class FeatureFlagRepository(BaseRepository):
                 )
                 await session.execute(stmt)
                 await session.commit()
-                return True
             except SQLAlchemyError as e:
                 await session.rollback()
                 logger.warning(
@@ -87,7 +91,18 @@ class FeatureFlagRepository(BaseRepository):
                 )
                 return False
 
-    async def delete_one(self, *, name: str, scope: str) -> int:
+        # Cross-worker invalidation (best-effort, outside DB transaction).
+        if redis is not None:
+            try:
+                from src.core.feature_flags import publish_invalidation
+                await publish_invalidation(redis, name=name, scope=scope)
+            except (ImportError, RuntimeError, OSError, AttributeError) as e:
+                logger.debug("publish_invalidation skipped: %s", e)
+        return True
+
+    async def delete_one(
+        self, *, name: str, scope: str, redis: Any = None,
+    ) -> int:
         async with await self._get_session() as session:
             try:
                 result = await session.execute(
@@ -97,13 +112,21 @@ class FeatureFlagRepository(BaseRepository):
                     )
                 )
                 await session.commit()
-                return int(result.rowcount or 0)
+                rowcount = int(result.rowcount or 0)
             except SQLAlchemyError as e:
                 await session.rollback()
                 logger.warning(
                     "FeatureFlag delete failed (%s/%s): %s", name, scope, e,
                 )
                 return 0
+
+        if rowcount > 0 and redis is not None:
+            try:
+                from src.core.feature_flags import publish_invalidation
+                await publish_invalidation(redis, name=name, scope=scope)
+            except (ImportError, RuntimeError, OSError, AttributeError):
+                pass
+        return rowcount
 
     @staticmethod
     def _to_dict(model: FeatureFlagModel) -> dict[str, Any]:

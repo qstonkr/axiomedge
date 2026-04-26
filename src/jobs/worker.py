@@ -16,6 +16,7 @@ import os
 
 from arq.cron import cron
 
+from src.jobs.audit_log_archive import audit_log_archive_sweep
 from src.jobs.distill_jobs import distill_sweep_post_train, distill_sweep_training
 from src.jobs.ingestion_alerts import ingestion_failure_alert_sweep
 from src.jobs.queue import redis_settings_from_env
@@ -60,6 +61,8 @@ class WorkerSettings:
         # Ingestion failure alert sweep — 매 30분 (PR-6 E). schema_alerts 와
         # 15분 offset 으로 부하 분산.
         cron(ingestion_failure_alert_sweep, minute={15, 45}),
+        # Audit log archive — 매일 03:10 UTC (P1-2). retention=180d (env override).
+        cron(audit_log_archive_sweep, hour={3}, minute={10}),
     ]
 
     @staticmethod

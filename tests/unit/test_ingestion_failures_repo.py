@@ -55,19 +55,41 @@ class TestRecord:
         assert added.attempt == 1
 
     @pytest.mark.asyncio
-    async def test_record_truncates_traceback_to_4kb(self):
+    async def test_record_truncates_traceback_hybrid(self):
+        """P1-4: head 1KB + tail 3KB hybrid — 양쪽 frame 보존."""
         maker, session = _make_session_maker()
         repo = IngestionFailureRepository(maker)
 
-        big_tb = "x" * 10000
+        # head/tail 양쪽에 marker 문자를 심어서 보존 여부 검증
+        head_marker = "HEAD_FRAME_FUNC_X"
+        tail_marker = "TAIL_FRAME_FUNC_Y"
+        big_tb = head_marker + "x" * 20000 + tail_marker
         await repo.record(
             run_id="r", kb_id="kb", doc_id="d",
             stage="pipeline", reason="oom", traceback=big_tb,
         )
         added = session.add.call_args[0][0]
-        # 마지막 4KB 보존 (tail truncation — 가장 유의미한 stack 위쪽)
         assert added.traceback is not None
-        assert len(added.traceback) == 4096
+        # head 와 tail 모두 보존
+        assert head_marker in added.traceback
+        assert tail_marker in added.traceback
+        assert "[truncated middle frames]" in added.traceback
+        # 총 크기는 head + marker + tail 이내 (~4.2KB 안)
+        assert len(added.traceback) <= 4200
+
+    @pytest.mark.asyncio
+    async def test_record_short_traceback_not_truncated(self):
+        """4KB 이하 traceback 은 그대로 유지."""
+        maker, session = _make_session_maker()
+        repo = IngestionFailureRepository(maker)
+        small_tb = "Traceback (most recent call last)\n  File 'a.py'\n  ValueError"
+        await repo.record(
+            run_id="r", kb_id="kb", doc_id="d",
+            stage="pipeline", reason="x", traceback=small_tb,
+        )
+        added = session.add.call_args[0][0]
+        assert added.traceback == small_tb
+        assert "[truncated" not in added.traceback
 
     @pytest.mark.asyncio
     async def test_record_swallows_db_error_and_returns_none(self):

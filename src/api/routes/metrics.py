@@ -177,15 +177,63 @@ def observe_rag_stage(stage: str, duration_seconds: float) -> None:
 
 
 _INGEST_STATUSES = frozenset({"success", "failed", "skipped"})
+
+# PR-10 + P1-7 — 메트릭 라벨용 stage enum.
+#
+# Plan §H 의 6-stage 와 ingestion.py 의 ``_stage`` 변수 값(11종) 사이의
+# 매핑은 ``INGEST_STAGE_ALIAS`` 가 담당한다. 메트릭/추적 시리즈는 항상 6종
+# canonical 만 발생 → cardinality 안정 + dashboard 분산 방지.
 _INGEST_STAGES = frozenset({
-    "stage1_parse", "stage2_embed", "stage2_store",
-    "stage3_quality", "stage4_graph", "stage5_index",
-    # 기존 ingestion.py 의 _stage 명칭과 호환
-    "ingestion_gate", "dedup", "quality_check", "chunk", "embed",
-    "store", "graph_edges", "tree_index", "summary_tree",
-    "term_extraction", "synonym_discovery", "graphrag",
-    "pipeline", "caller", "init", "classify", "unknown",
+    "stage1_parse",
+    "stage2_embed",
+    "stage2_store",
+    "stage3_quality",
+    "stage4_graph",
+    "stage5_index",
+    "pipeline",   # except 블록 fallback
+    "caller",     # CLI/API 외부 raise
+    "unknown",    # 보호용 기본
 })
+
+# ingestion.py 의 ``_stage`` 로컬 변수 → canonical 6-stage 매핑.
+# Failure rows 와 metric labels 모두 이 alias 를 통해 정규화된다.
+INGEST_STAGE_ALIAS: dict[str, str] = {
+    # parse
+    "init": "stage1_parse",
+    "ingestion_gate": "stage1_parse",
+    "dedup": "stage1_parse",
+    "classify": "stage1_parse",
+    "chunk": "stage1_parse",
+    # quality
+    "quality_check": "stage3_quality",
+    # embed
+    "embed": "stage2_embed",
+    # store
+    "store": "stage2_store",
+    # graph
+    "graph_edges": "stage4_graph",
+    "graphrag": "stage4_graph",
+    # index/auxiliary
+    "tree_index": "stage5_index",
+    "summary_tree": "stage5_index",
+    "term_extraction": "stage5_index",
+    "synonym_discovery": "stage5_index",
+}
+
+
+def normalize_ingest_stage(stage: str | None) -> str:
+    """Map raw ingestion.py ``_stage`` to one of ``_INGEST_STAGES``.
+
+    - ``None`` / 빈 문자열 → ``"unknown"``
+    - canonical (이미 6-stage) → 그대로
+    - alias 적중 → canonical 매핑
+    - 그 외 → ``"unknown"`` (cardinality 보호)
+    """
+    if not stage:
+        return "unknown"
+    if stage in _INGEST_STAGES:
+        return stage
+    return INGEST_STAGE_ALIAS.get(stage, "unknown")
 
 
 def inc_ingest(kb_id: str | None, status: str) -> None:
@@ -198,8 +246,12 @@ def inc_ingest(kb_id: str | None, status: str) -> None:
 
 
 def observe_ingest_stage(stage: str, duration_seconds: float) -> None:
-    """Record ingest stage duration (PR-10 I)."""
-    safe_stage = (stage or "unknown")[:32]
+    """Record ingest stage duration (PR-10 I + P1-7).
+
+    Stage label is normalized to one of 6 canonical values to prevent
+    cardinality drift between ingestion.py raw stage names and metric labels.
+    """
+    safe_stage = normalize_ingest_stage(stage)
     with _lock:
         _ingest_stage_duration_sum[safe_stage] = (
             _ingest_stage_duration_sum.get(safe_stage, 0.0) + duration_seconds
@@ -216,8 +268,8 @@ def observe_ingest_stage(stage: str, duration_seconds: float) -> None:
 
 
 def inc_ingest_failure(stage: str, error_class: str) -> None:
-    """Increment ingest_failures_total{stage, error_class} (PR-10 I)."""
-    safe_stage = (stage or "unknown")[:32]
+    """Increment ingest_failures_total{stage, error_class} (PR-10 I + P1-7)."""
+    safe_stage = normalize_ingest_stage(stage)
     safe_error = (error_class or "unknown")[:48]
     with _lock:
         key = (safe_stage, safe_error)

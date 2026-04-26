@@ -1,15 +1,20 @@
-"""Lightweight feature-flag layer (PR-11 N).
+"""Lightweight feature-flag layer (PR-11 N + P1-6).
 
 Scope precedence: ``kb:<id>`` > ``org:<id>`` > ``_global`` > default.
 ENV override (``FF_<NAME>=true``) 는 모든 DB 조회보다 우선 — 긴급/테스트용.
 
-Cache: 60초 TTL in-memory, asyncio.Lock 으로 thundering-herd 방지. 새로 작성된
-flag 가 60초 이내 자동 갱신되도록 정상적으로 작동.
+Cache:
+- 60초 TTL in-memory, asyncio.Lock 으로 thundering-herd 방지.
+- **P1-6**: 다중 worker 환경에서 admin 이 flag 를 토글한 직후의 stale window
+  를 줄이기 위한 Redis 기반 invalidation 채널 (``feature_flags:invalidate``).
+  Repository.upsert 가 publish 하면 모든 worker 의 cache 가 즉시 비워진다.
+  Redis 미가용 시에는 60s TTL 만으로 동작 (하위 호환).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -19,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TTL = 60.0
 _GLOBAL_SCOPE = "_global"
+
+# Redis pub/sub channel for cross-worker cache invalidation.
+INVALIDATION_CHANNEL = "feature_flags:invalidate"
 
 
 class FeatureFlagCache:
@@ -79,6 +87,72 @@ _cache: FeatureFlagCache = FeatureFlagCache()
 def reset_cache_for_testing() -> None:
     """Test helper — invalidate the singleton cache."""
     _cache.invalidate()
+
+
+async def publish_invalidation(
+    redis: Any, name: str, scope: str = _GLOBAL_SCOPE,
+) -> bool:
+    """Notify all workers that ``(name, scope)`` cache entry should be dropped.
+
+    Caller (FeatureFlagRepository.upsert/delete) 가 호출. ``redis`` 가 None
+    이거나 publish 실패 시 silently false — TTL fallback 동작.
+    """
+    if redis is None:
+        return False
+    try:
+        payload = json.dumps({"name": name, "scope": scope})
+        await redis.publish(INVALIDATION_CHANNEL, payload)
+        return True
+    except (RuntimeError, OSError, AttributeError) as e:
+        logger.debug(
+            "FeatureFlag publish_invalidation failed: %s", e,
+        )
+        return False
+
+
+async def invalidation_listener(redis: Any) -> None:
+    """Long-running task: subscribe and invalidate ``_cache`` on each msg.
+
+    Worker startup 시 ``asyncio.create_task(invalidation_listener(redis))``
+    로 스폰. 메시지 1건 당 ``_cache.invalidate(name, scope)``.
+
+    Note: redis-py async pubsub API 사용. 미설치/연결 실패 시 graceful exit.
+    """
+    if redis is None:
+        return
+    try:
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(INVALIDATION_CHANNEL)
+    except (RuntimeError, OSError, AttributeError) as e:
+        logger.warning(
+            "FeatureFlag invalidation listener init failed: %s", e,
+        )
+        return
+
+    logger.info("FeatureFlag invalidation listener started")
+    try:
+        async for msg in pubsub.listen():
+            if msg.get("type") != "message":
+                continue
+            try:
+                data = json.loads(msg.get("data") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            name = data.get("name")
+            scope = data.get("scope") or _GLOBAL_SCOPE
+            if name:
+                _cache.invalidate(name=name, scope=scope)
+                logger.debug(
+                    "FeatureFlag cache invalidated: name=%s scope=%s",
+                    name, scope,
+                )
+    except (RuntimeError, OSError, AttributeError) as e:
+        logger.warning("FeatureFlag listener loop terminated: %s", e)
+    finally:
+        try:
+            await pubsub.unsubscribe(INVALIDATION_CHANNEL)
+        except (RuntimeError, OSError, AttributeError):
+            pass
 
 
 def _env_override(name: str) -> bool | None:
@@ -188,7 +262,10 @@ async def get_flag_payload(
 
 __all__ = [
     "FeatureFlagCache",
+    "INVALIDATION_CHANNEL",
     "get_flag",
     "get_flag_payload",
+    "invalidation_listener",
+    "publish_invalidation",
     "reset_cache_for_testing",
 ]

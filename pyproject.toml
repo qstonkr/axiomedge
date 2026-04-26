@@ -103,6 +103,9 @@ markers = [
     "integration: integration tests requiring running API server",
     "e2e: end-to-end tests requiring running API server and all services",
     "forked: run test in forked subprocess (numpy/C extension isolation)",
+    "requires_postgres: needs live PostgreSQL — auto-skip if not reachable",
+    "requires_redis: needs live Redis — auto-skip if not reachable",
+    "perf: performance regression test — opt-in (make perf-ingest)",
 ]
 # Coverage is opt-in via `make test-unit` or manual `--cov` flag. We do NOT
 # enable it on every pytest call because individual test runs during

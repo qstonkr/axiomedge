@@ -180,16 +180,15 @@ class TestNotionBFS:
                 ]
             return []
 
-        # NotionClient.__aenter__/__aexit__ 통과되도록 instance method 패치
-        async def fake_aexit(*args, **kwargs):
-            return None
-
-        client_instance = NotionClient.__new__(NotionClient)
+        # P1-9: NotionClient 가 BaseConnectorClient 상속 — 정상 인스턴스화 후
+        # 메서드만 mock 으로 교체. __aenter__/__aexit__ 는 magic method 라
+        # 인스턴스 attribute 패치로는 안 잡혀, base 의 라이프사이클을 그대로
+        # 사용한다 (httpx.AsyncClient 가 만들어지지만 실제 외부 호출 X).
+        client_instance = NotionClient(auth_token="secret_xxx_test")
         client_instance.get_page = AsyncMock(side_effect=fake_get_page)
-        client_instance.list_all_blocks = AsyncMock(side_effect=fake_list_all_blocks)
-        client_instance.aclose = AsyncMock()
-        client_instance.__aenter__ = AsyncMock(return_value=client_instance)
-        client_instance.__aexit__ = AsyncMock(side_effect=fake_aexit)
+        client_instance.list_all_blocks = AsyncMock(
+            side_effect=fake_list_all_blocks,
+        )
 
         # NotionConnector 안에서 NotionClient(...) 인스턴스화 — patch.
         from unittest.mock import patch

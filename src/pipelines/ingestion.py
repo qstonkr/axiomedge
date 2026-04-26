@@ -509,44 +509,62 @@ class IngestionPipeline:
                 raw.content.lower().strip().encode(),
             ).hexdigest()[:32]
 
-            # 0. Dedup check
-            _stage = "dedup"
-            dedup_failure, dedup_result_info = await check_dedup(
-                raw, collection_name, _content_hash,
-                self.dedup_pipeline, self.dedup_cache,
-            )
-            if dedup_failure is not None:
-                return dedup_failure
+            # P1-1 — OTel: stage1_parse covers dedup + classify + chunk.
+            # quality_check 은 별도 stage3_quality span 으로 분리.
+            from src.core.observability.tracing import trace_ingest_stage
 
-            # 1. Quality check
-            _stage = "quality_check"
-            quality_tier, quality_metrics, quality_failure = (
-                check_quality(
-                    raw, self.enable_quality_filter,
-                    self.min_quality_tier,
+            with trace_ingest_stage(
+                "stage1_parse",
+                kb_id=collection_name, doc_id=raw.doc_id,
+            ):
+                # 0. Dedup check
+                _stage = "dedup"
+                dedup_failure, dedup_result_info = await check_dedup(
+                    raw, collection_name, _content_hash,
+                    self.dedup_pipeline, self.dedup_cache,
                 )
-            )
-            if quality_failure is not None:
-                return quality_failure
+                if dedup_failure is not None:
+                    return dedup_failure
 
-            _stage = "classify"
-            doc_type = classify_document_type(raw.title, raw.content)
-            owner = extract_owner(raw)
-            l1_category = classify_l1_category(
-                raw.title, raw.content,
-            )
-            quality_score = calculate_quality_score(
-                quality_metrics, quality_tier,
-            )
+            # 1. Quality check (별도 stage span)
+            _stage = "quality_check"
+            with trace_ingest_stage(
+                "stage3_quality",
+                kb_id=collection_name, doc_id=raw.doc_id,
+            ):
+                quality_tier, quality_metrics, quality_failure = (
+                    check_quality(
+                        raw, self.enable_quality_filter,
+                        self.min_quality_tier,
+                    )
+                )
+                if quality_failure is not None:
+                    return quality_failure
 
-            # 2-4. Parse, chunk, clean
-            _stage = "chunk"
-            chunk_result = await build_typed_chunks(
-                raw, parse_result, self.chunker,
-            )
-            if isinstance(chunk_result, IngestionResult):
-                return chunk_result
-            typed_chunks, heading_map, doc_summary = chunk_result
+            # parse 후속 — classify + chunk 도 stage1_parse 의 일부
+            with trace_ingest_stage(
+                "stage1_parse",
+                kb_id=collection_name, doc_id=raw.doc_id,
+                phase="classify_chunk",
+            ):
+                _stage = "classify"
+                doc_type = classify_document_type(raw.title, raw.content)
+                owner = extract_owner(raw)
+                l1_category = classify_l1_category(
+                    raw.title, raw.content,
+                )
+                quality_score = calculate_quality_score(
+                    quality_metrics, quality_tier,
+                )
+
+                # 2-4. Parse, chunk, clean
+                _stage = "chunk"
+                chunk_result = await build_typed_chunks(
+                    raw, parse_result, self.chunker,
+                )
+                if isinstance(chunk_result, IngestionResult):
+                    return chunk_result
+                typed_chunks, heading_map, doc_summary = chunk_result
 
             # 5. Add document context prefix
             prefixed, chunk_types, chunk_heading_paths = (
@@ -555,7 +573,6 @@ class IngestionPipeline:
 
             # 6. Embed (dense + sparse) — wrap in OTel span (PR-9 H)
             _stage = "embed"
-            from src.core.observability.tracing import trace_ingest_stage
             with trace_ingest_stage(
                 "stage2_embed",
                 kb_id=collection_name, doc_id=raw.doc_id,
@@ -640,50 +657,63 @@ class IngestionPipeline:
                     ),
                 )
 
-            # 11. Graph edges
-            _stage = "graph_edges"
-            await create_graph_edges(
-                raw, collection_name, self.graph_store,
-                _extract_cross_references,
-                owner=owner, l1_category=l1_category,
-            )
+            # 11. Graph edges + 14. GraphRAG → stage4_graph span
+            with trace_ingest_stage(
+                "stage4_graph",
+                kb_id=collection_name, doc_id=raw.doc_id,
+            ):
+                _stage = "graph_edges"
+                await create_graph_edges(
+                    raw, collection_name, self.graph_store,
+                    _extract_cross_references,
+                    owner=owner, l1_category=l1_category,
+                )
 
-            # 12. Tree index
-            _stage = "tree_index"
-            await run_tree_index_builder(
-                raw, items, chunk_heading_paths,
-                collection_name, self.graph_store,
-            )
+            # 12-13. Tree/Summary index + term extraction → stage5_index span
+            with trace_ingest_stage(
+                "stage5_index",
+                kb_id=collection_name, doc_id=raw.doc_id,
+            ):
+                _stage = "tree_index"
+                await run_tree_index_builder(
+                    raw, items, chunk_heading_paths,
+                    collection_name, self.graph_store,
+                )
 
-            # 13. Summary tree
-            _stage = "summary_tree"
-            await run_summary_tree_builder(
-                raw, items, dense_vectors, prefixed,
-                collection_name, chunk_heading_paths,
-                now_iso, self.vector_store,
-                getattr(self, 'embedding_provider', None),
-                getattr(self, 'llm_client', None),
-            )
+                _stage = "summary_tree"
+                await run_summary_tree_builder(
+                    raw, items, dense_vectors, prefixed,
+                    collection_name, chunk_heading_paths,
+                    now_iso, self.vector_store,
+                    getattr(self, 'embedding_provider', None),
+                    getattr(self, 'llm_client', None),
+                )
 
-            # 14. Term extraction + synonym discovery + GraphRAG
-            _stage = "term_extraction"
-            term_stats = await run_term_extraction(
-                raw, typed_chunks, collection_name,
-                self.enable_term_extraction,
-                self.term_extractor,
-            )
-            _stage = "synonym_discovery"
-            synonym_stats = await run_synonym_discovery(
-                raw, collection_name,
-                self.enable_term_extraction,
-                self.term_extractor,
-            )
-            _stage = "graphrag"
-            graphrag_stats = await run_graphrag(
-                raw, collection_name, self.enable_graphrag,
-                self.graphrag_extractor,
-                self.legal_graph_extractor,
-            )
+                _stage = "term_extraction"
+                term_stats = await run_term_extraction(
+                    raw, typed_chunks, collection_name,
+                    self.enable_term_extraction,
+                    self.term_extractor,
+                )
+                _stage = "synonym_discovery"
+                synonym_stats = await run_synonym_discovery(
+                    raw, collection_name,
+                    self.enable_term_extraction,
+                    self.term_extractor,
+                )
+
+            # GraphRAG 는 graph cluster — stage4_graph 에 다시 묶음
+            with trace_ingest_stage(
+                "stage4_graph",
+                kb_id=collection_name, doc_id=raw.doc_id,
+                phase="graphrag",
+            ):
+                _stage = "graphrag"
+                graphrag_stats = await run_graphrag(
+                    raw, collection_name, self.enable_graphrag,
+                    self.graphrag_extractor,
+                    self.legal_graph_extractor,
+                )
 
             # Register dedup hash
             if self.dedup_cache:

@@ -22,6 +22,27 @@ from src.stores.postgres.repositories.base import BaseRepository
 logger = logging.getLogger(__name__)
 
 _TRACEBACK_MAX_BYTES = 4096
+# P1-4 hybrid truncation: head 1KB + tail 3KB. 다중-라인 traceback 의
+# 첫 frame (어느 함수가 raise 됐는지) + 마지막 frame (실제 원인) 양쪽 보존.
+_TRACEBACK_HEAD_BYTES = 1024
+_TRACEBACK_TAIL_BYTES = 3072
+_TRACEBACK_MARKER = "\n…[truncated middle frames]…\n"
+
+
+def _truncate_traceback(tb: str | None) -> str | None:
+    """Hybrid head+tail truncation for ``traceback.format_exc()``.
+
+    Total output size is bounded by
+    ``_TRACEBACK_HEAD_BYTES + len(marker) + _TRACEBACK_TAIL_BYTES`` ≤ 4128B.
+    PG Text 컬럼이라 4KB 근처 cap 은 row-size 안전.
+    """
+    if tb is None:
+        return None
+    if len(tb) <= _TRACEBACK_MAX_BYTES:
+        return tb
+    head = tb[:_TRACEBACK_HEAD_BYTES]
+    tail = tb[-_TRACEBACK_TAIL_BYTES:]
+    return f"{head}{_TRACEBACK_MARKER}{tail}"
 
 
 class IngestionFailureRepository(BaseRepository):
@@ -45,9 +66,7 @@ class IngestionFailureRepository(BaseRepository):
         예외를 swallow 한다 (logger.warning 만).
         """
         row_id = str(_uuid.uuid4())
-        tb = (traceback or None)
-        if tb is not None and len(tb) > _TRACEBACK_MAX_BYTES:
-            tb = tb[-_TRACEBACK_MAX_BYTES:]
+        tb = _truncate_traceback(traceback)
 
         async with await self._get_session() as session:
             try:

@@ -13,10 +13,38 @@ composes with async jobs / FastAPI handlers without a thread hop.
 from __future__ import annotations
 
 import logging
+import re
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+
+# P1-8 — PII / sensitive-path patterns scrubbed from Slack reason text.
+# Slack workspace 가 외부 사용자에게 공유될 가능성 → file path, email,
+# token-like hex, IPv4 등을 mask 처리.
+_PII_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"/Users/[^\s/]+(/[^\s]*)?"), "/Users/<USER>"),
+    (re.compile(r"/home/[^\s/]+(/[^\s]*)?"), "/home/<USER>"),
+    (re.compile(r"/var/secrets/[^\s]*"), "/var/secrets/<MASKED>"),
+    (re.compile(r"/etc/[^\s]*"), "/etc/<MASKED>"),
+    (re.compile(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
+    ), "<EMAIL>"),
+    (re.compile(r"\b(\d{1,3}\.){3}\d{1,3}\b"), "<IP>"),
+    # 32~64자 hex (token-like): UUID 36자(- 포함) 는 제외 패턴
+    (re.compile(r"\b[a-f0-9]{32,64}\b"), "<HEX>"),
+]
+
+
+def mask_pii(text: str) -> str:
+    """Replace common PII / sensitive paths with placeholders."""
+    if not text:
+        return text
+    out = text
+    for pat, repl in _PII_PATTERNS:
+        out = pat.sub(repl, out)
+    return out
 
 
 def _get_webhook_url() -> str | None:
@@ -87,7 +115,9 @@ async def notify_ingestion_failure_streak(
         for f in sample_failures[:3]:
             doc_id = (f.get("doc_id") or "?")[:12]
             stage = f.get("stage", "?")
-            reason = (f.get("reason") or "")[:60].replace("\n", " ")
+            # P1-8 — reason 에서 path/email/IP/token 등 PII mask 후 60자로 cap
+            raw_reason = (f.get("reason") or "").replace("\n", " ")
+            reason = mask_pii(raw_reason)[:60]
             lines.append(f"  • `{doc_id}…` stage=`{stage}` reason={reason}")
         if lines:
             samples = "\n" + "\n".join(lines)
@@ -98,6 +128,7 @@ async def notify_ingestion_failure_streak(
 
 
 __all__ = [
+    "mask_pii",
     "notify_bootstrap_failure_streak",
     "notify_ingestion_failure_streak",
     "notify_pending_threshold",

@@ -29,6 +29,16 @@ def content_hash(text: str) -> str:
 class DedupCache:
     """Async Redis dedup cache using SET per KB.
 
+    Thread-safety (P1-5):
+        모든 mutating 연산은 Redis ``SADD``/``SREM``/``SISMEMBER`` 의 단일
+        원자 명령에 위임된다. 따라서 다중 worker / asyncio task 가 동시에
+        ``add()`` 를 호출해도 Redis-server 측에서 정합성이 보장된다.
+        클라이언트 측 ``asyncio.Lock`` 같은 추가 보호는 불필요하며, 도입할
+        경우 오히려 불필요한 직렬화 (lock contention) 를 만든다.
+
+        주의: 인-메모리 fallback 구현체를 새로 추가할 경우 본 보장이
+        무효화되므로 별도 lock 또는 단일-task-write 패턴이 필요하다.
+
     Usage::
 
         dedup = DedupCache(redis_url="redis://localhost:6379")

@@ -63,11 +63,18 @@ class TestObserveIngestStage:
 
 class TestIngestFailures:
     def test_increments_per_stage_error(self):
+        # P1-7: 라벨이 canonical 6-stage 로 정규화됨.
+        # ``embed`` → ``stage2_embed``, ``store`` → ``stage2_store``.
         M.inc_ingest_failure("embed", "RuntimeError")
         M.inc_ingest_failure("embed", "RuntimeError")
         M.inc_ingest_failure("store", "TimeoutError")
-        assert M._ingest_failures_total[("embed", "RuntimeError")] == 2
-        assert M._ingest_failures_total[("store", "TimeoutError")] == 1
+        assert M._ingest_failures_total[("stage2_embed", "RuntimeError")] == 2
+        assert M._ingest_failures_total[("stage2_store", "TimeoutError")] == 1
+
+    def test_unknown_stage_falls_back(self):
+        """Cardinality 가드: 매핑되지 않은 stage 는 'unknown' 으로."""
+        M.inc_ingest_failure("totally_unknown_stage", "X")
+        assert ("unknown", "X") in M._ingest_failures_total
 
 
 class TestInFlightGauge:
@@ -84,6 +91,7 @@ class TestPrometheusRendering:
     def test_renders_all_four_metric_families(self):
         M.inc_ingest("kb-1", "success")
         M.observe_ingest_stage("stage2_embed", 0.3)
+        # P1-7: ``"store"`` → ``"stage2_store"`` (canonical normalize)
         M.inc_ingest_failure("store", "OSError")
         M.inc_ingest_in_flight()
 
@@ -92,8 +100,8 @@ class TestPrometheusRendering:
         assert "ingest_duration_seconds" in text
         assert "ingest_failures_total" in text
         assert "ingest_in_flight" in text
-        # 라벨 정합성
+        # 라벨 정합성 — canonical 6-stage
         assert 'kb_id="kb-1"' in text
         assert 'status="success"' in text
-        assert 'stage="store"' in text
+        assert 'stage="stage2_store"' in text
         assert 'error_class="OSError"' in text
