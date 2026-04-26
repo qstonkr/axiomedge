@@ -29,7 +29,7 @@ st.caption(
 # =============================================================================
 # 최근 Run 목록
 # =============================================================================
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=30)  # M-cleanup: trafffic 완화
 def _fetch_runs(limit: int = 50) -> list[dict]:
     """API → IngestionRunRepository.list_recent."""
     try:
@@ -42,7 +42,7 @@ def _fetch_runs(limit: int = 50) -> list[dict]:
         return []
 
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=30)
 def _fetch_failures(run_id: str) -> list[dict]:
     """API → IngestionFailureRepository.list_by_run."""
     try:

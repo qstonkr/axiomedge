@@ -342,6 +342,38 @@ score = parse_strict_score("점수: 0.85")
 
 ---
 
+## DASHBOARD_API_TOKEN rotation SOP
+
+Streamlit dashboard 가 FastAPI admin endpoint 호출 시 사용하는 토큰.
+AUTH_ENABLED=true 환경에서 admin pages (Ingestion Runs / Audit Logs /
+Feature Flags) 정상 동작 필수.
+
+**발급**: OWNER 역할 user 로 long-lived JWT 발급 (`src/auth/jwt_service.py`).
+권장 만료: 90일.
+
+**적용**:
+```bash
+# 1) k8s secret 갱신
+kubectl -n knowledge create secret generic dashboard-token \
+  --from-literal=DASHBOARD_API_TOKEN='<new-token>' \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 2) dashboard pod 재시작 (모듈-import time 평가 — 자동 갱신 X)
+kubectl -n knowledge rollout restart deploy/knowledge-dashboard
+```
+
+**모니터링**: 토큰 만료 시 dashboard 의 모든 admin page 가 "Failed to fetch"
+표시. ``audit_unauthenticated_total`` Prometheus 메트릭 spike 도 좋은 지표.
+
+**Permission 정책**:
+- Feature Flag 토글: ``org:manage`` (OWNER role only — `permission_matrix.py:78`)
+- Audit Log 열람: ``audit_log:read`` (ADMIN+)
+
+ADMIN 에게도 flag 토글 권한 부여 필요 시 ADMIN role 에 ``org:manage`` 추가
+또는 별도 권한 정의.
+
+---
+
 ## 참고
 
 - Prompt injection 구현: `src/llm/prompt_safety.py` + `tests/unit/test_prompt_safety.py`

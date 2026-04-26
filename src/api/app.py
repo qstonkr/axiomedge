@@ -751,6 +751,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # P0-W2 — FeatureFlag invalidation listener spawn (Redis pub/sub).
     app.state._ff_listener_task = None
     try:
+        from src.api.routes.metrics import set_ff_listener_alive
+    except ImportError:
+        set_ff_listener_alive = lambda _x: None  # noqa: E731 — graceful no-op
+    set_ff_listener_alive(False)
+    try:
         from src.core.feature_flags import invalidation_listener
         from src.jobs.queue import get_pool
         redis = await get_pool()
@@ -759,11 +764,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 invalidation_listener(redis),
                 name="feature_flag_invalidation_listener",
             )
+            set_ff_listener_alive(True)
             logger.info("FeatureFlag invalidation listener spawned")
-    except (ImportError, RuntimeError, OSError, AttributeError) as e:
-        logger.warning(
-            "FeatureFlag listener not started (Redis unavailable): %s", e,
+        else:
+            logger.warning(
+                "FeatureFlag listener: Redis pool returned None — "
+                "multi-worker FF cache will rely on 60s TTL only."
+            )
+    except Exception as e:  # noqa: BLE001 — N3: arq/asyncio-redis ConnectionError
+        # 가 OSError 자손이 아니므로 명시적 광범위 catch.
+        logger.error(
+            "FeatureFlag listener spawn FAILED — multi-worker stale window "
+            "exists. Error: %s", e, exc_info=True,
         )
+        try:
+            from src.api.routes.metrics import inc as metrics_inc
+            metrics_inc("errors", 1)
+        except (ImportError, AttributeError):
+            pass
 
     try:
         yield
@@ -785,7 +803,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     len(bg_audit),
                 )
 
-        # Cancel FF invalidation listener gracefully
+        # Cancel FF invalidation listener gracefully + flip alive metric.
         ff_task = getattr(app.state, "_ff_listener_task", None)
         if ff_task and not ff_task.done():
             ff_task.cancel()
@@ -793,6 +811,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await asyncio.wait_for(ff_task, timeout=2.0)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 pass
+        try:
+            from src.api.routes.metrics import set_ff_listener_alive
+            set_ff_listener_alive(False)
+        except (ImportError, AttributeError):
+            pass
 
         await _shutdown_services()
 

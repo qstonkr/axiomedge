@@ -58,7 +58,8 @@ def _resolve_auth_token() -> str:
       2. Streamlit ``st.session_state.api_token`` (set by login flow)
       3. empty (auth-less dev mode — AUTH_ENABLED=false 필요)
     """
-    static = getattr(cfg, "DASHBOARD_API_TOKEN", "") or ""
+    # M-cleanup — getattr defensive overkill 제거.
+    static = cfg.DASHBOARD_API_TOKEN or ""
     if static:
         return static
     try:
@@ -172,11 +173,15 @@ def get(
     )
     clean = {k: v for k, v in merged.items() if v is not None}
     result = _request("GET", path, params=clean, timeout=timeout)
-    # ``_request`` 가 list 를 ``{"items": [...]}`` 로 wrap 한다 — original list
-    # 모양을 페이지에서 기대하면 unwrap.
+    # N2 — robust unwrap. ``_request`` 는 list 응답을 ``{"items": [...]}`` 로
+    # wrap. 단일-key dict 일 때만 unwrap — pagination 형태 (``{items, total}``)
+    # 가 추가되면 wrap 보존하여 caller 가 명시적으로 처리하도록.
+    # error/_api_failed dict 도 unwrap 하지 않음 (caller 가 dict 로 받아 검사).
     if (
-        isinstance(result, dict) and len(result) == 1
+        isinstance(result, dict)
         and isinstance(result.get("items"), list)
+        and not result.get("_api_failed")
+        and set(result.keys()) <= {"items"}
     ):
         return result["items"]
     return result

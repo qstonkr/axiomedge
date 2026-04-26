@@ -37,8 +37,24 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         except (AttributeError, RuntimeError):
             audit = None
 
-        # 4xx/5xx 응답은 audit 기록 skip — 의미 있는 mutating 만 남김
-        if audit and 200 <= response.status_code < 300:
+        # 의미있는 mutating event 는 항상 audit (M-cleanup):
+        # - 2xx 성공: 정상 audit
+        # - 4xx 실패: ``failed.`` prefix 로 — 권한 거부 / 잘못된 입력 시도도
+        #   security visibility 측면에서 보존
+        # - 5xx 는 server error 로 추적 의미 적음 → skip
+        should_audit = bool(audit) and (
+            200 <= response.status_code < 300
+            or 400 <= response.status_code < 500
+        )
+        if 400 <= response.status_code < 500 and audit:
+            audit = dict(audit)
+            audit["event_type"] = (
+                f"failed.{audit.get('event_type', 'unknown')}"
+            )
+            audit.setdefault("details", {})
+            if isinstance(audit["details"], dict):
+                audit["details"]["status_code"] = response.status_code
+        if should_audit:
             task = asyncio.create_task(_write_audit(request, audit))
             # GC 방지 — task 참조 보존 + 완료 시 자동 제거
             try:

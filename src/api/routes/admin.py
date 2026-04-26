@@ -285,11 +285,36 @@ async def upsert_feature_flag(
     if not isinstance(payload, dict):
         raise HTTPException(400, "payload must be a JSON object")
 
+    # N1 — multi-tenant org scope enforcement.
+    # ``scope`` 가 ``org:<id>`` 형태면 사용자가 그 org 의 active member 인지
+    # 검증. 그렇지 않으면 OWNER A 가 OWNER B 의 flag 를 토글하는 cross-tenant
+    # 사고가 가능. 단일-org 환경 (active_org_id 가 None) 에서는 no-op.
+    if scope.startswith("org:"):
+        target_org_id = scope[len("org:"):].strip()
+        if target_org_id:
+            user = getattr(request.state, "auth_user", None) or getattr(
+                request.state, "user", None,
+            )
+            user_active_org = (
+                getattr(user, "active_org_id", None)
+                or getattr(user, "organization_id", None)
+            )
+            if user_active_org and str(user_active_org) != target_org_id:
+                raise HTTPException(
+                    403,
+                    f"Cannot toggle feature flag in org {target_org_id} — "
+                    f"your active session is bound to {user_active_org}.",
+                )
+
     redis = None
     try:
         from src.jobs.queue import get_pool
         redis = await get_pool()
-    except (ImportError, RuntimeError, OSError, AttributeError):
+    except Exception as e:  # noqa: BLE001 — N3: ConnectionError 도 swallow
+        logger.warning(
+            "FeatureFlag upsert: Redis pool unavailable, "
+            "skipping cross-worker invalidation: %s", e,
+        )
         redis = None
 
     # S6 — actor 자동 추출 + audit 기록 세팅 (middleware 가 후처리).
@@ -333,9 +358,14 @@ async def list_audit_logs(
     et_prefix = None
     et_exact = None
     if event_type:
-        # Trailing "." → prefix mode
         if event_type.endswith("."):
-            et_prefix = event_type
+            # M-cleanup — escape SQL LIKE meta chars before LIKE matching.
+            et_prefix = (
+                event_type
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
         else:
             et_exact = event_type
     return await repo.list_recent(
@@ -373,20 +403,11 @@ async def list_run_failures(run_id: str, limit: int = 1000) -> list[dict]:
 
 
 def _resolve_actor_from_request(request: Request) -> str:
-    """S6 — pull authenticated user id from auth middleware state.
+    """N5 — single source of truth for actor resolution.
 
-    Mirrors ``src/api/middleware/audit_log.py:_resolve_actor`` to keep the
-    contract aligned (``auth_user`` 우선, ``user`` legacy fallback).
+    Delegates to ``audit_log._resolve_actor`` to prevent contract drift
+    (둘이 다르면 이 함수가 ``_system`` 으로 채운 actor 가 middleware 의
+    fallback 과 충돌해 false ``unauth.*`` 알림 가능).
     """
-    for attr in ("auth_user", "user"):
-        try:
-            user = getattr(request.state, attr, None)
-        except (AttributeError, RuntimeError):
-            user = None
-        if user is None:
-            continue
-        for key in ("sub", "user_id", "id", "email"):
-            value = getattr(user, key, None)
-            if value:
-                return str(value)
-    return "_system"
+    from src.api.middleware.audit_log import _resolve_actor
+    return _resolve_actor(request)

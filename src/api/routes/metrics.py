@@ -301,6 +301,20 @@ def dec_ingest_in_flight() -> None:
         _ingest_in_flight -= 1
 
 
+# N4 — FeatureFlag invalidation listener health gauge (set by lifespan).
+_ff_listener_alive: bool = False
+
+
+def set_ff_listener_alive(alive: bool) -> None:
+    """Mark FF invalidation listener as alive/down (consumed by /metrics)."""
+    global _ff_listener_alive
+    _ff_listener_alive = bool(alive)
+
+
+def _ff_listener_alive_get() -> bool:
+    return _ff_listener_alive
+
+
 def observe_llm_tokens(
     kb_id: str | None,
     model: str,
@@ -570,6 +584,16 @@ def _render_prometheus() -> str:
         lines.append("# HELP ingest_in_flight Currently in-flight ingest tasks")
         lines.append("# TYPE ingest_in_flight gauge")
         lines.append(f"ingest_in_flight {_ingest_in_flight}")
+
+        # N4 — FeatureFlag invalidation listener health (1=alive, 0=down).
+        # 운영자는 ``ff_listener_alive == 0`` 가 5분 이상 유지되면 alert.
+        # 정보는 module-level helper 가 lifespan 시점에 set 한다.
+        alive = _ff_listener_alive_get()
+        lines.append(
+            "# HELP ff_listener_alive FeatureFlag Redis pub/sub listener health"
+        )
+        lines.append("# TYPE ff_listener_alive gauge")
+        lines.append(f"ff_listener_alive {1 if alive else 0}")
 
         # -- Gauges --
         lines.append("# HELP active_connections Current active connections")

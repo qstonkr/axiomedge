@@ -90,7 +90,7 @@ class WorkerSettings:
             ", ".join(cron_names),
         )
 
-        # P0-W2 — FeatureFlag invalidation listener spawn.
+        # P0-W2 + N3 — FeatureFlag invalidation listener spawn.
         ctx["_ff_listener_task"] = None
         try:
             from src.core.feature_flags import invalidation_listener
@@ -101,9 +101,15 @@ class WorkerSettings:
                     name="feature_flag_invalidation_listener",
                 )
                 logger.info("FeatureFlag invalidation listener spawned (worker)")
-        except (ImportError, RuntimeError, OSError, AttributeError) as e:
-            logger.warning(
-                "FeatureFlag listener not started in worker: %s", e,
+            else:
+                logger.warning(
+                    "FeatureFlag listener (worker): redis None in ctx — "
+                    "multi-worker invalidation 60s TTL only."
+                )
+        except Exception as e:  # noqa: BLE001 — N3: ConnectionError 광범위 catch
+            logger.error(
+                "FeatureFlag listener spawn FAILED in worker: %s",
+                e, exc_info=True,
             )
 
     @staticmethod

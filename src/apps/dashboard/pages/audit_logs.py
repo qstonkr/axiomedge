@@ -50,7 +50,7 @@ with filter_cols[4]:
         st.rerun()
 
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=30)  # M-cleanup: 10s 는 너무 짧아 트래픽 폭증 — 30s
 def _fetch_audit_logs(
     event_type: str, kb_id: str, limit: int, unauth_only: bool,
 ) -> list[dict]:
@@ -105,7 +105,8 @@ for r in rows:
         "event_type": event_type,
         "knowledge_id": r.get("knowledge_id", ""),
         "actor": r.get("actor", ""),
-        "details_preview": str(r.get("details", ""))[:80],
+        # M-cleanup — preview 80→200 자 (전체는 expander 의 st.json 으로).
+        "details_preview": str(r.get("details", ""))[:200],
         "id": (r.get("id") or "")[:8] + "…",
     })
 

@@ -31,7 +31,7 @@ st.caption(
 # =============================================================================
 # Listing
 # =============================================================================
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=30)  # M-cleanup: 30s 로 트래픽 완화 (toggle 후 새로고침 권장)
 def _fetch_flags() -> list[dict]:
     try:
         return api_client.get(

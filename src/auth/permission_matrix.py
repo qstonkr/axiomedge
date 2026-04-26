@@ -74,10 +74,15 @@ PERMISSION_RULES: list[PermissionRule] = [
     # ── Data sources — data_source:manage
     _rule(r"^/api/v1/admin/data-sources(?:/.*)?$", "*", "data_source", "manage"),
 
-    # ── Feature flags (S5 — VIEWER 권한 escalation 차단). 토글은 admin only.
+    # ── Feature flags (S5 — VIEWER 권한 escalation 차단).
+    # 정책 (M-cleanup): ``org:manage`` 는 OWNER role 의 ``*:*`` grant 로만
+    # 매칭됨. ADMIN role 은 별도 rule 없으면 차단된다. 의도: 위험 변경
+    # (인제스트 병렬, GraphRAG batch 등) 의 책임 범위를 OWNER 로 좁힘.
+    # ADMIN 에게도 토글 권한 부여하려면 ADMIN role 에 ``org:manage`` 추가
+    # 또는 별도 rule (예: ``("feature_flag", "manage")``) 추가 후 ADMIN 매핑.
     _rule(r"^/api/v1/admin/feature-flags(?:/.*)?$", "*", "org", "manage"),
 
-    # ── Audit logs (S5 — 정보 누출 차단). audit_log:read 권한.
+    # ── Audit logs (S5 — 정보 누출 차단). audit_log:read 권한 (ADMIN 보유).
     _rule(r"^/api/v1/admin/audit-logs(?:/.*)?$", "GET", "audit_log", "read"),
 
     # ── Ingestion / pipeline (admin)
