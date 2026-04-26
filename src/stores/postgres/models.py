@@ -371,7 +371,7 @@ class IngestionDocumentFailureModel(KnowledgeBase):
         nullable=False,
     )
     kb_id = Column(String(255), nullable=False)
-    doc_id = Column(String(64), nullable=False)
+    doc_id = Column(String(128), nullable=False)
     source_uri = Column(Text, nullable=True)
     stage = Column(String(40), nullable=False)
     reason = Column(Text, nullable=False)

@@ -106,11 +106,30 @@ async def _write_audit(request: Request, audit: dict[str, Any]) -> None:
 
 
 def _resolve_actor(request: Request) -> str:
-    """user 미들웨어가 request.state.user 를 세팅했으면 그 user_id 사용."""
-    try:
-        user = getattr(request.state, "user", None)
-        if user is not None:
-            return str(getattr(user, "user_id", "")) or str(user)
-    except (AttributeError, RuntimeError):
-        pass
+    """Resolve the user actor from middleware-populated state.
+
+    P2-6 contract:
+      - ``AuthMiddleware`` sets ``request.state.auth_user`` to a user object
+        with attributes ``sub`` (preferred) or ``user_id``. Anonymous users
+        have ``sub == "anonymous"``.
+      - Some legacy paths use ``request.state.user``; we accept both.
+      - Returns ``"_system"`` as a sentinel meaning "auth middleware was
+        bypassed" — caller (audit middleware) flags such events with a
+        ``unauth.`` prefix so they show up in the
+        ``audit_unauthenticated_total`` Prometheus metric.
+    """
+    for attr in ("auth_user", "user"):
+        try:
+            user = getattr(request.state, attr, None)
+        except (AttributeError, RuntimeError):
+            user = None
+        if user is None:
+            continue
+        # Try common identifier attributes in priority order.
+        for ident_attr in ("sub", "user_id", "id", "email"):
+            value = getattr(user, ident_attr, None)
+            if value:
+                return str(value)
+        # Fallback to repr — better than _system in audit trail.
+        return str(user)[:100]
     return "_system"

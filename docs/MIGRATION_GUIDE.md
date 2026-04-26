@@ -235,6 +235,59 @@ uv run pytest tests/unit/test_cross_tenant_unit.py -v --no-cov
 
 ---
 
+## P1-3 / 사고 대응: alembic_version mismatch 정렬 SOP
+
+운영 DB 의 ``alembic_version`` 이 0004 같이 오래된 revision 에 stamp 되어
+있는데, 실제 schema 는 0005~0008 의 일부 ALTER 만 손으로 적용된 케이스가
+2026-04-26 사고에서 발견되었다. 0010, 0011 적용 전에 다음 정렬 작업이 필요.
+
+### 1) 백업 (필수)
+
+```bash
+make backup-pg     # backups/pg_*.sql.gz 생성
+```
+
+### 2) 진단 — 실제 schema 와 alembic_version 의 차이 확인
+
+```bash
+make db-current    # 현재 alembic_version
+docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db -c \
+  "SELECT column_name FROM information_schema.columns
+   WHERE table_name='knowledge_data_sources'
+   AND column_name IN ('organization_id','secret_path','owner_user_id')"
+docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db -c \
+  "SELECT column_name FROM information_schema.columns
+   WHERE table_name='distill_builds' AND column_name LIKE 'gpu_%'"
+# → 5개 모두 (gpu_instance_id, gpu_started_at, s3_result_key, last_sweep_at,
+#   gpu_finished_at) 존재해야 0008 완전 적용
+```
+
+### 3) 부분 적용 컬럼 정리
+
+```bash
+# 예: gpu_started_at 만 적용된 경우 (NULL 만 있으므로 안전 drop)
+docker exec knowledge-local-postgres-1 psql -U knowledge -d knowledge_db -c \
+  "ALTER TABLE distill_builds DROP COLUMN gpu_started_at"
+```
+
+### 4) 정상 마이그레이션
+
+```bash
+make db-upgrade    # 0005 → 0006 → … → head
+```
+
+### 5) Rollback / Stamp 옵션 (P2-1)
+
+```bash
+make db-downgrade-1                                     # 1 step back
+make db-downgrade-to REV=0009_bulk_upload_sessions      # specific revision
+make db-stamp REV=0008_distill_build_gpu_metadata       # alembic 메타만
+```
+
+`stamp` 은 schema 가 known revision 과 정확히 일치한다고 확신할 때만 사용.
+
+---
+
 ## 참고
 
 - 데이터 모델: `docs/DATA_MODEL.md`

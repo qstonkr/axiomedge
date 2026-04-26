@@ -483,18 +483,36 @@ class IngestionPipeline:
         # Stage tracker — except 블록의 traceback 보고에 사용. 각 stage 진입
         # 직전 갱신해 어느 단계에서 raise 됐는지 식별 (PR-1).
         _stage = "init"
-        # PR-10 (I) — in-flight gauge + per-status counter (best-effort import).
+        # PR-10 (I) + P2-4 — in-flight gauge + per-status counter.
+        # 두 단계 분리: (1) import 와 (2) inc 호출. inc 성공 여부를 별도
+        # ``_in_flight_incremented`` 로 추적해 finally 의 dec 가 정확히 짝맞춤
+        # 으로만 호출되도록 한다.
+        inc_ingest = None  # type: ignore[assignment]
+        inc_ingest_failure = None  # type: ignore[assignment]
+        dec_ingest_in_flight = None  # type: ignore[assignment]
         try:
-            from src.api.routes.metrics import (
-                inc_ingest, inc_ingest_failure,
-                inc_ingest_in_flight, dec_ingest_in_flight,
+            from src.api.routes.metrics import (  # noqa: PLR0915
+                inc_ingest as _inc, inc_ingest_failure as _inc_fail,
+                inc_ingest_in_flight as _inc_inflight,
+                dec_ingest_in_flight as _dec_inflight,
             )
-            inc_ingest_in_flight()
+            inc_ingest = _inc
+            inc_ingest_failure = _inc_fail
+            dec_ingest_in_flight = _dec_inflight
             _metrics_active = True
-        except (ImportError, AttributeError):
-            inc_ingest = inc_ingest_failure = None  # type: ignore
-            dec_ingest_in_flight = None  # type: ignore
+        except Exception:  # noqa: BLE001 — best-effort import
             _metrics_active = False
+
+        # gauge inc — 자체적으로 raise 가능 (lock contention 등). 성공 여부
+        # 를 _in_flight_incremented 에 기록 → finally 의 dec 와 1:1 매칭.
+        _in_flight_incremented = False
+        if _metrics_active:
+            try:
+                _inc_inflight()
+                _in_flight_incremented = True
+            except Exception:  # noqa: BLE001
+                _in_flight_incremented = False
+
         try:
             # Stage 0: Ingestion gate
             _stage = "ingestion_gate"
@@ -767,8 +785,15 @@ class IngestionPipeline:
                 traceback=tb_text[-4096:],
             )
         finally:
-            if _metrics_active and dec_ingest_in_flight is not None:
-                dec_ingest_in_flight()
+            # P2-4: inc 가 실제로 성공한 경우에만 dec — over-decrement 방지.
+            if _in_flight_incremented and dec_ingest_in_flight is not None:
+                try:
+                    dec_ingest_in_flight()
+                except Exception:  # noqa: BLE001
+                    # gauge 저하 실패는 비즈니스 로직에 영향 없음
+                    logger.debug(
+                        "dec_ingest_in_flight failed", exc_info=True,
+                    )
 
 
 __all__ = [

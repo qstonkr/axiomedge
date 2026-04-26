@@ -208,6 +208,25 @@ db-history:
 db-current:
 	uv run alembic current
 
+# P2-1 — single-step downgrade (most common during dev). Backup before use!
+db-downgrade-1:
+	@echo "[db-downgrade] Backup recommended: make backup-pg"
+	@echo "[db-downgrade] Stepping back 1 revision..."
+	uv run alembic downgrade -1
+
+# Downgrade to a specific revision (e.g. ``make db-downgrade-to REV=0009_bulk_upload_sessions``)
+db-downgrade-to:
+	@if [ -z "$(REV)" ]; then echo "Usage: make db-downgrade-to REV='0009_bulk_upload_sessions'"; exit 1; fi
+	@echo "[db-downgrade] Backup recommended: make backup-pg"
+	uv run alembic downgrade $(REV)
+
+# Diagnose alembic_version vs schema mismatch (P1-3 / production handover use)
+db-stamp:
+	@if [ -z "$(REV)" ]; then echo "Usage: make db-stamp REV='0009_bulk_upload_sessions'"; exit 1; fi
+	@echo "[db-stamp] Forcing alembic_version to $(REV) WITHOUT applying migrations."
+	@echo "[db-stamp] Use only when DB schema is known to match REV manually."
+	uv run alembic stamp $(REV)
+
 # === Backups ===
 backup-pg:
 	./scripts/ops/backup_db.sh

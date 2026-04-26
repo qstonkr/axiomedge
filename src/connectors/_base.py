@@ -78,6 +78,30 @@ class BaseConnectorClient(ABC):
             await self._client.aclose()
             self._client = None
 
+    @staticmethod
+    def _mask_sensitive_headers(
+        request: httpx.Request,
+    ) -> httpx.Request:
+        """Replace sensitive headers in an outgoing request *copy* with masks.
+
+        P2-2: ``HTTPStatusError(request=...)`` 가 호출자에게 propagate 될 때
+        request.headers 가 그대로 logger 에 들어가면 Authorization Bearer
+        토큰이 누설된다. 401/403 raise 직전 request 의 헤더만 마스킹한 새
+        Request 객체를 만들어 raise 한다 (원본 request 는 보존 — pool 이
+        keep-alive 로 재사용 가능).
+        """
+        sensitive = {"authorization", "cookie", "x-api-key", "x-auth-token"}
+        masked_headers = httpx.Headers([
+            (k, "<MASKED>") if k.lower() in sensitive else (k, v)
+            for k, v in request.headers.items()
+        ])
+        return httpx.Request(
+            method=request.method,
+            url=request.url,
+            headers=masked_headers,
+            content=None,  # body 는 비움 — 민감 데이터 회피
+        )
+
     async def _request(
         self,
         method: str,
@@ -102,9 +126,13 @@ class BaseConnectorClient(ABC):
                 )
             # 4xx auth → 즉시 raise; 429 → backoff; 5xx → backoff; else return
             if resp.status_code in (401, 403):
+                # P2-2: request 객체에 Authorization 헤더가 그대로 담겨 있어
+                # logger.exception(...) 시 토큰이 누설된다. 마스킹된 사본으로
+                # 교체하여 raise.
+                masked_req = self._mask_sensitive_headers(resp.request)
                 raise httpx.HTTPStatusError(
                     f"{method} {path} returned {resp.status_code}",
-                    request=resp.request, response=resp,
+                    request=masked_req, response=resp,
                 )
             if resp.status_code == 429:
                 last = resp

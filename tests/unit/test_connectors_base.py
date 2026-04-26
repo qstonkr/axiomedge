@@ -69,6 +69,35 @@ class TestRequestRetries:
                 await c._request("GET", "/v")
 
     @pytest.mark.asyncio
+    async def test_401_masks_sensitive_request_headers(self, monkeypatch):
+        """P2-2: HTTPStatusError 의 request 객체에서 Authorization 등 마스킹."""
+        async def _no_sleep(_):
+            return None
+        monkeypatch.setattr("asyncio.sleep", _no_sleep)
+
+        cfg = BaseConnectorConfig(auth_token="super-secret-token-xyz")
+        async with _StubClient(base_url="https://api.x", config=cfg) as c:
+            c._client = httpx.AsyncClient(
+                base_url="https://api.x",
+                transport=_mock_transport([
+                    (401, {}, {"error": "unauth"}),
+                ]),
+                headers={"Authorization": "Bearer super-secret-token-xyz",
+                         "X-API-Key": "key-123"},
+            )
+            with pytest.raises(httpx.HTTPStatusError) as exc_info:
+                await c._request("GET", "/v")
+
+            req = exc_info.value.request
+            # 마스킹된 request 객체에 토큰 흔적 없음
+            joined_headers = " ".join(
+                f"{k}={v}" for k, v in req.headers.items()
+            )
+            assert "super-secret-token" not in joined_headers
+            assert "key-123" not in joined_headers
+            assert "<MASKED>" in joined_headers
+
+    @pytest.mark.asyncio
     async def test_retries_5xx_then_succeeds(self, monkeypatch):
         async def _no_sleep(_):
             return None

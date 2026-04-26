@@ -7,6 +7,35 @@
 - Docker (for building images)
 - At least 8GB RAM, 4 CPU cores available to the cluster
 
+## ⚠️ Make 타겟 변경 주의 (PR-8 / P2-8 SOP)
+
+`make k8s-deploy` 의 의미가 **dry-run-server** (manifest validation) 으로
+변경되었다. 실제 배포는 `make k8s-apply` 가 담당한다.
+
+| 명령 | 동작 |
+|------|------|
+| `make k8s-deploy` | `kubectl apply -k k8s/ --dry-run=server` — manifest 검증 only |
+| `make k8s-apply` | `kubectl apply -k k8s/` — 실제 배포 |
+
+### CI/CD 마이그레이션
+- 기존 GitHub Actions / GitLab CI 가 `make k8s-deploy` 직접 호출 → **`make
+  k8s-apply` 로 갱신** 필요. 이전 호출은 dry-run 만 실행되어 실제 변경이
+  반영되지 않는다.
+- ArgoCD 같은 GitOps 환경은 영향 없음 (Makefile 호출 안 함).
+
+## ⚠️ Docker Compose project 명 (P0 사고 대응)
+
+Local docker-compose 가 cwd 기반으로 project 명을 추정하면 새 빈 볼륨이
+생성되어 **기존 데이터 볼륨 (``knowledge-local_*``) 에 마운트되지 않는**
+사고가 2026-04-26 발생. Makefile `start`/`stop` 에 `-p knowledge-local` 이
+명시되어 영구 차단되었으나, 다른 환경 (별 prefix, 예: `axiomedge-prod`)
+에서는 직접 `docker compose -p <project> up` 으로 호출해야 한다.
+
+기존에 `knowledge-local` 외 prefix 를 쓰던 staging/prod 환경 운영자는:
+1. `docker volume ls | grep <기존 prefix>` 로 실 데이터 볼륨 확인
+2. 그 prefix 를 명시 (`docker compose -p <prefix> -f deploy/docker-compose.yml up -d`)
+   또는 `Makefile` 의 `-p` 값을 환경별 분기.
+
 ## Quick Start
 
 ```bash

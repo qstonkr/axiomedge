@@ -26,6 +26,12 @@ _counters: dict[str, int] = {
     "ingest_chunks": 0,
     "ocr_requests": 0,
     "errors": 0,
+    # P2-5: audit middleware 가 actor=_system 인 mutating event 를 만났을 때
+    # 카운트. 의미: 인증 미들웨어 우회 또는 미설정 endpoint. Alert rule 권장:
+    #   ALERT AuditUnauthenticatedSpike
+    #     IF rate(audit_unauthenticated_total[5m]) > 0.1
+    #     FOR 10m
+    "audit_unauthenticated": 0,
 }
 
 _start_time: float = time.time()
@@ -399,6 +405,16 @@ def _render_prometheus() -> str:
         lines.append("# HELP errors_total Total errors")
         lines.append("# TYPE errors_total counter")
         lines.append(f"errors_total {_counters.get('errors', 0)}")
+
+        # P2-5 — audit middleware unauth event counter
+        lines.append(
+            "# HELP audit_unauthenticated_total Mutating events with actor=_system",
+        )
+        lines.append("# TYPE audit_unauthenticated_total counter")
+        lines.append(
+            f"audit_unauthenticated_total "
+            f"{_counters.get('audit_unauthenticated', 0)}"
+        )
 
         # -- Request counts by method/path/status --
         lines.append("# HELP request_count Total HTTP requests by method, path, status")
