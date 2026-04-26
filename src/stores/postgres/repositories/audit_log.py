@@ -55,9 +55,20 @@ class AuditLogRepository(BaseRepository):
         *,
         knowledge_id: str | None = None,
         event_type: str | None = None,
+        event_type_prefix: str | None = None,
         before: datetime | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
+        """List recent audit rows with optional filters.
+
+        Args:
+            knowledge_id: Exact match.
+            event_type: Exact match (e.g. ``kb.update``).
+            event_type_prefix: ``LIKE 'prefix%'`` match (e.g. ``unauth.``)
+                — P0-W4: Streamlit ``unauth. only`` 토글 동작에 필요.
+            before: Filter ``created_at < before``.
+            limit: 1..1000.
+        """
         async with await self._get_session() as session:
             try:
                 stmt = select(AuditLogModel)
@@ -65,6 +76,12 @@ class AuditLogRepository(BaseRepository):
                     stmt = stmt.where(AuditLogModel.knowledge_id == knowledge_id)
                 if event_type:
                     stmt = stmt.where(AuditLogModel.event_type == event_type)
+                if event_type_prefix:
+                    # PG escape — caller 가 ``%`` 를 그대로 넣을 위험은 낮지만
+                    # 정확한 prefix 매칭만 허용하려 ``f"{prefix}%"`` 그대로 사용.
+                    stmt = stmt.where(
+                        AuditLogModel.event_type.like(f"{event_type_prefix}%"),
+                    )
                 if before:
                     stmt = stmt.where(AuditLogModel.created_at < before)
                 stmt = stmt.order_by(AuditLogModel.created_at.desc()).limit(

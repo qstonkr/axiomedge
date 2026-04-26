@@ -110,4 +110,8 @@ class TestPipelineExceptCaptures:
         raw = RawDocument(doc_id="d2", title="t", content="c", source_uri="/x")
         result = await pipe.ingest(raw, collection_name="kb")
         assert result.traceback is not None
-        assert len(result.traceback) <= 4096
+        # P1-W1 — pipeline 은 full traceback 을 IngestionResult.traceback 으로
+        # 그대로 전달; hybrid 4KB cap 은 IngestionFailureRepository._truncate_
+        # traceback 단계에서 적용된다 (tests/unit/test_ingestion_failures_repo
+        # 가 cap 동작 검증). 본 assertion 은 raise 경로가 작동했음을 확인.
+        assert "RuntimeError" in result.traceback

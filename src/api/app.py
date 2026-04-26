@@ -747,8 +747,54 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_tracing(app)
     await _init_services()
     app.state._app_state = _state  # Expose for request.app.state access (no circular import)
-    yield
-    await _shutdown_services()
+
+    # P0-W2 — FeatureFlag invalidation listener spawn (Redis pub/sub).
+    app.state._ff_listener_task = None
+    try:
+        from src.core.feature_flags import invalidation_listener
+        from src.jobs.queue import get_arq_pool
+        redis = await get_arq_pool()
+        if redis is not None:
+            app.state._ff_listener_task = asyncio.create_task(
+                invalidation_listener(redis),
+                name="feature_flag_invalidation_listener",
+            )
+            logger.info("FeatureFlag invalidation listener spawned")
+    except (ImportError, RuntimeError, OSError, AttributeError) as e:
+        logger.warning(
+            "FeatureFlag listener not started (Redis unavailable): %s", e,
+        )
+
+    try:
+        yield
+    finally:
+        # P1-W3 — drain audit middleware fire-and-forget tasks.
+        bg_audit = getattr(app.state, "_audit_bg_tasks", None)
+        if bg_audit:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*bg_audit, return_exceptions=True),
+                    timeout=5.0,
+                )
+                logger.info(
+                    "Audit bg tasks drained: %d", len(bg_audit),
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Audit bg drain timed out — %d tasks still running",
+                    len(bg_audit),
+                )
+
+        # Cancel FF invalidation listener gracefully
+        ff_task = getattr(app.state, "_ff_listener_task", None)
+        if ff_task and not ff_task.done():
+            ff_task.cancel()
+            try:
+                await asyncio.wait_for(ff_task, timeout=2.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
+
+        await _shutdown_services()
 
 
 app = FastAPI(

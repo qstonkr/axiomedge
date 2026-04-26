@@ -11,11 +11,13 @@ Settings drive concurrency, retry policy, redis connection.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
 from arq.cron import cron
 
+from src.core.logging import configure_logging
 from src.jobs.audit_log_archive import audit_log_archive_sweep
 from src.jobs.distill_jobs import distill_sweep_post_train, distill_sweep_training
 from src.jobs.ingestion_alerts import ingestion_failure_alert_sweep
@@ -25,6 +27,8 @@ from src.jobs.schema_bootstrap_jobs import schema_bootstrap_cleanup
 from src.jobs.tasks import REGISTERED_TASKS
 from src.jobs.upload_jobs import cleanup_orphan_uploads
 
+# P1-W2 — JSON 로그 + trace_id ContextVar 통일.
+configure_logging(service="axiomedge-worker")
 logger = logging.getLogger(__name__)
 
 
@@ -67,15 +71,49 @@ class WorkerSettings:
 
     @staticmethod
     async def on_startup(ctx: dict) -> None:
+        # P1-W2 — accurate cron list in startup log.
+        cron_names = [
+            "distill_sweep_training (every 1m)",
+            "distill_sweep_post_train (every 5m)",
+            "cleanup_orphan_uploads (daily 03:00)",
+            "schema_bootstrap_cleanup (daily 03:05)",
+            "schema_alerts_sweep (every 30m)",
+            "ingestion_failure_alert_sweep (every 30m, +15m offset)",
+            "audit_log_archive_sweep (daily 03:10)",
+        ]
         logger.info(
             "Arq worker starting — max_jobs=%s max_tries=%s job_timeout=%ss "
-            "cron=[distill_sweep_training(60s), distill_sweep_post_train(5min), "
-            "cleanup_orphan_uploads(daily 03:00)]",
+            "cron=[%s]",
             WorkerSettings.max_jobs,
             WorkerSettings.max_tries,
             WorkerSettings.job_timeout,
+            ", ".join(cron_names),
         )
+
+        # P0-W2 — FeatureFlag invalidation listener spawn.
+        ctx["_ff_listener_task"] = None
+        try:
+            from src.core.feature_flags import invalidation_listener
+            redis = ctx.get("redis")
+            if redis is not None:
+                ctx["_ff_listener_task"] = asyncio.create_task(
+                    invalidation_listener(redis),
+                    name="feature_flag_invalidation_listener",
+                )
+                logger.info("FeatureFlag invalidation listener spawned (worker)")
+        except (ImportError, RuntimeError, OSError, AttributeError) as e:
+            logger.warning(
+                "FeatureFlag listener not started in worker: %s", e,
+            )
 
     @staticmethod
     async def on_shutdown(ctx: dict) -> None:
+        # Graceful cancel of FF listener task.
+        ff_task = ctx.get("_ff_listener_task")
+        if ff_task and not ff_task.done():
+            ff_task.cancel()
+            try:
+                await asyncio.wait_for(ff_task, timeout=2.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                pass
         logger.info("Arq worker shutting down")

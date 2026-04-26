@@ -284,10 +284,11 @@ async def _ingest_single_file(
         return result.chunks_stored
     except Exception as exc:  # noqa: BLE001
         # parse 단계 또는 pipeline 외부에서 raise 된 caller-level 예외
+        # P1-W1: full traceback — repo 가 hybrid 4KB 처리.
         await _persist_failure(
             failure_repo, run_id=run_id, kb_id=kb_id, doc_id=doc_id,
             source_uri=fpath, stage="caller", reason=str(exc),
-            traceback=_tb.format_exc()[-4096:],
+            traceback=_tb.format_exc(),
         )
         logger.warning("Caller-level ingest failure for %s: %s", fpath, exc)
         return 0
@@ -511,7 +512,8 @@ async def ingest_crawl(crawl_dir: str, kb_id: str, force: bool = False) -> None:
                     failure_repo, run_id=run_id, kb_id=kb_id,
                     doc_id=doc.doc_id, source_uri=doc.source_uri,
                     stage="caller", reason=str(exc),
-                    traceback=_tb.format_exc()[-4096:],
+                    # P1-W1: full traceback — repo 가 hybrid 4KB 처리
+                    traceback=_tb.format_exc(),
                 )
                 logger.warning(
                     "Caller-level crawl ingest failure for %s: %s",

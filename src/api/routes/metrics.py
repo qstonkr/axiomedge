@@ -224,6 +224,11 @@ INGEST_STAGE_ALIAS: dict[str, str] = {
     "summary_tree": "stage5_index",
     "term_extraction": "stage5_index",
     "synonym_discovery": "stage5_index",
+    # caller-level (CLI/API 외부 raise) — 자체 카테고리 유지 (canonical set 내).
+    # NOTE: ``caller`` 가 _INGEST_STAGES 에 이미 있으므로 normalize 가 그대로
+    # 통과시키지만, 명시적으로 alias 에도 두어 의도를 documents.
+    "caller": "caller",
+    "pipeline": "pipeline",
 }
 
 

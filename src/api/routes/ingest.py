@@ -292,7 +292,8 @@ async def ingest_directory(request: IngestRequest) -> "IngestResponse":
                         state, run_id=run_id, kb_id=request.kb_id,
                         doc_id=doc_id, source_uri=fpath, stage="caller",
                         reason=str(exc),
-                        traceback=_tb.format_exc()[-4096:],
+                        # P1-W1: full traceback — repo 가 hybrid 4KB 처리
+                        traceback=_tb.format_exc(),
                     )
                     raise
 

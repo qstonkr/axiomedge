@@ -17,9 +17,14 @@ logger = logging.getLogger(__name__)
 async def run_audit_archive(*, repo: Any) -> dict[str, int]:
     """Pure function — testable. repo 는 AuditLogRepository.
 
-    archive bucket 미설정 시:
-      - 운영자가 ``AUDIT_LOG_ARCHIVE_BUCKET`` 를 명시할 때까지 row 보존.
-      - 단순 delete-only 모드를 원하면 ``AUDIT_LOG_DELETE_ONLY=1``.
+    Modes:
+      1. **Default (no env)**: row 보존 — 운영자가 명시적 결정 안 한 상태이므로
+         silent skip 으로 안전 fallback.
+      2. ``AUDIT_LOG_DELETE_ONLY=1``: dump 없이 delete only (cheap retention).
+      3. ``AUDIT_LOG_ARCHIVE_BUCKET=s3://...``: S3 dump 후 delete. **현재 dump
+         미구현 — fail-fast** (P0-W3): 운영자가 retention 활성화 의도로 bucket
+         을 세팅했는데 silent skip 하면 row 가 영원히 안 지워지는 trap. 따라서
+         bucket 만 세팅됐으면 ``status="error"`` 반환 + alert 가능 한 형태.
     """
     retention_days = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "180"))
     bucket = os.getenv("AUDIT_LOG_ARCHIVE_BUCKET", "").strip()
@@ -32,16 +37,30 @@ async def run_audit_archive(*, repo: Any) -> dict[str, int]:
             "AUDIT_LOG_ARCHIVE_BUCKET 미설정 + DELETE_ONLY 비활성 → "
             "archive skip (행 보존). retention=%d days", retention_days,
         )
-        return {"archived": 0, "deleted": 0, "skipped": 1}
+        return {"archived": 0, "deleted": 0, "skipped": 1, "status": "noop"}
 
-    # bucket 이 설정된 경우 실제 S3 dump 는 별도 PR (현재 P1 범위) — 여기서는
-    # delete-only 또는 dummy ack. 추후 boto3 dump 추가 가능.
+    # P0-W3 — bucket 만 설정된 경우 silent skip 대신 명시적 error 보고.
+    # 향후 boto3 dump 추가 시 본 분기를 dump 호출로 교체.
     if bucket:
-        logger.warning(
-            "AUDIT_LOG_ARCHIVE_BUCKET=%s 설정됐지만 dump 미구현 — 행 보존",
+        logger.error(
+            "AUDIT_LOG_ARCHIVE_BUCKET=%s 설정됐지만 dump 가 미구현입니다. "
+            "row 가 삭제되지 않아 retention 의도가 달성되지 않습니다. "
+            "options: (1) ``AUDIT_LOG_DELETE_ONLY=1`` 로 dump 없이 삭제만, "
+            "(2) boto3 dump 구현 PR 머지, "
+            "(3) 본 cron 비활성화.",
             bucket,
         )
-        return {"archived": 0, "deleted": 0, "skipped": 1}
+        # Operator 가 모니터링할 수 있는 metric counter 도 함께
+        try:
+            from src.api.routes.metrics import inc as metrics_inc
+            metrics_inc("errors", 1)
+        except (ImportError, AttributeError):
+            pass
+        return {
+            "archived": 0, "deleted": 0, "skipped": 1,
+            "status": "error",
+            "reason": "archive_bucket_set_but_dump_unimplemented",
+        }
 
     # delete_only 모드만 실제 archive_older_than 호출
     deleted = await repo.archive_older_than(days=retention_days)
@@ -49,7 +68,10 @@ async def run_audit_archive(*, repo: Any) -> dict[str, int]:
         "Audit log archive: deleted %d rows older than %d days",
         deleted, retention_days,
     )
-    return {"archived": 0, "deleted": deleted, "skipped": 0}
+    return {
+        "archived": 0, "deleted": deleted, "skipped": 0,
+        "status": "ok",
+    }
 
 
 async def audit_log_archive_sweep(ctx: dict[str, Any]) -> dict[str, Any]:

@@ -24,7 +24,8 @@ class TestArchive:
         monkeypatch.delenv("AUDIT_LOG_ARCHIVE_BUCKET", raising=False)
         monkeypatch.delenv("AUDIT_LOG_DELETE_ONLY", raising=False)
         result = await run_audit_archive(repo=repo)
-        assert result == {"archived": 0, "deleted": 0, "skipped": 1}
+        assert result["skipped"] == 1
+        assert result["status"] == "noop"
         repo.archive_older_than.assert_not_called()
 
     @pytest.mark.asyncio
@@ -39,14 +40,15 @@ class TestArchive:
         repo.archive_older_than.assert_awaited_once_with(days=90)
 
     @pytest.mark.asyncio
-    async def test_bucket_set_but_dump_unimplemented_skips(
+    async def test_bucket_set_but_dump_unimplemented_returns_error(
         self, monkeypatch, repo,
     ):
+        # P0-W3: silent skip 이 아니라 status=error 보고 + logger.error.
         monkeypatch.setenv("AUDIT_LOG_ARCHIVE_BUCKET", "s3://x")
         monkeypatch.delenv("AUDIT_LOG_DELETE_ONLY", raising=False)
         result = await run_audit_archive(repo=repo)
-        # 안전 default: bucket 만 있고 delete-only 없으면 보존
-        assert result["skipped"] == 1
+        assert result["status"] == "error"
+        assert result["reason"] == "archive_bucket_set_but_dump_unimplemented"
         repo.archive_older_than.assert_not_called()
 
     @pytest.mark.asyncio

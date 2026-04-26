@@ -779,10 +779,13 @@ class IngestionPipeline:
                 if inc_ingest_failure is not None:
                     inc_ingest_failure(_stage or "pipeline", type(exc).__name__)
             # _stage 가 아직 init/None 이면 fallback 으로 'pipeline' 기록
+            # P1-W1: full traceback 전달 — repo._truncate_traceback 가 hybrid
+            # head+tail 4KB 으로 압축 (frame 정보 양쪽 보존). 이전엔 caller 가
+            # ``tb_text[-4096:]`` 로 사전-truncate 하여 hybrid 분기가 죽어 있었음.
             return IngestionResult.failure_result(
                 reason=str(exc),
                 stage=_stage or "pipeline",
-                traceback=tb_text[-4096:],
+                traceback=tb_text,
             )
         finally:
             # P2-4: inc 가 실제로 성공한 경우에만 dec — over-decrement 방지.

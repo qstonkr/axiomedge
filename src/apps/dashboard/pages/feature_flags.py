@@ -46,9 +46,12 @@ def _fetch_flags() -> list[dict]:
 col_top1, col_top2 = st.columns([3, 1])
 with col_top1:
     st.markdown(
-        "**Initial flags (recommended seed):** "
-        "`ENABLE_INGESTION_FILE_PARALLEL`, `ENABLE_GRAPHRAG_BATCH_NEO4J`, "
-        "`ENABLE_OTEL_NEO4J_INSTRUMENTATION`",
+        "**Active flag** (실제 코드 분기에서 사용):\n"
+        "- `ENABLE_INGESTION_FILE_PARALLEL` — `_resolve_file_parallel` 의 "
+        "병렬 ingest kill switch (CLI/Crawl).\n\n"
+        "**Future work** (정의됐지만 코드 분기 대기 중):\n"
+        "- `ENABLE_GRAPHRAG_BATCH_NEO4J` — GraphRAG persistence batch (계획)\n"
+        "- `ENABLE_OTEL_NEO4J_INSTRUMENTATION` — Neo4j manual span 토글 (계획)",
     )
 with col_top2:
     if st.button("🔄 새로고침"):

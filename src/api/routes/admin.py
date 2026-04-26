@@ -239,3 +239,121 @@ async def reset_config_weights() -> dict:
     weights.reset()
     logger.info("Config weights reset to defaults")
     return {"status": "reset", "current": weights.to_dict()}
+
+
+# =============================================================================
+# P0-W1 — Admin endpoints for Streamlit pages (PR-10/C3/C4)
+# =============================================================================
+
+
+@router.get(
+    "/feature-flags",
+    responses={503: {"description": "feature_flag_repo not initialized"}},
+)
+async def list_feature_flags() -> list[dict]:
+    """List all feature flag rows (admin UI listing)."""
+    state = _get_state()
+    repo = state.get("feature_flag_repo")
+    if repo is None:
+        raise HTTPException(503, "feature_flag_repo not initialized")
+    return await repo.list_all()
+
+
+@router.post(
+    "/feature-flags",
+    responses={503: {"description": "feature_flag_repo not initialized"}},
+)
+async def upsert_feature_flag(body: dict[str, Any]) -> dict:
+    """Upsert a feature flag — admin UI toggle save.
+
+    Body: ``{name, scope, enabled, payload}``. Triggers Redis pub/sub
+    invalidation if redis is wired (P1-6).
+    """
+    state = _get_state()
+    repo = state.get("feature_flag_repo")
+    if repo is None:
+        raise HTTPException(503, "feature_flag_repo not initialized")
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    scope = (body.get("scope") or "_global").strip()
+    enabled = bool(body.get("enabled", False))
+    payload = body.get("payload") or {}
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "payload must be a JSON object")
+
+    redis = None
+    try:
+        from src.jobs.queue import get_arq_pool
+        redis = await get_arq_pool()
+    except (ImportError, RuntimeError, OSError, AttributeError):
+        redis = None
+
+    actor = "admin-ui"  # FIXME: use request.state.auth_user.sub when wired
+    ok = await repo.upsert(
+        name=name, scope=scope, enabled=enabled, payload=payload,
+        updated_by=actor, redis=redis,
+    )
+    if not ok:
+        raise HTTPException(500, "upsert failed (see server log)")
+    return {"name": name, "scope": scope, "enabled": enabled}
+
+
+@router.get(
+    "/audit-logs",
+    responses={503: {"description": "audit_log_repo not initialized"}},
+)
+async def list_audit_logs(
+    knowledge_id: str | None = None,
+    event_type: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Recent audit log rows.
+
+    P0-W4: ``event_type`` 가 ``"unauth."`` 같은 prefix 로 끝나면 LIKE
+    쿼리로 자동 전환. exact match 의도면 더 구체적인 값을 보내면 됨.
+    """
+    state = _get_state()
+    repo = state.get("audit_log_repo")
+    if repo is None:
+        raise HTTPException(503, "audit_log_repo not initialized")
+    et_prefix = None
+    et_exact = None
+    if event_type:
+        # Trailing "." → prefix mode
+        if event_type.endswith("."):
+            et_prefix = event_type
+        else:
+            et_exact = event_type
+    return await repo.list_recent(
+        knowledge_id=knowledge_id,
+        event_type=et_exact,
+        event_type_prefix=et_prefix,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/pipeline/ingestion-runs",
+    responses={503: {"description": "ingestion_run_repo not initialized"}},
+)
+async def list_ingestion_runs(limit: int = 50) -> list[dict]:
+    """Recent ingestion run rows for the Ingestion Runs admin page (PR-10)."""
+    state = _get_state()
+    repo = state.get("ingestion_run_repo")
+    if repo is None:
+        raise HTTPException(503, "ingestion_run_repo not initialized")
+    return await repo.list_recent(limit=max(1, min(limit, 500)))
+
+
+@router.get(
+    "/pipeline/runs/{run_id}/failures",
+    responses={503: {"description": "ingestion_failure_repo not initialized"}},
+)
+async def list_run_failures(run_id: str, limit: int = 1000) -> list[dict]:
+    """Failures recorded for a specific ingestion run."""
+    state = _get_state()
+    repo = state.get("ingestion_failure_repo")
+    if repo is None:
+        raise HTTPException(503, "ingestion_failure_repo not initialized")
+    return await repo.list_by_run(run_id, limit=max(1, min(limit, 5000)))

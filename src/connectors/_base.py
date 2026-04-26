@@ -183,10 +183,16 @@ class BaseConnectorClient(ABC):
         max_pages: int = 1000,
         **httpx_kwargs: Any,
     ) -> AsyncIterator[dict[str, Any]]:
-        """Cursor pagination — yield 각 page body dict."""
+        """Cursor pagination — yield 각 page body dict.
+
+        P1-W4 fix: ``httpx_kwargs.pop`` 가 dict 에서 ``params`` 를 영구 제거해
+        2 번째 page 부터 caller 가 넣은 base params (예: ``team=ENG``) 가
+        사라지는 버그가 있었음. ``get`` 으로 변경.
+        """
         cursor: str | None = None
+        base_params = dict(httpx_kwargs.pop("params", {}) or {})
         for _ in range(max_pages):
-            params = dict(httpx_kwargs.pop("params", {}) or {})
+            params = dict(base_params)
             if cursor:
                 params[cursor_param] = cursor
             resp = await self._request(
