@@ -89,23 +89,14 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
   }, [create, setActive, selectedKbIds]);
 
   return (
-    <div className="flex h-full w-full">
+    // min-h-0 + h-full so the 3-pane respects its parent flex height (#4)
+    <div className="flex h-full min-h-0 w-full">
       <ConversationSidebar activeId={activeId} onSelect={setActive} userEmail={userEmail} />
 
-      <main className="flex flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default px-4 py-2 text-sm">
-          <span className="font-medium">
-            {messages.length > 0 ? "대화" : "새 대화"}
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <KbSelector />
-            <ModeForceMenu value={forceMode} onChange={setForceMode} />
-          </div>
-        </header>
-
+      <main className="flex min-h-0 flex-1 flex-col">
         {showOwnerOnboarding && (
           <div className="border-b border-border-default bg-bg-info px-4 py-2 text-sm">
-            💡 오너 검색은 이제 채팅창에서 <code>/owner 이름</code> 으로 가능합니다.
+            💡 오너 검색은 이제 채팅창에서 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-xs">/owner 이름</code> 으로 가능합니다.
           </div>
         )}
 
@@ -136,12 +127,18 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
         <footer className="border-t border-border-default px-6 py-3">
           {ownerHint && (
             <p className="mb-1 text-xs text-fg-muted">
-              💡 입력창에 <code>/owner 이름</code> 으로 오너를 검색할 수 있습니다.
-              <button onClick={() => setOwnerHint(false)} className="ml-2">
+              💡 입력창에 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-xs">/owner 이름</code> 으로 오너를 검색할 수 있습니다.
+              <button onClick={() => setOwnerHint(false)} className="ml-2 underline hover:text-fg-default">
                 닫기
               </button>
             </p>
           )}
+          {/* KB chip + mode menu live with the input toolbar — single header
+              (the outer (app) layout header) instead of the prior duplicate. */}
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <KbSelector />
+            <ModeForceMenu value={forceMode} onChange={setForceMode} />
+          </div>
           <ChatInput onSubmit={handleSubmit} pending={send.isPending} />
         </footer>
       </main>

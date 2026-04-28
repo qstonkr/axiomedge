@@ -75,25 +75,35 @@ export function PrivacyConsent() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="max-w-md rounded-lg border border-border-default bg-bg-default p-6 shadow-xl">
-        <h2 className="text-lg font-semibold">처리방침 안내</h2>
-        <p className="mt-3 text-sm text-fg-muted">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="privacy-consent-title"
+        aria-describedby="privacy-consent-body"
+        className="max-w-md rounded-lg border border-border-default bg-bg-canvas p-6 shadow-lg"
+      >
+        <h2 id="privacy-consent-title" className="text-lg font-semibold">
+          처리방침 안내
+        </h2>
+        <p id="privacy-consent-body" className="mt-3 text-sm text-fg-muted">
           AI 검색 시 입력하신 질의·답변은 시스템 개선·감사 목적으로{" "}
-          <b>90일 보관 후 자동 파기</b>됩니다. 본인 대화는 좌측 사이드바에서
-          직접 삭제할 수 있고, 동의는 언제든 철회할 수 있습니다 (PIPA §37).
+          <b className="text-fg-default">90일 보관 후 자동 파기</b>됩니다. 본인 대화는
+          좌측 사이드바에서 직접 삭제할 수 있고, 동의는 언제든 철회할 수
+          있습니다 (PIPA §37).
         </p>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex items-center justify-end gap-3">
           <a
             href="/security#chat-retention"
-            className="text-xs text-fg-muted underline"
+            className="text-xs text-fg-muted underline hover:text-fg-default focus-visible:outline-2 focus-visible:outline-accent-default"
           >
             상세 처리방침
           </a>
           <button
             type="button"
+            autoFocus
             disabled={submitting}
             onClick={accept}
-            className="rounded-md bg-fg-default px-3 py-1.5 text-sm text-bg-default disabled:opacity-60"
+            className="rounded-md bg-fg-default px-3 py-1.5 text-sm text-bg-canvas hover:bg-accent-default disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-accent-default"
           >
             {submitting ? "기록 중…" : "동의하고 시작"}
           </button>

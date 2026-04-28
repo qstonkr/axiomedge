@@ -11,6 +11,12 @@
   --color-bg-subtle: #f7f7f5;
   --color-bg-muted: #efeeec;
   --color-bg-emphasis: #e3e2e0;
+  /* Aliases used by popovers/dialogs/cards as their "default" surface and
+   * by inline info banners. Defined here so existing components written
+   * against `bg-bg-default` / `bg-bg-info` resolve to real colors instead
+   * of being silently dropped by Tailwind v4. */
+  --color-bg-default: var(--color-bg-canvas);
+  --color-bg-info: var(--color-accent-subtle);
 
   --color-fg-default: #1f1f1f;
   --color-fg-muted: #5f5e5b;
@@ -64,6 +70,9 @@
   --color-bg-subtle: #232323;
   --color-bg-muted: #2c2c2c;
   --color-bg-emphasis: #383838;
+  /* aliases (see :root for rationale) */
+  --color-bg-default: var(--color-bg-canvas);
+  --color-bg-info: var(--color-accent-subtle);
 
   --color-fg-default: #ededed;
   --color-fg-muted: #b6b3ac;
