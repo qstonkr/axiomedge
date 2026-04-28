@@ -1261,8 +1261,14 @@ class ChatPrivacyConsentModel(KnowledgeBase):
 
     Complements the client-side PrivacyConsent localStorage flag — survives
     browser cache clears, supports auditor inquiries about who/when accepted.
-    Idempotent on (user_id, policy_version): re-accepting the same version is
-    a no-op upsert.
+
+    State machine on (user_id, policy_version):
+      missing                         → user has never consented
+      withdrawn_at IS NULL            → active consent
+      withdrawn_at IS NOT NULL        → withdrawn (PIPA §37)
+    Re-accepting after withdrawal updates the same row (clears
+    ``withdrawn_at``, refreshes ``accepted_at``) — single legal trail row
+    per user × version.
     """
 
     __tablename__ = "chat_privacy_consents"
@@ -1282,6 +1288,9 @@ class ChatPrivacyConsentModel(KnowledgeBase):
         default=lambda: datetime.now(timezone.utc),
         server_default=sa.func.now(),
     )
+    # PIPA §37 — populated when the user revokes their consent. NULL means
+    # the consent is currently active.
+    withdrawn_at = Column(DateTime(timezone=True), nullable=True)
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(Text, nullable=True)
 

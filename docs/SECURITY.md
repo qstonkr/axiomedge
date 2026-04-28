@@ -383,7 +383,8 @@ axiomedge는 사용자 web의 영구 좌측 sidebar를 위해 chat 대화 기록
 - **사용자 삭제권 (PIPA §36)**: 사용자가 좌측 sidebar에서 본인 대화를 직접 삭제 가능. soft delete은 즉시, hard delete은 다음 cron 사이클.
 - **본문 암호화 (at-rest)**: `chat_messages.content_enc`는 `pgp_sym_encrypt(body, CHAT_ENCRYPTION_KEY)`로 저장. 프로덕션 (`APP_ENV != dev/local/test`)은 키 미설정 시 **기동 거부**. dev 환경에서 키가 비면 plaintext + WARN log + sentinel 프리픽스 (이후 키가 활성화되면 read 시 자동 구분).
 - **접근 제어**: 모든 repo 메서드가 `user_id` predicate 강제 — 본인 대화만 read/list/rename/delete. `list_messages` 도 user_id 인자 받아 repo 레이어에서 한 번 더 확인 (defense in depth).
-- **처리방침 고지**: 첫 로그인 시 `PrivacyConsent` 모달로 안내. 동의 시 `localStorage`(axe-privacy-consent-v1)에 기록. 서버측 동의 트레일은 follow-up.
+- **처리방침 고지**: 첫 로그인 시 `PrivacyConsent` 모달로 안내. accept 시 서버에 `chat_privacy_consents` row 기록 (legal trail) + `localStorage`(axe-privacy-consent-v1) 캐시. 클라이언트는 mount 시 `GET /api/v1/users/me/consent` 로 서버 상태 확인 후 modal 표시 여부 결정.
+- **동의 철회 (PIPA §37)**: ProfileDropdown 의 "🚫 처리방침 동의 철회" 항목 또는 `DELETE /api/v1/users/me/consent` 로 철회. row 의 `withdrawn_at` 컬럼이 set 되고, 다음 chat 진입 시 PrivacyConsent modal 이 다시 떠 재동의를 요구. 기존 대화는 자동 삭제되지 않음 (사용자가 좌측 sidebar 에서 직접 삭제). 재동의 시 같은 row 의 `withdrawn_at` 이 null 로 clear 되며 단일 legal-trail row 가 유지됨.
 - **감사**: 대화 생성·이름변경·삭제·메시지 전송은 `request.state.audit` 으로 `AuditLogMiddleware` 가 한 행씩 기록 (event_type=`chat.conversation.create|rename|delete`, `chat.message.send`). **본문은 audit log 에 들어가지 않음** — conversation_id, mode_used, kb_ids 등 메타데이터만.
 
 백업: PostgreSQL 매일 백업은 암호화된 데이터만 보관, 표준 30일 로테이션. 사용자가 삭제한 대화는 백업 사이클이 지나면 복구 불가.
