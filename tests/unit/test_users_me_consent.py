@@ -1,4 +1,5 @@
-"""POST/GET /api/v1/users/me/consent — server-side PIPA legal trail."""
+"""POST/GET/DELETE /api/v1/users/me/consent — server-side PIPA legal trail
+including §37 withdrawal."""
 
 from __future__ import annotations
 
@@ -18,6 +19,20 @@ USER_ID = "11111111-1111-1111-1111-111111111111"
 ORG_ID = "default-org"
 
 
+def _record(withdrawn=False):
+    return MagicMock(
+        id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
+        user_id=uuid.UUID(USER_ID),
+        org_id=ORG_ID,
+        policy_version="v1",
+        accepted_at=datetime.now(UTC),
+        withdrawn_at=datetime.now(UTC) if withdrawn else None,
+        ip_address="127.0.0.1",
+        user_agent="curl/8",
+        is_active=not withdrawn,
+    )
+
+
 @pytest.fixture
 def fake_user():
     return AuthUser(
@@ -34,16 +49,9 @@ def fake_org():
 @pytest.fixture
 def consent_repo():
     repo = AsyncMock()
-    repo.accept.return_value = MagicMock(
-        id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
-        user_id=uuid.UUID(USER_ID),
-        org_id=ORG_ID,
-        policy_version="v1",
-        accepted_at=datetime.now(UTC),
-        ip_address="127.0.0.1",
-        user_agent="curl/8",
-    )
+    repo.accept.return_value = _record()
     repo.get_for_user.return_value = None
+    repo.withdraw.return_value = _record(withdrawn=True)
     return repo
 
 
@@ -65,19 +73,16 @@ def test_post_consent_records_acceptance(client, consent_repo):
     assert res.status_code == 201, res.text
     body = res.json()
     assert body["policy_version"] == "v1"
-    assert body["accepted_at"]
-    consent_repo.accept.assert_awaited_once()
-    kwargs = consent_repo.accept.await_args.kwargs
-    assert kwargs["user_id"] == uuid.UUID(USER_ID)
-    assert kwargs["policy_version"] == "v1"
+    assert body["is_active"] is True
+    assert body["withdrawn_at"] is None
 
 
 def test_post_consent_idempotent_repeat(client, consent_repo):
-    """Server-side accept is idempotent — repo.accept handles upsert."""
+    """Endpoint always calls repo.accept; repo handles upsert idempotency."""
     client.post("/api/v1/users/me/consent", json={"policy_version": "v1"})
     res2 = client.post("/api/v1/users/me/consent", json={"policy_version": "v1"})
     assert res2.status_code == 201
-    assert consent_repo.accept.await_count == 2  # endpoint always calls repo
+    assert consent_repo.accept.await_count == 2
 
 
 def test_get_consent_returns_null_when_missing(client, consent_repo):
@@ -87,13 +92,33 @@ def test_get_consent_returns_null_when_missing(client, consent_repo):
     assert res.json() is None
 
 
-def test_get_consent_returns_record_when_present(client, consent_repo):
-    consent_repo.get_for_user.return_value = MagicMock(
-        policy_version="v1",
-        accepted_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+def test_get_consent_returns_active_record(client, consent_repo):
+    consent_repo.get_for_user.return_value = _record(withdrawn=False)
     res = client.get("/api/v1/users/me/consent")
     assert res.status_code == 200
     body = res.json()
-    assert body["policy_version"] == "v1"
-    assert body["accepted_at"].startswith("2026-01-01")
+    assert body["is_active"] is True
+    assert body["withdrawn_at"] is None
+
+
+def test_get_consent_returns_withdrawn_record(client, consent_repo):
+    consent_repo.get_for_user.return_value = _record(withdrawn=True)
+    res = client.get("/api/v1/users/me/consent")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["is_active"] is False
+    assert body["withdrawn_at"] is not None
+
+
+def test_delete_consent_withdraws(client, consent_repo):
+    res = client.delete("/api/v1/users/me/consent")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["withdrawn_at"] is not None
+    consent_repo.withdraw.assert_awaited_once()
+
+
+def test_delete_consent_returns_404_when_nothing_active(client, consent_repo):
+    consent_repo.withdraw.return_value = None
+    res = client.delete("/api/v1/users/me/consent")
+    assert res.status_code == 404

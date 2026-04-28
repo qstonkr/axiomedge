@@ -60,6 +60,19 @@ async def init_database(database_url: str | None = None) -> None:
             await conn.run_sync(DistillBase.metadata.create_all)
             logger.info("DistillBase tables created (%d tables)", len(DistillBase.metadata.tables))
 
+            # Lightweight schema-evolution patches for tables that already exist
+            # in dev DBs from earlier code. ``Base.metadata.create_all`` only
+            # *creates* missing tables — it never alters existing ones — so any
+            # column added after the table first shipped needs an idempotent
+            # ALTER here. Once Alembic migrations are wired through, drop these.
+            try:
+                await conn.execute(text(
+                    "ALTER TABLE chat_privacy_consents "
+                    "ADD COLUMN IF NOT EXISTS withdrawn_at TIMESTAMPTZ"
+                ))
+            except Exception as e:  # noqa: BLE001 — table may not exist on a brand-new install
+                logger.debug("withdrawn_at ALTER skipped: %s", e)
+
         # Stamp Alembic head so future schema changes flow through migrations
         # (idempotent — re-stamping the same revision is a no-op).
         try:
