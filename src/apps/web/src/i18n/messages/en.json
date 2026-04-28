@@ -2,12 +2,8 @@
   "nav": {
     "label": "User menu",
     "chat": "Knowledge search",
-    "find_owner": "Find owner",
     "my_knowledge": "My knowledge",
-    "my_documents": "My documents",
-    "my_feedback": "Feedback / report",
-    "search_history": "Search history",
-    "my_activities": "My activities"
+    "my_documents": "My documents"
   },
   "common": {
     "logout": "Log out",

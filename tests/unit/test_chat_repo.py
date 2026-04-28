@@ -82,13 +82,15 @@ async def test_rename_conversation_owner_only(repo):
 
 @pytest.mark.asyncio
 async def test_purge_older_than_hard_deletes(repo):
-    """purge_older_than removes rows whose created_at is older than cutoff."""
+    """purge_older_than removes rows whose updated_at is older than cutoff."""
     user_id = uuid.uuid4()
     old = await repo.create_conversation(user_id=user_id, org_id="o", kb_ids=[])
     async with repo._session_maker() as session:
         await session.execute(
             text(
-                "UPDATE chat_conversations SET created_at = now() - interval '100 days' "
+                "UPDATE chat_conversations "
+                "SET created_at = now() - interval '100 days', "
+                "    updated_at = now() - interval '100 days' "
                 "WHERE id = :id",
             ),
             {"id": old},
@@ -96,3 +98,54 @@ async def test_purge_older_than_hard_deletes(repo):
         await session.commit()
     deleted = await repo.purge_older_than(days=90)
     assert deleted >= 1
+
+
+@pytest.mark.asyncio
+async def test_purge_older_than_keeps_recently_active(repo):
+    """A row whose created_at is old but updated_at is recent must survive."""
+    user_id = uuid.uuid4()
+    keep = await repo.create_conversation(user_id=user_id, org_id="o", kb_ids=[])
+    async with repo._session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE chat_conversations "
+                "SET created_at = now() - interval '100 days' "
+                "WHERE id = :id",
+            ),
+            {"id": keep},
+        )
+        await session.commit()
+    deleted = await repo.purge_older_than(days=90)
+    assert deleted == 0
+
+
+@pytest.mark.asyncio
+async def test_purge_older_than_rejects_short_retention(repo):
+    """retention floor — refuse days < 7 to prevent accidents."""
+    with pytest.raises(ValueError, match="retention floor"):
+        await repo.purge_older_than(days=3)
+
+
+@pytest.mark.asyncio
+async def test_set_title_if_empty_skips_deleted(repo):
+    """Auto-title race vs delete: deleted conv should not get a title set."""
+    user_id = uuid.uuid4()
+    conv_id = await repo.create_conversation(user_id=user_id, org_id="o", kb_ids=[])
+    await repo.soft_delete_conversation(conv_id, user_id)
+    ok = await repo.set_title_if_empty(conv_id, "should-not-stick")
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_list_messages_user_id_blocks_other(repo):
+    """Defense-in-depth: passing wrong user_id returns empty even if conv id is right."""
+    owner = uuid.uuid4()
+    other = uuid.uuid4()
+    conv_id = await repo.create_conversation(user_id=owner, org_id="o", kb_ids=[])
+    await repo.append_message(
+        conversation_id=conv_id, role="user", content="hi", chunks=[], meta={},
+    )
+    own_msgs = await repo.list_messages(conv_id, user_id=owner)
+    assert len(own_msgs) == 1
+    other_msgs = await repo.list_messages(conv_id, user_id=other)
+    assert other_msgs == []

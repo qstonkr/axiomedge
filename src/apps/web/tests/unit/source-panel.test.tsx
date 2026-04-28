@@ -32,11 +32,12 @@ describe("SourcePanel", () => {
     expect(screen.getByText("회의록")).toBeInTheDocument();
   });
 
-  it("switches to meta tab", async () => {
+  it("switches to meta tab and renders MetaSignals", async () => {
+    // SourcePanel reuses MetaSignals — confidence 0.78 renders as "78%"
     render(<SourcePanel chunks={sources} meta={{ confidence: 0.78 }} highlightedMarker={null} />);
     const u = userEvent.setup();
     await u.click(screen.getByRole("tab", { name: /메타/i }));
-    expect(screen.getByText(/0\.78/)).toBeInTheDocument();
+    expect(screen.getByText(/78%/)).toBeInTheDocument();
   });
 
   it("highlights card when marker matches", () => {

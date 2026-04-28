@@ -66,7 +66,11 @@ export async function listMessages(id: string): Promise<ChatMessage[]> {
 
 export async function sendMessage(
   id: string,
-  body: { content: string; force_mode?: "quick" | "deep" | null },
+  body: {
+    content: string;
+    force_mode?: "quick" | "deep" | null;
+    kb_ids?: string[] | null;
+  },
 ): Promise<SendResult> {
   return jsonFetch<SendResult>(`/conversations/${id}/messages`, {
     method: "POST",

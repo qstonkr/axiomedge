@@ -18,7 +18,7 @@ import { ModeForceMenu, type ForceMode } from "./ModeForceMenu";
 import { RecommendedQueries } from "./RecommendedQueries";
 import { SourcePanel, type SourceChunk } from "./SourcePanel";
 
-export function ChatPage() {
+export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
   const activeId = useChatStore((s) => s.activeConversationId);
   const setActive = useChatStore((s) => s.resetForConversation);
   const selectedKbIds = useChatStore((s) => s.selectedKbIds);
@@ -56,9 +56,12 @@ export function ChatPage() {
 
   async function handleSubmit(content: string) {
     await ensureConversation();
+    // Pass current selectedKbIds so mid-conversation KB toggling actually
+    // routes — backend prefers per-message kb_ids over the conversation row.
     await send.mutateAsync({
       content,
       force_mode: forceMode === "auto" ? null : forceMode,
+      kb_ids: selectedKbIds,
     });
   }
 
@@ -77,7 +80,7 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full w-full">
-      <ConversationSidebar activeId={activeId} onSelect={setActive} />
+      <ConversationSidebar activeId={activeId} onSelect={setActive} userEmail={userEmail} />
 
       <main className="flex flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default px-4 py-2 text-sm">
@@ -111,6 +114,7 @@ export function ChatPage() {
             <ChatMessages
               messages={messages}
               onMarkerActivate={setHighlightMarker}
+              onMarkerDeactivate={() => setHighlightMarker(null)}
               onReportError={() => {/* handled inline by 호버 액션; PR4+ may add modal */}}
               onResubmit={(prior) => prior && handleSubmit(prior)}
               onFindOwner={() => setOwnerHint(true)}

@@ -144,9 +144,23 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     # PR1 — chat history persistence
     from src.config import get_settings
     from src.stores.postgres.repositories.chat_repo import ChatRepository
+    _chat_settings = get_settings().chat
+    # PIPA at-rest encryption is required outside dev. Without a key, repo
+    # falls back to plaintext bytes — useful locally, dangerous in prod.
+    _is_dev = os.getenv("APP_ENV", "dev").lower() in {"dev", "development", "local", "test"}
+    if not _chat_settings.encryption_key and not _is_dev:
+        raise RuntimeError(
+            "CHAT_ENCRYPTION_KEY is required when APP_ENV is not dev/local — "
+            "refusing to start with plaintext chat body fallback (PIPA)"
+        )
+    if not _chat_settings.encryption_key:
+        logger.warning(
+            "CHAT_ENCRYPTION_KEY is empty — chat_messages.content_enc will be "
+            "stored as plaintext. Acceptable for dev only."
+        )
     state["chat_repo"] = ChatRepository(
         session_maker=session_factory,
-        encryption_key=get_settings().chat.encryption_key,
+        encryption_key=_chat_settings.encryption_key,
     )
 
     # Distill plugin repo (sync 등록만, 시드/서비스 초기화는 _init_distill에서)

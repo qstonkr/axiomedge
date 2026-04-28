@@ -14,12 +14,13 @@ import logging
 import uuid
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from src.api.routes.agentic import AgenticAskRequest, agentic_ask
 from src.api.routes.chat_helpers import derive_signals, route_query
 from src.api.routes.search import HubSearchRequest, hub_search
+from src.api.state import AppState
 from src.auth.dependencies import OrgContext, get_current_org, get_current_user
 from src.auth.providers import AuthUser
 
@@ -27,8 +28,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
 
+# Inner /search/hub and /agentic/ask cap content at 2000 chars; mirror that
+# here so a 2001+ char message fails validation BEFORE we persist a user turn,
+# avoiding orphan rows on subsequent 502.
+MAX_CONTENT_LENGTH = 2000
 
-def _get_state():  # type: ignore[no-untyped-def]  # AppState (dict-compat) returned via late-bound import to avoid circular
+
+def _get_state() -> AppState:
     """Late-bound state accessor — patched in tests."""
     from src.api.app import _get_state as _gs
     return _gs()
@@ -36,10 +42,20 @@ def _get_state():  # type: ignore[no-untyped-def]  # AppState (dict-compat) retu
 
 def _get_repo():
     state = _get_state()
-    repo = state.get("chat_repo") if hasattr(state, "get") else getattr(state, "chat_repo", None)
+    repo = state.chat_repo
     if repo is None:
         raise HTTPException(503, detail="Chat service not initialized")
     return repo
+
+
+def _set_audit(request: Request, event_type: str, user: AuthUser, **details: Any) -> None:
+    """Record a chat event in the audit trail. AuditLogMiddleware reads
+    request.state.audit on response and writes one row to audit_log."""
+    request.state.audit = {
+        "event_type": event_type,
+        "actor": user.sub,
+        "details": details,
+    }
 
 
 # --- request/response models ---------------------------------------------
@@ -58,9 +74,13 @@ class RenameRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=4000)
+    content: str = Field(min_length=1, max_length=MAX_CONTENT_LENGTH)
     # Pydantic-validated literal — narrowed before passing to route_query.
     force_mode: Literal["quick", "deep"] | None = None
+    # Per-message KB scope override. When None, the conversation's stored kb_ids
+    # are used. KbSelector chip toggles flow through here so users can widen or
+    # narrow KB scope mid-conversation without having to start a new chat.
+    kb_ids: list[str] | None = None
 
 
 class ConversationView(BaseModel):
@@ -90,6 +110,7 @@ class MessageView(BaseModel):
 )
 async def create_conversation(
     body: CreateConversationRequest,
+    request: Request,
     user: AuthUser = Depends(get_current_user),
     org: OrgContext = Depends(get_current_org),
 ):
@@ -98,6 +119,10 @@ async def create_conversation(
         user_id=uuid.UUID(user.sub),
         org_id=org.id,
         kb_ids=body.kb_ids,
+    )
+    _set_audit(
+        request, "chat.conversation.create", user,
+        conversation_id=str(conv_id), kb_ids=body.kb_ids,
     )
     return {"id": str(conv_id)}
 
@@ -127,24 +152,34 @@ async def list_conversations(
 async def rename_conversation(
     conv_id: uuid.UUID,
     body: RenameRequest,
+    request: Request,
     user: AuthUser = Depends(get_current_user),
 ):
     repo = _get_repo()
     ok = await repo.rename_conversation(conv_id, uuid.UUID(user.sub), body.title)
     if not ok:
         raise HTTPException(404, detail="Conversation not found")
+    _set_audit(
+        request, "chat.conversation.rename", user,
+        conversation_id=str(conv_id), title=body.title,
+    )
     return {"status": "ok"}
 
 
 @router.delete("/conversations/{conv_id}")
 async def delete_conversation(
     conv_id: uuid.UUID,
+    request: Request,
     user: AuthUser = Depends(get_current_user),
 ):
     repo = _get_repo()
     ok = await repo.soft_delete_conversation(conv_id, uuid.UUID(user.sub))
     if not ok:
         raise HTTPException(404, detail="Conversation not found")
+    _set_audit(
+        request, "chat.conversation.delete", user,
+        conversation_id=str(conv_id),
+    )
     return {"status": "ok"}
 
 
@@ -157,7 +192,8 @@ async def list_messages(
     conv = await repo.get_conversation(conv_id, uuid.UUID(user.sub))
     if conv is None:
         raise HTTPException(404, detail="Conversation not found")
-    msgs = await repo.list_messages(conv_id)
+    # Pass user_id for defense-in-depth — list_messages enforces ownership too.
+    msgs = await repo.list_messages(conv_id, user_id=uuid.UUID(user.sub))
     return {
         "messages": [
             MessageView(
@@ -178,6 +214,7 @@ async def list_messages(
 async def send_message(
     conv_id: uuid.UUID,
     body: SendMessageRequest,
+    request: Request,
     user: AuthUser = Depends(get_current_user),
     org: OrgContext = Depends(get_current_org),
 ):
@@ -186,16 +223,21 @@ async def send_message(
     if conv is None:
         raise HTTPException(404, detail="Conversation not found")
 
+    # KB scope: per-message override > conversation default. Empty list means
+    # "no KB filter" (search all). None means "fall back to conversation default".
+    effective_kb_ids = body.kb_ids if body.kb_ids is not None else list(conv.kb_ids)
+
     # Save user turn
     await repo.append_message(
         conversation_id=conv_id, role="user",
         content=body.content, chunks=[], meta={},
     )
 
-    # Route via classifier signals (None classifier → defaults to 'search').
+    # Route via classifier signals. derive_signals is fail-open: classifier
+    # missing or raising → conservative "search" defaults, never blocks send.
     state = _get_state()
-    classifier = state.get("query_classifier") if hasattr(state, "get") else getattr(state, "query_classifier", None)
-    sig = await derive_signals(body.content, classifier)
+    classifier = state.query_classifier
+    sig = derive_signals(body.content, classifier)
     mode = route_query(sig, force_mode=body.force_mode)
 
     answer: str = ""
@@ -208,7 +250,7 @@ async def send_message(
             res = await hub_search(
                 request=HubSearchRequest(
                     query=body.content,
-                    kb_ids=list(conv.kb_ids) or None,
+                    kb_ids=effective_kb_ids or None,
                     top_k=8,
                     include_answer=True,
                 ),
@@ -224,12 +266,16 @@ async def send_message(
                 "query_type": res.query_type,
                 "search_time_ms": res.search_time_ms,
                 "crag_action": res.crag_action,
+                # Preserve corrected/expanded query for the meta tab
+                "corrected_query": res.corrected_query,
+                "display_query": res.display_query,
+                "expanded_terms": list(res.expanded_terms or []),
             })
         else:
             res = await agentic_ask(
                 request=AgenticAskRequest(
                     query=body.content,
-                    kb_ids=list(conv.kb_ids) or None,
+                    kb_ids=effective_kb_ids or None,
                 ),
                 user=user,
                 org=org,
@@ -266,6 +312,11 @@ async def send_message(
         except Exception as e:  # noqa: BLE001 — title is best-effort
             logger.warning("auto_title enqueue failed: %s", e)
 
+    _set_audit(
+        request, "chat.message.send", user,
+        conversation_id=str(conv_id), mode_used=mode,
+        kb_ids=effective_kb_ids,
+    )
 
     return {
         "id": str(msg_id),

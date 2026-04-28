@@ -19,7 +19,7 @@ async def auto_title_for_conversation(
 ) -> None:
     repo = ctx["chat_repo"]
     llm = ctx.get("llm")
-    max_tokens = int(ctx.get("auto_title_max_tokens", 20))
+    max_tokens = int(ctx.get("auto_title_max_tokens", 32))
     fallback_chars = int(ctx.get("auto_title_fallback_chars", 30))
 
     title = ""
@@ -30,7 +30,8 @@ async def auto_title_for_conversation(
                 "출력은 제목만, 따옴표/구두점 없음.\n\n"
                 f"질의: {first_user_query}"
             )
-            raw = await llm.ainvoke(prompt, max_tokens=max_tokens)
+            # LLMClient protocol exposes generate(prompt, ...) — not ainvoke.
+            raw = await llm.generate(prompt, max_tokens=max_tokens)
             title = (raw or "").strip().strip('"“”')[:40]
         except Exception as e:  # noqa: BLE001 — LLM failure is best-effort
             logger.warning("auto_title LLM failed: %s — using fallback", e)

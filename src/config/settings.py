@@ -346,7 +346,7 @@ class ChatSettings(BaseSettings):
     encryption_key: str = ""  # pgp_sym_encrypt key — empty disables encryption (dev only)
     retention_days: int = Field(default=90, ge=1)
     auto_title_enabled: bool = True
-    auto_title_max_tokens: int = Field(default=20, ge=1)
+    auto_title_max_tokens: int = Field(default=32, ge=1)
     auto_title_fallback_chars: int = Field(default=30, ge=1)
 
 

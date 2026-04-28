@@ -7,7 +7,8 @@ import { MessageActions } from "./MessageActions";
 
 function renderWithCitations(
   text: string,
-  onMarker: (n: number) => void,
+  onActivate: (n: number) => void,
+  onDeactivate: () => void,
 ): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   const re = /\[(\d+)\]/g;
@@ -19,7 +20,8 @@ function renderWithCitations(
       <CitationMarker
         key={`${m.index}-${m[1]}`}
         n={Number(m[1])}
-        onActivate={onMarker}
+        onActivate={onActivate}
+        onDeactivate={onDeactivate}
       />,
     );
     last = m.index + m[0].length;
@@ -28,15 +30,22 @@ function renderWithCitations(
   return parts;
 }
 
+function firstCitedMarker(text: string): number | null {
+  const m = /\[(\d+)\]/.exec(text);
+  return m ? Number(m[1]) : null;
+}
+
 export function ChatMessages({
   messages,
   onMarkerActivate,
+  onMarkerDeactivate,
   onReportError,
   onResubmit,
   onFindOwner,
 }: {
   messages: ChatMessage[];
   onMarkerActivate: (n: number) => void;
+  onMarkerDeactivate: () => void;
   onReportError: () => void;
   onResubmit: (priorUserContent: string) => void;
   onFindOwner: () => void;
@@ -53,12 +62,18 @@ export function ChatMessages({
         <li key={m.id} className="group">
           <p className="text-xs uppercase text-fg-subtle">{m.role}</p>
           <div className="mt-1 whitespace-pre-wrap text-sm">
-            {renderWithCitations(m.content, onMarkerActivate)}
+            {renderWithCitations(m.content, onMarkerActivate, onMarkerDeactivate)}
           </div>
           {m.role === "assistant" && (
             <MessageActions
               content={m.content}
-              onShowSources={() => onMarkerActivate(1)}
+              onShowSources={() => {
+                // Activate the first cited marker if any; otherwise just open
+                // the panel without forcing a specific highlight.
+                const first = firstCitedMarker(m.content);
+                if (first !== null) onMarkerActivate(first);
+                else onMarkerDeactivate();
+              }}
               onFindOwner={onFindOwner}
               onResubmit={() => onResubmit(priorUserOf(idx))}
               onReportError={onReportError}

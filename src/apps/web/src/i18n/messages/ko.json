@@ -2,12 +2,8 @@
   "nav": {
     "label": "사용자 메뉴",
     "chat": "지식 검색",
-    "find_owner": "담당자 찾기",
     "my_knowledge": "내 지식",
-    "my_documents": "내 담당 문서",
-    "my_feedback": "피드백/오류 신고",
-    "search_history": "검색 이력",
-    "my_activities": "나의 활동"
+    "my_documents": "내 담당 문서"
   },
   "common": {
     "logout": "로그아웃",

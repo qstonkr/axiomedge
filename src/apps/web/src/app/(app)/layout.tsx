@@ -36,7 +36,7 @@ export default async function AppLayout({
         본문으로 건너뛰기
       </a>
       <div className="flex min-h-screen">
-        <Sidebar />
+        <Sidebar userEmail={session.email} />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-14 items-center justify-between border-b border-border-default bg-bg-subtle px-8">
             <span className="text-base font-semibold tracking-tight text-fg-default">
