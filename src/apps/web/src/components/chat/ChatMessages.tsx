@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { cn } from "@/components/ui/cn";
 import type { ChatMessage } from "@/lib/api/chat";
 
 import { CitationMarker } from "./CitationMarker";
@@ -37,9 +38,9 @@ function firstCitedMarker(text: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** Pending assistant skeleton with an elapsed-time tick. Used while waiting
- * on a slow LLM (Ollama 7.8b commonly takes 1–3 min for Korean RAG answers).
- * The hint copy escalates so the user knows we haven't silently failed. */
+const ROLE_LABEL: Record<string, string> = { user: "나", assistant: "AI" };
+
+/** Pending assistant skeleton with an elapsed-time tick. */
 function PendingAssistant() {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -61,9 +62,9 @@ function PendingAssistant() {
 
   return (
     <li className="space-y-2" aria-live="polite" aria-busy="true">
-      <p className="text-xs uppercase text-fg-subtle">assistant</p>
+      <p className="text-xs font-medium text-fg-muted">AI</p>
       <div className="flex items-center gap-2 text-sm text-fg-muted">
-        <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-fg-default" aria-hidden />
+        <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-accent-default" aria-hidden />
         <span>{hint}</span>
         <span className="ml-2 font-mono text-xs text-fg-subtle">{mm}:{ss}</span>
       </div>
@@ -86,8 +87,6 @@ export function ChatMessages({
   onFindOwner,
 }: {
   messages: ChatMessage[];
-  /** When non-null, render an optimistic user bubble with this content plus
-   * an assistant skeleton. Cleared by ChatPage once the mutation resolves. */
   pendingQuery?: string | null;
   onMarkerActivate: (n: number) => void;
   onMarkerDeactivate: () => void;
@@ -102,33 +101,57 @@ export function ChatMessages({
     return "";
   }
   return (
-    <ul className="space-y-4">
-      {messages.map((m, idx) => (
-        <li key={m.id} className="group">
-          <p className="text-xs uppercase text-fg-subtle">{m.role}</p>
-          <div className="mt-1 whitespace-pre-wrap text-sm">
-            {renderWithCitations(m.content, onMarkerActivate, onMarkerDeactivate)}
-          </div>
-          {m.role === "assistant" && (
-            <MessageActions
-              content={m.content}
-              onShowSources={() => {
-                const first = firstCitedMarker(m.content);
-                if (first !== null) onMarkerActivate(first);
-                else onMarkerDeactivate();
-              }}
-              onFindOwner={onFindOwner}
-              onResubmit={() => onResubmit(priorUserOf(idx))}
-              onReportError={onReportError}
-            />
-          )}
-        </li>
-      ))}
+    <ul className="space-y-5">
+      {messages.map((m, idx) => {
+        const isUser = m.role === "user";
+        return (
+          <li
+            key={m.id}
+            className={cn("group flex flex-col", isUser ? "items-end" : "items-start")}
+          >
+            <p className={cn(
+              "text-xs font-medium",
+              isUser ? "text-accent-emphasis" : "text-fg-muted",
+            )}>
+              {ROLE_LABEL[m.role] ?? m.role}
+            </p>
+            <div
+              className={cn(
+                "mt-1 max-w-[85%] whitespace-pre-wrap text-sm leading-relaxed",
+                isUser
+                  // User bubble — accent-tinted, right-aligned, lets the eye
+                  // distinguish "what I asked" from "what AI said" instantly.
+                  ? "rounded-2xl rounded-tr-sm bg-accent-subtle px-4 py-2 text-fg-default"
+                  : "text-fg-default",
+              )}
+            >
+              {isUser
+                ? m.content
+                : renderWithCitations(m.content, onMarkerActivate, onMarkerDeactivate)}
+            </div>
+            {!isUser && (
+              <MessageActions
+                content={m.content}
+                onShowSources={() => {
+                  const first = firstCitedMarker(m.content);
+                  if (first !== null) onMarkerActivate(first);
+                  else onMarkerDeactivate();
+                }}
+                onFindOwner={onFindOwner}
+                onResubmit={() => onResubmit(priorUserOf(idx))}
+                onReportError={onReportError}
+              />
+            )}
+          </li>
+        );
+      })}
       {pendingQuery && (
         <>
-          <li>
-            <p className="text-xs uppercase text-fg-subtle">user</p>
-            <div className="mt-1 whitespace-pre-wrap text-sm">{pendingQuery}</div>
+          <li className="flex flex-col items-end">
+            <p className="text-xs font-medium text-accent-emphasis">나</p>
+            <div className="mt-1 max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-accent-subtle px-4 py-2 text-sm leading-relaxed text-fg-default">
+              {pendingQuery}
+            </div>
           </li>
           <PendingAssistant />
         </>

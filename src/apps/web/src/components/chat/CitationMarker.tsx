@@ -9,10 +9,15 @@ export function CitationMarker({
 }) {
   return (
     <button
+      type="button"
       onClick={() => onActivate(n)}
       onMouseEnter={() => onActivate(n)}
       onMouseLeave={() => onDeactivate?.()}
-      className="mx-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded bg-bg-emphasis px-1 text-[11px] font-medium text-fg-default hover:bg-fg-default hover:text-bg-default"
+      onFocus={() => onActivate(n)}
+      onBlur={() => onDeactivate?.()}
+      // accent-subtle bg + accent-emphasis text — pops against body copy
+      // without being shouty. Hover/focus inverts to accent-default.
+      className="mx-0.5 inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded border border-accent-default/30 bg-accent-subtle px-1 text-[11px] font-semibold text-accent-emphasis hover:border-accent-default hover:bg-accent-default hover:text-fg-onAccent focus-visible:outline-2 focus-visible:outline-accent-default"
     >
       [{n}]
     </button>

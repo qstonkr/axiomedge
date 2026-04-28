@@ -59,7 +59,7 @@ export function SourcePanel({ chunks, meta, highlightedMarker }: Props) {
 
       <div className="flex-1 overflow-y-auto p-3">
         {tab === "sources" && (chunks.length === 0 ? (
-          <p className="text-xs text-fg-muted">출처가 없습니다.</p>
+          <p className="text-sm text-fg-default">출처가 없습니다.</p>
         ) : (
           chunks.map((c) => (
             <article
@@ -68,12 +68,14 @@ export function SourcePanel({ chunks, meta, highlightedMarker }: Props) {
               data-highlighted={c.marker === highlightedMarker ? "true" : "false"}
               className={cn(
                 "mb-3 rounded-md border border-border-default bg-bg-default p-3 transition-colors",
-                c.marker === highlightedMarker && "ring-2 ring-fg-default",
+                c.marker === highlightedMarker
+                  ? "border-accent-default ring-2 ring-accent-default"
+                  : "hover:border-border-strong",
               )}
             >
               <h4 className="text-sm font-medium">
                 {c.marker != null && (
-                  <span className="mr-1 text-fg-subtle">[{c.marker}]</span>
+                  <span className="mr-1 font-semibold text-accent-emphasis">[{c.marker}]</span>
                 )}
                 {c.doc_title}
               </h4>
@@ -81,10 +83,10 @@ export function SourcePanel({ chunks, meta, highlightedMarker }: Props) {
                 {c.kb_id}
                 {c.owner && ` · 👤 ${c.owner}`}
               </p>
-              <p className="mt-2 line-clamp-3 text-xs">{c.snippet}</p>
+              <p className="mt-2 line-clamp-3 text-xs text-fg-default">{c.snippet}</p>
               {typeof c.score === "number" && (
-                <p className="mt-1 text-[10px] text-fg-subtle">
-                  신뢰도 {(c.score * 100).toFixed(0)}%
+                <p className="mt-2 text-xs text-fg-muted">
+                  신뢰도 <span className="font-medium text-fg-default">{(c.score * 100).toFixed(0)}%</span>
                 </p>
               )}
             </article>
