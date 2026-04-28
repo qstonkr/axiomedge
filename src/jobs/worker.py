@@ -19,6 +19,7 @@ from arq.cron import cron
 
 from src.core.logging import configure_logging
 from src.jobs.audit_log_archive import audit_log_archive_sweep
+from src.jobs.chat_jobs import chat_history_purge_sweep
 from src.jobs.distill_jobs import distill_sweep_post_train, distill_sweep_training
 from src.jobs.ingestion_alerts import ingestion_failure_alert_sweep
 from src.jobs.queue import redis_settings_from_env
@@ -67,6 +68,8 @@ class WorkerSettings:
         cron(ingestion_failure_alert_sweep, minute={15, 45}),
         # Audit log archive — 매일 03:10 UTC (P1-2). retention=180d (env override).
         cron(audit_log_archive_sweep, hour={3}, minute={10}),
+        # Chat history purge — 매일 03:20 UTC (PR5). retention=90d (env override).
+        cron(chat_history_purge_sweep, hour={3}, minute={20}),
     ]
 
     @staticmethod
@@ -80,6 +83,7 @@ class WorkerSettings:
             "schema_alerts_sweep (every 30m)",
             "ingestion_failure_alert_sweep (every 30m, +15m offset)",
             "audit_log_archive_sweep (daily 03:10)",
+            "chat_history_purge_sweep (daily 03:20)",
         ]
         logger.info(
             "Arq worker starting — max_jobs=%s max_tries=%s job_timeout=%ss "
