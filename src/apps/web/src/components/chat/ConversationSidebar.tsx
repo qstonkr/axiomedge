@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { ProfileDropdown } from "@/components/layout/ProfileDropdown";
 import type { Conversation } from "@/lib/api/chat";
 import { useConversations, useCreateConversation } from "@/store/conversations";
 
@@ -33,9 +34,11 @@ function bucketize(items: Conversation[]): Bucket[] {
 export function ConversationSidebar({
   activeId,
   onSelect,
+  userEmail,
 }: {
   activeId: string | null;
   onSelect?: (id: string) => void;
+  userEmail?: string;
 }) {
   const { data = [], isLoading } = useConversations();
   const create = useCreateConversation();
@@ -89,6 +92,11 @@ export function ConversationSidebar({
           </div>
         ))}
       </div>
+      {userEmail && (
+        <div className="mt-2 border-t border-border-default pt-2">
+          <ProfileDropdown email={userEmail} />
+        </div>
+      )}
     </aside>
   );
 }

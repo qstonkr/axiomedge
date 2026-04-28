@@ -65,7 +65,11 @@ export function useSendMessage(id: string | null) {
   return useMutation<
     SendResult,
     Error,
-    { content: string; force_mode?: "quick" | "deep" | null }
+    {
+      content: string;
+      force_mode?: "quick" | "deep" | null;
+      kb_ids?: string[] | null;
+    }
   >({
     mutationFn: (body) => {
       if (!id) throw new Error("conversation id required");

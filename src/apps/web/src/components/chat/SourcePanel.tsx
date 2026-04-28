@@ -4,6 +4,9 @@ import { useState } from "react";
 
 import { cn } from "@/components/ui/cn";
 
+import { MetaSignals } from "./MetaSignals";
+import type { AssistantTurn } from "./types";
+
 export type SourceChunk = {
   chunk_id: string;
   marker?: number;
@@ -88,9 +91,7 @@ export function SourcePanel({ chunks, meta, highlightedMarker }: Props) {
           ))
         ))}
         {tab === "meta" && (
-          <pre className="text-xs whitespace-pre-wrap break-all">
-            {JSON.stringify(meta, null, 2)}
-          </pre>
+          <MetaSignals meta={meta as AssistantTurn["meta"]} />
         )}
       </div>
     </aside>

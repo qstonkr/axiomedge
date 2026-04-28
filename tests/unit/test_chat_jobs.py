@@ -10,11 +10,12 @@ from src.jobs.chat_jobs import auto_title_for_conversation
 async def test_auto_title_writes_short_title():
     repo = AsyncMock()
     llm = AsyncMock()
-    llm.ainvoke.return_value = "신촌 점검"
+    # LLMClient protocol exposes async generate(prompt, ...) — match that.
+    llm.generate.return_value = "신촌 점검"
     ctx = {
         "chat_repo": repo,
         "llm": llm,
-        "auto_title_max_tokens": 20,
+        "auto_title_max_tokens": 32,
         "auto_title_fallback_chars": 30,
     }
     await auto_title_for_conversation(
@@ -29,11 +30,11 @@ async def test_auto_title_writes_short_title():
 async def test_auto_title_fallback_on_llm_failure():
     repo = AsyncMock()
     llm = AsyncMock()
-    llm.ainvoke.side_effect = RuntimeError("llm down")
+    llm.generate.side_effect = RuntimeError("llm down")
     ctx = {
         "chat_repo": repo,
         "llm": llm,
-        "auto_title_max_tokens": 20,
+        "auto_title_max_tokens": 32,
         "auto_title_fallback_chars": 30,
     }
     await auto_title_for_conversation(

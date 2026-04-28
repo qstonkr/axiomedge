@@ -115,7 +115,7 @@ class WorkerSettings:
             ctx["auto_title_max_tokens"] = settings.chat.auto_title_max_tokens
             ctx["auto_title_fallback_chars"] = settings.chat.auto_title_fallback_chars
             try:
-                ctx["llm"] = create_llm_client(settings)
+                ctx["llm"] = create_llm_client(settings=settings)
             except Exception as e:  # noqa: BLE001 — LLM optional, fallback in chat_jobs
                 logger.warning("Worker LLM provider init skipped: %s", e)
                 ctx["llm"] = None

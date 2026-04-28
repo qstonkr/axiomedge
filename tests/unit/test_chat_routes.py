@@ -105,10 +105,14 @@ def test_send_message_routes_through_search(client, fake_repo, monkeypatch):
     fake_search = AsyncMock(return_value=fake_search_resp)
     monkeypatch.setattr("src.api.routes.chat.hub_search", fake_search)
 
-    # Classifier returns simple-query signals → search mode
-    fake_classifier = AsyncMock()
-    fake_signals = MagicMock(intent_count=1, requires_followup=False, ambiguity_score=0.1)
-    fake_classifier.analyze.return_value = fake_signals
+    # Classifier returns FACTUAL → route_query takes the search branch.
+    # Real QueryClassifier.classify is sync and returns ClassificationResult;
+    # MagicMock matches that surface.
+    from src.search.query_classifier import QueryType
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = MagicMock(
+        query_type=QueryType.FACTUAL, confidence=0.9, matched_patterns=[],
+    )
     from src.api.app import _state as real_state
     monkeypatch.setattr(real_state, "query_classifier", fake_classifier)
 
