@@ -266,6 +266,7 @@ async def send_message(
         except Exception as e:  # noqa: BLE001 — title is best-effort
             logger.warning("auto_title enqueue failed: %s", e)
 
+
     return {
         "id": str(msg_id),
         "role": "assistant",
