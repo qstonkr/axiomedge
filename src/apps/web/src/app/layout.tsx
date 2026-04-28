@@ -27,6 +27,20 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
         />
+        {/* Apply persisted theme BEFORE React hydrates to avoid the
+            light-mode flash dark-mode users were seeing on every navigation
+            (`store/theme.ts` reads localStorage post-mount). The script
+            mirrors the priority order used by useTheme: explicit pref →
+            system. Inlined so it runs synchronously during head parse. */}
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var p=localStorage.getItem('axiomedge.theme');" +
+              "var t=p||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');" +
+              "document.documentElement.dataset.theme=t;}catch(e){}})();",
+          }}
+        />
       </head>
       <body className="flex min-h-screen flex-col">{children}</body>
     </html>

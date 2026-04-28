@@ -60,17 +60,19 @@ export function ConversationSidebar({
   return (
     <aside className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-3 md:flex md:flex-col">
       <button
+        type="button"
         onClick={newChat}
-        className="mb-3 rounded-md border border-border-default px-3 py-2 text-sm hover:bg-bg-muted"
+        className="mb-3 rounded-md border border-border-default px-3 py-2 text-sm hover:bg-bg-muted focus-visible:outline-2 focus-visible:outline-accent-default"
       >
         + 새 대화
       </button>
       <input
         type="search"
         placeholder="대화 검색"
+        aria-label="대화 검색"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        className="mb-3 rounded-md border border-border-default bg-bg-default px-2 py-1 text-sm"
+        className="mb-3 rounded-md border border-border-default bg-bg-canvas px-2 py-1 text-sm focus-visible:border-accent-default focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-default"
       />
       <div className="flex-1 overflow-y-auto pr-1">
         {isLoading && <p className="text-xs text-fg-muted">불러오는 중…</p>}

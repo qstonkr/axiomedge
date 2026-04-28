@@ -40,8 +40,9 @@ export function ChatInput({
           }
         }}
         rows={2}
+        aria-label="질문 입력"
         placeholder="질문을 입력하세요. ⌘/Ctrl+Enter 전송. /owner 같은 명령도 가능."
-        className="w-full resize-none rounded-md border border-border-default bg-bg-default px-3 py-2 text-sm"
+        className="w-full resize-none rounded-md border border-border-default bg-bg-canvas px-3 py-2 text-sm focus-visible:border-accent-default focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-default disabled:opacity-60"
         disabled={pending}
       />
       <p className="mt-1 text-right text-xs text-fg-subtle">

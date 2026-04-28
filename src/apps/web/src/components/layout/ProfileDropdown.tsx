@@ -1,11 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function ProfileDropdown({ email }: { email: string }) {
   const [open, setOpen] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click + Escape — was open until next page load before.
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   async function withdrawConsent() {
     if (
@@ -38,11 +56,14 @@ export function ProfileDropdown({ email }: { email: string }) {
   }
 
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       <button
+        type="button"
         aria-label="프로필"
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-bg-muted"
+        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-bg-muted focus-visible:outline-2 focus-visible:outline-accent-default"
       >
         <span aria-hidden>👤</span>
         <span className="truncate">{email}</span>
@@ -50,13 +71,14 @@ export function ProfileDropdown({ email }: { email: string }) {
       {open && (
         <ul
           role="menu"
-          className="absolute bottom-full left-0 z-10 mb-1 w-full overflow-hidden rounded-md border border-border-default bg-bg-default shadow-lg"
+          className="absolute bottom-full left-0 z-10 mb-1 w-full overflow-hidden rounded-md border border-border-default bg-bg-canvas shadow-md"
         >
           <li>
             <Link
               role="menuitem"
               href="/my-feedback"
-              className="block px-3 py-2 text-sm hover:bg-bg-muted"
+              onClick={() => setOpen(false)}
+              className="block min-h-[36px] px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
             >
               📝 내 피드백
             </Link>
@@ -65,7 +87,8 @@ export function ProfileDropdown({ email }: { email: string }) {
             <Link
               role="menuitem"
               href="/my-activities"
-              className="block px-3 py-2 text-sm hover:bg-bg-muted"
+              onClick={() => setOpen(false)}
+              className="block min-h-[36px] px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
             >
               📋 내 활동
             </Link>
@@ -74,7 +97,8 @@ export function ProfileDropdown({ email }: { email: string }) {
             <Link
               role="menuitem"
               href="/security#chat-retention"
-              className="block px-3 py-2 text-sm hover:bg-bg-muted"
+              onClick={() => setOpen(false)}
+              className="block min-h-[36px] px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
             >
               🔒 처리방침
             </Link>
@@ -85,7 +109,7 @@ export function ProfileDropdown({ email }: { email: string }) {
               role="menuitem"
               disabled={withdrawing}
               onClick={withdrawConsent}
-              className="block w-full px-3 py-2 text-left text-sm hover:bg-bg-muted disabled:opacity-60"
+              className="block w-full min-h-[36px] px-3 py-2 text-left text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none disabled:opacity-60"
             >
               🚫 {withdrawing ? "철회 중…" : "처리방침 동의 철회"}
             </button>
@@ -95,7 +119,7 @@ export function ProfileDropdown({ email }: { email: string }) {
               <button
                 type="submit"
                 role="menuitem"
-                className="block w-full px-3 py-2 text-left text-sm hover:bg-bg-muted"
+                className="block w-full min-h-[36px] px-3 py-2 text-left text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
               >
                 ⏻ 로그아웃
               </button>

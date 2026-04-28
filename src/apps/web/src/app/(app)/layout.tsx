@@ -35,10 +35,13 @@ export default async function AppLayout({
       >
         본문으로 건너뛰기
       </a>
-      <div className="flex min-h-screen">
+      {/* h-screen + min-h-0 children so the chat 3-pane (which uses h-full
+          inside flex-1) can actually compute height. Without min-h-0 the
+          flex parent expands to fit content and h-full collapses to 0. */}
+      <div className="flex h-screen min-h-screen">
         <Sidebar userEmail={session.email} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 items-center justify-between border-b border-border-default bg-bg-subtle px-8">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-default bg-bg-subtle px-8">
             <span className="text-base font-semibold tracking-tight text-fg-default">
               axiomedge
             </span>
@@ -51,7 +54,7 @@ export default async function AppLayout({
           <main
             id="main-content"
             tabIndex={-1}
-            className="flex min-w-0 flex-1 flex-col bg-bg-canvas focus:outline-none"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-bg-canvas focus:outline-none"
           >
             {children}
           </main>
