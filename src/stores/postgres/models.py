@@ -37,18 +37,20 @@ from datetime import datetime, timezone
 import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PG_UUID
 from sqlalchemy.orm import declarative_base
 
 # Shared declarative base for all knowledge models
@@ -1169,4 +1171,86 @@ class ReextractJobModel(KnowledgeBase):
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         server_default=sa.func.now(),
+    )
+
+
+class ChatConversationModel(KnowledgeBase):
+    """Persistent chat conversation — left sidebar item.
+
+    Soft-deletable (deleted_at). Hard-deleted by chat_history_purge_sweep
+    when older than CHAT_RETENTION_DAYS.
+    """
+
+    __tablename__ = "chat_conversations"
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuidlib.uuid4,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    org_id = Column(String(64), nullable=False)
+    title = Column(Text, nullable=False, server_default=sa.text("''"))
+    kb_ids = Column(
+        ARRAY(String(64)),
+        nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_chat_conv_user_active",
+            "user_id", "deleted_at", "updated_at",
+        ),
+    )
+
+
+class ChatMessageModel(KnowledgeBase):
+    """Single chat turn (user OR assistant)."""
+
+    __tablename__ = "chat_messages"
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuidlib.uuid4,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    conversation_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("chat_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role = Column(String(16), nullable=False)
+    content_enc = Column(LargeBinary, nullable=False)
+    chunks = Column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    meta = Column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    trace_id = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user','assistant')",
+            name="ck_chat_msg_role",
+        ),
+        Index("ix_chat_msg_conv_time", "conversation_id", "created_at"),
     )
