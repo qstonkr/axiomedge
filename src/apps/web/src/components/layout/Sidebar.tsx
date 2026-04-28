@@ -7,22 +7,26 @@ import { useTranslations } from "next-intl";
 import { cn } from "@/components/ui/cn";
 
 /**
- * User-facing sidebar — only the 6 MVP pages (Streamlit Group 1+2 + 내 지식).
- * Admin entries land in B-2. Active route is highlighted via usePathname.
+ * User-facing outer sidebar — trimmed to non-chat hubs only.
+ *
+ * /chat owns its own ConversationSidebar (history + new chat), so this
+ * outer one is hidden inside /chat to avoid double sidebars.
+ *
+ * Removed entries (PR4 of UX redesign):
+ * - /search-history → absorbed into /chat ConversationSidebar
+ * - /find-owner → /owner slash command in /chat
+ * - /my-feedback, /my-activities → moved into ProfileDropdown
  */
 const NAV: { href: string; key: string; icon: string }[] = [
   { href: "/chat", key: "chat", icon: "💬" },
-  { href: "/find-owner", key: "find_owner", icon: "👤" },
   { href: "/my-knowledge", key: "my_knowledge", icon: "📚" },
   { href: "/my-documents", key: "my_documents", icon: "📄" },
-  { href: "/my-feedback", key: "my_feedback", icon: "📝" },
-  { href: "/search-history", key: "search_history", icon: "🕐" },
-  { href: "/my-activities", key: "my_activities", icon: "📋" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const t = useTranslations("nav");
+  if (pathname.startsWith("/chat")) return null;
   return (
     <aside className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-4 md:block">
       <nav className="space-y-1" aria-label={t("label")}>
