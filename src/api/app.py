@@ -141,6 +141,14 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
     state["usage_log_repo"] = UsageLogRepository(session_factory)
     state["_kb_registry_pending"] = KBRegistryRepository(db_url)
 
+    # PR1 — chat history persistence
+    from src.config import get_settings
+    from src.stores.postgres.repositories.chat_repo import ChatRepository
+    state["chat_repo"] = ChatRepository(
+        session_maker=session_factory,
+        encryption_key=get_settings().chat.encryption_key,
+    )
+
     # Distill plugin repo (sync 등록만, 시드/서비스 초기화는 _init_distill에서)
     try:
         from src.distill.repository import DistillRepository
