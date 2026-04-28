@@ -90,6 +90,35 @@ class WorkerSettings:
             ", ".join(cron_names),
         )
 
+        # PR5 — chat_repo + retention/title settings injected so chat_jobs
+        # (auto_title_for_conversation + chat_history_purge_sweep) work
+        # without reaching back into FastAPI's AppState.
+        try:
+            from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+            from src.config import get_settings
+            from src.core.providers.llm import create_llm_client
+            from src.stores.postgres.repositories.chat_repo import ChatRepository
+
+            settings = get_settings()
+            engine = create_async_engine(settings.database.database_url)
+            session_maker = async_sessionmaker(engine, expire_on_commit=False)
+            ctx["_chat_engine"] = engine  # held for on_shutdown disposal
+            ctx["chat_repo"] = ChatRepository(
+                session_maker=session_maker,
+                encryption_key=settings.chat.encryption_key,
+            )
+            ctx["chat_retention_days"] = settings.chat.retention_days
+            ctx["auto_title_max_tokens"] = settings.chat.auto_title_max_tokens
+            ctx["auto_title_fallback_chars"] = settings.chat.auto_title_fallback_chars
+            try:
+                ctx["llm"] = create_llm_client(settings)
+            except Exception as e:  # noqa: BLE001 — LLM optional, fallback in chat_jobs
+                logger.warning("Worker LLM provider init skipped: %s", e)
+                ctx["llm"] = None
+            logger.info("Chat worker context wired (chat_repo + settings)")
+        except Exception as e:  # noqa: BLE001 — chat ctx is best-effort
+            logger.error("Chat worker context init FAILED: %s", e, exc_info=True)
+
         # P0-W2 + N3 — FeatureFlag invalidation listener spawn.
         ctx["_ff_listener_task"] = None
         try:
@@ -122,4 +151,11 @@ class WorkerSettings:
                 await asyncio.wait_for(ff_task, timeout=2.0)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 pass
+        # Dispose chat engine if we created one.
+        chat_engine = ctx.get("_chat_engine")
+        if chat_engine is not None:
+            try:
+                await chat_engine.dispose()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Chat engine dispose failed: %s", e)
         logger.info("Arq worker shutting down")

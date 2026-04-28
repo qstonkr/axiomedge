@@ -13,6 +13,10 @@ import logging
 from typing import Any
 
 from src.jobs.audit_log_archive import audit_log_archive_sweep
+from src.jobs.chat_jobs import (
+    auto_title_for_conversation,
+    chat_history_purge_sweep,
+)
 from src.jobs.distill_jobs import (
     distill_pipeline_post_train,
     distill_pipeline_pre_train,
@@ -60,4 +64,6 @@ REGISTERED_TASKS = [
     schema_alerts_sweep,
     ingestion_failure_alert_sweep,
     audit_log_archive_sweep,
+    auto_title_for_conversation,
+    chat_history_purge_sweep,
 ]

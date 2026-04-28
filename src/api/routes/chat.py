@@ -254,6 +254,17 @@ async def send_message(
         content=answer, chunks=chunks, meta=meta, trace_id=trace_id,
     )
 
+    # Best-effort: enqueue auto-title for the conversation if title still empty.
+    if conv.title == "":
+        try:
+            from src.jobs.queue import enqueue_job
+            await enqueue_job(
+                "auto_title_for_conversation",
+                str(conv_id), body.content,
+            )
+        except Exception as e:  # noqa: BLE001 — title is best-effort
+            logger.warning("auto_title enqueue failed: %s", e)
+
     return {
         "id": str(msg_id),
         "role": "assistant",
