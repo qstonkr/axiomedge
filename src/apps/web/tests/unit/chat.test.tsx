@@ -69,28 +69,21 @@ describe("MetaSignals", () => {
 });
 
 describe("ChatInput", () => {
-  it("submits on form submit", () => {
-    const onSubmit = vi.fn();
-    render(<ChatInput onSubmit={onSubmit} pending={false} />);
-    const ta = screen.getByLabelText("검색어");
-    fireEvent.change(ta, { target: { value: "안녕" } });
-    fireEvent.click(screen.getByRole("button", { name: "검색" }));
-    expect(onSubmit).toHaveBeenCalledWith("안녕");
-  });
-
   it("does nothing on empty submit", () => {
     const onSubmit = vi.fn();
     render(<ChatInput onSubmit={onSubmit} pending={false} />);
-    fireEvent.click(screen.getByRole("button", { name: "검색" }));
+    const ta = screen.getByPlaceholderText(/질문/) as HTMLTextAreaElement;
+    fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("⌘+Enter sends", () => {
+  it("⌘+Enter sends and clears", () => {
     const onSubmit = vi.fn();
     render(<ChatInput onSubmit={onSubmit} pending={false} />);
-    const ta = screen.getByLabelText("검색어") as HTMLTextAreaElement;
+    const ta = screen.getByPlaceholderText(/질문/) as HTMLTextAreaElement;
     fireEvent.change(ta, { target: { value: "테스트" } });
     fireEvent.keyDown(ta, { key: "Enter", metaKey: true });
     expect(onSubmit).toHaveBeenCalledWith("테스트");
+    expect(ta.value).toBe("");
   });
 });
