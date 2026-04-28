@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
 
 
-def _get_state() -> dict:  # noqa: ANN201
+def _get_state():  # type: ignore[no-untyped-def]  # AppState (dict-compat) returned via late-bound import to avoid circular
     """Late-bound state accessor — patched in tests."""
     from src.api.app import _get_state as _gs
     return _gs()
@@ -59,7 +59,8 @@ class RenameRequest(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
-    force_mode: str | None = None  # 'quick' | 'deep' | None
+    # Pydantic-validated literal — narrowed before passing to route_query.
+    force_mode: Literal["quick", "deep"] | None = None
 
 
 class ConversationView(BaseModel):
