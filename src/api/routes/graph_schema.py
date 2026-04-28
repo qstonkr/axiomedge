@@ -35,7 +35,7 @@ def _get_repos():
     binds via the app_state session_maker; kept lazy to avoid app-startup
     order issues.
     """
-    from src.api.state import get_app_state
+    from src.api.app import _get_state
     from src.stores.postgres.repositories.bootstrap_run_repo import (
         BootstrapRunRepo,
     )
@@ -46,8 +46,8 @@ def _get_repos():
         SchemaCandidateRepo,
     )
 
-    app_state = get_app_state()
-    session_maker = app_state.session_maker
+    app_state = _get_state()
+    session_maker = app_state.db_session_factory
     return (
         SchemaCandidateRepo(session_maker),
         BootstrapRunRepo(session_maker),
