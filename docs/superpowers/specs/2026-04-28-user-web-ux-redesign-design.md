@@ -139,7 +139,7 @@ chat_conversations
 ├─ id            uuid pk default gen_random_uuid()
 ├─ user_id       uuid not null
 ├─ org_id        text not null
-├─ title         text not null      -- 자동 요약 (첫 질문 → 짧은 제목)
+├─ title         text not null default ''  -- 자동 요약. 첫 답변 후 background task 가 LLM 짧은 호출 (≤20 토큰) 로 채움. 실패 시 첫 질문 앞 30자 fallback.
 ├─ kb_ids        text[] not null default '{}'
 ├─ created_at    timestamptz not null default now()
 ├─ updated_at    timestamptz not null default now()  -- 마지막 메시지 시각
@@ -165,7 +165,7 @@ index (conversation_id, created_at)
 | 메서드 | 경로 | 역할 |
 |---|---|---|
 | GET    | `/api/v1/chat/conversations` | 좌측 sidebar — paged, 날짜 그룹 |
-| POST   | `/api/v1/chat/conversations` | 새 대화 생성 (첫 메시지 보낼 때 자동) |
+| POST   | `/api/v1/chat/conversations` | 새 대화 생성 (첫 메시지 보낼 때 클라이언트가 호출 → id 반환받아 messages POST 에 사용). 빈 title 로 생성, title 은 첫 답변 직후 서버가 비동기 채움. |
 | PATCH  | `/api/v1/chat/conversations/{id}` | rename |
 | DELETE | `/api/v1/chat/conversations/{id}` | soft delete (즉시), hard delete은 다음 cron |
 | GET    | `/api/v1/chat/conversations/{id}/messages` | 대화 열람 |
