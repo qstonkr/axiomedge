@@ -1254,3 +1254,41 @@ class ChatMessageModel(KnowledgeBase):
         ),
         Index("ix_chat_msg_conv_time", "conversation_id", "created_at"),
     )
+
+
+class ChatPrivacyConsentModel(KnowledgeBase):
+    """Server-side record of chat retention policy consent (PIPA legal trail).
+
+    Complements the client-side PrivacyConsent localStorage flag — survives
+    browser cache clears, supports auditor inquiries about who/when accepted.
+    Idempotent on (user_id, policy_version): re-accepting the same version is
+    a no-op upsert.
+    """
+
+    __tablename__ = "chat_privacy_consents"
+
+    id = Column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuidlib.uuid4,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    org_id = Column(String(64), nullable=False)
+    policy_version = Column(String(32), nullable=False)
+    accepted_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.func.now(),
+    )
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "policy_version",
+            name="uq_chat_privacy_user_version",
+        ),
+        Index("ix_chat_privacy_user", "user_id"),
+    )

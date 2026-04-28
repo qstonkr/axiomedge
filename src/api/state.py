@@ -34,6 +34,9 @@ if TYPE_CHECKING:
     from src.stores.postgres.repositories.search_group import SearchGroupRepository
     from src.stores.postgres.repositories.usage_log import UsageLogRepository
     from src.stores.postgres.repositories.chat_repo import ChatRepository
+    from src.stores.postgres.repositories.consent_repo import (
+        ChatPrivacyConsentRepository,
+    )
 
     # Domain Services
     from src.pipelines.term_extractor import TermExtractor
@@ -116,6 +119,7 @@ class AppState:
     search_group_repo: SearchGroupRepository | None = None
     usage_log_repo: UsageLogRepository | None = None
     chat_repo: "ChatRepository | None" = None  # PR1 — chat history persistence
+    consent_repo: "ChatPrivacyConsentRepository | None" = None
 
     # Domain Services
     term_extractor: TermExtractor | None = None

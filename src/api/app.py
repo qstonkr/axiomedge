@@ -163,6 +163,12 @@ def _create_repositories(state: AppState, session_factory, db_url: str) -> None:
         encryption_key=_chat_settings.encryption_key,
     )
 
+    # Server-side privacy consent trail — see ChatPrivacyConsentModel.
+    from src.stores.postgres.repositories.consent_repo import (
+        ChatPrivacyConsentRepository,
+    )
+    state["consent_repo"] = ChatPrivacyConsentRepository(session_factory)
+
     # Distill plugin repo (sync 등록만, 시드/서비스 초기화는 _init_distill에서)
     try:
         from src.distill.repository import DistillRepository

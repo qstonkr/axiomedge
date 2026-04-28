@@ -97,14 +97,24 @@ class WorkerSettings:
         # PR5 — chat_repo + retention/title settings injected so chat_jobs
         # (auto_title_for_conversation + chat_history_purge_sweep) work
         # without reaching back into FastAPI's AppState.
+        # Wait for the API-side init_database() to land chat_* tables + pgcrypto
+        # before serving any chat job; otherwise jobs fail-loudly on missing
+        # schema (which the user sees as silent absent titles / broken purge).
         try:
             from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
             from src.config import get_settings
             from src.core.providers.llm import create_llm_client
+            from src.stores.postgres.chat_bootstrap import wait_for_chat_schema
             from src.stores.postgres.repositories.chat_repo import ChatRepository
 
             settings = get_settings()
             engine = create_async_engine(settings.database.database_url)
+            ready = await wait_for_chat_schema(engine, timeout_seconds=60.0)
+            if not ready:
+                logger.error(
+                    "Chat schema not ready after 60s — chat jobs will skip"
+                    " until next worker restart",
+                )
             session_maker = async_sessionmaker(engine, expire_on_commit=False)
             ctx["_chat_engine"] = engine  # held for on_shutdown disposal
             ctx["chat_repo"] = ChatRepository(
