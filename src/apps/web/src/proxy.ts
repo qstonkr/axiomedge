@@ -10,8 +10,27 @@ import { ACCESS_COOKIE, REFRESH_COOKIE } from "@/lib/api/url";
  * even renders. AppLayout still calls getSession() as defense-in-depth, but
  * the redirect here saves a server round-trip + flash of unstyled gate.
  */
+/**
+ * 30-day redirect map for pages absorbed into /chat (PR4 of UX redesign).
+ * Drop entries after ~2026-05-28 once user habit + bookmarks have moved on.
+ */
+const REDIRECTS_ABSORBED: Record<string, string> = {
+  "/search-history": "/chat",
+  "/find-owner": "/chat?onboarding=owner",
+};
+
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+
+  // Permanent-ish redirect (308) for pages absorbed into /chat.
+  const redirectTarget = REDIRECTS_ABSORBED[pathname];
+  if (redirectTarget) {
+    const url = req.nextUrl.clone();
+    const [redirPath, redirQuery] = redirectTarget.split("?");
+    url.pathname = redirPath;
+    url.search = redirQuery ? `?${redirQuery}` : "";
+    return NextResponse.redirect(url, 308);
+  }
 
   if (isPublic(pathname)) return NextResponse.next();
 
