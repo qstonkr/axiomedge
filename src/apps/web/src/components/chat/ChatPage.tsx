@@ -29,6 +29,9 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
   const [forceMode, setForceMode] = useState<ForceMode>("auto");
   const [highlightMarker, setHighlightMarker] = useState<number | null>(null);
   const [ownerHint, setOwnerHint] = useState(false);
+  // Optimistic in-flight user turn — renders immediately so the user sees
+  // their message while the LLM (often Ollama 7.8b, 1–3 min) generates.
+  const [pendingQuery, setPendingQuery] = useState<string | null>(null);
 
   const params = useSearchParams();
   const showOwnerOnboarding = params?.get("onboarding") === "owner";
@@ -56,13 +59,20 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
 
   async function handleSubmit(content: string) {
     await ensureConversation();
-    // Pass current selectedKbIds so mid-conversation KB toggling actually
-    // routes — backend prefers per-message kb_ids over the conversation row.
-    await send.mutateAsync({
-      content,
-      force_mode: forceMode === "auto" ? null : forceMode,
-      kb_ids: selectedKbIds,
-    });
+    setPendingQuery(content);
+    try {
+      // Pass current selectedKbIds so mid-conversation KB toggling actually
+      // routes — backend prefers per-message kb_ids over the conversation row.
+      await send.mutateAsync({
+        content,
+        force_mode: forceMode === "auto" ? null : forceMode,
+        kb_ids: selectedKbIds,
+      });
+    } finally {
+      // Server messages query invalidates on success; clear the optimistic
+      // turn so we don't briefly render it twice.
+      setPendingQuery(null);
+    }
   }
 
   // Keyboard: Cmd/Ctrl + N → new chat.
@@ -100,7 +110,7 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
         )}
 
         <section className="flex-1 overflow-y-auto px-6 py-4">
-          {messages.length === 0 ? (
+          {messages.length === 0 && !send.isPending ? (
             <div className="space-y-4">
               <p className="text-sm text-fg-muted">
                 궁금한 것을 물어보세요. <kbd>⌘/Ctrl+N</kbd> 새 대화.
@@ -113,6 +123,7 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
           ) : (
             <ChatMessages
               messages={messages}
+              pendingQuery={send.isPending ? pendingQuery : null}
               onMarkerActivate={setHighlightMarker}
               onMarkerDeactivate={() => setHighlightMarker(null)}
               onReportError={() => {/* handled inline by 호버 액션; PR4+ may add modal */}}
