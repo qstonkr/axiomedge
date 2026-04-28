@@ -293,8 +293,18 @@ async def send_message(
         # Re-raise 4xx/5xx from underlying routes after still having recorded user turn.
         raise
     except Exception as e:  # noqa: BLE001 — surface as 502 so the user turn is preserved
-        logger.exception("Chat send: underlying %s call failed", mode)
-        raise HTTPException(502, detail=f"underlying {mode} failed: {e}") from e
+        # Surface enough detail so a 502 doesn't carry an empty body when the
+        # exception's __str__ is empty (CancelledError, loop-affinity errors,
+        # asyncpg internal-protocol errors all behave that way).
+        err_type = type(e).__name__
+        err_msg = str(e) or err_type
+        logger.exception(
+            "Chat send: underlying %s call failed (%s): %s",
+            mode, err_type, repr(e),
+        )
+        raise HTTPException(
+            502, detail=f"underlying {mode} failed: {err_type}: {err_msg}",
+        ) from e
 
     msg_id = await repo.append_message(
         conversation_id=conv_id, role="assistant",

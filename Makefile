@@ -37,6 +37,16 @@ stop:
 # `tei-refresh` 는 AWS 사용 시에만 필요. AWS 접근 가능한 환경이면 수동 호출:
 #   make tei-refresh && make api
 api:
+	# Dev default: --workers 1. Multi-worker (--workers ≥ 2) currently causes
+	# httpx.ReadTimeout when several workers contend for the same local Ollama
+	# instance — local 7.8b model is the bottleneck, not the API. Revisit after
+	# Ollama capacity is increased (cloud TEI/SageMaker, larger box, etc.).
+	# Production deploy uses gunicorn from deploy/k8s with its own worker count.
+	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 300
+
+api-multi:
+	# Opt-in multi-worker. Use only when Ollama (or USE_SAGEMAKER_LLM=true) can
+	# absorb concurrent inference; otherwise workers timeout each other out.
 	uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --workers 2 --timeout-keep-alive 300
 
 # Sync current egress IP to the TEI/PaddleOCR security group (jbkim-auto-* rules).

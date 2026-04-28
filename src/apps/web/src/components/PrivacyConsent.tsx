@@ -3,14 +3,38 @@
 import { useEffect, useState } from "react";
 
 const KEY = "axe-privacy-consent-v1";
+const POLICY_VERSION = "v1";
 
 export function PrivacyConsent() {
   const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     setOpen(localStorage.getItem(KEY) !== "accepted");
   }, []);
+
   if (!open) return null;
+
+  async function accept() {
+    setSubmitting(true);
+    // Server-side legal trail — survives localStorage clear. localStorage is
+    // still set so the modal won't re-open even if the network call fails.
+    try {
+      await fetch("/api/proxy/api/v1/users/me/consent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ policy_version: POLICY_VERSION }),
+      });
+    } catch {
+      // network errors are non-blocking — user has accepted, audit trail can
+      // catch up next time. UX shouldn't trap them here.
+    }
+    localStorage.setItem(KEY, "accepted");
+    setSubmitting(false);
+    setOpen(false);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="max-w-md rounded-lg border border-border-default bg-bg-default p-6 shadow-xl">
@@ -28,13 +52,12 @@ export function PrivacyConsent() {
             상세 처리방침
           </a>
           <button
-            onClick={() => {
-              localStorage.setItem(KEY, "accepted");
-              setOpen(false);
-            }}
-            className="rounded-md bg-fg-default px-3 py-1.5 text-sm text-bg-default"
+            type="button"
+            disabled={submitting}
+            onClick={accept}
+            className="rounded-md bg-fg-default px-3 py-1.5 text-sm text-bg-default disabled:opacity-60"
           >
-            동의하고 시작
+            {submitting ? "기록 중…" : "동의하고 시작"}
           </button>
         </div>
       </div>
