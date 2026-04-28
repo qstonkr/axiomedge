@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.stores.postgres.models import KnowledgeBase, RegistryBase
@@ -39,6 +40,14 @@ async def init_database(database_url: str | None = None) -> None:
 
     try:
         async with engine.begin() as conn:
+            # Ensure pgcrypto extension (used by chat_messages content_enc).
+            # Idempotent — no-op if already installed.
+            try:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+                logger.info("pgcrypto extension ensured")
+            except Exception as e:  # noqa: BLE001 — non-PG dialects (e.g. SQLite tests) may reject
+                logger.debug("pgcrypto extension skipped (non-PG dialect?): %s", e)
+
             # Create KnowledgeBase tables (Text-column based, cross-dialect)
             await conn.run_sync(KnowledgeBase.metadata.create_all)
             logger.info("KnowledgeBase tables created (%d tables)", len(KnowledgeBase.metadata.tables))
