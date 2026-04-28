@@ -1,65 +1,52 @@
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { Turn } from "@/components/chat/types";
+import type { AssistantTurn, UserTurn } from "@/components/chat/types";
 
+type Turn = UserTurn | AssistantTurn;
+
+/** @deprecated removed in PR3 alongside ModeToggle — server-side route_query replaces it */
 export type ChatMode = "agentic" | "fast";
 
 type ChatStore = {
-  selectedKbIds: string[];
-  mode: ChatMode;
+  activeConversationId: string | null;
   turns: Turn[];
+  selectedKbIds: string[];
+  /** @deprecated removed in PR3 — server routes via route_query */
+  mode: ChatMode;
+  resetForConversation: (id: string | null) => void;
+  appendTurn: (turn: Turn) => void;
+  hydrateTurns: (turns: Turn[]) => void;
   setSelectedKbIds: (ids: string[]) => void;
   toggleKb: (id: string) => void;
-  setMode: (mode: ChatMode) => void;
-  appendTurn: (turn: Turn) => void;
+  /** @deprecated removed in PR3 — equivalent to resetForConversation(null) */
   clearTurns: () => void;
+  /** @deprecated removed in PR3 — server route_query replaces user-facing toggle */
+  setMode: (mode: ChatMode) => void;
 };
 
 /**
- * /chat sticky state — 사용자가 새로고침해도 KB 선택, mode, 대화
- * history (turns) 가 유지되도록 sessionStorage 에 persist.
- *
- * **왜 sessionStorage** (localStorage 아닌):
- * - 브라우저 탭 닫으면 자동 삭제 → 공용 PC 에서도 안전
- * - 새로고침 / 같은 탭 안의 다른 페이지로 이동 후 복귀 시엔 유지 (의도)
- * - localStorage 는 영속이라 답변 chunks 같은 민감 정보가 long-term 잔존
- *
- * 서버 측 search/agentic_trace 가 search_log 에 저장은 별개 — 프론트
- * 화면 즉시 복원에는 클라이언트 캐시가 더 빠르고 backend 부담 없음.
+ * /chat in-memory state. Server is source of truth — chat_messages and
+ * chat_conversations persist via /api/v1/chat. sessionStorage is removed
+ * deliberately to comply with PIPA at-rest encryption (PR1+) — body data
+ * never lands in browser storage.
  */
-export const useChatStore = create<ChatStore>()(
-  persist(
-    (set) => ({
-      selectedKbIds: [],
-      mode: "agentic",
-      turns: [],
-      setSelectedKbIds: (ids) => set({ selectedKbIds: ids }),
-      toggleKb: (id) =>
-        set((s) => ({
-          selectedKbIds: s.selectedKbIds.includes(id)
-            ? s.selectedKbIds.filter((x) => x !== id)
-            : [...s.selectedKbIds, id],
-        })),
-      setMode: (mode) => set({ mode }),
-      appendTurn: (turn) => set((s) => ({ turns: [...s.turns, turn] })),
-      clearTurns: () => set({ turns: [] }),
-    }),
-    {
-      name: "axiomedge:chat",
-      storage: createJSONStorage(() => sessionStorage),
-      // version 올리면 stored shape 호환 안 될 때 이전 데이터 무시.
-      version: 1,
-      // sessionStorage 5MB 한계 보호 — agentic answer + chunks 가 큰
-      // payload 라 50+ turn 이면 quota 위험. 마지막 30 turn 만 persist
-      // (in-memory state 는 그대로, persist 시점에만 trim).
-      partialize: (state) => ({
-        selectedKbIds: state.selectedKbIds,
-        mode: state.mode,
-        turns: state.turns.slice(-30),
-      }),
-    },
-  ),
-);
+export const useChatStore = create<ChatStore>((set) => ({
+  activeConversationId: null,
+  turns: [],
+  selectedKbIds: [],
+  mode: "agentic",
+  resetForConversation: (id) => set({ activeConversationId: id, turns: [] }),
+  appendTurn: (turn) => set((s) => ({ turns: [...s.turns, turn] })),
+  hydrateTurns: (turns) => set({ turns }),
+  setSelectedKbIds: (ids) => set({ selectedKbIds: ids }),
+  toggleKb: (id) =>
+    set((s) => ({
+      selectedKbIds: s.selectedKbIds.includes(id)
+        ? s.selectedKbIds.filter((x) => x !== id)
+        : [...s.selectedKbIds, id],
+    })),
+  clearTurns: () => set({ turns: [] }),
+  setMode: (mode) => set({ mode }),
+}));
