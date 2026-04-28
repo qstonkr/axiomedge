@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AppProviders } from "@/components/providers";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
+import { PrivacyConsent } from "@/components/PrivacyConsent";
 import { getSession } from "@/lib/auth/session";
 
 /**
@@ -27,6 +28,7 @@ export default async function AppLayout({
 
   return (
     <AppProviders>
+      <PrivacyConsent />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-accent-default focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-fg-onAccent"
