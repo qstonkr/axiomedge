@@ -1,57 +1,52 @@
 "use client";
 
-import { useRef, type FormEvent, type KeyboardEvent } from "react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui";
+import { parseSlash, SlashCommandDropdown } from "./SlashCommands";
 
 export function ChatInput({
   onSubmit,
   pending,
-  placeholder = "예: 신촌점 차주 매장 점검 일정 알려줘",
 }: {
-  onSubmit: (query: string) => void;
+  onSubmit: (content: string) => void | Promise<void>;
   pending: boolean;
-  placeholder?: string;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue] = useState("");
+  const slash = parseSlash(value);
+  const showDropdown = slash !== null && slash.arg === "";
 
-  function send() {
-    const q = ref.current?.value.trim() ?? "";
-    if (!q) return;
-    onSubmit(q);
-    if (ref.current) ref.current.value = "";
-  }
-
-  function onFormSubmit(e: FormEvent) {
-    e.preventDefault();
-    send();
-  }
-
-  function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // ⌘/Ctrl+Enter — submit. plain Enter inserts newline (multi-line OK).
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      send();
-    }
+  function submit() {
+    const v = value.trim();
+    if (!v || pending) return;
+    onSubmit(v);
+    setValue("");
   }
 
   return (
-    <form
-      onSubmit={onFormSubmit}
-      className="flex w-full items-end gap-3 rounded-lg border border-border-default bg-bg-canvas p-3 shadow-sm"
-    >
+    <div className="relative">
+      {showDropdown && (
+        <SlashCommandDropdown
+          query={slash!.cmd}
+          onPick={(name) => setValue(`/${name} `)}
+        />
+      )}
       <textarea
-        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            submit();
+          }
+        }}
         rows={2}
-        placeholder={placeholder}
-        onKeyDown={onKey}
+        placeholder="질문을 입력하세요. ⌘/Ctrl+Enter 전송. /owner 같은 명령도 가능."
+        className="w-full resize-none rounded-md border border-border-default bg-bg-default px-3 py-2 text-sm"
         disabled={pending}
-        aria-label="검색어"
-        className="min-h-[56px] flex-1 resize-none border-0 bg-transparent px-2 py-1 text-sm leading-7 text-fg-default placeholder:text-fg-subtle focus:outline-none disabled:opacity-50"
       />
-      <Button type="submit" disabled={pending} size="md">
-        {pending ? "검색 중…" : "검색"}
-      </Button>
-    </form>
+      <p className="mt-1 text-right text-xs text-fg-subtle">
+        ⌘/Ctrl + Enter 전송
+      </p>
+    </div>
   );
 }
