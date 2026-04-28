@@ -297,3 +297,13 @@
 | `MANIFEST_URL` | - | S3 manifest URL (모델 + 앱 버전) |
 | `CENTRAL_API_URL` | - | 중앙 서버 API URL (heartbeat push) |
 | `APP_VERSION` | `dev` | 앱 바이너리 버전 |
+
+### Chat history (PIPA-compliant)
+
+| 환경변수 | 기본값 | 설명 |
+|---|---|---|
+| `CHAT_ENCRYPTION_KEY` | (empty) | `chat_messages.content_enc`용 pgp_sym_encrypt 키. 비어 있으면 plaintext (dev only). |
+| `CHAT_RETENTION_DAYS` | `90` | `chat_conversations` 보존 일수. cron이 cutoff보다 오래된 row hard delete. |
+| `CHAT_AUTO_TITLE_ENABLED` | `true` | 첫 답변 후 LLM이 짧은 제목 자동 생성. |
+| `CHAT_AUTO_TITLE_MAX_TOKENS` | `20` | auto-title LLM 호출의 토큰 cap. |
+| `CHAT_AUTO_TITLE_FALLBACK_CHARS` | `30` | LLM 실패 시 첫 user 질의 앞 N자로 fallback. |
