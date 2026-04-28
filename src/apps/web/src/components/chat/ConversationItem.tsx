@@ -5,6 +5,9 @@ import { useState } from "react";
 import { cn } from "@/components/ui/cn";
 import { useDeleteConversation, useRenameConversation } from "@/store/conversations";
 
+const ICON_BTN =
+  "rounded px-1 py-0.5 text-fg-muted opacity-60 transition hover:bg-bg-muted hover:text-fg-default hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent-default";
+
 export function ConversationItem({
   id, title, active, onSelect,
 }: {
@@ -30,9 +33,14 @@ export function ConversationItem({
   return (
     <div
       className={cn(
-        "group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm",
-        active ? "bg-bg-emphasis" : "hover:bg-bg-muted",
+        "group relative flex items-center gap-1 rounded-md pl-3 pr-2 py-1.5 text-sm transition-colors",
+        active
+          // Active row: accent-tinted background + left bar so the selected
+          // conversation is easy to scan, not just slightly grayer.
+          ? "bg-accent-subtle font-medium text-fg-default before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded before:bg-accent-default"
+          : "hover:bg-bg-muted",
       )}
+      aria-current={active ? "page" : undefined}
     >
       {editing ? (
         <input
@@ -51,29 +59,34 @@ export function ConversationItem({
         />
       ) : (
         <button
+          type="button"
           onClick={() => onSelect(id)}
           className="flex-1 truncate text-left"
         >
           {title || "(제목 없음)"}
         </button>
       )}
+      {/* Always-visible icons (muted by default, full on hover/focus) — was
+          opacity-0 hover-only which broke touch + keyboard discoverability. */}
       <button
+        type="button"
         aria-label="이름 변경"
         onClick={(e) => {
           e.stopPropagation();
           setEditing(true);
         }}
-        className="opacity-0 group-hover:opacity-100"
+        className={ICON_BTN}
       >
         ✏️
       </button>
       <button
+        type="button"
         aria-label="삭제"
         onClick={async (e) => {
           e.stopPropagation();
           if (confirm("이 대화를 삭제할까요?")) await remove.mutateAsync(id);
         }}
-        className="opacity-0 group-hover:opacity-100"
+        className={ICON_BTN}
       >
         🗑️
       </button>
