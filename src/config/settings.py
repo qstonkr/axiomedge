@@ -338,6 +338,18 @@ class NotificationSettings(BaseSettings):
     ingestion_alert_dedup_minutes: int = Field(default=120, ge=10)
 
 
+class ChatSettings(BaseSettings):
+    """Chat history persistence + privacy settings (PIPA-compliant)."""
+
+    model_config = SettingsConfigDict(env_prefix="CHAT_", extra="ignore")
+
+    encryption_key: str = ""  # pgp_sym_encrypt key — empty disables encryption (dev only)
+    retention_days: int = Field(default=90, ge=1)
+    auto_title_enabled: bool = True
+    auto_title_max_tokens: int = Field(default=20, ge=1)
+    auto_title_fallback_chars: int = Field(default=30, ge=1)
+
+
 class Settings(BaseSettings):
     """Top-level aggregated settings."""
 
@@ -359,6 +371,7 @@ class Settings(BaseSettings):
     distill: DistillSettings = Field(default_factory=DistillSettings)
     tree_index: TreeIndexSettings = Field(default_factory=TreeIndexSettings)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)
+    chat: ChatSettings = Field(default_factory=ChatSettings)
 
 
 @lru_cache(maxsize=1)
