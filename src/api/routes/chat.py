@@ -33,6 +33,51 @@ router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
 # avoiding orphan rows on subsequent 502.
 MAX_CONTENT_LENGTH = 2000
 
+# Snippet preview shown in SourcePanel cards. Trimmed at write time to keep
+# JSON payloads bounded (raw chunks can be multi-KB).
+SNIPPET_MAX_CHARS = 500
+
+
+def _normalize_chunk(raw: dict[str, Any], idx: int) -> dict[str, Any]:
+    """Map hub_search / agentic chunk shape to the SourceChunk contract the
+    frontend SourcePanel renders.
+
+    Hub search emits ``{id, kb_id, document_id, document_name, title, text,
+    content, rerank_score, score, ...}``. The frontend expects
+    ``{chunk_id, marker, doc_title, kb_id, snippet, score, owner}``. Without
+    this mapping the cards show only the kb_id (whatever happens to overlap),
+    which is what users actually saw after PR8 landed.
+    """
+    chunk_id = raw.get("chunk_id") or raw.get("id") or f"c{idx}"
+    doc_title = (
+        raw.get("doc_title")
+        or raw.get("document_name")
+        or raw.get("title")
+        or raw.get("document_id")
+        or "(제목 없음)"
+    )
+    snippet_src = raw.get("snippet") or raw.get("text") or raw.get("content") or ""
+    snippet = snippet_src[:SNIPPET_MAX_CHARS] if isinstance(snippet_src, str) else ""
+    score = (
+        raw.get("score")
+        if isinstance(raw.get("score"), (int, float))
+        else raw.get("rerank_score")
+    )
+    owner = raw.get("owner")
+    if owner is None:
+        meta = raw.get("metadata") or {}
+        if isinstance(meta, dict):
+            owner = meta.get("owner") or meta.get("owner_user_id")
+    return {
+        "chunk_id": str(chunk_id),
+        "marker": idx + 1,
+        "doc_title": str(doc_title),
+        "kb_id": str(raw.get("kb_id") or ""),
+        "snippet": snippet,
+        "score": float(score) if isinstance(score, (int, float)) else None,
+        "owner": owner,
+    }
+
 
 def _get_state() -> AppState:
     """Late-bound state accessor — patched in tests."""
@@ -259,7 +304,13 @@ async def send_message(
             )
             # res is HubSearchResponse pydantic model
             answer = res.answer or ""
-            chunks = list(res.chunks or [])
+            # Normalize chunk shape so SourcePanel cards have doc_title /
+            # snippet / owner — not just the kb_id.
+            chunks = [
+                _normalize_chunk(c, i)
+                for i, c in enumerate(res.chunks or [])
+                if isinstance(c, dict)
+            ]
             meta.update({
                 "confidence": res.confidence,
                 "confidence_level": res.confidence_level,
@@ -311,16 +362,25 @@ async def send_message(
         content=answer, chunks=chunks, meta=meta, trace_id=trace_id,
     )
 
-    # Best-effort: enqueue auto-title for the conversation if title still empty.
+    # Title bootstrap: when the conversation has no title yet, write a
+    # synchronous fallback (first 30 chars of the user query) before the
+    # response returns. This guarantees the sidebar shows something
+    # meaningful immediately — invalidate-on-send picks it up before the
+    # background LLM job has a chance to run. The worker job still runs
+    # for the LLM-upgraded title; it uses set_title_if_empty so it skips
+    # rather than overwrite our fallback. Trade-off accepted: cleaner
+    # default UX over a slightly nicer (but possibly minutes-late) title.
     if conv.title == "":
         try:
+            fallback = (body.content or "").strip()[:30] or "(제목 없음)"
+            await repo.set_title_if_empty(conv_id, fallback)
             from src.jobs.queue import enqueue_job
             await enqueue_job(
                 "auto_title_for_conversation",
                 str(conv_id), body.content,
             )
         except Exception as e:  # noqa: BLE001 — title is best-effort
-            logger.warning("auto_title enqueue failed: %s", e)
+            logger.warning("auto_title bootstrap failed: %s", e)
 
     _set_audit(
         request, "chat.message.send", user,

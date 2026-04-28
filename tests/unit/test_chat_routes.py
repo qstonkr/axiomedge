@@ -129,6 +129,71 @@ def test_send_message_routes_through_search(client, fake_repo, monkeypatch):
     assert fake_repo.append_message.await_count == 2
 
 
+def test_send_message_normalizes_chunks_and_bootstraps_title(client, fake_repo, monkeypatch):
+    """Two regressions from PR8: chunks need normalization (frontend wants
+    doc_title/snippet/owner) and the conversation title needs a synchronous
+    fallback so the sidebar isn't stuck at "(제목 없음)" while waiting on the
+    auto_title worker job (which can block for tens of seconds on a slow LLM).
+    """
+    from src.search.query_classifier import QueryType
+
+    fake_search_resp = MagicMock()
+    fake_search_resp.answer = "answer body"
+    # Hub-search-shaped chunks — frontend needs normalized form.
+    fake_search_resp.chunks = [
+        {
+            "id": "abc-1",
+            "kb_id": "drp",
+            "document_name": "정책 v3.2.pdf",
+            "text": "본문 발췌",
+            "rerank_score": 0.91,
+        },
+    ]
+    fake_search_resp.confidence = 0.8
+    fake_search_resp.confidence_level = "high"
+    fake_search_resp.query_type = "factual"
+    fake_search_resp.search_time_ms = 100.0
+    fake_search_resp.crag_action = None
+    fake_search_resp.corrected_query = None
+    fake_search_resp.display_query = None
+    fake_search_resp.expanded_terms = []
+
+    monkeypatch.setattr(
+        "src.api.routes.chat.hub_search",
+        AsyncMock(return_value=fake_search_resp),
+    )
+    monkeypatch.setattr(
+        "src.api.routes.chat.enqueue_job",
+        AsyncMock(return_value=None),
+        raising=False,
+    )
+    fake_classifier = MagicMock()
+    fake_classifier.classify.return_value = MagicMock(
+        query_type=QueryType.FACTUAL, confidence=0.9, matched_patterns=[],
+    )
+    from src.api.app import _state as real_state
+    monkeypatch.setattr(real_state, "query_classifier", fake_classifier)
+
+    res = client.post(
+        f"/api/v1/chat/conversations/{CONV_ID}/messages",
+        json={"content": "GS25 세마역점 가맹분쟁 알려줘"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    chunk0 = body["chunks"][0]
+    assert chunk0["chunk_id"] == "abc-1"
+    assert chunk0["doc_title"] == "정책 v3.2.pdf"
+    assert chunk0["snippet"] == "본문 발췌"
+    assert chunk0["score"] == 0.91
+    assert chunk0["marker"] == 1
+
+    # set_title_if_empty called with the first 30 chars of the user query —
+    # synchronous fallback so the sidebar is meaningful immediately.
+    fake_repo.set_title_if_empty.assert_awaited()
+    args = fake_repo.set_title_if_empty.await_args.args
+    assert args[1] == "GS25 세마역점 가맹분쟁 알려줘"  # ≤30 chars
+
+
 def test_send_message_force_deep_routes_agentic(client, fake_repo, monkeypatch):
     fake_agentic_resp = MagicMock()
     fake_agentic_resp.answer = "deep answer"
