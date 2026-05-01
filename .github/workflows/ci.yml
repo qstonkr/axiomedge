@@ -107,8 +107,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --frozen
-      - name: Apply Alembic migrations to test DB
-        run: uv run alembic upgrade head
+      - name: Initialize test DB schema (Base.metadata.create_all + Alembic stamp head)
+        # alembic upgrade head 만 돌리면 0003_rbac_b0 가 ALTER auth_roles 인데
+        # auth_roles 는 Base.metadata.create_all 로 생성되는 테이블이라 fail.
+        # init_database() 가 create_all 후 alembic stamp head 까지 처리.
+        run: |
+          uv run python -c "
+          import asyncio
+          from src.stores.postgres.init_db import init_database
+          asyncio.run(init_database())
+          "
         env:
           DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
       - name: Start API server (background) for integration tests

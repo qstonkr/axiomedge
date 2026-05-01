@@ -142,3 +142,56 @@ class TestRequestRetries:
             assert resp.status_code == 200
         # Retry-After=2 was respected (jitter ±10% so within [1.8, 2.2])
         assert sleeps and 1.5 <= sleeps[0] <= 2.5
+
+    @pytest.mark.asyncio
+    async def test_request_raises_when_client_not_entered(self):
+        """async-with 안 거치면 self._client = None → RuntimeError."""
+        cfg = BaseConnectorConfig()
+        c = _StubClient(base_url="https://api.x", config=cfg)
+        # Did not enter async with — _client is still None
+        with pytest.raises(RuntimeError, match="async context manager"):
+            await c._request("GET", "/v")
+
+    @pytest.mark.asyncio
+    async def test_retry_after_invalid_value_falls_back(self, monkeypatch):
+        """Retry-After 가 숫자 아니면 (예: HTTP-date) fallback 사용."""
+        sleeps: list[float] = []
+
+        async def _capture_sleep(s):
+            sleeps.append(s)
+
+        monkeypatch.setattr("asyncio.sleep", _capture_sleep)
+
+        cfg = BaseConnectorConfig()
+        async with _StubClient(base_url="https://api.x", config=cfg) as c:
+            c._client = httpx.AsyncClient(
+                base_url="https://api.x",
+                transport=_mock_transport([
+                    (429, {"Retry-After": "Wed, 21 Oct 2025 07:28:00 GMT"}, {}),
+                    (200, {}, {"ok": 1}),
+                ]),
+            )
+            resp = await c._request(
+                "GET", "/v", retries=2, initial_backoff=0.3,
+            )
+            assert resp.status_code == 200
+        # Falls back to initial_backoff (~0.3s, not the date value)
+        assert sleeps and sleeps[0] < 1.0
+
+    @pytest.mark.asyncio
+    async def test_5xx_retries_exhausted_returns_last(self, monkeypatch):
+        """5xx 가 재시도 한도 초과하면 마지막 응답 반환 (raise 없이)."""
+        async def _no_sleep(_):
+            return None
+        monkeypatch.setattr("asyncio.sleep", _no_sleep)
+
+        cfg = BaseConnectorConfig()
+        async with _StubClient(base_url="https://api.x", config=cfg) as c:
+            c._client = httpx.AsyncClient(
+                base_url="https://api.x",
+                transport=_mock_transport([(503, {}, {}), (503, {}, {})]),
+            )
+            resp = await c._request(
+                "GET", "/v", retries=2, initial_backoff=0.01,
+            )
+            assert resp.status_code == 503
