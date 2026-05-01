@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BookOpen, FolderOpen } from "lucide-react";
 
 import { ConnectorCatalog } from "@/components/connectors/ConnectorCatalog";
 import {
@@ -64,8 +65,9 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
     <section className="mx-auto w-full max-w-5xl space-y-6 px-6 py-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold leading-snug text-fg-default">
-            📚 내 지식
+          <h1 className="flex items-center gap-2 text-2xl font-semibold leading-snug text-fg-default">
+            <BookOpen aria-hidden size={22} strokeWidth={1.75} className="text-accent-default" />
+            <span>내 지식</span>
           </h1>
           <p className="text-sm text-fg-muted">
             내 개인 KB 를 관리합니다 — 내가 owner 인 KB 만 보이고,
@@ -114,7 +116,7 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
         />
       ) : kbs.length === 0 ? (
         <EmptyState
-          icon="📚"
+          icon={<BookOpen size={32} strokeWidth={1.5} />}
           title="아직 personal KB 가 없습니다"
           description="첫 KB 를 만들고 문서를 업로드해 보세요. 가입 시 자동으로 생성된 기본 KB 가 보이지 않는다면 새로 만들어 주세요."
           action={<Button onClick={() => setCreating(true)}>+ 새 KB 만들기</Button>}
@@ -160,7 +162,7 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
               </>
             ) : (
               <EmptyState
-                icon="📂"
+                icon={<FolderOpen size={32} strokeWidth={1.5} />}
                 title="KB 를 선택하세요"
                 description="좌측에서 KB 를 클릭하면 문서 업로드 영역이 보입니다."
               />

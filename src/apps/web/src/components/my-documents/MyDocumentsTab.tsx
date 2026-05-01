@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FileText } from "lucide-react";
 
 import {
   Badge,
@@ -46,7 +47,7 @@ export function MyDocumentsTab({ userId }: { userId: string }) {
         </div>
       ) : (data ?? []).length === 0 ? (
         <EmptyState
-          icon="📄"
+          icon={<FileText size={32} strokeWidth={1.5} />}
           title="담당 문서가 없습니다"
           description={
             kbId

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Lightbulb } from "lucide-react";
 
 import { useChatStore } from "@/store/chat";
 import {
@@ -104,8 +105,9 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
         </div>
 
         {showOwnerOnboarding && (
-          <div className="border-b border-border-default bg-bg-info px-4 py-2 text-sm">
-            💡 오너 검색은 이제 채팅창에서 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-xs">/owner 이름</code> 으로 가능합니다.
+          <div className="flex items-start gap-2 border-b border-border-default bg-bg-info px-4 py-2 text-sm">
+            <Lightbulb aria-hidden size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-accent-emphasis" />
+            <span>오너 검색은 이제 채팅창에서 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-xs">/owner 이름</code> 으로 가능합니다.</span>
           </div>
         )}
 
@@ -148,8 +150,9 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
 
         <footer className="border-t border-border-default px-6 py-3">
           {ownerHint && (
-            <p className="mb-1 text-xs text-fg-muted">
-              💡 입력창에 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-xs">/owner 이름</code> 으로 오너를 검색할 수 있습니다.
+            <p className="mb-1 flex items-center gap-1.5 text-xs text-fg-muted">
+              <Lightbulb aria-hidden size={12} strokeWidth={1.75} className="shrink-0" />
+              <span>입력창에 <code className="rounded bg-bg-muted px-1 py-0.5 font-mono text-xs">/owner 이름</code> 으로 오너를 검색할 수 있습니다.</span>
               <button onClick={() => setOwnerHint(false)} className="ml-2 underline hover:text-fg-default">
                 닫기
               </button>

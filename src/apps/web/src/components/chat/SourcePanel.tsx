@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Activity, Paperclip } from "lucide-react";
 
 import { cn } from "@/components/ui/cn";
 
@@ -40,7 +41,10 @@ export function SourcePanel({ chunks, meta, highlightedMarker }: Props) {
               : "text-fg-muted",
           )}
         >
-          📎 출처 {chunks.length > 0 && `(${chunks.length})`}
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Paperclip aria-hidden size={14} strokeWidth={1.75} />
+            출처 {chunks.length > 0 && `(${chunks.length})`}
+          </span>
         </button>
         <button
           role="tab"
@@ -53,7 +57,10 @@ export function SourcePanel({ chunks, meta, highlightedMarker }: Props) {
               : "text-fg-muted",
           )}
         >
-          🧪 메타
+          <span className="inline-flex items-center justify-center gap-1.5">
+            <Activity aria-hidden size={14} strokeWidth={1.75} />
+            메타
+          </span>
         </button>
       </div>
 
