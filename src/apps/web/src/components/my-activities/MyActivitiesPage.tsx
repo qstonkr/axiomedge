@@ -1,6 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
+import {
+  Activity,
+  Database,
+  FileText,
+  KeyRound,
+  MessageSquareWarning,
+  Pin,
+  Search,
+} from "lucide-react";
 
 import {
   ErrorFallback,
@@ -14,17 +23,20 @@ import {
 } from "@/hooks/useMyActivities";
 import type { MyActivity } from "@/lib/api/endpoints";
 
-const ACTIVITY_TYPES: { value: string; label: string; icon: string }[] = [
-  { value: "", label: "전체", icon: "📌" },
-  { value: "search", label: "검색", icon: "🔍" },
-  { value: "feedback", label: "피드백", icon: "📝" },
-  { value: "document", label: "문서", icon: "📄" },
-  { value: "login", label: "로그인", icon: "🔑" },
-  { value: "ingestion", label: "인제스트", icon: "📥" },
+type IconComponent = ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean; className?: string }>;
+
+const ACTIVITY_TYPES: { value: string; label: string; Icon: IconComponent }[] = [
+  { value: "", label: "전체", Icon: Pin },
+  { value: "search", label: "검색", Icon: Search },
+  { value: "feedback", label: "피드백", Icon: MessageSquareWarning },
+  { value: "document", label: "문서", Icon: FileText },
+  { value: "login", label: "로그인", Icon: KeyRound },
+  { value: "ingestion", label: "인제스트", Icon: Database },
 ];
 
-function iconFor(type: string | undefined): string {
-  return ACTIVITY_TYPES.find((t) => t.value === type)?.icon ?? "📌";
+function IconFor({ type }: { type: string | undefined }) {
+  const Found = ACTIVITY_TYPES.find((t) => t.value === type)?.Icon ?? Pin;
+  return <Found size={16} strokeWidth={1.75} aria-hidden className="text-fg-muted" />;
 }
 
 function fmtDate(s: unknown): string {
@@ -69,8 +81,9 @@ export function MyActivitiesPage() {
   return (
     <section className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold leading-snug text-fg-default">
-          📋 나의 활동
+        <h1 className="flex items-center gap-2 text-2xl font-semibold leading-snug text-fg-default">
+          <Activity aria-hidden size={22} strokeWidth={1.75} className="text-accent-default" />
+          <span>나의 활동</span>
         </h1>
         <p className="text-sm text-fg-muted">
           최근 활동 요약 + 통합 timeline (검색 / 피드백 / 문서 / 로그인 등).
@@ -157,8 +170,8 @@ export function MyActivitiesPage() {
                 key={act.id ?? `${ts}-${idx}`}
                 className="flex items-start gap-3 rounded-md border border-border-default bg-bg-canvas px-4 py-3 text-sm"
               >
-                <span aria-hidden className="text-lg leading-none">
-                  {iconFor(act.activity_type)}
+                <span className="mt-0.5 shrink-0">
+                  <IconFor type={act.activity_type} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-fg-default">{title}</p>
