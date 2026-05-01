@@ -6,7 +6,6 @@ Spec §6.5 (concurrent safety).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -41,7 +40,7 @@ class BootstrapRunRepo(BaseRepository):
                 )
                 session.add(run)
                 await session.flush()
-                return cast(UUID, run.id)
+                return run.id
 
     async def complete(
         self,

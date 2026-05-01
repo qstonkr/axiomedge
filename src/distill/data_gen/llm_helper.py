@@ -21,7 +21,7 @@ from src.config.weights import weights as _w
 
 # botocore 는 boto3 의존성으로 설치되지만, edge 환경 등에서 부재 가능 — soft import.
 try:
-    from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[assignment]
+    from botocore.exceptions import BotoCoreError, ClientError
 except ImportError:  # pragma: no cover - boto3 미설치 환경 fallback.
     class ClientError(Exception):  # type: ignore[no-redef]
         """Fallback when botocore is unavailable."""
