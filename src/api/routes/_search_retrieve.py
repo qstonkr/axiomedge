@@ -120,7 +120,7 @@ async def _step_keyword_fallback(
                     ]},
                 },
             )
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
             logger.debug("Keyword fallback scroll failed (coll=%s): %s", coll, e)
             return []
         if resp.status_code != 200:
@@ -152,7 +152,7 @@ async def _step_keyword_fallback(
             "Keyword fallback: injected %d chunks across %d collections for '%s'",
             sum(len(c) for c in per_collection_chunks), len(collections), kw_primary,
         )
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
         logger.debug("Keyword fallback search failed: %s", e)
 
     return all_chunks

@@ -157,7 +157,7 @@ async def identifier_search(
                 _identifiers[:3],
                 _id_count,
             )
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
         logger.debug("Identifier search failed: %s", e)
 
     return all_chunks
@@ -307,7 +307,7 @@ async def date_filter_search(
             _q_date,
             sum(1 for c in all_chunks if c.get("_date_filtered")),
         )
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
         logger.debug("Date-filtered search failed: %s", e)
 
     all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -457,7 +457,7 @@ async def week_name_search(
             logger.info("Week-name search [%s] → %d chunks injected", pattern_label, wk_injected)
             all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
             all_chunks = all_chunks[:pool_size]
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
         logger.debug("Week-name search failed: %s", e)
 
     return all_chunks
@@ -567,7 +567,7 @@ async def _inject_graph_docs(
                 except httpx.HTTPError as e:
                     # Qdrant scroll timeout/network — graceful skip per (doc, coll) pair
                     logger.debug("Graph chunk injection httpx error: %s", e)
-                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+                except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
                     logger.debug("Graph chunk injection failed: %s", e)
 
 
@@ -629,7 +629,7 @@ async def graph_expansion(
         logger.warning("Graph expansion timed out (5s), skipping")
     except httpx.HTTPError as e:
         logger.warning("Graph expansion httpx error: %s", e)
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
         logger.warning("Graph expansion failed in search route: %s", e)
 
     return all_chunks
