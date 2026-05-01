@@ -194,6 +194,9 @@ class DistillTrainingDataModel(DistillBase):
     # 계보
     augmented_from = Column(String(36), nullable=True)  # 원본 QA id (변형인 경우)
     generation_batch_id = Column(String(36), nullable=True)
+    # 원본 chunk 의 deterministic fingerprint — chunk-level train/test partition.
+    # qa_generator.chunk_fingerprint(content)[:16].
+    source_chunk_fp = Column(String(16), nullable=True)
 
     # 리뷰
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

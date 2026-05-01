@@ -8,6 +8,7 @@ import random
 from typing import Any
 
 from src.distill.config import MIN_CHUNK_LENGTH, DistillProfile
+from src.distill.data_gen.dedup import chunk_fingerprint
 from src.distill.data_gen.llm_helper import LLMHelper
 from src.distill.data_gen.quality_filter import QualityFilter
 from src.nlp.llm.prompt_safety import safe_user_input
@@ -143,6 +144,7 @@ class QAGenerator:
                 "source_type": "chunk_qa",
                 "kb_id": kb_id,
                 "consistency_score": consistency_score,
+                "source_chunk_fp": chunk_fingerprint(content),  # chunk-level partition 용
             })
 
         return results

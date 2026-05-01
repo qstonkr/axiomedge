@@ -160,11 +160,16 @@ async def generate_test_qa(
     quality_filter=None,
     *,
     existing_questions: set[str],
+    excluded_chunk_fingerprints: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """테스트용 QA 쌍 생성 (KB 청크 기반).
 
     ``existing_questions`` 는 의무 — train QA 와 같은 question 이 test seed
     로 들어가는 누수 차단. 빈 set 으로라도 호출자가 명시적으로 넘겨야 함.
+
+    ``excluded_chunk_fingerprints`` 는 chunk-level partition — train QA 가 만들어진
+    chunk 와 같은 chunk 에서 test QA 가 만들어지는 것을 차단. None 이면 경고
+    (caller 가 의도적 skip 한 케이스).
 
     1. KB 청크를 랜덤 샘플링
     2. Teacher LLM이 청크 내용 보고 질문 생성
@@ -175,17 +180,38 @@ async def generate_test_qa(
         raise ValueError(
             "existing_questions is required (train/test 누수 방지) — 빈 set 이라도 명시"
         )
+    if excluded_chunk_fingerprints is None:
+        logger.warning(
+            "excluded_chunk_fingerprints not provided — chunk-level partition skipped. "
+            "train QA chunk 와 test QA chunk 가 겹칠 수 있음.",
+        )
+        excluded_chunk_fingerprints = set()
     import httpx
+
+    from src.distill.data_gen.dedup import chunk_fingerprint as _chunk_fp
 
     # Step 1: KB 청크 샘플링
     chunks_per_kb = max(count // max(len(kb_ids), 1), 10)
     all_chunks = await _fetch_sample_chunks(qdrant_url, kb_ids, limit=chunks_per_kb)
 
     flat_chunks: list[dict[str, str]] = []
+    excluded_count = 0
     for kb_id, contents in all_chunks.items():
         for content in contents:
-            if len(content) >= 100:  # 너무 짧은 청크 제외
-                flat_chunks.append({"kb_id": kb_id, "content": content})
+            if len(content) < 100:  # 너무 짧은 청크 제외
+                continue
+            # chunk-level partition: train 에 사용된 chunk 와 fingerprint 일치 시 skip
+            fp = _chunk_fp(content)
+            if fp in excluded_chunk_fingerprints:
+                excluded_count += 1
+                continue
+            flat_chunks.append({"kb_id": kb_id, "content": content})
+
+    if excluded_count > 0:
+        logger.info(
+            "Excluded %d chunks (fingerprint match with train) — chunk-level partition",
+            excluded_count,
+        )
 
     if not flat_chunks:
         logger.warning(

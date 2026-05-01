@@ -240,14 +240,23 @@ class DistillService:
         llm_helper = LLMHelper(self.llm, self.qdrant_url, concurrency=3, timeout_sec=60)
         qf = QualityFilter(llm_helper, self.embedder, profile)
 
-        # 기존 질문 가져오기 (중복 방지)
+        # 기존 질문 + chunk fingerprint 가져오기 (train/test 누수 차단)
         existing_result = await repo.list_training_data(
             profile_name=profile_name, limit=10000,
         )
         existing_questions = {
             it["question"] for it in existing_result.get("items", [])
         }
-        logger.info("Existing questions for dedup: %d", len(existing_questions))
+        # chunk-level partition: train QA 가 만들어진 chunk fingerprint 모음
+        excluded_chunk_fps = {
+            it.get("source_chunk_fp")
+            for it in existing_result.get("items", [])
+            if it.get("source_chunk_fp")
+        }
+        logger.info(
+            "Existing dedup signals — questions=%d chunk_fps=%d",
+            len(existing_questions), len(excluded_chunk_fps),
+        )
 
         test_qa = await generate_test_qa(
             llm_client=self.llm,
@@ -257,6 +266,7 @@ class DistillService:
             rag_api_url=rag_url,
             quality_filter=qf,
             existing_questions=existing_questions,
+            excluded_chunk_fingerprints=excluded_chunk_fps,
         )
 
         # 범용성 점수
