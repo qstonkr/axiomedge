@@ -59,7 +59,7 @@ export function ConnectorCatalog({
         <div className="space-y-2">
           <Input
             type="search"
-            placeholder="🔍 소스 검색 — 이름 / 설명 (예: confluence, git, slack)"
+            placeholder="소스 검색 — 이름 / 설명 (예: confluence, git, slack)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoFocus

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/components/ui/cn";
 import { useDeleteConversation, useRenameConversation } from "@/store/conversations";
 
 const ICON_BTN =
-  "rounded px-1 py-0.5 text-fg-muted opacity-60 transition hover:bg-bg-muted hover:text-fg-default hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent-default";
+  "inline-flex h-6 w-6 items-center justify-center rounded text-fg-muted opacity-60 transition hover:bg-bg-muted hover:text-fg-default hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent-default";
 
 export function ConversationItem({
   id, title, active, onSelect,
@@ -77,7 +78,7 @@ export function ConversationItem({
         }}
         className={ICON_BTN}
       >
-        ✏️
+        <Pencil aria-hidden size={12} strokeWidth={1.75} />
       </button>
       <button
         type="button"
@@ -88,7 +89,7 @@ export function ConversationItem({
         }}
         className={ICON_BTN}
       >
-        🗑️
+        <Trash2 aria-hidden size={12} strokeWidth={1.75} />
       </button>
     </div>
   );
