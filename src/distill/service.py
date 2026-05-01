@@ -902,6 +902,7 @@ class DistillService:
         deployer = DistillDeployer(profile)
         build = await repo.get_build(build_id)
         version = build["version"]
+        profile_name = build["profile_name"]
 
         if gpu_trained:
             src_uri = build.get("s3_uri")
@@ -915,8 +916,7 @@ class DistillService:
 
         await deployer.create_and_upload_manifest(s3_uri, version, build)
 
-        await repo.update_build(
-            build_id,
-            s3_uri=s3_uri,
-            deployed_at=datetime.now(timezone.utc),
-        )
+        # s3_uri 만 update — deployed_at 은 mark_build_deployed 가 처리하여
+        # 같은 profile 의 이전 deployed 빌드를 NULL 로 정리해 'active 1개' 불변식 유지.
+        await repo.update_build(build_id, s3_uri=s3_uri)
+        await repo.mark_build_deployed(build_id, profile_name)

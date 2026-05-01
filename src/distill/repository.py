@@ -72,6 +72,24 @@ class DistillRepository:
     async def create_build(self, **kwargs: Any) -> dict[str, Any]:
         return await self._builds.create(**kwargs)
 
+    async def create_build_unique(
+        self, *, profile_name: str, **build_fields: Any,
+    ) -> dict[str, Any]:
+        """active 빌드가 없을 때만 신규 빌드 생성 (advisory lock).
+
+        Raises:
+            RuntimeError: 같은 profile 에 active 빌드(pending/training/etc.) 존재.
+        """
+        return await self._builds.create_unique(
+            profile_name=profile_name, **build_fields,
+        )
+
+    async def mark_build_deployed(
+        self, build_id: str, profile_name: str,
+    ) -> dict[str, Any] | None:
+        """대상 빌드를 deployed 로 마킹 + 같은 profile 의 이전 deployed_at 정리."""
+        return await self._builds.mark_build_deployed(build_id, profile_name)
+
     async def update_build(self, build_id: str, **kwargs: Any) -> dict[str, Any] | None:
         return await self._builds.update(build_id, **kwargs)
 

@@ -110,15 +110,18 @@ async def trigger_build(
     version = f"v{datetime.now(timezone.utc).strftime('%Y%m%d.%H%M')}"
 
     import json as _json
-    await repo.create_build(
-        id=build_id,
-        profile_name=request.profile_name,
-        version=version,
-        status="pending",
-        search_group=profile.get("search_group", ""),
-        base_model=profile.get("base_model", ""),
-        config_snapshot=_json.dumps(profile, ensure_ascii=False, default=str),
-    )
+    try:
+        await repo.create_build_unique(
+            profile_name=request.profile_name,
+            id=build_id,
+            version=version,
+            status="pending",
+            search_group=profile.get("search_group", ""),
+            base_model=profile.get("base_model", ""),
+            config_snapshot=_json.dumps(profile, ensure_ascii=False, default=str),
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
 
     # 학습 파이프라인 — arq worker 가 처리. asyncio.create_task 패턴 폐기
     # (API 재시작 시 task 소실 + safety-net 이 학습 죽이는 함정).
