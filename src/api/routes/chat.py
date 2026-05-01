@@ -370,7 +370,7 @@ async def send_message(
     # for the LLM-upgraded title; it uses set_title_if_empty so it skips
     # rather than overwrite our fallback. Trade-off accepted: cleaner
     # default UX over a slightly nicer (but possibly minutes-late) title.
-    if conv.title == "":
+    if not (conv.title or ""):  # type: ignore[truthy-bool]
         try:
             fallback = (body.content or "").strip()[:30] or "(제목 없음)"
             await repo.set_title_if_empty(conv_id, fallback)
