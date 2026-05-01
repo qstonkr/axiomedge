@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { X } from "lucide-react";
 
 import { ProfileDropdown } from "@/components/layout/ProfileDropdown";
+import { cn } from "@/components/ui/cn";
 import type { Conversation } from "@/lib/api/chat";
 import { useConversations, useCreateConversation } from "@/store/conversations";
 
@@ -35,10 +37,16 @@ export function ConversationSidebar({
   activeId,
   onSelect,
   userEmail,
+  mobileOpen = false,
+  onMobileClose,
 }: {
   activeId: string | null;
   onSelect?: (id: string) => void;
   userEmail?: string;
+  /** md 미만 화면에서 drawer 로 열림 (B3 follow-up). 기본 false → mobile 에서
+   * 숨김. 부모가 trigger 버튼으로 토글. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
   const { data = [], isLoading } = useConversations();
   const create = useCreateConversation();
@@ -55,17 +63,51 @@ export function ConversationSidebar({
   async function newChat() {
     const id = await create.mutateAsync({ kb_ids: [] });
     onSelect?.(id);
+    onMobileClose?.();
   }
 
-  return (
-    <aside className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-3 md:flex md:flex-col">
-      <button
-        type="button"
-        onClick={newChat}
-        className="mb-3 rounded-md border border-border-default px-3 py-2 text-sm hover:bg-bg-muted focus-visible:outline-2 focus-visible:outline-accent-default"
-      >
-        + 새 대화
-      </button>
+  function selectAndClose(id: string) {
+    onSelect?.(id);
+    onMobileClose?.();
+  }
+
+  // Esc + body scroll lock — mobile drawer 모드에서만.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onMobileClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen, onMobileClose]);
+
+  const inner = (
+    <>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={newChat}
+          className="flex-1 rounded-md border border-border-default px-3 py-2 text-sm hover:bg-bg-muted focus-visible:outline-2 focus-visible:outline-accent-default"
+        >
+          + 새 대화
+        </button>
+        {/* mobile 모드에서만 닫기 버튼 노출 */}
+        {onMobileClose && (
+          <button
+            type="button"
+            onClick={onMobileClose}
+            aria-label="대화 목록 닫기"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-muted md:hidden"
+          >
+            <X size={18} strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
+      </div>
       <input
         type="search"
         placeholder="대화 검색"
@@ -88,7 +130,7 @@ export function ConversationSidebar({
                 id={c.id}
                 title={c.title}
                 active={c.id === activeId}
-                onSelect={(id) => onSelect?.(id)}
+                onSelect={selectAndClose}
               />
             ))}
           </div>
@@ -99,6 +141,36 @@ export function ConversationSidebar({
           <ProfileDropdown email={userEmail} />
         </div>
       )}
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* desktop aside — md+ 에서 항상 표시, mobile 에서는 위 mobile drawer 가 대체 */}
+      <aside className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-3 md:flex md:flex-col">
+        {inner}
+      </aside>
+
+      {/* mobile drawer — backdrop + slide-in from left */}
+      {mobileOpen && (
+        <>
+          <div
+            aria-hidden
+            onClick={onMobileClose}
+            className="fixed inset-0 z-40 bg-fg-default/40 backdrop-blur-sm md:hidden"
+          />
+          <aside
+            role="dialog"
+            aria-label="대화 목록"
+            aria-modal="true"
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-border-default bg-bg-subtle px-3 py-3 shadow-lg md:hidden",
+            )}
+          >
+            {inner}
+          </aside>
+        </>
+      )}
+    </>
   );
 }

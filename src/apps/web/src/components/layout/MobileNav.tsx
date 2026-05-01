@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { BookOpen, FileText, Menu, MessageCircle, X, type LucideIcon } from "lucide-react";
 
@@ -27,6 +27,9 @@ export function MobileNav() {
   const pathname = usePathname();
   const t = useTranslations("nav");
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const firstLinkRef = useRef<HTMLAnchorElement>(null);
 
   // route 이동 시 자동 닫힘 — pathname 이 외부 input (router) 이고 menu state 를
   // 그에 동기화하는 정당한 effect 용도. PrivacyConsent.tsx 와 동일 패턴.
@@ -35,11 +38,37 @@ export function MobileNav() {
     setOpen(false);
   }, [pathname]);
 
-  // Esc 닫기 + 열림 시 body scroll lock
+  // 열림 시: body scroll lock + 첫 nav item auto-focus + Tab focus trap.
+  // 닫힘 시: trigger 로 focus 복귀.
   useEffect(() => {
     if (!open) return;
+
+    // 첫 nav 링크에 focus (drawer 진입 직후 자연스러운 시작점)
+    firstLinkRef.current?.focus();
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+        return;
+      }
+      // Focus trap — drawer 안에서 Tab 순회만 가능, 밖으로 못 빠져나감.
+      if (e.key === "Tab" && panelRef.current) {
+        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -47,12 +76,15 @@ export function MobileNav() {
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      // 닫힘 시 trigger 로 focus 복귀 — 키보드 사용자 위치 유지.
+      triggerRef.current?.focus();
     };
   }, [open]);
 
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-label={t("label")}
@@ -72,6 +104,7 @@ export function MobileNav() {
             className="fixed inset-0 z-40 bg-fg-default/40 backdrop-blur-sm md:hidden"
           />
           <aside
+            ref={panelRef}
             role="dialog"
             aria-label={t("label")}
             aria-modal="true"
@@ -91,11 +124,12 @@ export function MobileNav() {
               </button>
             </div>
             <nav className="flex-1 space-y-1" aria-label={t("label")}>
-              {NAV.map(({ href, key, Icon }) => {
+              {NAV.map(({ href, key, Icon }, idx) => {
                 const active = pathname === href || pathname.startsWith(`${href}/`);
                 return (
                   <Link
                     key={href}
+                    ref={idx === 0 ? firstLinkRef : undefined}
                     href={href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
