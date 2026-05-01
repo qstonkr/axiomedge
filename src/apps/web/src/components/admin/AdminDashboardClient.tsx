@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Boxes, FileText, MessageSquare, Search, ShieldAlert, Layers } from "lucide-react";
 
 import { Skeleton } from "@/components/ui";
 import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
@@ -8,6 +9,8 @@ import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 import { AreaChartHero, type HeroPoint } from "./AreaChartHero";
 import { L1CategoryChart } from "./L1CategoryChart";
 import { MetricCard } from "./MetricCard";
+
+const ICON_PROPS = { size: 14, strokeWidth: 1.75, "aria-hidden": true } as const;
 
 function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
@@ -161,28 +164,28 @@ export function AdminDashboardClient() {
           {/* 6 메트릭 카드 — icon + sparkline + accent strip */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <MetricCard
-              icon="🗂️"
+              icon={<Boxes {...ICON_PROPS} />}
               label="활성 KB"
               value={fmt(data?.active_kbs)}
               hint="status=active"
               sparkline={series.kbs}
             />
             <MetricCard
-              icon="📄"
+              icon={<FileText {...ICON_PROPS} />}
               label="문서 합계"
               value={fmt(data?.total_documents)}
               hint="모든 활성 KB"
               sparkline={series.docs}
             />
             <MetricCard
-              icon="🧩"
+              icon={<Layers {...ICON_PROPS} />}
               label="청크 합계"
               value={fmt(data?.total_chunks)}
               hint="검색 인덱스"
               sparkline={series.chunks}
             />
             <MetricCard
-              icon="💬"
+              icon={<MessageSquare {...ICON_PROPS} />}
               label="대기 피드백"
               value={fmt(data?.feedback_pending)}
               hint="status=pending"
@@ -190,7 +193,7 @@ export function AdminDashboardClient() {
               tone={(data?.feedback_pending ?? 0) > 10 ? "warning" : "neutral"}
             />
             <MetricCard
-              icon="🚨"
+              icon={<ShieldAlert {...ICON_PROPS} />}
               label="오류 신고"
               value={fmt(data?.error_reports_pending)}
               hint="처리 안 된 신고"
@@ -200,7 +203,7 @@ export function AdminDashboardClient() {
               }
             />
             <MetricCard
-              icon="🔎"
+              icon={<Search {...ICON_PROPS} />}
               label="24h 검색"
               value={fmt(data?.search_history_24h)}
               hint="search_log row 수"

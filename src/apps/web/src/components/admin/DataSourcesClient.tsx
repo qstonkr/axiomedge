@@ -125,7 +125,7 @@ export function DataSourcesClient() {
       header: "이름",
       render: (s) => (
         <div className="flex items-center gap-2">
-          <span aria-hidden>{TYPE_ICON[s.source_type] ?? "📁"}</span>
+          <span aria-hidden>{TYPE_ICON[s.source_type] ?? "•"}</span>
           <div className="flex flex-col">
             <span className="font-medium text-fg-default">{s.name}</span>
             <span className="font-mono text-[10px] text-fg-subtle">
@@ -423,7 +423,7 @@ function DataSourceFormDialog({
         <div className="rounded-md border border-border-default bg-bg-subtle px-3 py-2 text-xs text-fg-muted">
           <span className="text-fg-subtle">타입: </span>
           <span className="font-medium text-fg-default">
-            {connector?.icon ?? "📁"} {connector?.label ?? effectiveType}
+            {connector?.icon ?? "•"} {connector?.label ?? effectiveType}
           </span>
           <span className="font-mono text-[10px] text-fg-subtle">
             {" "}

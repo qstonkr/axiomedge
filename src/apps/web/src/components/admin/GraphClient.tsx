@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Search } from "lucide-react";
 
 import {
   Button,
@@ -376,8 +377,13 @@ function IntegrityPanel() {
             severity 와 설명.
           </p>
         </div>
-        <Button onClick={onRun} disabled={run.isPending} size="sm">
-          {run.isPending ? "점검 중…" : "🔍 지금 점검"}
+        <Button
+          onClick={onRun}
+          disabled={run.isPending}
+          size="sm"
+          leftIcon={<Search aria-hidden size={12} strokeWidth={1.75} />}
+        >
+          {run.isPending ? "점검 중…" : "지금 점검"}
         </Button>
       </header>
 

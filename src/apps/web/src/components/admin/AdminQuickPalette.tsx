@@ -3,35 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { Search } from "lucide-react";
 
 import { Dialog, Input } from "@/components/ui";
 
-type Cmd = { href: string; label: string; group: string; icon: string };
+import { ADMIN_NAV } from "./nav";
 
 /**
- * 가벼운 command palette (Cmd/Ctrl+K) — 17 admin 라우트로 빠른 이동.
- * 외부 의존성 없음. fuzzy match 는 단순 substring + 토큰 일치.
+ * 가벼운 command palette (Cmd/Ctrl+K) — admin 라우트로 빠른 이동.
+ * NAV 는 ./nav.ts SSOT 사용 (sidebar / mobile 과 공유).
  */
-const CMDS: Cmd[] = [
-  { href: "/admin", label: "운영 대시보드", group: "개요", icon: "📊" },
-  { href: "/admin/sources", label: "데이터 소스", group: "콘텐츠", icon: "🔌" },
-  { href: "/admin/ingest", label: "Ingest 작업", group: "콘텐츠", icon: "⚙️" },
-  { href: "/admin/glossary", label: "용어집", group: "콘텐츠", icon: "📖" },
-  { href: "/admin/owners", label: "담당자 관리", group: "콘텐츠", icon: "👥" },
-  { href: "/admin/groups", label: "검색 그룹", group: "콘텐츠", icon: "🗂️" },
-  { href: "/admin/conflicts", label: "중복/모순", group: "콘텐츠", icon: "⚠️" },
-  { href: "/admin/verification", label: "검증 대기", group: "콘텐츠", icon: "🔍" },
-  { href: "/admin/lifecycle", label: "문서 라이프사이클", group: "콘텐츠", icon: "♻️" },
-  { href: "/admin/quality", label: "RAG 품질", group: "품질", icon: "📈" },
-  { href: "/admin/golden-set", label: "Golden Set", group: "품질", icon: "🥇" },
-  { href: "/admin/traces", label: "Agent Trace", group: "품질", icon: "🛤️" },
-  { href: "/admin/errors", label: "오류 신고", group: "품질", icon: "🚨" },
-  { href: "/admin/users", label: "사용자/권한", group: "운영", icon: "🔐" },
-  { href: "/admin/edge", label: "Edge 모델", group: "운영", icon: "🌐" },
-  { href: "/admin/jobs", label: "작업 모니터", group: "운영", icon: "📋" },
-  { href: "/admin/config", label: "가중치 설정", group: "운영", icon: "🎚️" },
-  { href: "/admin/graph", label: "엔티티 탐색", group: "그래프", icon: "🕸️" },
-];
+const CMDS = ADMIN_NAV;
 
 export function AdminQuickPalette() {
   const router = useRouter();
@@ -60,7 +42,6 @@ export function AdminQuickPalette() {
     );
   }, [q]);
 
-  // 키보드 네비게이션
   function onListKey(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -88,7 +69,7 @@ export function AdminQuickPalette() {
         title="⌘K"
         className="flex items-center gap-2 rounded-md border border-border-default bg-bg-canvas px-2.5 py-1 text-xs text-fg-muted transition-colors hover:bg-bg-muted hover:text-fg-default"
       >
-        <span aria-hidden>🔎</span>
+        <Search aria-hidden size={12} strokeWidth={1.75} />
         <span className="hidden sm:inline">빠른 이동…</span>
         <kbd className="hidden rounded border border-border-default bg-bg-subtle px-1 font-mono text-[10px] sm:inline">
           ⌘K
@@ -124,6 +105,7 @@ export function AdminQuickPalette() {
             ) : (
               filtered.map((c, idx) => {
                 const selected = idx === active;
+                const Icon = c.Icon;
                 return (
                   <li key={c.href}>
                     <Link
@@ -141,9 +123,7 @@ export function AdminQuickPalette() {
                           : "text-fg-default hover:bg-bg-muted"
                       }`}
                     >
-                      <span aria-hidden className="text-base leading-none">
-                        {c.icon}
-                      </span>
+                      <Icon aria-hidden size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" />
                       <span className="flex-1 truncate">{c.label}</span>
                       <span className="font-mono text-[10px] text-fg-subtle">
                         {c.group}

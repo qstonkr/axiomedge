@@ -111,7 +111,7 @@ export function SharedTokensDialog({ open, onClose }: Props) {
     <Dialog
       open={open}
       onClose={onClose}
-      title="🤝 공유 Bot 토큰 (organization-wide)"
+      title="공유 Bot 토큰 (organization-wide)"
       description="Slack/Teams 같은 워크스페이스 bot 토큰을 admin 이 1회 등록하면, 모든 사용자가 self-service 로 channel/sub-resource 만 입력해 source 추가할 수 있습니다. 토큰 값은 응답에 노출되지 않습니다."
       width="lg"
       footer={
@@ -139,7 +139,7 @@ export function SharedTokensDialog({ open, onClose }: Props) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xl" aria-hidden>
-                      {connector?.icon ?? "🤖"}
+                      {connector?.icon ?? "•"}
                     </span>
                     <div>
                       <div className="text-sm font-medium text-fg-default">
