@@ -6,7 +6,7 @@ import { Suspense, useState, type FormEvent } from "react";
 export default function LoginPage() {
   // Next.js 16: useSearchParams() must live inside a Suspense boundary.
   return (
-    <main className="flex min-h-full items-center justify-center px-6 py-16">
+    <main className="flex min-h-screen items-center justify-center bg-bg-subtle px-6 py-12">
       <Suspense fallback={null}>
         <LoginForm />
       </Suspense>
@@ -54,10 +54,12 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-sm rounded-lg border border-border-default bg-bg-canvas p-8 shadow-sm">
-      <header className="mb-6 space-y-1">
-        <span className="inline-block rounded-pill bg-accent-subtle px-3 py-1 text-xs font-medium text-accent-emphasis">
+      <header className="mb-6 space-y-2">
+        {/* Wordmark — 카테고리 태그 pill 대신 product 타이포그래피.
+         * tracking-tight + indigo accent 로 brand 정체성 강조. */}
+        <p className="text-base font-semibold tracking-tight text-accent-default">
           axiomedge
-        </span>
+        </p>
         <h1 className="text-2xl font-semibold leading-snug text-fg-default">
           로그인
         </h1>
