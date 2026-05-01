@@ -657,6 +657,10 @@ class AuditLogModel(KnowledgeBase):
     __table_args__ = (
         Index("idx_audit_knowledge", "knowledge_id"),
         Index("idx_audit_event", "event_type"),
+        # 0012_audit_log_created_at_index 마이그레이션과 동기화. archive cron 의
+        # ``created_at < cutoff`` range scan 가속용. 모델 선언이 있어야
+        # ``Base.metadata.create_all`` (e.g. CI fresh init) 도 인덱스 생성.
+        Index("idx_audit_created_at", "created_at"),
     )
 
 
