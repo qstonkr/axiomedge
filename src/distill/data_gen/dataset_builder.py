@@ -9,9 +9,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from rapidfuzz import fuzz
-
 from src.distill.config import DistillProfile
+from src.distill.data_gen.dedup import GlobalDeduper
 from src.distill.data_gen.llm_helper import LLMHelper
 
 SOURCE_TYPE_AUG_SUFFIX = "_aug"  # augmented 소스 타입 접미사
