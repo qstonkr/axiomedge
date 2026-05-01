@@ -42,7 +42,7 @@ export function Button({
     <button
       {...rest}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors",
+        "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-default focus-visible:outline-offset-2",
         VARIANT[variant],
         SIZE[size],

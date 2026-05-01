@@ -13,7 +13,7 @@ import asyncio
 import logging
 import random
 from abc import ABC
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Self
 
 import httpx
 from pydantic import BaseModel, Field
@@ -57,7 +57,7 @@ class BaseConnectorClient(ABC):
         self._client: httpx.AsyncClient | None = None
         self._sem = asyncio.Semaphore(config.max_concurrent)
 
-    async def __aenter__(self) -> "BaseConnectorClient":
+    async def __aenter__(self) -> Self:
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(

@@ -1021,6 +1021,26 @@ class TestRunTreeIndexBuilder:
             _make_raw(), items, ["H1"], "kb",
         )
 
+    @patch("src.pipelines.tree_index_builder.persist_tree_to_neo4j")
+    @patch("src.pipelines.tree_index_builder.build_tree_from_chunks")
+    @patch("src.config.get_settings")
+    async def test_persist_failure_logged(
+        self, mock_settings, mock_build, mock_persist,
+    ) -> None:
+        """Tree index persist 실패는 graceful degradation — 로그 후 silent return."""
+        mock_settings.return_value.tree_index.enabled = True
+        mock_build.return_value = {"nodes": [], "edges": []}
+        mock_persist.side_effect = RuntimeError("neo4j unavailable")
+        p = _pipeline_with_mocks()
+        items = [
+            {
+                "metadata": {"chunk_type": "body", "chunk_index": 0},
+                "point_id": "point-0",
+            },
+        ]
+        # Should not raise — except clause swallows.
+        await p._run_tree_index_builder(_make_raw(), items, ["H1"], "kb")
+
 
 # =========================================================================
 # _run_summary_tree_builder
@@ -1053,6 +1073,114 @@ class TestRunSummaryTreeBuilder:
         # No embedding_provider or llm_client
         await p._run_summary_tree_builder(
             _make_raw(), [], [], [], "kb", [], "t",
+        )
+
+    @patch("src.config.get_settings")
+    async def test_below_min_chunks_returns_silently(self, mock_settings) -> None:
+        """body chunks 수가 summary_cluster_min_chunks 미만이면 build 도 안 함."""
+        ts = mock_settings.return_value.tree_index
+        ts.enabled = True
+        ts.summary_enabled = True
+        ts.summary_cluster_min_chunks = 5
+        ts.summary_max_layers = 2
+        ts.summary_umap_dim = 8
+        p = _pipeline_with_mocks()
+        # 1 body chunk < 5 min → early return
+        items = [{"metadata": {"chunk_type": "body", "chunk_index": 0}, "point_id": "p0"}]
+        p.embedding_provider = MagicMock()
+        p.llm_client = MagicMock()
+        await p._run_summary_tree_builder(
+            _make_raw(), items, [[0.1] * 4], ["text-0"], "kb", ["H1"], "t",
+        )
+
+    @patch("src.pipelines.summary_tree_builder.build_summary_tree", new_callable=AsyncMock)
+    @patch("src.config.get_settings")
+    async def test_empty_summaries_returns_silently(
+        self, mock_settings, mock_build,
+    ) -> None:
+        """build_summary_tree 가 빈 리스트 반환하면 upsert 호출 없이 return."""
+        ts = mock_settings.return_value.tree_index
+        ts.enabled = True
+        ts.summary_enabled = True
+        ts.summary_cluster_min_chunks = 1
+        ts.summary_max_layers = 2
+        ts.summary_umap_dim = 8
+        mock_build.return_value = []
+        p = _pipeline_with_mocks()
+        items = [
+            {"metadata": {"chunk_type": "body", "chunk_index": 0}, "point_id": "p0"},
+            {"metadata": {"chunk_type": "body", "chunk_index": 1}, "point_id": "p1"},
+        ]
+        p.embedding_provider = MagicMock()
+        p.llm_client = MagicMock()
+        await p._run_summary_tree_builder(
+            _make_raw(), items, [[0.1] * 4, [0.2] * 4],
+            ["text-0", "text-1"], "kb", ["H1", "H2"], "t",
+        )
+
+    @patch("src.pipelines.summary_tree_builder.build_summary_tree", new_callable=AsyncMock)
+    @patch("src.config.get_settings")
+    async def test_full_path_upserts_summaries(
+        self, mock_settings, mock_build,
+    ) -> None:
+        """build_summary_tree 가 summary 반환 시 vector_store.upsert_batch 호출."""
+        ts = mock_settings.return_value.tree_index
+        ts.enabled = True
+        ts.summary_enabled = True
+        ts.summary_cluster_min_chunks = 1
+        ts.summary_max_layers = 2
+        ts.summary_umap_dim = 8
+        mock_build.return_value = [
+            {
+                "text": "summary 1",
+                "embedding": [0.5] * 4,
+                "layer": 1,
+                "source_chunk_ids": ["p0", "p1"],
+            },
+        ]
+        vector_store = MagicMock()
+        vector_store.upsert_batch = AsyncMock()
+        p = _pipeline_with_mocks(vector_store=vector_store)
+        items = [
+            {"metadata": {"chunk_type": "body", "chunk_index": 0}, "point_id": "p0"},
+            {"metadata": {"chunk_type": "body", "chunk_index": 1}, "point_id": "p1"},
+        ]
+        p.embedding_provider = MagicMock()
+        p.llm_client = MagicMock()
+        await p._run_summary_tree_builder(
+            _make_raw(), items, [[0.1] * 4, [0.2] * 4],
+            ["text-0", "text-1"], "kb", ["H1", "H2"], "t",
+        )
+        vector_store.upsert_batch.assert_awaited_once()
+        coll, payload = vector_store.upsert_batch.await_args.args
+        assert coll == "kb"
+        assert len(payload) == 1
+        assert payload[0]["metadata"]["chunk_type"] == "summary"
+
+    @patch("src.pipelines.summary_tree_builder.build_summary_tree", new_callable=AsyncMock)
+    @patch("src.config.get_settings")
+    async def test_build_failure_logged(
+        self, mock_settings, mock_build,
+    ) -> None:
+        """build_summary_tree 가 raise 해도 except clause 가 swallow."""
+        ts = mock_settings.return_value.tree_index
+        ts.enabled = True
+        ts.summary_enabled = True
+        ts.summary_cluster_min_chunks = 1
+        ts.summary_max_layers = 2
+        ts.summary_umap_dim = 8
+        mock_build.side_effect = RuntimeError("clustering failed")
+        p = _pipeline_with_mocks()
+        items = [
+            {"metadata": {"chunk_type": "body", "chunk_index": 0}, "point_id": "p0"},
+            {"metadata": {"chunk_type": "body", "chunk_index": 1}, "point_id": "p1"},
+        ]
+        # Should not raise.
+        p.embedding_provider = MagicMock()
+        p.llm_client = MagicMock()
+        await p._run_summary_tree_builder(
+            _make_raw(), items, [[0.1] * 4, [0.2] * 4],
+            ["text-0", "text-1"], "kb", ["H1", "H2"], "t",
         )
 
 

@@ -71,7 +71,7 @@ export function AdminHeader({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border-default bg-bg-canvas px-3 backdrop-blur md:px-6">
+    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border-default bg-bg-canvas px-3 md:px-6">
       <div className="flex min-w-0 items-center gap-2">
         <AdminMobileNav />
         <nav aria-label="현재 위치" className="flex items-center gap-2 text-xs">

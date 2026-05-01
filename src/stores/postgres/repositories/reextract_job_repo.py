@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -35,7 +36,7 @@ class ReextractJobRepo(BaseRepository):
                 )
                 session.add(job)
                 await session.flush()
-                return job.id
+                return cast(UUID, job.id)
 
     async def start(self, job_id: UUID, *, docs_total: int) -> None:
         async with self._session_maker() as session:

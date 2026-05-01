@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -79,7 +79,7 @@ class ChatRepository(BaseRepository):
                 )
                 session.add(row)
                 await session.flush()
-                return row.id
+                return cast(uuid.UUID, row.id)
 
     async def list_conversations(
         self,
@@ -205,7 +205,7 @@ class ChatRepository(BaseRepository):
                     .where(ChatConversationModel.id == conversation_id)
                     .values(updated_at=datetime.now(UTC))
                 )
-                return row.id
+                return cast(uuid.UUID, row.id)
 
     async def list_messages(
         self,
