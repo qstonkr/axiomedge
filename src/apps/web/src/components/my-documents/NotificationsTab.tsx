@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Bell } from "lucide-react";
 
 import { EmptyState, Select, Skeleton } from "@/components/ui";
 import { useSearchableKbs } from "@/hooks/useSearch";
@@ -49,7 +50,7 @@ export function NotificationsTab() {
           </div>
         ) : (data ?? []).length === 0 ? (
           <EmptyState
-            icon="🌿"
+            icon={<Bell size={32} strokeWidth={1.5} />}
             title="오래된 문서가 없습니다"
             description="모든 담당 문서가 최근 검증되었습니다."
           />

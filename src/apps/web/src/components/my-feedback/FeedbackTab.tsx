@@ -17,11 +17,14 @@ import { useMyFeedbackList, useSubmitFeedback } from "@/hooks/useFeedback";
 import type { FeedbackBody, FeedbackItem } from "@/lib/api/endpoints";
 
 const TYPES: { id: FeedbackBody["feedback_type"]; label: string; tone: "success" | "danger" | "accent" | "warning" | "neutral" }[] = [
-  { id: "UPVOTE", label: "👍 좋아요", tone: "success" },
-  { id: "DOWNVOTE", label: "👎 싫어요", tone: "danger" },
-  { id: "CORRECTION", label: "✏️ 수정 제안", tone: "accent" },
-  { id: "ERROR_REPORT", label: "🚨 오류 신고", tone: "warning" },
-  { id: "SUGGESTION", label: "💡 개선 제안", tone: "accent" },
+  // emoji 제거 — <option> 안에서는 lucide React 컴포넌트 렌더 불가 (browser
+  // native rendering). 시각 구분은 Badge tone (success/danger/accent/warning)
+  // 으로 충분.
+  { id: "UPVOTE", label: "좋아요", tone: "success" },
+  { id: "DOWNVOTE", label: "싫어요", tone: "danger" },
+  { id: "CORRECTION", label: "수정 제안", tone: "accent" },
+  { id: "ERROR_REPORT", label: "오류 신고", tone: "warning" },
+  { id: "SUGGESTION", label: "개선 제안", tone: "accent" },
 ];
 
 export function FeedbackTab() {

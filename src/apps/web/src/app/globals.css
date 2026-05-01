@@ -76,7 +76,9 @@
 
   --color-fg-default: #ededed;
   --color-fg-muted: #b6b3ac;
-  --color-fg-subtle: #8a8a87;
+  /* light 에서 #6e6c69 (4.79:1) 로 어둡게 보정한 것과 일관성 — dark 위에서도
+   * 한 단계 밝게 (#9a9a97) 로 이동해 small caption 가독성 확보. */
+  --color-fg-subtle: #9a9a97;
 
   --color-border-default: #323232;
   --color-border-strong: #4a4a4a;

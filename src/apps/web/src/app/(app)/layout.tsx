@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { AppProviders } from "@/components/providers";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { MobileNav } from "@/components/layout/MobileNav";
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { PrivacyConsent } from "@/components/PrivacyConsent";
 import { getSession } from "@/lib/auth/session";
@@ -41,10 +42,13 @@ export default async function AppLayout({
       <div className="flex h-screen min-h-screen">
         <Sidebar userEmail={session.email} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-default bg-bg-subtle px-8">
-            <span className="text-base font-semibold tracking-tight text-fg-default">
-              axiomedge
-            </span>
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-default bg-bg-subtle px-4 md:px-8">
+            <div className="flex items-center gap-2">
+              <MobileNav />
+              <span className="text-base font-semibold tracking-tight text-fg-default">
+                axiomedge
+              </span>
+            </div>
             <OrgSwitcher
               activeOrgId={session.active_org_id}
               memberships={session.memberships}

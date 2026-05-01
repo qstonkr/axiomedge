@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { Activity, Lock, LogOut, MessageSquareWarning, ShieldOff, User } from "lucide-react";
 
 export function ProfileDropdown({ email }: { email: string }) {
   const [open, setOpen] = useState(false);
@@ -65,7 +66,7 @@ export function ProfileDropdown({ email }: { email: string }) {
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-bg-muted focus-visible:outline-2 focus-visible:outline-accent-default"
       >
-        <span aria-hidden>👤</span>
+        <User aria-hidden size={16} strokeWidth={1.75} className="shrink-0" />
         <span className="truncate">{email}</span>
       </button>
       {open && (
@@ -78,9 +79,10 @@ export function ProfileDropdown({ email }: { email: string }) {
               role="menuitem"
               href="/my-feedback"
               onClick={() => setOpen(false)}
-              className="block min-h-[36px] px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
+              className="flex min-h-[36px] items-center gap-2 px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
             >
-              📝 내 피드백
+              <MessageSquareWarning aria-hidden size={14} strokeWidth={1.75} />
+              <span>내 피드백</span>
             </Link>
           </li>
           <li>
@@ -88,9 +90,10 @@ export function ProfileDropdown({ email }: { email: string }) {
               role="menuitem"
               href="/my-activities"
               onClick={() => setOpen(false)}
-              className="block min-h-[36px] px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
+              className="flex min-h-[36px] items-center gap-2 px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
             >
-              📋 내 활동
+              <Activity aria-hidden size={14} strokeWidth={1.75} />
+              <span>내 활동</span>
             </Link>
           </li>
           <li>
@@ -98,9 +101,10 @@ export function ProfileDropdown({ email }: { email: string }) {
               role="menuitem"
               href="/security#chat-retention"
               onClick={() => setOpen(false)}
-              className="block min-h-[36px] px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
+              className="flex min-h-[36px] items-center gap-2 px-3 py-2 text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
             >
-              🔒 처리방침
+              <Lock aria-hidden size={14} strokeWidth={1.75} />
+              <span>처리방침</span>
             </Link>
           </li>
           <li>
@@ -109,9 +113,10 @@ export function ProfileDropdown({ email }: { email: string }) {
               role="menuitem"
               disabled={withdrawing}
               onClick={withdrawConsent}
-              className="block w-full min-h-[36px] px-3 py-2 text-left text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none disabled:opacity-60"
+              className="flex w-full min-h-[36px] items-center gap-2 px-3 py-2 text-left text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none disabled:opacity-60"
             >
-              🚫 {withdrawing ? "철회 중…" : "처리방침 동의 철회"}
+              <ShieldOff aria-hidden size={14} strokeWidth={1.75} />
+              <span>{withdrawing ? "철회 중…" : "처리방침 동의 철회"}</span>
             </button>
           </li>
           <li>
@@ -119,9 +124,10 @@ export function ProfileDropdown({ email }: { email: string }) {
               <button
                 type="submit"
                 role="menuitem"
-                className="block w-full min-h-[36px] px-3 py-2 text-left text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
+                className="flex w-full min-h-[36px] items-center gap-2 px-3 py-2 text-left text-sm hover:bg-bg-muted focus-visible:bg-bg-muted focus-visible:outline-none"
               >
-                ⏻ 로그아웃
+                <LogOut aria-hidden size={14} strokeWidth={1.75} />
+                <span>로그아웃</span>
               </button>
             </form>
           </li>

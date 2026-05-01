@@ -1,3 +1,5 @@
+import { Lock } from "lucide-react";
+
 import { PageShell } from "@/components/layout/PageShell";
 
 export const metadata = { title: "처리방침 · axiomedge" };
@@ -5,7 +7,7 @@ export const metadata = { title: "처리방침 · axiomedge" };
 export default function SecurityPolicyPage() {
   return (
     <PageShell
-      icon="🔒"
+      icon={<Lock size={22} strokeWidth={1.75} className="text-accent-default" />}
       title="처리방침"
       description={
         <>

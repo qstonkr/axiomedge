@@ -1,5 +1,7 @@
 "use client";
 
+import { CheckCircle2 } from "lucide-react";
+
 import { Badge, EmptyState, Skeleton } from "@/components/ui";
 import { usePendingTasks } from "@/hooks/useMyDocuments";
 
@@ -24,7 +26,7 @@ export function PendingTab() {
   if (total === 0) {
     return (
       <EmptyState
-        icon="✅"
+        icon={<CheckCircle2 size={32} strokeWidth={1.5} className="text-success-default" />}
         title="대기 작업이 없습니다"
         description="처리할 검증/피드백/오류 신고가 없습니다."
       />
