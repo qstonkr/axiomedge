@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Lightbulb } from "lucide-react";
 
 import {
   ErrorFallback,
@@ -204,9 +205,12 @@ function TopicOwnersPanel({ kbId }: { kbId: string }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-fg-muted">
-        💡 Topic 전문가 (SME) 는 admin 이 직접 curate 하는 도메인 전문가
-        매핑. 문서 owner 와 별개로 search/agentic 에서 우선 추천에 사용.
+      <p className="inline-flex items-start gap-1.5 text-xs text-fg-muted">
+        <Lightbulb size={12} strokeWidth={1.75} aria-hidden className="mt-0.5 shrink-0" />
+        <span>
+          Topic 전문가 (SME) 는 admin 이 직접 curate 하는 도메인 전문가
+          매핑. 문서 owner 와 별개로 search/agentic 에서 우선 추천에 사용.
+        </span>
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <MetricCard label="등록 topic" value={topics.data?.total ?? 0} />

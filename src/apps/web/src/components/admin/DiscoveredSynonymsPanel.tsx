@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, X } from "lucide-react";
 
 import { Button, Skeleton, useToast } from "@/components/ui";
 import {
@@ -198,20 +199,22 @@ export function DiscoveredSynonymsPanel() {
           <Button
             size="sm"
             variant="ghost"
+            leftIcon={<Check size={14} strokeWidth={1.75} aria-hidden />}
             onClick={onApprove}
             disabled={selected.size === 0 || pending}
             title="선택한 후보를 base term 의 동의어로 등록"
           >
-            ✅ 승인
+            승인
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            leftIcon={<X size={14} strokeWidth={1.75} aria-hidden />}
             onClick={onReject}
             disabled={selected.size === 0 || pending}
             title="선택한 후보를 거부 (status=rejected)"
           >
-            ❌ 거부
+            거부
           </Button>
         </div>
       </div>

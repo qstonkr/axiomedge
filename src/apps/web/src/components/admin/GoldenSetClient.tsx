@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Trash2, X } from "lucide-react";
 
 import {
   Badge,
@@ -137,8 +138,9 @@ export function GoldenSetClient() {
               disabled={upd.isPending}
               onClick={() => onChangeStatus(g, "approved")}
               title="승인"
+              aria-label="승인"
             >
-              ✅
+              <Check size={14} strokeWidth={1.75} aria-hidden className="text-success-default" />
             </Button>
           )}
           {g.status !== "rejected" && (
@@ -148,12 +150,19 @@ export function GoldenSetClient() {
               disabled={upd.isPending}
               onClick={() => onChangeStatus(g, "rejected")}
               title="거부"
+              aria-label="거부"
             >
-              ❌
+              <X size={14} strokeWidth={1.75} aria-hidden className="text-fg-muted" />
             </Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => onDelete(g)}>
-            🗑️
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onDelete(g)}
+            title="삭제"
+            aria-label="삭제"
+          >
+            <Trash2 size={14} strokeWidth={1.75} aria-hidden className="text-danger-default" />
           </Button>
         </div>
       ),
