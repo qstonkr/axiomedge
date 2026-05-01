@@ -75,6 +75,12 @@ async def init_database(database_url: str | None = None) -> None:
 
         # Stamp Alembic head so future schema changes flow through migrations
         # (idempotent — re-stamping the same revision is a no-op).
+        # env.py 의 ``asyncio.run(run_async_migrations())`` 는 이미 실행 중인
+        # event loop 안에서 호출되면 RuntimeError 가 난다 — FastAPI startup 컨텍스트.
+        # 워커 스레드에서 실행해 별도 thread-local loop 을 쓰도록 우회한다. 또한
+        # alembic.ini 의 [logger_*] 가 fileConfig 로 적용되면 root logger 가
+        # WARNING 으로 리셋되어 앱 INFO 로그가 다 죽으므로 config_file_name 을
+        # None 으로 둬서 env.py 의 fileConfig 호출을 스킵한다.
         try:
             from alembic import command
             from alembic.config import Config as AlembicConfig
@@ -83,7 +89,8 @@ async def init_database(database_url: str | None = None) -> None:
             if ini_path.exists():
                 cfg = AlembicConfig(str(ini_path))
                 cfg.set_main_option("sqlalchemy.url", url)
-                command.stamp(cfg, "head")
+                cfg.config_file_name = None
+                await asyncio.to_thread(command.stamp, cfg, "head")
                 logger.info("Alembic head stamped — schema versioning ready")
         except (ImportError, OSError, ValueError, RuntimeError) as e:
             logger.warning("Alembic stamp skipped: %s", e)

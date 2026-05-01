@@ -659,9 +659,11 @@ async def retrieve_chunks_by_ids(
         return []
 
     raw_client = await qdrant_provider.ensure_client()
+    # AsyncQdrantClient.retrieve 는 async — 직접 await. asyncio.to_thread 로 감싸면
+    # 워커 스레드 안에서 코루틴만 만들고 await 안 돼서 RuntimeWarning 후 결과는
+    # 코루틴 객체가 돼버린다 (tree expansion 무력화).
     retrieve_coros = [
-        asyncio.to_thread(
-            raw_client.retrieve,
+        raw_client.retrieve(
             collection_name=col, ids=point_ids, with_payload=True,
         )
         for col in collections

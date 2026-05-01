@@ -768,9 +768,10 @@ class TestRetrieveChunksByIds:
             id="p1",
             payload={"content": "hello", "metadata": {"k": "v"}},
         )
-        # qdrant_provider.ensure_client() 는 async — AsyncMock 으로 raw client 반환
+        # qdrant_provider.ensure_client() 는 async — AsyncMock 으로 raw client 반환.
+        # raw.retrieve 도 async (AsyncQdrantClient.retrieve) — AsyncMock 필요.
         raw = MagicMock()
-        raw.retrieve = MagicMock(return_value=[pt])
+        raw.retrieve = AsyncMock(return_value=[pt])
         provider = MagicMock()
         provider.ensure_client = AsyncMock(return_value=raw)
 
@@ -792,7 +793,7 @@ class TestRetrieveChunksByIds:
             payload={"content": "x", "metadata": {}},
         )
         raw = MagicMock()
-        raw.retrieve = MagicMock(return_value=[pt])
+        raw.retrieve = AsyncMock(return_value=[pt])
         provider = MagicMock()
         provider.ensure_client = AsyncMock(return_value=raw)
 
@@ -804,7 +805,7 @@ class TestRetrieveChunksByIds:
     @pytest.mark.asyncio
     async def test_handles_exception(self):
         raw = MagicMock()
-        raw.retrieve = MagicMock(side_effect=RuntimeError("fail"))
+        raw.retrieve = AsyncMock(side_effect=RuntimeError("fail"))
         provider = MagicMock()
         provider.ensure_client = AsyncMock(return_value=raw)
 
