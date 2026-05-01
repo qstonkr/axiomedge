@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, FolderOpen } from "lucide-react";
+import { BookOpen, Download, FolderOpen } from "lucide-react";
 
 import { ConnectorCatalog } from "@/components/connectors/ConnectorCatalog";
 import {
@@ -89,7 +89,8 @@ export function MyKnowledgePage({ userId }: { userId: string }) {
                 : "데이터 가져오기 (파일 업로드 / 외부 connector)"
             }
           >
-            📥 데이터 가져오기
+            <Download aria-hidden size={14} strokeWidth={1.75} className="mr-1 inline-block" />
+            데이터 가져오기
           </Button>
           <Button
             size="sm"

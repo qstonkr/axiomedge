@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Lightbulb } from "lucide-react";
+import { Lightbulb, MessagesSquare, Paperclip } from "lucide-react";
 
 import { useChatStore } from "@/store/chat";
 import {
@@ -30,6 +30,9 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
   const [forceMode, setForceMode] = useState<ForceMode>("auto");
   const [highlightMarker, setHighlightMarker] = useState<number | null>(null);
   const [ownerHint, setOwnerHint] = useState(false);
+  // mobile-only — md+ 에서는 outer aside 가 항상 노출되니까 무관.
+  const [convListOpen, setConvListOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   // Optimistic in-flight user turn — renders immediately so the user sees
   // their message while the LLM (often Ollama 7.8b, 1–3 min) generates.
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
@@ -92,14 +95,29 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
   return (
     // min-h-0 + h-full so the 3-pane respects its parent flex height (#4)
     <div className="flex h-full min-h-0 w-full">
-      <ConversationSidebar activeId={activeId} onSelect={setActive} userEmail={userEmail} />
+      <ConversationSidebar
+        activeId={activeId}
+        onSelect={setActive}
+        userEmail={userEmail}
+        mobileOpen={convListOpen}
+        onMobileClose={() => setConvListOpen(false)}
+      />
 
       <main className="flex min-h-0 flex-1 flex-col">
         {/* Conversation header — KB scope 가 input 옆이 아니라 main 상단에서
           * 항상 보이도록 (B2). 사용자가 "지금 이 답변이 어떤 KB 기반"을 즉시
           * 인지 가능. ModeForceMenu 는 input 옆으로 collapse 유지 (per-message
           * mode 는 transient 컨트롤). */}
-        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border-default bg-bg-canvas px-6">
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border-default bg-bg-canvas px-4 md:px-6">
+          {/* mobile only — 대화 목록 drawer trigger. md+ 는 outer ConversationSidebar 가 항상 표시 */}
+          <button
+            type="button"
+            onClick={() => setConvListOpen(true)}
+            aria-label="대화 목록 열기"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-muted md:hidden"
+          >
+            <MessagesSquare size={18} strokeWidth={1.75} aria-hidden />
+          </button>
           <span className="text-xs uppercase tracking-wider text-fg-subtle">맥락</span>
           <KbSelector />
         </div>
@@ -149,6 +167,18 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
         </section>
 
         <footer className="border-t border-border-default px-6 py-3">
+          {/* mobile/tablet (xl 미만) — 출처/메타 시트 trigger. 답변 chunks 가 있을 때만 표시. */}
+          {sourceChunks.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSourcesOpen(true)}
+              className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-border-default px-3 py-1.5 text-xs text-fg-muted transition-colors hover:bg-bg-muted xl:hidden"
+              aria-label={`출처 ${sourceChunks.length}개 보기`}
+            >
+              <Paperclip aria-hidden size={12} strokeWidth={1.75} />
+              <span>출처 ({sourceChunks.length})</span>
+            </button>
+          )}
           {ownerHint && (
             <p className="mb-1 flex items-center gap-1.5 text-xs text-fg-muted">
               <Lightbulb aria-hidden size={12} strokeWidth={1.75} className="shrink-0" />
@@ -172,6 +202,8 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
         chunks={sourceChunks}
         meta={(lastAssistant?.meta ?? {}) as Record<string, unknown>}
         highlightedMarker={highlightMarker}
+        mobileOpen={sourcesOpen}
+        onMobileClose={() => setSourcesOpen(false)}
       />
     </div>
   );
