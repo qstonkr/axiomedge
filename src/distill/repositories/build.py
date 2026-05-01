@@ -82,6 +82,29 @@ class DistillBuildRepository:
                 await session.rollback()
                 raise
 
+    async def get_deployed_baseline(
+        self, profile_name: str,
+    ) -> dict[str, Any] | None:
+        """직전 deployed 빌드 (deployed_at desc) — eval 회귀 비교용.
+
+        eval_faithfulness 가 set 된 (진짜 평가 통과한) 빌드만 — 평가 skip 한
+        force_deploy 빌드는 baseline 으로 사용 안 함.
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(DistillBuildModel)
+                .where(
+                    DistillBuildModel.profile_name == profile_name,
+                    DistillBuildModel.deployed_at.is_not(None),
+                    DistillBuildModel.eval_faithfulness.is_not(None),
+                )
+                .order_by(DistillBuildModel.deployed_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._to_dict(model) if model else None
+
     async def mark_build_deployed(
         self, build_id: str, profile_name: str,
     ) -> dict[str, Any] | None:

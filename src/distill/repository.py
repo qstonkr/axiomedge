@@ -90,6 +90,12 @@ class DistillRepository:
         """대상 빌드를 deployed 로 마킹 + 같은 profile 의 이전 deployed_at 정리."""
         return await self._builds.mark_build_deployed(build_id, profile_name)
 
+    async def get_deployed_baseline(
+        self, profile_name: str,
+    ) -> dict[str, Any] | None:
+        """직전 deployed 빌드 (eval 회귀 비교용). force_deploy 통과한 빌드 제외."""
+        return await self._builds.get_deployed_baseline(profile_name)
+
     async def update_build(self, build_id: str, **kwargs: Any) -> dict[str, Any] | None:
         return await self._builds.update(build_id, **kwargs)
 

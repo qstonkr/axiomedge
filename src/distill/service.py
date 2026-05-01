@@ -869,6 +869,26 @@ class DistillService:
                 f"eval failed: faithfulness={result.faithfulness:.3f} "
                 f"relevancy={result.relevancy:.3f}"
             )
+
+        # baseline 회귀 비교 — 직전 deployed 빌드 대비 점수가 너무 떨어지면 fail-closed.
+        profile_name = (build.get("profile_name") if build else None) or getattr(
+            profile, "search_group", "",
+        )
+        baseline = (
+            await repo.get_deployed_baseline(profile_name) if profile_name else None
+        )
+        if baseline and baseline.get("eval_faithfulness") is not None:
+            delta = result.faithfulness - baseline["eval_faithfulness"]
+            max_drop = -float(self.config.defaults.max_regression_delta)
+            if delta < max_drop:
+                return _gate_fail(
+                    f"faithfulness regression: delta={delta:+.3f} (max={max_drop:+.3f}) "
+                    f"current={result.faithfulness:.3f} "
+                    f"baseline={baseline['eval_faithfulness']:.3f}"
+                )
+            logger.info(
+                "Baseline check OK: delta=%+.3f (max=%+.3f)", delta, max_drop,
+            )
         return True
 
     async def _download_gguf_from_s3(
