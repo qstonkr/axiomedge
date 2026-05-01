@@ -3,16 +3,29 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import or_, select, text, update
+from sqlalchemy import func, or_, select, text, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.distill.models import DistillBuildModel
 
 logger = logging.getLogger(__name__)
+
+# 다른 active 빌드가 있으면 새 빌드 차단 — 동시 빌드로 인한 GPU 자원 충돌
+# + deploy race 방지. completed/failed/archived 는 active 가 아님.
+_ACTIVE_BUILD_STATUSES: tuple[str, ...] = (
+    "pending", "generating", "training", "quantizing", "evaluating", "deploying",
+)
+
+
+def _profile_lock_key(profile_name: str) -> int:
+    """profile_name → bigint advisory lock 키 (PostgreSQL bigint 범위 안)."""
+    return int(hashlib.sha256(profile_name.encode()).hexdigest()[:15], 16)
 
 
 class DistillBuildRepository:
@@ -27,6 +40,104 @@ class DistillBuildRepository:
             await session.commit()
             await session.refresh(model)
             return self._to_dict(model)
+
+    async def create_unique(
+        self, *, profile_name: str, **build_fields: Any,
+    ) -> dict[str, Any]:
+        """active 빌드가 없을 때만 신규 빌드 생성. PostgreSQL advisory lock 으로 race-free.
+
+        같은 profile 의 active 빌드 (pending/generating/training/quantizing/
+        evaluating/deploying) 가 1개라도 있으면 ``RuntimeError`` raise.
+
+        ``pg_advisory_xact_lock`` 은 transaction-scoped — commit/rollback 시 자동 해제.
+        SHA256 hash[:15hex] (≈59bit) 를 키로 사용 — bigint 범위(±2^63) 안전.
+        """
+        async with self._session_maker() as session:
+            try:
+                key = _profile_lock_key(profile_name)
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(:k)"), {"k": key},
+                )
+                stmt = (
+                    select(func.count())
+                    .select_from(DistillBuildModel)
+                    .where(
+                        DistillBuildModel.profile_name == profile_name,
+                        DistillBuildModel.status.in_(_ACTIVE_BUILD_STATUSES),
+                    )
+                )
+                count_result = await session.execute(stmt)
+                active_count = count_result.scalar() or 0
+                if active_count > 0:
+                    raise RuntimeError(
+                        f"active build exists for profile={profile_name} "
+                        f"(count={active_count})",
+                    )
+                model = DistillBuildModel(profile_name=profile_name, **build_fields)
+                session.add(model)
+                await session.commit()
+                await session.refresh(model)
+                return self._to_dict(model)
+            except SQLAlchemyError:
+                await session.rollback()
+                raise
+
+    async def get_deployed_baseline(
+        self, profile_name: str,
+    ) -> dict[str, Any] | None:
+        """직전 deployed 빌드 (deployed_at desc) — eval 회귀 비교용.
+
+        eval_faithfulness 가 set 된 (진짜 평가 통과한) 빌드만 — 평가 skip 한
+        force_deploy 빌드는 baseline 으로 사용 안 함.
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(DistillBuildModel)
+                .where(
+                    DistillBuildModel.profile_name == profile_name,
+                    DistillBuildModel.deployed_at.is_not(None),
+                    DistillBuildModel.eval_faithfulness.is_not(None),
+                )
+                .order_by(DistillBuildModel.deployed_at.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            model = result.scalar_one_or_none()
+            return self._to_dict(model) if model else None
+
+    async def mark_build_deployed(
+        self, build_id: str, profile_name: str,
+    ) -> dict[str, Any] | None:
+        """대상 빌드를 deployed 로 마킹 + 같은 profile 의 이전 deployed_at 정리.
+
+        'profile 당 active 배포 1개' 불변식 유지. 단순한 update_build(deployed_at=now)
+        는 historical deployed_at 을 누적시킨다.
+        """
+        async with self._session_maker() as session:
+            now = datetime.now(timezone.utc)
+            # 기존 같은 profile 의 다른 deployed 빌드 deployed_at NULL 처리.
+            await session.execute(
+                update(DistillBuildModel)
+                .where(
+                    DistillBuildModel.profile_name == profile_name,
+                    DistillBuildModel.id != build_id,
+                    DistillBuildModel.deployed_at.isnot(None),
+                )
+                .values(deployed_at=None)
+            )
+            # 대상 빌드 deployed_at set.
+            await session.execute(
+                update(DistillBuildModel)
+                .where(DistillBuildModel.id == build_id)
+                .values(deployed_at=now, updated_at=now)
+            )
+            await session.commit()
+
+            result = await session.execute(
+                select(DistillBuildModel).where(DistillBuildModel.id == build_id)
+            )
+            model = result.scalar_one_or_none()
+            return self._to_dict(model) if model else None
 
     async def update(self, build_id: str, **kwargs: Any) -> dict[str, Any] | None:
         async with self._session_maker() as session:
@@ -268,6 +379,7 @@ class DistillBuildRepository:
             "s3_uri": model.s3_uri,
             "deployed_at": model.deployed_at.isoformat() if model.deployed_at else None,
             "rollback_from": model.rollback_from,
+            "force_deploy": getattr(model, "force_deploy", False),
             "error_message": model.error_message,
             "error_step": model.error_step,
             # 0008 — async sweeper 메타. NULL = 신구조 미적용 (기존 fire-and-forget build).

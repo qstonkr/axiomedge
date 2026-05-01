@@ -36,30 +36,50 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+import boto3
+from botocore.config import Config
+
 logger = logging.getLogger(__name__)
 
 _GPU_INSTANCE_ID = os.getenv("DISTILL_GPU_INSTANCE_ID", "")
 _AWS_REGION = os.getenv("AWS_REGION", "ap-northeast-2")
-_AWS_PROFILE = os.getenv("AWS_PROFILE", "")
 
 
 # ---------------------------------------------------------------------------
-# EC2 lifecycle (start + state — stop 은 부팅 스크립트가 담당, 본 모듈 X)
+# EC2 client (boto3 — subprocess aws CLI 대체)
+# ---------------------------------------------------------------------------
+
+def _ec2_client() -> Any:
+    """V4 서명 + 명시적 region 으로 EC2 client 생성.
+
+    deployer._s3_client 와 같은 패턴. AWS_PROFILE / SSO / IAM role 모두
+    boto3 자격증명 chain 으로 자동. subprocess + ``aws --profile`` 대체.
+    """
+    return boto3.Session(
+        profile_name=os.getenv("AWS_PROFILE") or None,
+        region_name=_AWS_REGION,
+    ).client("ec2", config=Config(signature_version="v4"))
+
+
+# ---------------------------------------------------------------------------
+# EC2 lifecycle (start + state)
 # ---------------------------------------------------------------------------
 
 async def _get_instance_state(instance_id: str) -> str:
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 describe-instances --instance-ids {instance_id} "
-        f"--region {_AWS_REGION} --profile {_AWS_PROFILE} "
-        f"--query 'Reservations[0].Instances[0].State.Name' --output text",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
+    """EC2 인스턴스 state 조회 — boto3 describe_instances."""
+    def _query() -> str:
+        ec2 = _ec2_client()
+        resp = ec2.describe_instances(InstanceIds=[instance_id])
+        return resp["Reservations"][0]["Instances"][0]["State"]["Name"]
+    return await asyncio.to_thread(_query)
 
 
 async def _start_instance(instance_id: str) -> bool:
+    """EC2 인스턴스 start 후 running 까지 대기 (최대 5분).
+
+    state=stopping 인 경우 먼저 stopped 까지 30회 × 5초 대기 (start_instances
+    는 stopped 상태 필요).
+    """
     state = await _get_instance_state(instance_id)
 
     # stopping 상태면 stopped 될 때까지 대기
@@ -71,13 +91,9 @@ async def _start_instance(instance_id: str) -> bool:
                 break
 
     logger.info("Starting GPU instance %s", instance_id)
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 start-instances --instance-ids {instance_id} "
-        f"--region {_AWS_REGION} --profile {_AWS_PROFILE}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+    await asyncio.to_thread(
+        lambda: _ec2_client().start_instances(InstanceIds=[instance_id]),
     )
-    await proc.communicate()
 
     for _ in range(60):
         if await _get_instance_state(instance_id) == "running":
@@ -85,6 +101,19 @@ async def _start_instance(instance_id: str) -> bool:
             return True
         await asyncio.sleep(5)
     return False
+
+
+async def _stop_instance(instance_id: str) -> None:
+    """EC2 인스턴스 stop 요청 (fire-and-forget).
+
+    실제 stopped 상태 확인은 호출자/TrainingMonitor 가 _get_instance_state
+    로 polling.
+    """
+    logger.info("Stopping GPU instance %s", instance_id)
+    await asyncio.to_thread(
+        lambda: _ec2_client().stop_instances(InstanceIds=[instance_id]),
+    )
+    logger.info("GPU instance stop requested")
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,8 @@ def _mock_repo(**extra_methods):
     repo.delete_base_model = AsyncMock(return_value=True)
     repo.get_build = AsyncMock(return_value=None)
     repo.create_build = AsyncMock()
+    repo.create_build_unique = AsyncMock()
+    repo.mark_build_deployed = AsyncMock()
     repo.update_build = AsyncMock()
     repo.list_builds = AsyncMock(return_value=[])
     repo.list_version_history = AsyncMock(return_value=[])
@@ -563,7 +565,7 @@ class TestTriggerBuild:
                 await trigger_build(req)
             assert exc.value.status_code == 500
         # build row 는 생성됐고 failed 로 업데이트됨 — 고아 row 추적 가능.
-        repo.create_build.assert_awaited_once()
+        repo.create_build_unique.assert_awaited_once()
         repo.update_build.assert_awaited()
         # update kwargs 에 status='failed' 포함
         update_kwargs = repo.update_build.await_args.kwargs

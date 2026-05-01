@@ -110,6 +110,9 @@ class DistillBuildModel(DistillBase):
     s3_uri = Column(String(500), nullable=True)
     deployed_at = Column(DateTime(timezone=True), nullable=True)
     rollback_from = Column(String(36), nullable=True)  # 롤백 시 이전 빌드 id
+    # 평가 게이트 우회 — eval 데이터/baseline 부재 또는 의도된 회귀 빌드용.
+    # 운영자가 명시 set 해야만 _evaluate 가 fail-closed 를 우회.
+    force_deploy = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # 에러
     error_message = Column(Text, nullable=True)
@@ -191,6 +194,9 @@ class DistillTrainingDataModel(DistillBase):
     # 계보
     augmented_from = Column(String(36), nullable=True)  # 원본 QA id (변형인 경우)
     generation_batch_id = Column(String(36), nullable=True)
+    # 원본 chunk 의 deterministic fingerprint — chunk-level train/test partition.
+    # qa_generator.chunk_fingerprint(content)[:16].
+    source_chunk_fp = Column(String(16), nullable=True)
 
     # 리뷰
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

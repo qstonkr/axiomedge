@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import random
 import re
 import uuid
 from datetime import datetime, timezone
@@ -17,6 +19,45 @@ from pathlib import Path
 from src.distill.config import DistillConfig, DistillProfile
 from src.distill.repository import DistillRepository
 from src.config.weights import weights as _w
+
+
+def _load_eval_set(
+    data_path: Path | str, build_id: str, ratio: float = 0.1,
+) -> list[dict]:
+    """train.jsonl 에서 build_id 기반 deterministic shuffle 후 ratio 만큼 추출.
+
+    이전 코드는 ``lines[int(len(lines)*0.9):]`` 로 마지막 10% 만 사용 — 데이터
+    생성 순서(usage_log → chunk_qa → reformatted) 에 따라 source_type 편향이
+    심함. build_id seed 로 셔플해 평가 신뢰성 확보.
+
+    같은 build_id 면 항상 같은 eval set → 회귀 비교 가능.
+    """
+    path = Path(data_path)
+    with open(path, encoding="utf-8") as f:
+        all_lines = f.readlines()
+    if not all_lines:
+        return []
+
+    seed = int(hashlib.sha256(str(build_id).encode()).hexdigest()[:16], 16) % (2**32)
+    rng = random.Random(seed)
+    indices = list(range(len(all_lines)))
+    rng.shuffle(indices)
+    eval_n = max(1, int(len(all_lines) * ratio))
+    eval_indices = sorted(indices[:eval_n])
+
+    eval_data: list[dict] = []
+    for i in eval_indices:
+        try:
+            entry = json.loads(all_lines[i])
+        except json.JSONDecodeError:
+            continue
+        msgs = entry.get("messages", [])
+        if len(msgs) >= 2 and isinstance(msgs[0], dict) and isinstance(msgs[1], dict):
+            eval_data.append({
+                "question": msgs[0].get("content", ""),
+                "answer": msgs[1].get("content", ""),
+            })
+    return eval_data
 
 logger = logging.getLogger(__name__)
 
@@ -199,14 +240,23 @@ class DistillService:
         llm_helper = LLMHelper(self.llm, self.qdrant_url, concurrency=3, timeout_sec=60)
         qf = QualityFilter(llm_helper, self.embedder, profile)
 
-        # 기존 질문 가져오기 (중복 방지)
+        # 기존 질문 + chunk fingerprint 가져오기 (train/test 누수 차단)
         existing_result = await repo.list_training_data(
             profile_name=profile_name, limit=10000,
         )
         existing_questions = {
             it["question"] for it in existing_result.get("items", [])
         }
-        logger.info("Existing questions for dedup: %d", len(existing_questions))
+        # chunk-level partition: train QA 가 만들어진 chunk fingerprint 모음
+        excluded_chunk_fps = {
+            it.get("source_chunk_fp")
+            for it in existing_result.get("items", [])
+            if it.get("source_chunk_fp")
+        }
+        logger.info(
+            "Existing dedup signals — questions=%d chunk_fps=%d",
+            len(existing_questions), len(excluded_chunk_fps),
+        )
 
         test_qa = await generate_test_qa(
             llm_client=self.llm,
@@ -216,6 +266,7 @@ class DistillService:
             rag_api_url=rag_url,
             quality_filter=qf,
             existing_questions=existing_questions,
+            excluded_chunk_fingerprints=excluded_chunk_fps,
         )
 
         # 범용성 점수
@@ -765,65 +816,90 @@ class DistillService:
         model_path: str, data_path: str, repo: DistillRepository,
         *, gguf_path: str | None = None,
     ) -> bool:
-        """모델 평가 + 배포 게이트.
+        """모델 평가 + 배포 게이트 — fail-closed.
 
-        GGUF가 있으면 DistillEvaluator로 Teacher judge + 임베딩 유사도 평가.
-        llama_cpp 미설치 시 train_loss 기반 fallback 게이트.
+        데이터 부재 / 평가 실패 / GGUF 미적재 모두 fail-closed (return False).
+        ``build.force_deploy=True`` 일 때만 우회 (경고 로그).
+
+        train_loss<2.0 fallback 제거 — Reformatter 적용 후 손실 분포가
+        다르므로 의미 없음. 평가 실패는 명시적으로 fail.
         """
-        # eval set 로드 (train.jsonl에서 마지막 10% 사용)
-        eval_data = []
-        with open(data_path, encoding="utf-8") as f:
-            lines = f.readlines()
-        eval_lines = lines[int(len(lines) * 0.9):]
-        for line in eval_lines:
-            entry = json.loads(line)
-            msgs = entry.get("messages", [])
-            if len(msgs) >= 2:
-                eval_data.append({
-                    "question": msgs[0]["content"],
-                    "answer": msgs[1]["content"],
-                })
+        build = await repo.get_build(build_id) or {}
+        force_deploy = bool(build.get("force_deploy", False))
+
+        def _gate_fail(reason: str) -> bool:
+            if force_deploy:
+                logger.warning("Eval gate FAIL — force_deploy=True 로 우회: %s", reason)
+                return True
+            logger.error("Eval gate FAIL (fail-closed): %s", reason)
+            return False
+
+        # 1. data 파일 부재 → fail-closed
+        if not Path(data_path).exists():
+            return _gate_fail(f"eval data file not found: {data_path}")
+
+        # 2. eval set 로드 — build_id seed 기반 deterministic shuffle
+        eval_data = _load_eval_set(Path(data_path), build_id)
 
         if not eval_data:
-            logger.warning("No eval data, skipping evaluation")
-            return True
+            return _gate_fail("eval_data is empty after parsing train.jsonl")
 
-        # GGUF 기반 실 평가 시도
-        if gguf_path and self.llm and self.embedder:
-            try:
-                from src.distill.evaluator import DistillEvaluator
+        # 3. GGUF 평가 prerequisites 검증 → fail-closed
+        if not (gguf_path and self.llm and self.embedder):
+            return _gate_fail(
+                f"GGUF eval prerequisites missing: "
+                f"gguf={bool(gguf_path)} llm={bool(self.llm)} embedder={bool(self.embedder)}"
+            )
 
-                evaluator = DistillEvaluator(self.llm, self.embedder)
-                threshold = getattr(profile.training, "eval_threshold", None)
-                result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+        # 4. GGUF 평가 실행
+        try:
+            from src.distill.evaluator import DistillEvaluator
 
-                await repo.update_build(
-                    build_id,
-                    eval_passed=result.passed,
-                    eval_faithfulness=result.faithfulness,
-                    eval_relevancy=result.relevancy,
-                )
-                logger.info(
-                    "GGUF evaluation: passed=%s, faithfulness=%.3f, relevancy=%.3f",
-                    result.passed, result.faithfulness, result.relevancy,
-                )
-                return result.passed
-            except ImportError:
-                logger.warning("llama_cpp not available, falling back to train_loss gate")
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-                logger.warning("GGUF evaluation failed, falling back to train_loss gate: %s", e)
+            evaluator = DistillEvaluator(self.llm, self.embedder)
+            threshold = getattr(profile.training, "eval_threshold", None)
+            result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+        except ImportError as e:
+            return _gate_fail(f"llama_cpp not available: {e}")
+        except (RuntimeError, OSError, ValueError) as e:
+            return _gate_fail(f"GGUF evaluation raised: {e}")
 
-        # Fallback: train_loss 기반 게이트
-        build = await repo.get_build(build_id)
-        train_loss = build.get("train_loss", 999)
-        passed = train_loss < 2.0
         await repo.update_build(
             build_id,
-            eval_passed=passed,
-            eval_faithfulness=0.0,
-            eval_relevancy=0.0,
+            eval_passed=result.passed,
+            eval_faithfulness=result.faithfulness,
+            eval_relevancy=result.relevancy,
         )
-        return passed
+        logger.info(
+            "GGUF evaluation: passed=%s, faithfulness=%.3f, relevancy=%.3f",
+            result.passed, result.faithfulness, result.relevancy,
+        )
+
+        if not result.passed:
+            return _gate_fail(
+                f"eval failed: faithfulness={result.faithfulness:.3f} "
+                f"relevancy={result.relevancy:.3f}"
+            )
+
+        # baseline 회귀 비교 — 직전 deployed 빌드 대비 점수가 너무 떨어지면 fail-closed.
+        profile_name = (build.get("profile_name") if build else None) or getattr(
+            profile, "search_group", "",
+        )
+        baseline = (
+            await repo.get_deployed_baseline(profile_name) if profile_name else None
+        )
+        if baseline and baseline.get("eval_faithfulness") is not None:
+            delta = result.faithfulness - baseline["eval_faithfulness"]
+            max_drop = -float(self.config.defaults.max_regression_delta)
+            if delta < max_drop:
+                return _gate_fail(
+                    f"faithfulness regression: delta={delta:+.3f} (max={max_drop:+.3f}) "
+                    f"current={result.faithfulness:.3f} "
+                    f"baseline={baseline['eval_faithfulness']:.3f}"
+                )
+            logger.info(
+                "Baseline check OK: delta=%+.3f (max=%+.3f)", delta, max_drop,
+            )
+        return True
 
     async def _download_gguf_from_s3(
         self, build_id: str, profile: DistillProfile, build_dir: Path,
@@ -883,6 +959,7 @@ class DistillService:
         deployer = DistillDeployer(profile)
         build = await repo.get_build(build_id)
         version = build["version"]
+        profile_name = build["profile_name"]
 
         if gpu_trained:
             src_uri = build.get("s3_uri")
@@ -896,8 +973,7 @@ class DistillService:
 
         await deployer.create_and_upload_manifest(s3_uri, version, build)
 
-        await repo.update_build(
-            build_id,
-            s3_uri=s3_uri,
-            deployed_at=datetime.now(timezone.utc),
-        )
+        # s3_uri 만 update — deployed_at 은 mark_build_deployed 가 처리하여
+        # 같은 profile 의 이전 deployed 빌드를 NULL 로 정리해 'active 1개' 불변식 유지.
+        await repo.update_build(build_id, s3_uri=s3_uri)
+        await repo.mark_build_deployed(build_id, profile_name)

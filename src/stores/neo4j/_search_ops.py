@@ -100,12 +100,15 @@ class SearchOpsMixin:
         keywords: list[str],
         *,
         max_facts: int = 20,
+        scope_kb_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Entity search across both wiki and GraphRAG nodes.
 
         Searches two fulltext indexes:
         1. entity_name_title: Entity nodes (wiki-based)
         2. entity_search: __Entity__ nodes (GraphRAG Store/Person/Process etc.)
+
+        scope_kb_ids 가 주어지면 해당 KB 의 노드만 통과시킴 (cross-domain noise 차단).
         """
         lucene_query = build_lucene_or_query(keywords)
         if not lucene_query:
@@ -113,10 +116,12 @@ class SearchOpsMixin:
             return await self._search_by_contains(keyword, max_facts)
 
         results: list[dict[str, Any]] = []
+        scope_clause = "AND ($scope IS NULL OR node.kb_id IN $scope)"
 
         graphrag_cypher = f"""
         CALL db.index.fulltext.queryNodes('{self._FULLTEXT_INDEX_GRAPHRAG}', $lucene_query)
         YIELD node, score WHERE score > 0.3
+          {scope_clause}
         WITH node, score, [l IN labels(node) WHERE l <> '__Entity__'][0] AS node_type
         OPTIONAL MATCH (node)-[r]-(connected)
         WITH node, score, node_type, r, connected
@@ -133,7 +138,11 @@ class SearchOpsMixin:
         try:
             results.extend(await self._client.execute_query(
                 graphrag_cypher,
-                {"lucene_query": lucene_query, "max_facts": max_facts},
+                {
+                    "lucene_query": lucene_query,
+                    "max_facts": max_facts,
+                    "scope": scope_kb_ids,
+                },
             ))
         except NEO4J_FAILURE as e:
             logger.debug("GraphRAG entity search failed: %s", e)
@@ -141,6 +150,7 @@ class SearchOpsMixin:
         wiki_cypher = f"""
         CALL db.index.fulltext.queryNodes('{self._FULLTEXT_INDEX}', $lucene_query)
         YIELD node, score WHERE score > 0.5
+          {scope_clause}
         WITH node, score, labels(node)[0] AS node_type
         OPTIONAL MATCH (node)-[r]-(connected)
         WHERE type(r) IN $rel_whitelist
@@ -160,6 +170,7 @@ class SearchOpsMixin:
                     "lucene_query": lucene_query,
                     "max_facts": max_facts,
                     "rel_whitelist": self._FACT_RELATION_WHITELIST,
+                    "scope": scope_kb_ids,
                 },
             ))
         except NEO4J_FAILURE as e:

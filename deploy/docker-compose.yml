@@ -26,7 +26,9 @@ services:
       - qdrant_data:/qdrant/storage
       - ./config/qdrant/config.yaml:/qdrant/config/production.yaml
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      # Qdrant 1.13 컨테이너에 curl 부재 — bash /dev/tcp 로 포트 확인.
+      # (적용은 컨테이너 재생성 시점에 반영; 운영 중 인제스트 보호 위해 즉시 재적용 금지)
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

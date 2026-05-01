@@ -123,6 +123,9 @@ class DistillDefaults(BaseModel):
     min_training_samples: int = 200
     eval_threshold: EvalThreshold = Field(default_factory=EvalThreshold)
     training_backend: str = "local"  # local | sagemaker
+    # 직전 deployed 빌드 대비 faithfulness 회귀 허용 폭. 더 떨어지면 fail-closed
+    # (force_deploy 로 우회 가능). 0.05 = 5% 점수 하락까지 OK.
+    max_regression_delta: float = Field(0.05, ge=0.0, le=1.0)
 
 
 class DistillProfile(BaseModel):

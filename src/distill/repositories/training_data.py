@@ -42,6 +42,7 @@ class DistillTrainingDataRepository:
                     augmentation_verified=entry.get("augmentation_verified"),
                     augmented_from=entry.get("augmented_from"),
                     generation_batch_id=entry.get("generation_batch_id"),
+                    source_chunk_fp=entry.get("source_chunk_fp"),
                 )
                 for entry in entries
             ]
@@ -238,6 +239,7 @@ class DistillTrainingDataRepository:
             "augmentation_verified": model.augmentation_verified,
             "augmented_from": model.augmented_from,
             "generation_batch_id": model.generation_batch_id,
+            "source_chunk_fp": getattr(model, "source_chunk_fp", None),
             "reviewed_at": model.reviewed_at.isoformat() if model.reviewed_at else None,
             "review_comment": model.review_comment,
         }

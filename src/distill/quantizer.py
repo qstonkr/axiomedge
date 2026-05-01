@@ -260,25 +260,27 @@ class DistillQuantizer:
         """GGUF f16 → 양자화 (Q4_K_M 등).
 
         경로는 ``DISTILL_QUANTIZE_BIN`` env var 를 우선 사용 (SSOT).
+        Binary 미설치 시 RuntimeError — f16 silent fallback 제거:
+        manifest 에는 q4_k_m 으로 기록되는데 실제 14GB f16 이 엣지에 적재되어
+        OOM 사고 발생 가능성이 있어 fail-closed.
         """
         quantize_bin = _resolve_quantize_bin()
-        if quantize_bin:
-            cmd = [quantize_bin, str(input_path), str(output_path), self.quantize_method.upper()]
-            logger.info("Quantizing: %s", " ".join(cmd))
-            _timeout = _w.timeouts.subprocess_convert
+        if not quantize_bin:
+            raise RuntimeError(
+                "llama-quantize not resolved — set DISTILL_QUANTIZE_BIN or run "
+                "`make setup-distill-toolchain`. f16 fallback 제거됨."
+            )
+        cmd = [quantize_bin, str(input_path), str(output_path), self.quantize_method.upper()]
+        logger.info("Quantizing: %s", " ".join(cmd))
+        _timeout = _w.timeouts.subprocess_quantize
+        try:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, timeout=_timeout,
             )
-            if result.returncode != 0:
-                raise RuntimeError(f"Quantization failed: {result.stderr[:200]}")
-        else:
-            # llama-quantize 바이너리 없으면 f16을 그대로 사용. 엣지 배포 품질
-            # 떨어지지만 파이프라인은 진행. 사용자는 로그로 알 수 있음.
-            logger.warning(
-                "llama-quantize not resolved — using f16 as-is. "
-                "Run `make setup-distill-toolchain` and export DISTILL_QUANTIZE_BIN.",
-            )
-            shutil.copy2(str(input_path), str(output_path))
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(f"Quantization timed out after {_timeout}s") from e
+        if result.returncode != 0:
+            raise RuntimeError(f"Quantization failed: {result.stderr[:500]}")
 
     @staticmethod
     def _python_convert_to_gguf(model_path: Path, output_path: Path) -> None:
@@ -319,7 +321,11 @@ raise NotImplementedError('Manual GGUF conversion needed')
         return h.hexdigest()
 
     def validate_gguf(self, gguf_path: str) -> dict:
-        """GGUF 파일 유효성 검증 (로드 + 테스트 추론 + SHA256)."""
+        """GGUF 파일 유효성 검증 — multi-prompt + 빈/degenerate 출력 차단.
+
+        한국어/영어/숫자 3개 프롬프트로 다양성 확인. 어느 하나라도 빈 출력이거나
+        단일 토큰 반복(degenerate) 이면 invalid (손상 모델 차단).
+        """
         from llama_cpp import Llama
 
         path = Path(gguf_path)
@@ -330,26 +336,61 @@ raise NotImplementedError('Manual GGUF conversion needed')
         sha256 = self.compute_sha256(gguf_path)
 
         try:
-            llm = Llama(model_path=gguf_path, n_ctx=128, n_threads=2, verbose=False)
-            # Gemma 3: <end_of_turn> (106) 는 GGUF eos 에 안 들어가서
-            # 명시 차단 필요. edge/server.py 와 동일 방어선.
-            output = llm.create_chat_completion(
-                messages=[{"role": "user", "content": "테스트"}],
-                max_tokens=10,
-                stop=["<end_of_turn>", "<start_of_turn>"],
+            llm = Llama(
+                model_path=gguf_path, n_ctx=512, n_threads=4, verbose=False, seed=42,
             )
-            test_output = output["choices"][0]["message"]["content"]
+            outputs: list[str] = []
+            for prompt in _VALIDATE_PROMPTS:
+                # Gemma 3: <end_of_turn> (106) 는 GGUF eos 에 안 들어가서
+                # 명시 차단 필요. edge/server.py 와 동일 방어선.
+                resp = llm.create_chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=32,
+                    temperature=0.0,
+                    stop=["<end_of_turn>", "<start_of_turn>"],
+                )
+                text = resp["choices"][0]["message"]["content"]
+                _check_inference_output(text, prompt=prompt)
+                outputs.append(text)
             del llm
 
             return {
                 "valid": True,
                 "size_mb": round(size_mb, 1),
                 "sha256": sha256,
-                "test_output": test_output,
+                "test_outputs": outputs,
                 "quantize_method": self.quantize_method,
             }
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except ValueError as e:
+            # _check_inference_output 의 fail-closed
+            return {
+                "valid": False, "error": f"output validation: {e}",
+                "size_mb": round(size_mb, 1), "sha256": sha256,
+            }
+        except (RuntimeError, OSError) as e:
             return {
                 "valid": False, "error": str(e),
                 "size_mb": round(size_mb, 1), "sha256": sha256,
             }
+
+
+_VALIDATE_PROMPTS: tuple[str, ...] = (
+    "다음 질문에 답하세요: 우리 매장 영업시간은?",
+    "Answer briefly: what is GS25?",
+    "숫자만 답하세요: 1+1=",
+)
+
+
+def _check_inference_output(text: str, *, prompt: str) -> None:
+    """validate_gguf 의 출력 검증 — 빈/degenerate 시 ValueError.
+
+    fail-closed: 손상된 GGUF 가 manifest 까지 propagate 되는 것을 차단.
+    edge/server.py 의 /health smoke test 와 같은 정신.
+    """
+    if not text or len(text.strip()) < 2:
+        raise ValueError(f"validate_gguf: empty output for prompt={prompt!r}")
+    stripped = text.strip()
+    if len(set(stripped)) <= 2 and len(stripped) > 5:
+        raise ValueError(
+            f"validate_gguf: degenerate output {stripped!r} for prompt={prompt!r}"
+        )

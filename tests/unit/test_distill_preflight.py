@@ -110,7 +110,8 @@ class TestRoutePreflight:
         repo.get_profile = AsyncMock(return_value={
             "name": "p1", "enabled": True, "base_model": "x", "search_group": "g",
         })
-        repo.create_build = AsyncMock()  # 호출되면 안 됨
+        repo.create_build = AsyncMock()
+        repo.create_build_unique = AsyncMock()  # 호출되면 안 됨
 
         with patch(
             "src.api.routes.distill_builds._get_distill_repo", return_value=repo,
@@ -133,7 +134,7 @@ class TestRoutePreflight:
             _run(_t())
 
         # 빌드 row 가 생성되지 않았는지 (고아 row 방지)
-        repo.create_build.assert_not_called()
+        repo.create_build_unique.assert_not_called()
 
     def test_reset_to_base_blocks_when_toolchain_missing(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -151,7 +152,8 @@ class TestRoutePreflight:
 
         repo = AsyncMock()
         repo.get_profile = AsyncMock(return_value={"name": "p1", "base_model": "x"})
-        repo.create_build = AsyncMock()  # 호출되면 안 됨
+        repo.create_build = AsyncMock()
+        repo.create_build_unique = AsyncMock()  # 호출되면 안 됨
 
         with patch(
             "src.api.routes.distill_builds._get_distill_repo", return_value=repo,
@@ -170,7 +172,7 @@ class TestRoutePreflight:
                     assert "toolchain" in resp.json()["detail"].lower()
             _run(_t())
 
-        repo.create_build.assert_not_called()
+        repo.create_build_unique.assert_not_called()
 
     def test_trigger_build_skips_preflight_when_no_quantize(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -191,6 +193,7 @@ class TestRoutePreflight:
             "name": "p1", "enabled": True, "base_model": "x", "search_group": "g",
         })
         repo.create_build = AsyncMock()
+        repo.create_build_unique = AsyncMock()
         distill_service = AsyncMock()
         distill_service.run_pipeline = AsyncMock()
 
@@ -213,4 +216,4 @@ class TestRoutePreflight:
             _run(_t())
 
         # quantize 안 들어간 steps → preflight 건너뛰고 정상 진행
-        repo.create_build.assert_called_once()
+        repo.create_build_unique.assert_called_once()

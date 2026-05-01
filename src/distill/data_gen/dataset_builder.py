@@ -29,7 +29,12 @@ class DatasetBuilder:
     async def merge_and_deduplicate(
         self, *data_sources: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """여러 소스의 QA 데이터를 병합하고 중복 제거."""
+        """여러 소스의 QA 데이터를 병합하고 전역 dedup (MinHash LSH).
+
+        이전: ``seen_questions.values()[-200:]`` 슬라이싱으로 마지막 200개만
+        비교 — 멀리 떨어진 paraphrase 가 train/eval 양쪽에 들어가서 데이터
+        누수 발생. 새 GlobalDeduper 는 전 데이터 LSH 검사.
+        """
         merged: list[dict[str, Any]] = []
         for source in data_sources:
             merged.extend(source)
@@ -37,23 +42,16 @@ class DatasetBuilder:
         if not merged:
             return merged
 
+        deduper = GlobalDeduper(threshold=0.85)
         unique: list[dict[str, Any]] = []
-        seen_questions: dict[str, str] = {}  # normalized → original
-
         for qa in merged:
-            q = qa["question"]
-            # 빠른 사전 필터: 정규화된 키워드로 후보군 축소
-            q_sorted = " ".join(sorted(q.split()))
-            if q_sorted in seen_questions:
-                continue
-            # 후보가 많으면 최근 200개만 비교 (O(n) → O(min(n,200)))
-            candidates = list(seen_questions.values())[-200:]
-            is_dup = any(fuzz.token_sort_ratio(q, seen) > 85 for seen in candidates)
-            if not is_dup:
+            if deduper.add({
+                "question": qa.get("question", ""),
+                "answer": qa.get("answer", ""),
+            }):
                 unique.append(qa)
-                seen_questions[q_sorted] = q
 
-        logger.info("Deduplicated: %d → %d QA pairs", len(merged), len(unique))
+        logger.info("Deduplicated (LSH): %d → %d QA pairs", len(merged), len(unique))
         return unique
 
     async def augment_questions(

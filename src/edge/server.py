@@ -113,11 +113,15 @@ def _sync_log_query(entry: dict) -> None:
 
 async def _log_query(query: str, answer: str, latency_ms: int, success: bool) -> None:
     import asyncio
+
+    from src.edge.pii import mask_pii
+
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "store_id": STORE_ID,
-        "query": query,
-        "answer": answer,
+        # PII 평문 저장 방지 — 전화/카드/이메일/주민번호 패턴 마스킹.
+        "query": mask_pii(query),
+        "answer": mask_pii(answer),
         "latency_ms": latency_ms,
         "success": success,
         "model_version": _get_cached_version(),

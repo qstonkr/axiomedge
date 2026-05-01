@@ -79,9 +79,16 @@ class SimilarityThresholds:
     fallback_review: float = 0.60
 
     # L2 RRF fusion weights
-    rrf_edit_weight: float = 0.25
-    rrf_sparse_weight: float = 0.25
-    rrf_dense_weight: float = 0.50
+    # "폐기 vs 폐점" 유사 단어 혼동 완화 — 1글자 차이 한국어 단어는 lexical
+    # (edit + sparse) 가 명확히 구분하지만 dense 임베딩은 의미적 근접으로 혼동.
+    # lexical 합산을 0.50 → 0.60 으로 강화하고 dense 비중을 0.50 → 0.40 으로 점진 감소.
+    # (운영 RAG 평가 점수와 비교하며 필요 시 추가 조정)
+    # 효과:
+    #   - 폐기/폐점, 폐쇄/폐기, 인쇄/인사 등 1-2 글자 차이 단어 정확도 ↑
+    #   - 의미 유사 패러프레이징 (예: "정산" ≈ "결제") 영향 최소화
+    rrf_edit_weight: float = 0.30
+    rrf_sparse_weight: float = 0.30
+    rrf_dense_weight: float = 0.40
     rrf_k: int = 60
 
     # L2 RapidFuzz

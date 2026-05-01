@@ -7,6 +7,9 @@ import logging
 import re
 import time
 from typing import Any, TYPE_CHECKING
+
+import httpx
+
 from src.config.weights import weights as _w
 
 if TYPE_CHECKING:
@@ -554,8 +557,6 @@ async def _inject_graph_docs(
     all_chunks: list[dict[str, Any]],
 ) -> None:
     """Inject graph-found documents into chunks via Qdrant scroll."""
-    import httpx
-
     async with httpx.AsyncClient(timeout=_w.timeouts.httpx_search_scroll) as qc:
         for doc_name in list(new_docs)[:5]:
             for coll in collections:
@@ -563,6 +564,9 @@ async def _inject_graph_docs(
                     await _inject_single_doc(
                         qc, doc_name, coll, qdrant_url, display_query, all_chunks,
                     )
+                except httpx.HTTPError as e:
+                    # Qdrant scroll timeout/network — graceful skip per (doc, coll) pair
+                    logger.debug("Graph chunk injection httpx error: %s", e)
                 except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                     logger.debug("Graph chunk injection failed: %s", e)
 
@@ -575,7 +579,6 @@ async def graph_expansion(
     qdrant_url: str,
 ) -> list[dict[str, Any]]:
     """Enrich results with structurally related content from Neo4j graph."""
-    import asyncio
     import unicodedata as _uc
 
     try:
@@ -609,11 +612,23 @@ async def graph_expansion(
             len(existing_docs), len(new_docs), list(new_docs)[:3],
         )
         if new_docs:
-            await _inject_graph_docs(new_docs, collections, qdrant_url, display_query, all_chunks)
+            try:
+                await asyncio.wait_for(
+                    _inject_graph_docs(
+                        new_docs, collections, qdrant_url, display_query, all_chunks,
+                    ),
+                    timeout=5.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Graph injection timed out (5s), continuing with partial results",
+                )
 
         all_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
     except asyncio.TimeoutError:
         logger.warning("Graph expansion timed out (5s), skipping")
+    except httpx.HTTPError as e:
+        logger.warning("Graph expansion httpx error: %s", e)
     except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
         logger.warning("Graph expansion failed in search route: %s", e)
 
