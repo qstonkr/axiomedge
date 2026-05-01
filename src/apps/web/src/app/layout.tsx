@@ -13,7 +13,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className="h-full antialiased">
+    // suppressHydrationWarning: <head> 의 인라인 스크립트가 React hydrate 전에
+    // ``document.documentElement.dataset.theme`` 를 set 해서 server HTML 과
+    // client HTML 사이 ``data-theme`` 속성 불일치가 의도적으로 발생.
+    // 이 1-element-level 차이는 우리가 의도한 동작 (theme flash 방지) 이므로
+    // suppress. https://nextjs.org/docs/messages/react-hydration-error
+    <html lang="ko" className="h-full antialiased" suppressHydrationWarning>
       <head>
         {/* Pretendard via CDN — Korean-first webfont. The variable build covers
             the full weight range with a single file. Falls back to system
