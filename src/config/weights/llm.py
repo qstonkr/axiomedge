@@ -59,7 +59,11 @@ class TimeoutConfig:
     neo4j_batch: int = 5000
 
     # Ollama
-    ollama_llm: float = 120.0
+    # ollama_llm: tree expansion 이 정상 작동하면 LLM context 가 커져 (~34 chunks)
+    # local exaone3.5:7.8b prefill 이 길어진다. BFF undici headersTimeout(300s) 안에
+    # 안전하게 들어가도록 240s 로 잡는다 — 이를 넘기면 chunk capping 또는 streaming
+    # 으로 대응해야 한다.
+    ollama_llm: float = 240.0
     ollama_embedding: float = 60.0
 
     # API / Dashboard

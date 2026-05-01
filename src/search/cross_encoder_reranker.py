@@ -106,6 +106,27 @@ def _load_model_sync() -> None:
         requests.Session.get = _orig_get  # type: ignore
         requests.Session.post = _orig_post  # type: ignore
         logger.info("Cross-encoder loaded: %s", CROSS_ENCODER_MODEL)
+
+        # Real warmup — MPS 커널 JIT compile 을 startup 단계에서 끝낸다. 이게 없으면
+        # 첫 user query 가 cold-start 페널티(수십 초~수 분)를 떠안는다. 운영 batch
+        # 크기와 동일한 shape 으로 한 번 돌려야 의미 있는 JIT 캐시가 만들어진다.
+        try:
+            import time as _time
+            _t0 = _time.monotonic()
+            _warm_pairs = [["warmup query", "warmup passage " * 32]] * CROSS_ENCODER_BATCH_SIZE
+            _model.predict(
+                _warm_pairs,
+                batch_size=CROSS_ENCODER_BATCH_SIZE,
+                show_progress_bar=False,
+            )
+            logger.info(
+                "Cross-encoder warmup predict done in %.2fs (batch=%d, max_len=%d)",
+                _time.monotonic() - _t0,
+                CROSS_ENCODER_BATCH_SIZE,
+                CROSS_ENCODER_MAX_LENGTH,
+            )
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            logger.warning("Cross-encoder warmup predict skipped: %s", e)
     except (OSError, ImportError, RuntimeError) as e:
         logger.warning("Cross-encoder load failed (graceful degradation): %s", e)
         _model = None
