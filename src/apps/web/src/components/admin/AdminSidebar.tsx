@@ -20,7 +20,7 @@ export function AdminSidebar() {
 
   return (
     <aside
-      className="hidden w-60 shrink-0 self-stretch overflow-y-auto bg-admin-sidebar-bg px-3 py-4 text-admin-sidebar-fg md:block"
+      className="hidden w-60 shrink-0 self-stretch overflow-y-auto bg-admin-sidebar-bg px-3 py-4 text-admin-sidebar-fg lg:block"
       style={{ borderRight: "1px solid var(--color-admin-sidebar-border)" }}
     >
       <Link

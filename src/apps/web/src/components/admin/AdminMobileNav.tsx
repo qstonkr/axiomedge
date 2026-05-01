@@ -10,11 +10,12 @@ import { cn } from "@/components/ui/cn";
 import { groupAdminNav } from "./nav";
 
 /**
- * Admin mobile slide-out — md 미만 화면 진입점 (B-2 follow-up).
+ * Admin mobile/tablet slide-out — lg 미만 화면 진입점 (B-2 follow-up).
  *
- * 데스크탑 AdminSidebar 가 ``hidden md:block`` 라 모바일에서는 사이드바 자체가
- * 보이지 않아 페이지 간 이동 불가. AdminHeader 에 햄버거 trigger 를 두고 클릭
- * 시 좌측 슬라이드 패널이 열리며 5 그룹 nav 노출.
+ * 데스크탑 AdminSidebar 가 ``hidden lg:block`` 라 모바일/태블릿에서는 사이드바
+ * 가 보이지 않아 페이지 간 이동 불가. AdminHeader 에 햄버거 trigger 를 두고
+ * 클릭 시 좌측 슬라이드 패널이 열리며 5 그룹 nav 노출. md(768) 에서 보였던
+ * 사이드바가 컨텐츠를 압박해 한글 어절이 글자 단위로 깨졌던 문제 해소용.
  *
  * Sidebar 와 동일한 dark slate 배경 + teal accent 유지. focus trap + Esc + 외부 클릭 닫기.
  */
@@ -79,7 +80,7 @@ export function AdminMobileNav() {
         aria-label="관리자 메뉴 열기"
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-fg-default transition-colors hover:bg-bg-muted md:hidden"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-fg-default transition-colors hover:bg-bg-muted lg:hidden"
       >
         <Menu size={20} strokeWidth={1.75} aria-hidden />
       </button>
@@ -89,14 +90,14 @@ export function AdminMobileNav() {
           <div
             aria-hidden
             onClick={() => setOpen(false)}
-            className="fixed inset-0 z-40 bg-fg-default/40 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-40 bg-fg-default/40 backdrop-blur-sm lg:hidden"
           />
           <aside
             ref={panelRef}
             role="dialog"
             aria-label="관리자 메뉴"
             aria-modal="true"
-            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-y-auto bg-admin-sidebar-bg px-3 py-4 text-admin-sidebar-fg shadow-lg md:hidden"
+            className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-y-auto bg-admin-sidebar-bg px-3 py-4 text-admin-sidebar-fg shadow-lg lg:hidden"
             style={{ borderRight: "1px solid var(--color-admin-sidebar-border)" }}
           >
             <div className="mb-4 flex items-center justify-between px-1">

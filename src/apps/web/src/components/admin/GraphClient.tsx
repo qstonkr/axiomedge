@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Network, Search } from "lucide-react";
 
 import {
   Button,
@@ -202,8 +202,9 @@ export function GraphClient() {
                 {selected && (
                   <article className="space-y-3">
                     <header className="flex items-center justify-between gap-3">
-                      <h2 className="text-sm font-medium text-fg-default">
-                        🕸️ {selected.entity_name} — 1-hop 이웃 그래프
+                      <h2 className="inline-flex items-center gap-1.5 text-sm font-medium text-fg-default">
+                        <Network size={14} strokeWidth={1.75} aria-hidden />
+                        {selected.entity_name} — 1-hop 이웃 그래프
                       </h2>
                       <Button
                         size="sm"
@@ -335,8 +336,9 @@ function ExpertSearchPanel() {
             />
           )}
           {experts.data?.error && (
-            <p className="rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs text-warning-default">
-              ⚠️ {experts.data.error}
+            <p className="inline-flex items-center gap-1 rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs text-warning-default">
+              <AlertTriangle size={12} strokeWidth={1.75} aria-hidden />
+              {experts.data.error}
             </p>
           )}
         </article>
@@ -434,10 +436,15 @@ function IntegrityPanel() {
           )}
 
           {issues.length === 0 ? (
-            <p className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-6 text-center text-xs text-fg-muted">
-              {data?.status === "ok"
-                ? "✅ 그래프가 깨끗합니다 — issue 없음."
-                : "issue 데이터가 비어있습니다 — 위쪽 점검 버튼으로 실행하세요."}
+            <p className="inline-flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-6 text-center text-xs text-fg-muted">
+              {data?.status === "ok" ? (
+                <>
+                  <CheckCircle2 size={14} strokeWidth={1.75} aria-hidden className="text-success-default" />
+                  그래프가 깨끗합니다 — issue 없음.
+                </>
+              ) : (
+                "issue 데이터가 비어있습니다 — 위쪽 점검 버튼으로 실행하세요."
+              )}
             </p>
           ) : (
             <ul className="space-y-2">

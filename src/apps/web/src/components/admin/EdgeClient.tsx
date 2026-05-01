@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Check, Settings, X } from "lucide-react";
 
 import {
   Badge,
@@ -976,8 +977,9 @@ function BuildsTab() {
                         loss {b.train_loss?.toFixed(4) ?? "—"}
                       </p>
                     </div>
-                    <span className="animate-pulse rounded-full bg-warning-default/20 px-2.5 py-1 text-xs font-medium text-warning-default">
-                      ⚙️ {b.status}
+                    <span className="inline-flex animate-pulse items-center gap-1 rounded-full bg-warning-default/20 px-2.5 py-1 text-xs font-medium text-warning-default">
+                      <Settings size={12} strokeWidth={1.75} aria-hidden />
+                      {b.status}
                     </span>
                   </div>
                 </li>
@@ -1160,18 +1162,20 @@ function TrainingDataReviewTable({ profileName }: { profileName: string }) {
           <Button
             size="sm"
             variant="ghost"
+            leftIcon={<Check size={14} strokeWidth={1.75} aria-hidden />}
             onClick={() => onReview("approved")}
             disabled={selected.size === 0 || review.isPending}
           >
-            ✅ 승인
+            승인
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            leftIcon={<X size={14} strokeWidth={1.75} aria-hidden />}
             onClick={() => onReview("rejected")}
             disabled={selected.size === 0 || review.isPending}
           >
-            ❌ 거부
+            거부
           </Button>
         </div>
       </header>

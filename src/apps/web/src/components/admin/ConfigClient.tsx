@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AlertTriangle, Check, Pencil, RotateCcw, X } from "lucide-react";
 
 import {
   Button,
@@ -114,7 +115,14 @@ function EditableRow({
             className="h-4 w-4 accent-accent-default"
           />
         ) : (
-          <span className="text-fg-default">{cur ? "✅ true" : "❌ false"}</span>
+          <span className="inline-flex items-center gap-1 text-fg-default">
+            {cur ? (
+              <Check size={14} strokeWidth={2} aria-hidden className="text-success-default" />
+            ) : (
+              <X size={14} strokeWidth={2} aria-hidden className="text-fg-subtle" />
+            )}
+            {cur ? "true" : "false"}
+          </span>
         )
       ) : editMode ? (
         <Input
@@ -216,8 +224,12 @@ export function ConfigClient() {
             {showRaw ? "슬라이더 보기" : "원본 JSON 보기"}
           </Button>
           {!editMode ? (
-            <Button size="sm" onClick={() => setEditMode(true)}>
-              ✏️ 수정
+            <Button
+              size="sm"
+              leftIcon={<Pencil size={14} strokeWidth={1.75} aria-hidden />}
+              onClick={() => setEditMode(true)}
+            >
+              수정
             </Button>
           ) : (
             <>
@@ -241,11 +253,12 @@ export function ConfigClient() {
               <Button
                 size="sm"
                 variant="ghost"
+                leftIcon={<RotateCcw size={14} strokeWidth={1.75} aria-hidden />}
                 onClick={onReset}
                 disabled={reset.isPending}
                 title="default 로 전체 리셋"
               >
-                🔄 리셋
+                리셋
               </Button>
               <Button
                 size="sm"
@@ -306,8 +319,9 @@ export function ConfigClient() {
             )}
           </article>
           {staged.size > 0 && (
-            <p className="text-xs text-warning-default">
-              ⚠️ {staged.size}건 변경 대기 중 — 반영 버튼 클릭 시 적용됩니다.
+            <p className="inline-flex items-center gap-1 text-xs text-warning-default">
+              <AlertTriangle size={12} strokeWidth={1.75} aria-hidden />
+              {staged.size}건 변경 대기 중 — 반영 버튼 클릭 시 적용됩니다.
             </p>
           )}
         </>

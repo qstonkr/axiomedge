@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-
-
+import { AlertTriangle, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
 
 import {
   Button,
@@ -166,8 +165,12 @@ export function DataSourcesClient() {
       header: "토큰",
       render: (s) =>
         s.has_secret ? (
-          <span className="text-success-default" title="SecretBox 에 토큰 저장됨">
-            🔐
+          <span
+            className="inline-flex items-center text-success-default"
+            title="SecretBox 에 토큰 저장됨"
+            aria-label="토큰 저장됨"
+          >
+            <Lock size={14} strokeWidth={1.75} aria-hidden />
           </span>
         ) : (
           <span className="text-fg-subtle" title="토큰 미설정 — connector 가 401">
@@ -238,13 +241,18 @@ export function DataSourcesClient() {
           <Button
             variant="ghost"
             size="sm"
+            leftIcon={<KeyRound size={14} strokeWidth={1.75} aria-hidden />}
             onClick={() => setSharedTokensOpen(true)}
             title="Slack 같은 organization-wide bot 토큰 관리"
           >
-            🤝 공유 토큰
+            공유 토큰
           </Button>
-          <Button size="sm" onClick={() => setCatalogOpen(true)}>
-            + 신규 소스
+          <Button
+            size="sm"
+            leftIcon={<Plus size={14} strokeWidth={1.75} aria-hidden />}
+            onClick={() => setCatalogOpen(true)}
+          >
+            신규 소스
           </Button>
         </div>
       </header>
@@ -476,15 +484,17 @@ function DataSourceFormDialog({
             }
             className="font-mono text-xs"
           />
-          <span className="text-[10px] text-fg-subtle">
-            ⚠️ token / PAT / password 는 절대 여기에 넣지 마세요 — 아래 전용 입력 사용.
+          <span className="inline-flex items-start gap-1 text-[10px] text-fg-subtle">
+            <AlertTriangle size={12} strokeWidth={1.75} aria-hidden className="mt-0.5 shrink-0" />
+            <span>token / PAT / password 는 절대 여기에 넣지 마세요 — 아래 전용 입력 사용.</span>
           </span>
         </label>
 
         {/* Per-source secret (PAT / auth_token) — SecretBox 로 분리 저장 */}
         <fieldset className="space-y-2 rounded-md border border-warning-default/30 bg-warning-subtle/40 p-3">
-          <legend className="px-1 text-xs font-semibold text-warning-default">
-            🔐 인증 토큰
+          <legend className="inline-flex items-center gap-1 px-1 text-xs font-semibold text-warning-default">
+            <Lock size={12} strokeWidth={1.75} aria-hidden />
+            인증 토큰
           </legend>
           <p className="text-[11px] text-fg-muted">
             Confluence PAT / Git auth_token 등 — 입력한 값은 즉시 암호화되어
@@ -517,8 +527,9 @@ function DataSourceFormDialog({
                 }}
                 className="h-3.5 w-3.5 accent-danger-default"
               />
-              <span className="text-danger-default">
-                🗑️ 저장된 토큰 삭제 (저장 시 SecretBox 에서 제거)
+              <span className="inline-flex items-center gap-1 text-danger-default">
+                <Trash2 size={12} strokeWidth={1.75} aria-hidden />
+                저장된 토큰 삭제 (저장 시 SecretBox 에서 제거)
               </span>
             </label>
           )}

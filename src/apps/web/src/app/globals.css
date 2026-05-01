@@ -219,6 +219,10 @@ body {
   /* Slight letter-spacing pull-in for tabular Korean — sans-serif feels too
      loose at the default at small sizes. */
   letter-spacing: -0.005em;
+  /* 한글은 단어 단위로 분리되지 않아 기본 break-word 가 글자 중간을 깨뜨림.
+     keep-all 로 어절(공백) 단위만 줄바꿈, 긴 영문/URL 은 anywhere 로 fallback. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 /* Make the default focus ring match the accent. */

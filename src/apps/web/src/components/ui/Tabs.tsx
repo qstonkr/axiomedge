@@ -32,7 +32,10 @@ export function Tabs({
 
   return (
     <div className={cn("space-y-4", className)}>
-      <div role="tablist" className="flex border-b border-border-default">
+      <div
+        role="tablist"
+        className="flex overflow-x-auto border-b border-border-default scrollbar-thin"
+      >
         {items.map((tab, idx) => {
           const selected = tab.id === active;
           const tabId = `${baseId}-${tab.id}-tab`;
@@ -49,7 +52,7 @@ export function Tabs({
               onClick={() => setActive(tab.id)}
               onKeyDown={(e) => onKey(e, idx)}
               className={cn(
-                "px-4 py-2 text-sm transition-colors",
+                "shrink-0 whitespace-nowrap px-4 py-2 text-sm transition-colors",
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-default focus-visible:outline-offset-2",
                 selected
                   ? "border-b-2 border-accent-default font-medium text-fg-default"

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2, RotateCcw, Settings, XCircle } from "lucide-react";
 
 import {
   Button,
@@ -164,11 +165,19 @@ export function JobsClient() {
           <Button
             size="sm"
             variant="ghost"
+            leftIcon={
+              <RotateCcw
+                size={14}
+                strokeWidth={1.75}
+                aria-hidden
+                className={isFetching ? "animate-spin" : undefined}
+              />
+            }
             onClick={() => refetch()}
             disabled={isFetching}
             title="지금 한 번 새로고침"
           >
-            🔄 {isFetching ? "갱신 중…" : "새로고침"}
+            {isFetching ? "갱신 중…" : "새로고침"}
           </Button>
           <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-border-default px-2.5 py-1 text-fg-muted">
             <input
@@ -283,8 +292,14 @@ function RunDetailPanel({
                   key={`${log.step ?? "?"}-${idx}`}
                   className="grid grid-cols-[20px_140px_minmax(0,1fr)] items-start gap-3 text-xs"
                 >
-                  <span aria-hidden className="-ml-[26px] text-base">
-                    {log.status === "completed" ? "✅" : log.status === "failed" ? "❌" : "⚙️"}
+                  <span aria-hidden className="-ml-[26px] inline-flex h-5 items-center">
+                    {log.status === "completed" ? (
+                      <CheckCircle2 size={16} strokeWidth={1.75} className="text-success-default" />
+                    ) : log.status === "failed" ? (
+                      <XCircle size={16} strokeWidth={1.75} className="text-danger-default" />
+                    ) : (
+                      <Settings size={16} strokeWidth={1.75} className="text-warning-default" />
+                    )}
                   </span>
                   <span className="font-mono text-fg-muted">
                     {log.timestamp?.slice(0, 19).replace("T", " ") ?? "—"}

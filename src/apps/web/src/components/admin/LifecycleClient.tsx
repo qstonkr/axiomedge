@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AlertTriangle } from "lucide-react";
 
 import { ErrorFallback, Select, Skeleton } from "@/components/ui";
 import { useKbLifecycle } from "@/hooks/admin/useLifecycle";
@@ -170,10 +171,13 @@ export function LifecycleClient() {
             </header>
             {(lifecycle.data?.scheduled_archive ?? []).length > 0 ? (
               <>
-                <p className="rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs text-warning-default">
-                  ⚠️ 아래 문서들은 신선도 (last update) 기준으로 자동 아카이브
-                  예정입니다. 게시 유지가 필요하면 lifecycle service 의
-                  유효 기간을 갱신하세요.
+                <p className="inline-flex items-start gap-1.5 rounded-md border border-warning-default/30 bg-warning-subtle px-3 py-2 text-xs text-warning-default">
+                  <AlertTriangle size={12} strokeWidth={1.75} aria-hidden className="mt-0.5 shrink-0" />
+                  <span>
+                    아래 문서들은 신선도 (last update) 기준으로 자동 아카이브
+                    예정입니다. 게시 유지가 필요하면 lifecycle service 의
+                    유효 기간을 갱신하세요.
+                  </span>
                 </p>
                 <DataTable
                   columns={scheduledColumns}
