@@ -26,13 +26,35 @@ def _is_port_open(host: str, port: int, timeout: float = 0.3) -> bool:
         return False
 
 
+@pytest.fixture(scope="session")
+def api_available() -> bool:
+    """Session-cached check: is the API server reachable at TEST_API_URL?
+
+    CI 는 보통 외부 서비스(Ollama/embedding 등) 의존으로 API 를 띄울 수 없으므로
+    api fixture 사용 테스트는 자동 skip. 로컬에서 ``make api`` 띄운 상태면 동작.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(API_URL)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    return _is_port_open(host, port)
+
+
 @pytest.fixture
 def api_url():
     return API_URL
 
 
 @pytest.fixture
-def api():
+def api(api_available):
+    """HTTP client for live API. Auto-skips when API server isn't reachable
+    (e.g. CI without a running uvicorn). Local dev: ``make api`` 후 그대로 동작.
+    """
+    if not api_available:
+        pytest.skip(
+            f"API server not reachable at {API_URL} — start it with "
+            "`make api` or set TEST_API_URL.",
+        )
     with httpx.Client(base_url=API_URL, timeout=30) as client:
         yield client
 
