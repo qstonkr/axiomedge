@@ -1,6 +1,6 @@
 """distill: force_deploy column + source_chunk_fp column.
 
-Revision ID: 0014_distill_force_deploy_and_chunk_fp
+Revision ID: 0014_distill_force_chunk
 Revises: 0013_failure_doc_id_widen
 Create Date: 2026-05-01
 
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0014_distill_force_deploy_and_chunk_fp"
+revision = "0014_distill_force_chunk"
 down_revision = "0013_failure_doc_id_widen"
 branch_labels = None
 depends_on = None
