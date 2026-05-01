@@ -765,18 +765,38 @@ class DistillService:
         model_path: str, data_path: str, repo: DistillRepository,
         *, gguf_path: str | None = None,
     ) -> bool:
-        """모델 평가 + 배포 게이트.
+        """모델 평가 + 배포 게이트 — fail-closed.
 
-        GGUF가 있으면 DistillEvaluator로 Teacher judge + 임베딩 유사도 평가.
-        llama_cpp 미설치 시 train_loss 기반 fallback 게이트.
+        데이터 부재 / 평가 실패 / GGUF 미적재 모두 fail-closed (return False).
+        ``build.force_deploy=True`` 일 때만 우회 (경고 로그).
+
+        train_loss<2.0 fallback 제거 — Reformatter 적용 후 손실 분포가
+        다르므로 의미 없음. 평가 실패는 명시적으로 fail.
         """
-        # eval set 로드 (train.jsonl에서 마지막 10% 사용)
-        eval_data = []
+        build = await repo.get_build(build_id) or {}
+        force_deploy = bool(build.get("force_deploy", False))
+
+        def _gate_fail(reason: str) -> bool:
+            if force_deploy:
+                logger.warning("Eval gate FAIL — force_deploy=True 로 우회: %s", reason)
+                return True
+            logger.error("Eval gate FAIL (fail-closed): %s", reason)
+            return False
+
+        # 1. data 파일 부재 → fail-closed
+        if not Path(data_path).exists():
+            return _gate_fail(f"eval data file not found: {data_path}")
+
+        # 2. eval set 로드 (train.jsonl 마지막 10%)
         with open(data_path, encoding="utf-8") as f:
             lines = f.readlines()
         eval_lines = lines[int(len(lines) * 0.9):]
+        eval_data: list[dict] = []
         for line in eval_lines:
-            entry = json.loads(line)
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             msgs = entry.get("messages", [])
             if len(msgs) >= 2:
                 eval_data.append({
@@ -785,45 +805,44 @@ class DistillService:
                 })
 
         if not eval_data:
-            logger.warning("No eval data, skipping evaluation")
-            return True
+            return _gate_fail("eval_data is empty after parsing train.jsonl")
 
-        # GGUF 기반 실 평가 시도
-        if gguf_path and self.llm and self.embedder:
-            try:
-                from src.distill.evaluator import DistillEvaluator
+        # 3. GGUF 평가 prerequisites 검증 → fail-closed
+        if not (gguf_path and self.llm and self.embedder):
+            return _gate_fail(
+                f"GGUF eval prerequisites missing: "
+                f"gguf={bool(gguf_path)} llm={bool(self.llm)} embedder={bool(self.embedder)}"
+            )
 
-                evaluator = DistillEvaluator(self.llm, self.embedder)
-                threshold = getattr(profile.training, "eval_threshold", None)
-                result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+        # 4. GGUF 평가 실행
+        try:
+            from src.distill.evaluator import DistillEvaluator
 
-                await repo.update_build(
-                    build_id,
-                    eval_passed=result.passed,
-                    eval_faithfulness=result.faithfulness,
-                    eval_relevancy=result.relevancy,
-                )
-                logger.info(
-                    "GGUF evaluation: passed=%s, faithfulness=%.3f, relevancy=%.3f",
-                    result.passed, result.faithfulness, result.relevancy,
-                )
-                return result.passed
-            except ImportError:
-                logger.warning("llama_cpp not available, falling back to train_loss gate")
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-                logger.warning("GGUF evaluation failed, falling back to train_loss gate: %s", e)
+            evaluator = DistillEvaluator(self.llm, self.embedder)
+            threshold = getattr(profile.training, "eval_threshold", None)
+            result = await evaluator.evaluate(gguf_path, eval_data, threshold)
+        except ImportError as e:
+            return _gate_fail(f"llama_cpp not available: {e}")
+        except (RuntimeError, OSError, ValueError) as e:
+            return _gate_fail(f"GGUF evaluation raised: {e}")
 
-        # Fallback: train_loss 기반 게이트
-        build = await repo.get_build(build_id)
-        train_loss = build.get("train_loss", 999)
-        passed = train_loss < 2.0
         await repo.update_build(
             build_id,
-            eval_passed=passed,
-            eval_faithfulness=0.0,
-            eval_relevancy=0.0,
+            eval_passed=result.passed,
+            eval_faithfulness=result.faithfulness,
+            eval_relevancy=result.relevancy,
         )
-        return passed
+        logger.info(
+            "GGUF evaluation: passed=%s, faithfulness=%.3f, relevancy=%.3f",
+            result.passed, result.faithfulness, result.relevancy,
+        )
+
+        if not result.passed:
+            return _gate_fail(
+                f"eval failed: faithfulness={result.faithfulness:.3f} "
+                f"relevancy={result.relevancy:.3f}"
+            )
+        return True
 
     async def _download_gguf_from_s3(
         self, build_id: str, profile: DistillProfile, build_dir: Path,
