@@ -154,10 +154,15 @@ class TermExtractor:
         glossary_repo: Any | None = None,
         min_occurrences: int | None = None,
         embedder: Any | None = None,
+        matcher: Any | None = None,
     ) -> None:
         self._glossary_repo = glossary_repo
         self._min_occurrences = min_occurrences or self.MIN_OCCURRENCES
         self._embedder = embedder  # For dense similarity check vs approved terms
+        # Standard Words Foundation §7.8 wire-in — EnhancedSimilarityMatcher 가
+        # 주입되면 추출된 candidates 를 표준 풀과 비교해 AUTO_MATCH 인 것 제외.
+        # 매처는 lifespan 에서 빌드된 singleton 권장 (load_standard_terms 한 번).
+        self._matcher = matcher
         self._kiwi = None
         self._kiwi_available: bool | None = None  # None = not checked yet
         self._approved_vecs_cache: Any | None = None  # numpy array cache
@@ -235,12 +240,50 @@ class TermExtractor:
         if self._embedder and self._glossary_repo and candidates:
             candidates = await self._filter_by_dense_similarity(candidates, kb_id)
 
+        # §7.8 wire-in — 매처 주입 시 표준 풀 기반 dedup (AUTO_MATCH zone 제외)
+        if self._matcher is not None and candidates:
+            candidates = await self._filter_by_matcher(candidates, kb_id)
+
         logger.info(
             "Term extraction (%s): %d candidates from %d chunks (kb_id=%s)",
             "kiwi" if use_kiwi else "regex",
             len(candidates), len(chunks), kb_id,
         )
         return candidates
+
+    async def _filter_by_matcher(
+        self,
+        candidates: list[ExtractedTerm],
+        kb_id: str,
+    ) -> list[ExtractedTerm]:
+        """매처 batch 매칭으로 AUTO_MATCH zone candidate 제외.
+
+        EnhancedSimilarityMatcher 가 표준 풀 (status='approved', source='gsr_standard')
+        과 비교해 zone 결정. AUTO_MATCH 는 표준에 이미 존재하므로 새 pending 으로
+        등록 불필요. REVIEW / NEW_TERM 은 그대로 통과 (사용자 검토 후 결정).
+        """
+        try:
+            self._matcher.set_kb_context(kb_id)
+            decisions = await self._matcher.match_batch(
+                candidates, disable_cross_encoder=False,
+            )
+            kept: list[ExtractedTerm] = []
+            skipped = 0
+            for cand, decision in zip(candidates, decisions):
+                if decision.zone == "AUTO_MATCH":
+                    skipped += 1
+                    continue
+                kept.append(cand)
+            if skipped:
+                logger.info(
+                    "Matcher dedup: %d/%d candidates dropped (AUTO_MATCH vs standards)",
+                    skipped, len(candidates),
+                )
+            return kept
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            # fail-soft: 매처 호출 실패 → 기존 candidates 그대로 반환 (영향 X)
+            logger.warning("Matcher dedup failed (best-effort): %s", e)
+            return candidates
 
     @staticmethod
     def _flush_compound_buffer(
