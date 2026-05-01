@@ -158,15 +158,23 @@ async def generate_test_qa(
     count: int = 50,
     rag_api_url: str = "",
     quality_filter=None,
-    existing_questions: set[str] | None = None,
+    *,
+    existing_questions: set[str],
 ) -> list[dict[str, Any]]:
     """테스트용 QA 쌍 생성 (KB 청크 기반).
+
+    ``existing_questions`` 는 의무 — train QA 와 같은 question 이 test seed
+    로 들어가는 누수 차단. 빈 set 으로라도 호출자가 명시적으로 넘겨야 함.
 
     1. KB 청크를 랜덤 샘플링
     2. Teacher LLM이 청크 내용 보고 질문 생성
     3. Hub Search API로 답변 생성 (검색 + 리랭킹 + 그래프 + LLM)
     4. 답변 품질 확인
     """
+    if existing_questions is None:
+        raise ValueError(
+            "existing_questions is required (train/test 누수 방지) — 빈 set 이라도 명시"
+        )
     import httpx
 
     # Step 1: KB 청크 샘플링
@@ -191,8 +199,8 @@ async def generate_test_qa(
         len(flat_chunks), len(all_chunks),
     )
 
-    # 기존 질문 세트 (중복 방지용)
-    seen_questions = set(existing_questions or set())
+    # 기존 질문 세트 (중복 방지용) — caller 가 train QA fingerprint 를 의무 주입
+    seen_questions = set(existing_questions)
 
     # count보다 많이 샘플링 (중복/필터 탈락 대비)
     sample_size = min(count * 2, len(flat_chunks))

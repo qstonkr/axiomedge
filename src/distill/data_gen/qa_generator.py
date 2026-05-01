@@ -15,6 +15,37 @@ from src.nlp.llm.prompt_safety import safe_user_input
 logger = logging.getLogger(__name__)
 
 
+def _usage_log_row_to_qa(
+    row: tuple, *, min_crag_confidence: float,
+) -> dict[str, Any] | None:
+    """usage_log row → qa dict (또는 skip 시 None).
+
+    ``kb_id`` 는 ctx.kb_id 단일값 보존 — 이전엔 ``",".join(kb_ids[:3])`` 로
+    호출 시점 kb_ids 앞 3개 join 이라 KB 출처 추적 불가능 했음.
+    """
+    query = row[0]
+    try:
+        ctx = json.loads(row[1]) if isinstance(row[1], str) else (row[1] or {})
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(ctx, dict):
+        return None
+    answer = ctx.get("answer", "")
+    if not answer or not query:
+        return None
+    crag_action = ctx.get("crag_action", "")
+    crag_confidence = ctx.get("crag_confidence", 0)
+    if crag_action != "correct" or crag_confidence < min_crag_confidence:
+        return None
+    return {
+        "question": query,
+        "answer": answer,
+        "source_type": "usage_log",
+        "kb_id": str(ctx.get("kb_id") or ""),
+        "crag_confidence": crag_confidence,
+    }
+
+
 class QAGenerator:
     """KB 청크와 usage log에서 QA 쌍 생성."""
 
@@ -150,31 +181,12 @@ class QAGenerator:
         logger.info("Found %d usage logs with answers for group %s", len(rows), group_name)
 
         for row in rows:
-            query = row[0]
-            try:
-                ctx = json.loads(row[1]) if isinstance(row[1], str) else {}
-            except (json.JSONDecodeError, TypeError):
-                continue
-
-            answer = ctx.get("answer", "")
-            if not answer or not query:
-                continue
-
-            # CRAG correct + 고 confidence만 선별
-            crag_action = ctx.get("crag_action", "")
-            crag_confidence = ctx.get("crag_confidence", 0)
-
-            if crag_action != "correct" or crag_confidence < min_crag_confidence:
+            qa = _usage_log_row_to_qa(row, min_crag_confidence=min_crag_confidence)
+            if qa is None:
+                # parsing 실패 / answer 없음 / CRAG 임계 미달
                 skipped_low_quality += 1
                 continue
-
-            qa_pairs.append({
-                "question": query,
-                "answer": answer,
-                "source_type": "usage_log",
-                "kb_id": ",".join(kb_ids[:3]),
-                "crag_confidence": crag_confidence,
-            })
+            qa_pairs.append(qa)
 
         logger.info(
             "Extracted %d high-quality QA pairs from usage logs "
