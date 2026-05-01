@@ -21,12 +21,43 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from src.config.weights import weights
-from src.core.resilience import with_resilience
 from .prompts import RAG_PROMPT, SYSTEM_PROMPT
 from .utils import sanitize_text as _sanitize_text, estimate_token_count as _estimate_token_count_fn
 
 logger = logging.getLogger(__name__)
+
+# Transient SageMaker error codes — invoke-level retry 가 의미있는 일시 장애.
+# Permanent error (ValidationException, AccessDenied, ModelError 등) 는 retry 무의미.
+# with_resilience 의 default httpx-based retry 는 boto3 호출에 적용 안 되므로
+# 직접 tenacity 사용 (PR 2026-04-29 — narrow ClientError code-based retry).
+_RETRYABLE_SAGEMAKER_ERROR_CODES: frozenset[str] = frozenset({
+    "ThrottlingException",
+    "ServiceUnavailable",
+    "ServiceUnavailableException",
+    "InternalServerError",
+    "InternalFailure",
+    "ModelNotReadyException",
+})
+
+
+def _is_retryable_sagemaker_error(exc: BaseException) -> bool:
+    """Return True only for transient ClientError codes worth retrying."""
+    try:
+        from botocore.exceptions import ClientError
+    except ImportError:  # pragma: no cover — botocore is a hard dep
+        return False
+    if not isinstance(exc, ClientError):
+        return False
+    code = exc.response.get("Error", {}).get("Code", "") if hasattr(exc, "response") else ""
+    return code in _RETRYABLE_SAGEMAKER_ERROR_CODES
 
 
 @dataclass
@@ -68,7 +99,9 @@ class SageMakerLLMClient:
             config=Config(
                 read_timeout=weights.timeouts.httpx_sagemaker_read,
                 connect_timeout=weights.timeouts.httpx_sagemaker_connect,
-                retries={"max_attempts": 2},
+                # boto3 자체 retry 비활성 — tenacity 가 retry 담당. 중복 retry 방지
+                # (worst-case latency 9× → 3×, SageMaker invoke 비용도 동일 비율).
+                retries={"max_attempts": 1},
             ),
         )
 
@@ -96,17 +129,38 @@ class SageMakerLLMClient:
         result = json.loads(resp["Body"].read())
         return result["choices"][0]["message"]["content"].strip()
 
-    @with_resilience("sagemaker", weights.resilience.sagemaker)
     async def _invoke(
         self,
         messages: list[dict[str, str]],
         max_tokens: int | None = None,
         temperature: float | None = None,
     ) -> str:
-        """Async wrapper around synchronous boto3 call. Retries transient errors."""
-        result = await asyncio.to_thread(
-            self._invoke_sync, messages, max_tokens, temperature
-        )
+        """Async wrapper around synchronous boto3 call with bounded retry.
+
+        Retry policy (narrowed from with_resilience httpx default — boto3 raises
+        ClientError, not httpx errors, so the resilience decorator was a no-op):
+        - max_attempts=3, exponential backoff (1s → 2s → 4s, cap 8s)
+        - retryable: ClientError with transient error code only
+          (ThrottlingException, ServiceUnavailable, InternalServerError,
+          ModelNotReadyException, InternalFailure)
+        - non-retryable: ValidationException, AccessDenied, ModelError, etc.
+          → raised on first failure (no retry).
+        - reraise=True → outer caller sees the underlying exception.
+
+        Worst-case latency: read_timeout × 3 + backoff(1+2)s. Plan
+        ``classify_batch`` concurrency accordingly.
+        """
+        result = ""
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=1, max=8),
+            retry=retry_if_exception(_is_retryable_sagemaker_error),
+            reraise=True,
+        ):
+            with attempt:
+                result = await asyncio.to_thread(
+                    self._invoke_sync, messages, max_tokens, temperature
+                )
         # Token usage attribution (best-effort estimation — boto3 doesn't return token counts)
         try:
             from src.api.routes.metrics import observe_llm_tokens
@@ -243,6 +297,10 @@ class SageMakerLLMClient:
         """Check SageMaker endpoint status."""
         await asyncio.sleep(0)
         try:
+            from botocore.exceptions import BotoCoreError, ClientError
+        except ImportError:  # pragma: no cover — botocore is a hard dep
+            BotoCoreError = ClientError = Exception  # type: ignore[misc, assignment]
+        try:
             import boto3
             session = boto3.Session(
                 profile_name=self._config.profile,
@@ -257,7 +315,8 @@ class SageMakerLLMClient:
                 "endpoint": self._config.endpoint_name,
                 "endpoint_status": status,
             }
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except (BotoCoreError, ClientError, RuntimeError, KeyError) as e:
+            # boto3/botocore 일반 장애, SSO/credential RuntimeError, 응답 누락(KeyError).
             return {"status": "unhealthy", "backend": "sagemaker", "error": str(e)}
 
     def _format_context(self, context: list[dict]) -> str:
