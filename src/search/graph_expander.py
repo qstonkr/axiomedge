@@ -27,6 +27,40 @@ logger = logging.getLogger(__name__)
 # Korean compound-word split: English/digits + Hangul boundary
 _COMPOUND_SPLIT_PATTERN = re.compile(r"[a-zA-Z0-9]+|[가-힣]+")
 
+# Person-name 후보에서 차단할 조사·어미·접속사. 길이 기반 필터만으로는
+# '이행에', '대하여' 같은 조사 결합 토큰이 통과해 무의미한 Neo4j 조회를 유발.
+_PERSON_STOPWORDS: frozenset[str] = frozenset({
+    "이행에", "대하여", "위하여", "관하여", "통하여", "인하여",
+    "따르면", "따라서", "있는", "없는", "이러한", "같은", "다른",
+    "그러나", "그리고", "그러면", "그래서", "하지만", "또는",
+    "그것을", "이것을", "저것을", "어떤", "모든", "각각",
+})
+
+# 길이 2~3 한글 토큰이 이 조사로 끝나면 조사 결합 토큰으로 판단해 제외.
+_PERSON_PARTICLE_SUFFIXES: tuple[str, ...] = (
+    "에", "의", "을", "를", "이", "가", "은", "는",
+    "로", "과", "와", "도", "만", "께", "랑",
+)
+
+
+def _is_likely_person_name(token: str) -> bool:
+    """길이·조사·stopword 기반으로 사람 이름 후보 검증.
+
+    Person MENTIONED_IN 그래프 조회 전에 명백한 비-인명 토큰을 차단해
+    Neo4j 라운드트립과 로그 노이즈를 줄임.
+    """
+    if not (2 <= len(token) <= 4):
+        return False
+    if not all("가" <= c <= "힣" for c in token):
+        return False
+    if token in _PERSON_STOPWORDS:
+        return False
+    # 짧은 토큰(≤3) 이 조사로 끝나면 조사 결합 — 인명이 아닐 가능성 큼.
+    # 4글자 토큰은 점포명/회사명 등 정상 케이스가 많아 통과.
+    if len(token) <= 3 and token.endswith(_PERSON_PARTICLE_SUFFIXES):
+        return False
+    return True
+
 
 # ---------------------------------------------------------------------------
 # Protocol for graph repository (matches Neo4jGraphRepository)
@@ -335,10 +369,7 @@ class GraphSearchExpander:
         if not hasattr(self._graph_repo, "_client") or not self._graph_repo._client:
             return set()
 
-        korean_names = [
-            n for n in entity_names
-            if 2 <= len(n) <= 4 and all("\uac00" <= c <= "\ud7a3" for c in n)
-        ]
+        korean_names = [n for n in entity_names if _is_likely_person_name(n)]
         if not korean_names:
             return set()
 
@@ -439,13 +470,15 @@ class GraphSearchExpander:
     async def _find_entity_connected_docs(
         self,
         entity_names: list[str],
+        *,
+        scope_kb_ids: list[str] | None = None,
     ) -> set[str]:
         """Find documents connected to entities via search_entities."""
         if not hasattr(self._graph_repo, "search_entities"):
             return set()
 
         entities = await self._graph_repo.search_entities(
-            entity_names, max_facts=30,
+            entity_names, max_facts=30, scope_kb_ids=scope_kb_ids,
         )
         doc_names: set[str] = set()
         for e in entities:
@@ -463,6 +496,8 @@ class GraphSearchExpander:
     async def _find_entity_source_docs(
         self,
         entity_names: list[str],
+        *,
+        scope_kb_ids: list[str] | None = None,
     ) -> set[str]:
         """Find documents via source_document property on __Entity__ nodes."""
         if not hasattr(self._graph_repo, "_client"):
@@ -479,8 +514,9 @@ class GraphSearchExpander:
                     "MATCH (n:__Entity__) "
                     "WHERE (n.id CONTAINS $kw_nfc OR n.id CONTAINS $kw_nfd) "
                     "AND n.source_document IS NOT NULL "
+                    "AND ($scope IS NULL OR n.kb_id IN $scope) "
                     "RETURN DISTINCT n.source_document AS doc LIMIT 5",
-                    {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd},
+                    {"kw_nfc": kw_nfc, "kw_nfd": kw_nfd, "scope": scope_kb_ids},
                 )
                 for row in src_docs:
                     doc = row.get("doc", "")
@@ -512,8 +548,12 @@ class GraphSearchExpander:
             if not entity_names:
                 return result
 
-            entity_doc_names = await self._find_entity_connected_docs(entity_names)
-            source_doc_names = await self._find_entity_source_docs(entity_names)
+            entity_doc_names = await self._find_entity_connected_docs(
+                entity_names, scope_kb_ids=scope_kb_ids,
+            )
+            source_doc_names = await self._find_entity_source_docs(
+                entity_names, scope_kb_ids=scope_kb_ids,
+            )
             entity_doc_names |= source_doc_names
 
             if entity_doc_names:

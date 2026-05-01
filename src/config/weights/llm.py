@@ -77,7 +77,7 @@ class TimeoutConfig:
 
     # Route-level httpx (KB scroll, search helpers, quality, distill)
     httpx_kb_scroll: float = 10.0
-    httpx_search_scroll: float = 3.0
+    httpx_search_scroll: float = 8.0
     httpx_quality: float = 30.0
     httpx_distill_teacher: float = 60.0
     httpx_rag: float = 30.0
