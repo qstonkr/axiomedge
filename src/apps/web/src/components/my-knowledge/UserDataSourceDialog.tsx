@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { KeyRound } from "lucide-react";
 
 import {
   Button,
@@ -148,14 +149,15 @@ export function UserDataSourceDialog({
           <span className="text-[10px] text-fg-subtle">
             {isShared
               ? "이 connector 는 channel_ids 등 sub-resource 만 입력합니다 — 토큰은 관리자가 등록한 bot 사용."
-              : "⚠️ token / PAT / password 는 절대 여기에 넣지 마세요 — 아래 전용 입력 사용."}
+              : "주의 — token / PAT / password 는 절대 여기에 넣지 마세요 (아래 전용 입력 사용)."}
           </span>
         </label>
 
         {isPerUser && (
           <fieldset className="space-y-2 rounded-md border border-warning-default/30 bg-warning-subtle/40 p-3">
-            <legend className="px-1 text-xs font-semibold text-warning-default">
-              🔐 인증 토큰 (본인 PAT)
+            <legend className="flex items-center gap-1 px-1 text-xs font-semibold text-warning-default">
+              <KeyRound aria-hidden size={12} strokeWidth={1.75} />
+              <span>인증 토큰 (본인 PAT)</span>
             </legend>
             <p className="text-[11px] text-fg-muted">
               본인이 발급한 토큰을 입력합니다. 본인 권한 안에서만 데이터를

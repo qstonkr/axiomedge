@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, Paperclip, X } from "lucide-react";
+import { Activity, Paperclip, User, X } from "lucide-react";
 
 import { cn } from "@/components/ui/cn";
 
@@ -112,9 +112,15 @@ export function SourcePanel({
               )}
               {c.doc_title}
             </h4>
-            <p className="mt-1 text-xs text-fg-muted">
-              {c.kb_id}
-              {c.owner && ` · 👤 ${c.owner}`}
+            <p className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
+              <span>{c.kb_id}</span>
+              {c.owner && (
+                <>
+                  <span aria-hidden>·</span>
+                  <User aria-hidden size={11} strokeWidth={1.75} />
+                  <span>{c.owner}</span>
+                </>
+              )}
             </p>
             <p className="mt-2 line-clamp-3 text-xs text-fg-default">{c.snippet}</p>
             {typeof c.score === "number" && (

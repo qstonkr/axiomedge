@@ -1,5 +1,7 @@
 "use client";
 
+import { FileText } from "lucide-react";
+
 import { Skeleton } from "@/components/ui";
 import type { KbDocument } from "@/lib/api/endpoints";
 
@@ -96,7 +98,7 @@ export function DocumentList({
               key={key}
               className="flex items-center gap-3 px-3 py-2 text-sm"
             >
-              <span aria-hidden className="text-base leading-none">📄</span>
+              <FileText aria-hidden size={14} strokeWidth={1.75} className="text-fg-muted" />
               <span className="flex-1 truncate text-fg-default" title={name}>
                 {name}
               </span>
