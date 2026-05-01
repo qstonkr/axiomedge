@@ -16,7 +16,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
+import boto3
 import httpx
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
 from src.config import get_settings
 
@@ -63,31 +66,43 @@ _AWS_REGION = os.getenv("SAGEMAKER_REGION", "ap-northeast-2")
 # PaddleOCR EC2 lifecycle helpers
 # ---------------------------------------------------------------------------
 
+def _ec2_client() -> Any:
+    """V4 서명 + 명시적 region 으로 EC2 client 생성.
+
+    deployer._s3_client / gpu_trainer._ec2_client 와 같은 패턴. AWS_PROFILE /
+    SSO / IAM role 모두 boto3 자격증명 chain 으로 자동.
+    """
+    return boto3.Session(
+        profile_name=os.getenv("AWS_PROFILE") or None,
+        region_name=_AWS_REGION,
+    ).client("ec2", config=Config(signature_version="v4"))
+
+
 async def _get_instance_state(instance_id: str) -> str:
-    """Get EC2 instance state (running, stopped, etc.)."""
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 describe-instances --instance-ids {instance_id} "
-        f"--query 'Reservations[0].Instances[0].State.Name' "
-        f"--output text --region {_AWS_REGION}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await proc.communicate()
-    return stdout.decode().strip()
+    """Get EC2 instance state (running, stopped, etc.) via boto3."""
+    def _query() -> str:
+        ec2 = _ec2_client()
+        try:
+            resp = ec2.describe_instances(InstanceIds=[instance_id])
+            return resp["Reservations"][0]["Instances"][0]["State"]["Name"]
+        except (ClientError, BotoCoreError, KeyError, IndexError) as e:
+            logger.warning("describe_instances failed for %s: %s", instance_id, e)
+            return ""
+    return await asyncio.to_thread(_query)
 
 
 async def _get_instance_ip(instance_id: str) -> str | None:
-    """Get EC2 instance public IP (may change after stop/start)."""
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 describe-instances --instance-ids {instance_id} "
-        f"--query 'Reservations[0].Instances[0].PublicIpAddress' "
-        f"--output text --region {_AWS_REGION}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await proc.communicate()
-    ip = stdout.decode().strip()
-    return ip if ip and ip != "None" else None
+    """Get EC2 instance public IP (may change after stop/start) via boto3."""
+    def _query() -> str | None:
+        ec2 = _ec2_client()
+        try:
+            resp = ec2.describe_instances(InstanceIds=[instance_id])
+            ip = resp["Reservations"][0]["Instances"][0].get("PublicIpAddress")
+            return ip if ip else None
+        except (ClientError, BotoCoreError, KeyError, IndexError) as e:
+            logger.warning("describe_instances IP failed for %s: %s", instance_id, e)
+            return None
+    return await asyncio.to_thread(_query)
 
 
 async def _wait_for_instance_stopped(instance_id: str, retries: int = 30) -> None:
@@ -121,13 +136,13 @@ async def _resolve_running_instance_url(instance_id: str) -> str | None:
 async def _boot_and_resolve_url(instance_id: str) -> str | None:
     """Start the EC2 instance, wait for running, and return health-checked URL."""
     logger.info("Starting PaddleOCR instance %s", instance_id)
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 start-instances --instance-ids {instance_id} "
-        f"--region {_AWS_REGION}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.communicate()
+    try:
+        await asyncio.to_thread(
+            lambda: _ec2_client().start_instances(InstanceIds=[instance_id]),
+        )
+    except (ClientError, BotoCoreError) as e:
+        logger.error("start_instances failed for %s: %s", instance_id, e)
+        return None
 
     if not await _wait_for_instance_running(instance_id):
         logger.error("PaddleOCR instance did not reach running state")
@@ -221,19 +236,18 @@ async def _wait_for_health(url: str, max_wait: int = 180) -> bool:
 
 
 async def _stop_ocr_instance() -> None:
-    """Stop PaddleOCR EC2 instance to save costs."""
+    """Stop PaddleOCR EC2 instance to save costs (boto3 fire-and-forget)."""
     if not _PADDLEOCR_INSTANCE_ID:
         return
 
     logger.info("Stopping PaddleOCR instance %s", _PADDLEOCR_INSTANCE_ID)
-    proc = await asyncio.create_subprocess_shell(
-        f"aws ec2 stop-instances --instance-ids {_PADDLEOCR_INSTANCE_ID} "
-        f"--region {_AWS_REGION}",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.communicate()
-    logger.info("PaddleOCR instance stop requested")
+    try:
+        await asyncio.to_thread(
+            lambda: _ec2_client().stop_instances(InstanceIds=[_PADDLEOCR_INSTANCE_ID]),
+        )
+        logger.info("PaddleOCR instance stop requested")
+    except (ClientError, BotoCoreError) as e:
+        logger.error("stop_instances failed for %s: %s", _PADDLEOCR_INSTANCE_ID, e)
 
 
 def _extract_page_id_from_url(url: str) -> str | None:

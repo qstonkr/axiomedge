@@ -247,21 +247,19 @@ class TestOCRInstanceLifecycle:
 
     @pytest.mark.asyncio
     async def test_stop_ocr_calls_aws(self):
+        """boto3 ec2.stop_instances 호출 검증 (subprocess → boto3 전환)."""
         from src.api.routes.data_source_sync import _stop_ocr_instance
 
+        mock_ec2 = MagicMock()
         with (
             patch("src.api.routes.data_source_sync._PADDLEOCR_INSTANCE_ID", "i-123"),
             patch(
-                "src.api.routes.data_source_sync.asyncio.create_subprocess_shell"
-            ) as mock_proc,
+                "src.api.routes.data_source_sync._ec2_client",
+                return_value=mock_ec2,
+            ),
         ):
-            proc = AsyncMock()
-            proc.communicate.return_value = (b"ok", b"")
-            mock_proc.return_value = proc
-
             await _stop_ocr_instance()
-            mock_proc.assert_called_once()
-            assert "stop-instances" in mock_proc.call_args[0][0]
+            mock_ec2.stop_instances.assert_called_once_with(InstanceIds=["i-123"])
 
 
 # ---------------------------------------------------------------------------
@@ -490,15 +488,14 @@ class TestWaitForInstanceState:
 class TestBootAndResolveUrl:
     @pytest.mark.asyncio
     async def test_success(self):
+        """boto3 ec2.start_instances + 폴링 → URL resolve."""
         from src.api.routes.data_source_sync import _boot_and_resolve_url
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"ok", b"")
-
+        mock_ec2 = MagicMock()
         with (
             patch(
-                "src.api.routes.data_source_sync.asyncio.create_subprocess_shell",
-                return_value=mock_proc,
+                "src.api.routes.data_source_sync._ec2_client",
+                return_value=mock_ec2,
             ),
             patch(
                 "src.api.routes.data_source_sync._wait_for_instance_running",
@@ -515,6 +512,7 @@ class TestBootAndResolveUrl:
         ):
             url = await _boot_and_resolve_url("i-123")
             assert url == "http://10.0.0.1:8866"
+            mock_ec2.start_instances.assert_called_once_with(InstanceIds=["i-123"])
 
     @pytest.mark.asyncio
     async def test_instance_not_running(self):
