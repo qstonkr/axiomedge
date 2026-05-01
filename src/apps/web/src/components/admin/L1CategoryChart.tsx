@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FolderOpen } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -32,8 +33,9 @@ export function L1CategoryChart() {
     <article className="space-y-3">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-fg-default">
-            📂 L1 카테고리 분포
+          <h2 className="flex items-center gap-1.5 text-sm font-medium text-fg-default">
+            <FolderOpen aria-hidden size={14} strokeWidth={1.75} />
+            <span>L1 카테고리 분포</span>
           </h2>
           <p className="text-xs text-fg-muted">
             KB 별 문서의 1차 카테고리 (l1_category payload) 집계.

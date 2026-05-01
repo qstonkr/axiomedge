@@ -57,8 +57,16 @@ def test_accepts_localhost_database_url() -> None:
     result = subprocess.run(
         [str(SCRIPT)], env=env, capture_output=True, text=True, timeout=15,
     )
-    # Either psql connection fails (expected w/o running PG) or other failure —
-    # but NOT exit code 2 (missing confirm) or 3 (prod URL detected).
-    assert result.returncode not in (2, 3), (
+    # Guard rejects with:
+    #   rc=2 + stderr "DRILL_CONFIRM=yes" → missing confirmation
+    #   rc=3 + stderr "production"        → prod URL detected
+    # Anything else (including rc=2 from psql connection refused on CI w/o PG)
+    # means the guard let us through and the drill proceeded to actual work.
+    stderr_lower = result.stderr.lower()
+    rejected_by_guard = (
+        (result.returncode == 2 and "drill_confirm=yes" in stderr_lower)
+        or (result.returncode == 3 and "production" in stderr_lower)
+    )
+    assert not rejected_by_guard, (
         f"safety guard incorrectly blocked localhost URL: rc={result.returncode}, stderr={result.stderr[:200]}"
     )

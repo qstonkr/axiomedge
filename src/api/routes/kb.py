@@ -407,8 +407,8 @@ async def _get_avg_quality_score(
     """Calculate average quality score from Qdrant metadata."""
     if not (collections and store):
         return 0.0
+    import httpx
     try:
-        import httpx
         quality_sum = 0.0
         quality_count = 0
         async with httpx.AsyncClient(timeout=_w.timeouts.httpx_kb_scroll) as client:
@@ -425,7 +425,7 @@ async def _get_avg_quality_score(
                             quality_sum += qs
                             quality_count += 1
         return round(quality_sum / quality_count, 1) if quality_count > 0 else 0.0
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError, httpx.HTTPError) as e:
         logger.debug("Failed to calculate avg quality score: %s", e)
         return 0.0
 

@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
+import { Bell } from "lucide-react";
 
 import { OrgSwitcher } from "@/components/layout/OrgSwitcher";
 import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 import type { Membership } from "@/lib/auth/session";
 
+import { AdminMobileNav } from "./AdminMobileNav";
 import { AdminQuickPalette } from "./AdminQuickPalette";
 
 /**
@@ -25,6 +27,7 @@ const ROUTE_LABELS: Record<string, string> = {
   groups: "검색 그룹",
   conflicts: "중복/모순",
   verification: "검증 대기",
+  lifecycle: "문서 라이프사이클",
   quality: "RAG 품질",
   "golden-set": "Golden Set",
   traces: "Agent Trace",
@@ -34,6 +37,7 @@ const ROUTE_LABELS: Record<string, string> = {
   jobs: "작업 모니터",
   config: "가중치 설정",
   graph: "엔티티 탐색",
+  "graph-schema": "스키마 검토",
 };
 
 export function AdminHeader({
@@ -67,24 +71,27 @@ export function AdminHeader({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between border-b border-border-default bg-bg-canvas px-6 backdrop-blur">
-      <nav aria-label="현재 위치" className="flex items-center gap-2 text-xs">
-        {crumbs.map((c, i) => (
-          <span key={c.href} className="flex items-center gap-2">
-            {i > 0 && <span className="text-fg-subtle" aria-hidden>›</span>}
-            {i === crumbs.length - 1 ? (
-              <span className="font-medium text-fg-default">{c.label}</span>
-            ) : (
-              <Link
-                href={c.href}
-                className="text-fg-muted hover:text-fg-default"
-              >
-                {c.label}
-              </Link>
-            )}
-          </span>
-        ))}
-      </nav>
+    <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border-default bg-bg-canvas px-3 backdrop-blur md:px-6">
+      <div className="flex min-w-0 items-center gap-2">
+        <AdminMobileNav />
+        <nav aria-label="현재 위치" className="flex items-center gap-2 text-xs">
+          {crumbs.map((c, i) => (
+            <span key={c.href} className="flex items-center gap-2">
+              {i > 0 && <span className="text-fg-subtle" aria-hidden>›</span>}
+              {i === crumbs.length - 1 ? (
+                <span className="font-medium text-fg-default">{c.label}</span>
+              ) : (
+                <Link
+                  href={c.href}
+                  className="text-fg-muted underline-offset-4 hover:text-accent-default hover:underline focus-visible:text-accent-default focus-visible:underline"
+                >
+                  {c.label}
+                </Link>
+              )}
+            </span>
+          ))}
+        </nav>
+      </div>
       <div className="flex items-center gap-2">
         {actions}
         <AdminQuickPalette />
@@ -112,9 +119,7 @@ function NotificationBell() {
       aria-label={`알림 ${pending}건`}
       className="relative flex h-7 w-7 items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-bg-muted hover:text-fg-default"
     >
-      <span aria-hidden className="text-base leading-none">
-        🔔
-      </span>
+      <Bell aria-hidden size={16} strokeWidth={1.75} />
       {pending > 0 && (
         <span
           aria-hidden

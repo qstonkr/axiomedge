@@ -130,9 +130,13 @@ async def run_graphrag(
         _graphrag_content = _clean_chunk_text(raw.content)
         # Phase 2: source_type 전파 → resolver 가 D-layer (connector default) 선택.
         # Schema 는 한 번만 resolve 해서 extract + save 양쪽에 재사용.
+        # source_type 은 RawDocument.metadata 에 connector 가 채워둠 (RawDocument
+        # 자체에는 source_type 필드가 없음). 누락 시 빈 문자열 → resolver 가
+        # default schema 사용.
+        _source_type = raw.metadata.get("source_type", "") if raw.metadata else ""
         from src.pipelines.graphrag.schema_resolver import SchemaResolver
         resolved_schema = SchemaResolver.resolve(
-            kb_id=collection_name, source_type=raw.source_type,
+            kb_id=collection_name, source_type=_source_type,
         )
         extraction_result = await asyncio.to_thread(
             lambda: graphrag_extractor.extract(
@@ -141,7 +145,7 @@ async def run_graphrag(
                 source_page_id=raw.doc_id,
                 source_updated_at=raw.updated_at.isoformat() if raw.updated_at else None,
                 kb_id=collection_name,
-                source_type=raw.source_type,
+                source_type=_source_type,
                 schema=resolved_schema,
             )
         )
