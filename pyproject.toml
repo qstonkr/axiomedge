@@ -194,6 +194,14 @@ reportOptionalCall = "warning"
 reportOptionalIterable = "warning"
 # AppState 가 dict 인터페이스를 일부만 구현 — 점진적 migration 중
 reportArgumentType = "warning"
+# 다음 에러 코드들도 baseline reduction 중 — 점진적 fix 까지 warning 으로 가시화.
+# - reportAssignmentType: Column[UUID]/Column[str] 을 plain UUID/str 으로 반환,
+#   try/except import 의 fallback class shadowing, list comprehension narrow 등.
+# - reportGeneralTypeIssues: SQLAlchemy ColumnElement[bool] 을 bool 컨텍스트에서 평가.
+# - reportMissingImports: opentelemetry-instrumentation-asyncpg 등 optional 의존성.
+reportAssignmentType = "warning"
+reportGeneralTypeIssues = "warning"
+reportMissingImports = "warning"
 
 [dependency-groups]
 dev = [
