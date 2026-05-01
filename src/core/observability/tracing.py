@@ -127,7 +127,7 @@ def init_tracing(app: Any | None = None) -> bool:
     # PR-9 (H) — asyncpg auto-instrument (PG repo 모든 쿼리 span). env 토글.
     if os.getenv("OTEL_INSTRUMENT_ASYNCPG", "1").lower() in ("1", "true", "yes"):
         try:
-            from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor  # type: ignore[import-not-found]
+            from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
             AsyncPGInstrumentor().instrument()
             logger.info("OTel: asyncpg instrumented")
         except ImportError:

@@ -144,9 +144,9 @@ class QdrantSearchTool(Tool):
                     error="kb_ids unspecified and kb_registry unavailable in state",
                 )
             collections = [
-                c for k in active_kbs
-                if (c := k.get("id") or k.get("kb_id"))
+                (k.get("id") or k.get("kb_id")) for k in active_kbs
             ]
+            collections = [c for c in collections if c]
             if not collections:
                 return ToolResult(
                     success=False, data=None,
