@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 
@@ -43,21 +44,25 @@ class DistillEvaluator:
         from llama_cpp import Llama
 
         logger.info("Loading student model for evaluation: %s", model_path)
-        student = Llama(model_path=model_path, n_ctx=512, n_threads=4, verbose=False)
+        # 결정적 평가 — temperature=0.0 + seed 고정으로 같은 빌드 재평가 시 동일 점수
+        student = Llama(
+            model_path=model_path, n_ctx=512, n_threads=4, verbose=False, seed=42,
+        )
 
         results = []
         for i, item in enumerate(eval_data):
             question = item["question"]
             expected = item["answer"]
 
-            # Student 답변 생성
+            # Student 답변 생성 (temperature=0.0 결정성)
             try:
                 output = student.create_chat_completion(
                     messages=[{"role": "user", "content": question}],
                     max_tokens=256,
+                    temperature=0.0,
                 )
                 student_answer = output["choices"][0]["message"]["content"].strip()
-            except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            except (RuntimeError, OSError) as e:
                 logger.warning("Student inference failed for Q%d: %s", i, e)
                 student_answer = ""
 
@@ -134,7 +139,6 @@ class DistillEvaluator:
                     query=prompt, context=[], system_prompt="",
                 )
 
-            import json
             start = response.find("{")
             end = response.rfind("}") + 1
             if start >= 0 and end > start:
@@ -143,7 +147,10 @@ class DistillEvaluator:
                     "faithfulness": float(scores.get("faithfulness", 0)),
                     "relevancy": float(scores.get("relevancy", 0)),
                 }
-        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+        except (RuntimeError, json.JSONDecodeError, ValueError, TypeError, KeyError, AttributeError) as e:
+            # teacher 호출 실패 / JSON 파싱 실패 / 점수 cast 실패 — fail-soft 0.5.
+            # import json 을 try 안에 두면 teacher.generate 가 raise 시 except 의
+            # json.JSONDecodeError 가 UnboundLocalError 로 폭주 (latent bug fix).
             logger.warning("Teacher judge failed: %s", e)
 
         return {"faithfulness": 0.5, "relevancy": 0.5}

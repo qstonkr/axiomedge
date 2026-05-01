@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import random
 import re
 import uuid
 from datetime import datetime, timezone
@@ -17,6 +19,45 @@ from pathlib import Path
 from src.distill.config import DistillConfig, DistillProfile
 from src.distill.repository import DistillRepository
 from src.config.weights import weights as _w
+
+
+def _load_eval_set(
+    data_path: Path | str, build_id: str, ratio: float = 0.1,
+) -> list[dict]:
+    """train.jsonl 에서 build_id 기반 deterministic shuffle 후 ratio 만큼 추출.
+
+    이전 코드는 ``lines[int(len(lines)*0.9):]`` 로 마지막 10% 만 사용 — 데이터
+    생성 순서(usage_log → chunk_qa → reformatted) 에 따라 source_type 편향이
+    심함. build_id seed 로 셔플해 평가 신뢰성 확보.
+
+    같은 build_id 면 항상 같은 eval set → 회귀 비교 가능.
+    """
+    path = Path(data_path)
+    with open(path, encoding="utf-8") as f:
+        all_lines = f.readlines()
+    if not all_lines:
+        return []
+
+    seed = int(hashlib.sha256(str(build_id).encode()).hexdigest()[:16], 16) % (2**32)
+    rng = random.Random(seed)
+    indices = list(range(len(all_lines)))
+    rng.shuffle(indices)
+    eval_n = max(1, int(len(all_lines) * ratio))
+    eval_indices = sorted(indices[:eval_n])
+
+    eval_data: list[dict] = []
+    for i in eval_indices:
+        try:
+            entry = json.loads(all_lines[i])
+        except json.JSONDecodeError:
+            continue
+        msgs = entry.get("messages", [])
+        if len(msgs) >= 2 and isinstance(msgs[0], dict) and isinstance(msgs[1], dict):
+            eval_data.append({
+                "question": msgs[0].get("content", ""),
+                "answer": msgs[1].get("content", ""),
+            })
+    return eval_data
 
 logger = logging.getLogger(__name__)
 
@@ -787,22 +828,8 @@ class DistillService:
         if not Path(data_path).exists():
             return _gate_fail(f"eval data file not found: {data_path}")
 
-        # 2. eval set 로드 (train.jsonl 마지막 10%)
-        with open(data_path, encoding="utf-8") as f:
-            lines = f.readlines()
-        eval_lines = lines[int(len(lines) * 0.9):]
-        eval_data: list[dict] = []
-        for line in eval_lines:
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            msgs = entry.get("messages", [])
-            if len(msgs) >= 2:
-                eval_data.append({
-                    "question": msgs[0]["content"],
-                    "answer": msgs[1]["content"],
-                })
+        # 2. eval set 로드 — build_id seed 기반 deterministic shuffle
+        eval_data = _load_eval_set(Path(data_path), build_id)
 
         if not eval_data:
             return _gate_fail("eval_data is empty after parsing train.jsonl")
