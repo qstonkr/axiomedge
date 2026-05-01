@@ -31,7 +31,9 @@ jobs:
       - run: uv sync --frozen
       # transformers CVE-2026-1839: fix는 5.0.0rc3 (major+pre-release) — 별도 평가 필요
       # diskcache CVE-2025-69872, py PYSEC-2022-42969: fix version 없음
-      - run: uv run pip-audit --ignore-vuln CVE-2026-1839 --ignore-vuln CVE-2025-69872 --ignore-vuln PYSEC-2022-42969
+      # pip CVE-2026-3219: 현재 (2026-05) 시점 upstream fix 없음 — pip 자체 취약점이라
+      # 런타임 영향 제한적이므로 추적만.
+      - run: uv run pip-audit --ignore-vuln CVE-2026-1839 --ignore-vuln CVE-2025-69872 --ignore-vuln PYSEC-2022-42969 --ignore-vuln CVE-2026-3219
 
   test:
     runs-on: ubuntu-latest
@@ -105,6 +107,37 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
       - run: uv sync --frozen
+      - name: Apply Alembic migrations to test DB
+        run: uv run alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
+      - name: Start API server (background) for integration tests
+        run: |
+          mkdir -p /tmp/test-api
+          nohup uv run uvicorn src.api.app:app --host 0.0.0.0 --port 8000 \
+            > /tmp/test-api/api.log 2>&1 &
+          echo $! > /tmp/test-api/api.pid
+          # Wait for /api/v1/health to respond (server takes ~15-30s with model loads).
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://localhost:8000/api/v1/health \
+                || curl -sf -o /dev/null -w '%{http_code}' http://localhost:8000/api/v1/health \
+                  | grep -qE '^(200|401)$'; then
+              echo "API ready after ${i}*2s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API failed to start. Last 100 log lines:"
+          tail -100 /tmp/test-api/api.log
+          exit 1
+        env:
+          DATABASE_URL: postgresql+asyncpg://knowledge:knowledge@localhost:5432/knowledge_db
+          REDIS_URL: redis://localhost:6379
+          QDRANT_URL: http://localhost:6333
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_AUTH: none
+          PYTHONUNBUFFERED: "1"
+          AUTH_ENABLED: "false"
       - name: Run integration tests
         run: uv run pytest tests/integration/ -v --no-cov --tb=short
         env:
@@ -113,6 +146,20 @@ jobs:
           QDRANT_URL: http://localhost:6333
           NEO4J_URI: bolt://localhost:7687
           NEO4J_AUTH: none
+          TEST_API_URL: http://localhost:8000
+      - name: Stop API server
+        if: always()
+        run: |
+          if [ -f /tmp/test-api/api.pid ]; then
+            kill $(cat /tmp/test-api/api.pid) 2>/dev/null || true
+          fi
+      - name: Upload API log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-api-log
+          path: /tmp/test-api/api.log
+          retention-days: 7
       - name: Run e2e tests (best-effort — some need LLM)
         continue-on-error: true  # E2E may require LLM service not available in CI
         run: uv run pytest tests/e2e/ -v --no-cov --tb=short -m e2e
@@ -145,7 +192,9 @@ jobs:
   sonarqube:
     runs-on: ubuntu-latest
     needs: test
-    if: github.event_name == 'pull_request'
+    # SONAR_TOKEN/SONAR_HOST_URL secrets 가 등록된 경우에만 실행. 미등록 환경에서
+    # 무의미하게 fail 표시 나는 것 방지.
+    if: github.event_name == 'pull_request' && vars.SONARQUBE_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v4
         with:

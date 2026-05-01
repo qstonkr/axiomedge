@@ -14,7 +14,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-async def run_audit_archive(*, repo: Any) -> dict[str, int]:
+async def run_audit_archive(*, repo: Any) -> dict[str, Any]:
     """Pure function — testable. repo 는 AuditLogRepository.
 
     Modes:

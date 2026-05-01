@@ -91,6 +91,7 @@ class IGraphRepository(Protocol):
         keywords: list[str],
         *,
         max_facts: int = 20,
+        scope_kb_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Search entities in graph."""
         ...
