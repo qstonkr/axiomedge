@@ -178,9 +178,9 @@ export function DiscoveredSynonymsPanel() {
   return (
     <article className="space-y-3">
       <header className="space-y-1">
-        <h3 className="text-sm font-medium text-fg-default">
+        <h2 className="text-sm font-medium text-fg-default">
           자동 발견된 동의어 후보
-        </h3>
+        </h2>
         <p className="text-xs text-fg-muted">
           검색 co-occurrence / cluster 분석으로 추론된 동의어 후보. 운영자
           검토 큐 — 체크박스로 선택 후 일괄 승인/거부.

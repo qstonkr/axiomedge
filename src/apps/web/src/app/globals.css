@@ -34,12 +34,16 @@
   --color-accent-emphasis: #4d57b5;
   --color-accent-subtle: #eef0fb;
 
-  /* ── semantic ── */
-  --color-success-default: #2f9461;
+  /* ── semantic ──
+   * default 색은 subtle 배경 위 텍스트로 자주 쓰여 (e.g. status pill).
+   * green-800 / red-700 / amber-800 로 어둡게 → subtle 위 4.5:1 (WCAG AA
+   * normal text) 통과. white text 가 올라갈 때 (notification badge 등) 도
+   * red-700 = 5.9:1 ✓. */
+  --color-success-default: #166534;
   --color-success-subtle: #eaf6ef;
-  --color-danger-default: #d23f3f;
+  --color-danger-default: #b91c1c;
   --color-danger-subtle: #fbecec;
-  --color-warning-default: #c47a16;
+  --color-warning-default: #92400e;
   --color-warning-subtle: #fbf2e2;
 
   /* ── radii ── */
@@ -87,8 +91,13 @@
   --color-accent-emphasis: #6770d4;
   --color-accent-subtle: #2c2e54;
 
+  /* dark 에서는 default 색이 dark subtle bg 위에 어둡게 깔리면 contrast 1.5:1 로
+   * 무너짐. 400 단계로 밝게 → subtle 위 6~7:1 AA normal text. */
+  --color-success-default: #4ade80; /* green-400 */
   --color-success-subtle: #1f3a2c;
+  --color-danger-default: #f87171; /* red-400 */
   --color-danger-subtle: #43221f;
+  --color-warning-default: #fbbf24; /* amber-400 */
   --color-warning-subtle: #3a2e15;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -105,11 +114,11 @@
  * teal/dark 으로 교체.
  */
 [data-admin="true"] {
-  /* teal-500 (#14b8a6) 는 흰 배경 contrast 2.49 (FAIL UI/text). teal-600 으로
-   * 한 단계 어둡게 해서 3.74 ✅ AA UI / large text 충족. emphasis 는 teal-700.
-   * 시각 identity (teal hue) 는 그대로 유지. */
-  --color-accent-default: #0d9488; /* teal-600 */
-  --color-accent-emphasis: #0f766e; /* teal-700 */
+  /* teal-600 (#0d9488) 은 흰 배경 contrast 3.49 — AA-large (3:1) 만 통과.
+   * small text (10–12px badge/kbd) 가 fail 떴음. teal-700 (#0f766e) 로
+   * 한 단계 더 어둡게 → 4.85:1, AA normal text 통과. */
+  --color-accent-default: #0f766e; /* teal-700 */
+  --color-accent-emphasis: #115e59; /* teal-800 */
   --color-accent-subtle: #ccfbf1; /* teal-100 */
 
   /* admin sidebar 는 light/dark theme 와 무관하게 항상 dark — 운영 dashboard 패턴 */
@@ -121,24 +130,26 @@
   --color-admin-sidebar-hover-bg: #374151; /* slate-700 */
   --color-admin-sidebar-border: #334155; /* slate-700 */
 
-  /* severity 5단계 — log viewer / event timeline / metric delta 색 */
+  /* severity 5단계 — log viewer / event timeline / metric delta 색.
+   * subtle bg 위 텍스트 4.5:1 보장 위해 success/warn 어둡게 (semantic 토큰과 동기화). */
   --color-severity-info: #3b82f6;
-  --color-severity-warn: #c47a16;
+  --color-severity-warn: #92400e;
   --color-severity-error: #d23f3f;
   --color-severity-critical: #7f1d1d;
-  --color-severity-success: #2f9461;
+  --color-severity-success: #166534;
 }
 
 [data-admin="true"][data-theme="dark"] {
   /* dark bg 위에서 teal 가 흐릿해 보이지 않도록 한 단계 더 vivid 하게.
-   * 400 → 300 (vivid), emphasis 는 400 으로 한 단계 위.
-   */
+   * 400 → 300 (vivid), emphasis 는 400 으로 한 단계 위. accent 가 light 하므로
+   * 그 위 텍스트 (fg-onAccent) 는 슬레이트로 — white 두면 1.6:1 fail. */
   --color-accent-default: #5eead4; /* teal-300 */
   --color-accent-emphasis: #2dd4bf; /* teal-400 */
   --color-accent-subtle: #134e4a; /* teal-900 */
+  --color-fg-onAccent: #0f172a; /* slate-900 — light teal 위 12:1 */
 
   --color-admin-sidebar-bg: #0f172a; /* slate-900 */
-  --color-admin-sidebar-active-bg: #0d9488; /* teal-600 */
+  --color-admin-sidebar-active-bg: #0f766e; /* teal-700 — active-fg teal-50 와 6.0:1 */
   --color-admin-sidebar-active-fg: #f0fdfa; /* teal-50 */
   --color-admin-sidebar-hover-bg: #1e293b; /* slate-800 */
   --color-admin-sidebar-border: #1e293b;
