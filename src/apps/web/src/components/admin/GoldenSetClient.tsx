@@ -40,9 +40,11 @@ export function GoldenSetClient() {
   const toast = useToast();
   const [filter, setFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
   const { data, isLoading, isError, error, refetch } = useGoldenSet({
-    page: 1,
-    page_size: 100,
+    page,
+    page_size: PAGE_SIZE,
     status: statusFilter || undefined,
   });
   const del = useDeleteGoldenItem();
@@ -202,7 +204,10 @@ export function GoldenSetClient() {
           상태 필터
           <Select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
           >
             {STATUS_FILTERS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -243,12 +248,45 @@ export function GoldenSetClient() {
           onRetry={() => refetch()}
         />
       ) : (
-        <DataTable<GoldenItem>
-          columns={columns}
-          rows={filtered}
-          rowKey={(r) => r.id}
-          empty={filter ? "검색 결과 없음" : "Golden Set 항목이 없습니다"}
-        />
+        <>
+          <DataTable<GoldenItem>
+            columns={columns}
+            rows={filtered}
+            rowKey={(r) => r.id}
+            empty={filter ? "검색 결과 없음" : "Golden Set 항목이 없습니다"}
+          />
+          {(data?.total ?? 0) > PAGE_SIZE && (
+            <nav
+              aria-label="페이지 네비게이션"
+              className="flex items-center justify-between border-t border-border-default pt-3 text-xs text-fg-muted"
+            >
+              <span>
+                {(page - 1) * PAGE_SIZE + 1} – {Math.min(page * PAGE_SIZE, data?.total ?? 0)} / 총 {data?.total ?? 0}건
+              </span>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-border-default px-2 py-1 disabled:opacity-50 hover:bg-bg-muted"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  이전
+                </button>
+                <span className="self-center font-mono text-fg-default">
+                  {page} / {Math.ceil((data?.total ?? 0) / PAGE_SIZE)}
+                </span>
+                <button
+                  type="button"
+                  className="rounded border border-border-default px-2 py-1 disabled:opacity-50 hover:bg-bg-muted"
+                  disabled={page * PAGE_SIZE >= (data?.total ?? 0)}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  다음
+                </button>
+              </span>
+            </nav>
+          )}
+        </>
       )}
     </section>
   );

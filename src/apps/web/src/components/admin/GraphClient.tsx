@@ -217,6 +217,7 @@ export function GraphClient() {
                     <GraphView
                       nodeId={selected.entity_id ?? selected.entity_name}
                       hubLabel={selected.entity_name}
+                      hubType={selected.entity_type}
                     />
                   </article>
                 )}

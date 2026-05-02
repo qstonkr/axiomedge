@@ -263,10 +263,14 @@ export function useGraphSearch(body: {
 }
 
 /** 한 노드의 1-hop 이웃 + edge 들 — 시각화용. node 클릭으로 활성화. */
-export function useGraphExpand(nodeId: string | null, maxNeighbors = 24) {
+export function useGraphExpand(
+  nodeId: string | null,
+  maxNeighbors = 24,
+  entityType?: string,
+) {
   return useQuery({
-    queryKey: ["admin", "graph", "expand", nodeId, maxNeighbors],
-    queryFn: () => expandGraphNode(nodeId!, maxNeighbors),
+    queryKey: ["admin", "graph", "expand", nodeId, maxNeighbors, entityType],
+    queryFn: () => expandGraphNode(nodeId!, maxNeighbors, entityType),
     enabled: Boolean(nodeId),
     staleTime: 5 * 60 * 1000,
   });
