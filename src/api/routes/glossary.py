@@ -117,14 +117,33 @@ async def get_source_stats() -> dict[str, Any]:
 # GET /api/v1/admin/glossary/similarity-distribution
 # (MUST be before /{term_id} to avoid path capture)
 # ---------------------------------------------------------------------------
+_similarity_cache: dict[str, Any] = {"data": None, "ts": 0.0}
+_SIMILARITY_TTL_S = 300.0
+
+
 @router.get("/similarity-distribution")
 async def get_similarity_distribution() -> dict[str, Any]:
-    """Get similarity score distribution with RapidFuzz sampling (500 samples, top-K matching)."""
+    """Get similarity score distribution with RapidFuzz sampling (500 samples, top-K matching).
+
+    223k+ 용어 환경에서 sample 비교가 ~57s 걸려 frontend 가 무한 로딩 → 5분
+    in-memory 캐시. transparency/stats 와 동일 패턴.
+    """
+    import time as _time
+    now = _time.monotonic()
+    if (
+        _similarity_cache["data"] is not None
+        and now - _similarity_cache["ts"] < _SIMILARITY_TTL_S
+    ):
+        return _similarity_cache["data"]
+
     state = _get_state()
     try:
-        return await compute_similarity_distribution(state, _EXACT_MATCH_THRESHOLD)
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-        logger.warning("Glossary similarity-distribution failed: %s", e)
+        result = await compute_similarity_distribution(state, _EXACT_MATCH_THRESHOLD)
+        _similarity_cache["data"] = result
+        _similarity_cache["ts"] = _time.monotonic()
+        return result
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Glossary similarity-distribution failed: %s", e, exc_info=True)
         return {"distribution": [], "total_pairs": 0, "mean_similarity": 0.0, "sample_size": 0, "error": str(e)}
 
 
