@@ -60,7 +60,15 @@ class UserModel(KnowledgeBase):
     )
 
     # Relationships
-    role_assignments = relationship("UserRoleModel", back_populates="user", lazy="selectin")
+    # passive_deletes=True — DB 의 ON DELETE CASCADE 에 위임. 기본값은 SQLAlchemy
+    # 가 자식 row 를 먼저 SELECT 후 user_id=NULL UPDATE → 자식의 NOT NULL FK
+    # constraint 위반으로 500. DB 트리거에 맡기면 안전하게 cascade.
+    role_assignments = relationship(
+        "UserRoleModel",
+        back_populates="user",
+        lazy="selectin",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         Index("idx_auth_user_email", "email"),
