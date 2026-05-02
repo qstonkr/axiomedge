@@ -138,20 +138,39 @@ async def find_experts(
 
 @router.post("/graph/expand")
 async def graph_expand(body: dict[str, Any]) -> dict[str, Any]:
-    """Expand a graph node to show neighbors."""
+    """Expand a graph node to show neighbors.
+
+    backend graph_repo 에 ``expand_node`` 메서드가 없어 항상 빈 결과 반환하던
+    버그 fix. ``get_entity_neighbors`` 가 실제 노드 1-hop 이웃 반환하므로
+    그걸 사용. node_id 는 entity name (graph_search 의 entity_id 도 사실
+    name 사용). entity_type 은 frontend 에서 옵션으로 줄 수 있고, 없으면
+    기본 "Entity" 로 wildcard 매칭.
+    """
     state = _get_state()
     graph = state.get("graph_repo")
     node_id = str(body.get("node_id", ""))[:200]
+    entity_type = str(body.get("entity_type", "Entity"))
 
     if not graph:
         return {"node_id": node_id, "neighbors": [], "edges": []}
 
     try:
-        max_neighbors = body.get("max_neighbors", 30)
-        # Try expand if available, else return empty
-        if hasattr(graph, "expand_node"):
-            result = await graph.expand_node(node_id, max_neighbors=max_neighbors)
-            return result
+        max_neighbors = int(body.get("max_neighbors", 30))
+        if hasattr(graph, "get_entity_neighbors"):
+            raw = await graph.get_entity_neighbors(
+                node_id, entity_type, max_hops=1,
+            )
+            # cap 후 frontend 가 기대하는 shape: {neighbors: [{id, name, type}]}
+            neighbors = [
+                {
+                    "id": n.get("id") or n.get("name") or "",
+                    "name": n.get("name") or n.get("id") or "",
+                    "type": n.get("type") or "",
+                }
+                for n in (raw or [])[:max_neighbors]
+                if n.get("name") or n.get("id")
+            ]
+            return {"node_id": node_id, "neighbors": neighbors, "edges": []}
         return {"node_id": node_id, "neighbors": [], "edges": []}
     except (*NEO4J_FAILURE, ImportError) as e:
         logger.warning("Graph expand failed: %s", e)

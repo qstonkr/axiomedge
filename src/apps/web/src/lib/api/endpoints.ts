@@ -1586,7 +1586,11 @@ export type GraphEdge = {
   weight?: number;
 };
 
-export const expandGraphNode = (nodeId: string, maxNeighbors = 24) =>
+export const expandGraphNode = (
+  nodeId: string,
+  maxNeighbors = 24,
+  entityType?: string,
+) =>
   request<{
     node_id: string;
     neighbors: GraphNeighbor[];
@@ -1594,7 +1598,12 @@ export const expandGraphNode = (nodeId: string, maxNeighbors = 24) =>
     error?: string;
   }>("api/v1/admin/graph/expand", {
     method: "POST",
-    body: JSON.stringify({ node_id: nodeId, max_neighbors: maxNeighbors }),
+    body: JSON.stringify({
+      node_id: nodeId,
+      max_neighbors: maxNeighbors,
+      // backend 의 get_entity_neighbors 가 type 필요. 안 주면 "Entity" 기본.
+      ...(entityType ? { entity_type: entityType } : {}),
+    }),
   });
 
 // ── /admin/pipeline/gates (B-2 ingest 게이트) ───────────────────────────

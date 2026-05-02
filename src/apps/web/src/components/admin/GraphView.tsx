@@ -48,19 +48,28 @@ function neighborTone(t: string | undefined): string {
 export function GraphView({
   nodeId,
   hubLabel,
+  hubType,
 }: {
   nodeId: string;
   hubLabel?: string;
+  /** Neo4j 노드 라벨 (Store / Person / Location 등). backend 의 1-hop
+   *  cypher 매칭에 사용 — 안 주면 wildcard 가 안 돼 빈 결과 반환됨. */
+  hubType?: string;
 }) {
   // 사용자가 이웃 노드 클릭 → 그 노드를 새 hub 로 (multi-hop 탐색).
   // history 로 이전 노드 스택 → 뒤로 가기 가능.
-  const [activeNode, setActiveNode] = useState<{ id: string; label: string }>({
+  const [activeNode, setActiveNode] = useState<{
+    id: string;
+    label: string;
+    type?: string;
+  }>({
     id: nodeId,
     label: hubLabel ?? nodeId,
+    type: hubType,
   });
-  const [history, setHistory] = useState<{ id: string; label: string }[]>([]);
+  const [history, setHistory] = useState<{ id: string; label: string; type?: string }[]>([]);
 
-  const expand = useGraphExpand(activeNode.id);
+  const expand = useGraphExpand(activeNode.id, 24, activeNode.type);
 
   function focusNeighbor(n: GraphNeighbor) {
     const nextId =
@@ -69,7 +78,11 @@ export function GraphView({
       neighborLabel(n);
     if (!nextId || nextId === activeNode.id) return;
     setHistory((prev) => [...prev, activeNode]);
-    setActiveNode({ id: nextId, label: neighborLabel(n) });
+    setActiveNode({
+      id: nextId,
+      label: neighborLabel(n),
+      type: (n.type as string | undefined) ?? (n.entity_type as string | undefined),
+    });
   }
 
   function goBack() {
