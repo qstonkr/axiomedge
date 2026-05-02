@@ -145,7 +145,7 @@ export function AdminDashboardClient() {
                 <AreaChartHero points={heroPoints} height={180} />
               ) : (
                 <div className="flex h-32 items-center justify-center text-xs text-fg-subtle">
-                  데이터 없음 — search_log_repo 미초기화
+                  지난 24시간 검색 기록이 없습니다
                 </div>
               )}
             </div>

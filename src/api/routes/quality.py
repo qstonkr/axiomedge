@@ -22,6 +22,11 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Quality"])
 # In-memory eval tracking (lightweight, not persistent)
 _eval_runs: dict[str, dict[str, Any]] = {}
 
+# /transparency/stats 캐시 — 173k Qdrant scroll 이 ~100s 걸리므로 5분 TTL.
+# 첫 호출 후 동일 endpoint 호출은 즉시 응답.
+_transparency_cache: dict[str, Any] = {"data": None, "ts": 0.0}
+_TRANSPARENCY_TTL_S = 300.0
+
 
 # ============================================================================
 # Knowledge Traceability
@@ -384,15 +389,30 @@ async def _count_qdrant_transparency(
 
 @router.get("/transparency/stats")
 async def get_transparency_stats() -> dict[str, Any]:
-    """Get transparency stats from Qdrant metadata + PostgreSQL."""
+    """Get transparency stats from Qdrant metadata + PostgreSQL.
+
+    173k+ 문서 환경에서 Qdrant scroll 이 ~100s 걸려 frontend 가 무한
+    Skeleton 표시 → 5분 in-memory 캐시. cache miss 만 100s, hit 는 ms.
+    """
+    import time as _time
+    now = _time.monotonic()
+    if (
+        _transparency_cache["data"] is not None
+        and now - _transparency_cache["ts"] < _TRANSPARENCY_TTL_S
+    ):
+        return _transparency_cache["data"]
+
     state = _get_state()
     collections = state.get("qdrant_collections")
     qdrant_url = state.get("qdrant_url") or get_settings().qdrant.url
 
     try:
         counts = await _count_qdrant_transparency(collections, qdrant_url)
-    except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-        logger.warning("Transparency Qdrant stats failed: %s", e)
+    except Exception as e:  # noqa: BLE001 — qdrant_client / httpx 에서
+        # 다양한 exception 타입 (ResponseHandlingException, UnexpectedResponse,
+        # httpx.ConnectError 등) 가 throw 가능. dashboard 가 렌더되는 게
+        # 더 중요해서 어떤 에러든 0 카운트로 fallback.
+        logger.warning("Transparency Qdrant stats failed: %s", e, exc_info=True)
         counts = {"total": 0, "owner": 0, "category": 0, "source": 0}
 
     total_documents = counts["total"]
@@ -410,7 +430,7 @@ async def get_transparency_stats() -> dict[str, Any]:
     source_coverage = with_source / total_documents if total_documents > 0 else 0
     avg_sources = 1.0 if with_source > 0 else 0
 
-    return {
+    result = {
         "total_documents": total_documents,
         "total_citations": total_documents,
         "with_provenance": with_source,
@@ -420,6 +440,9 @@ async def get_transparency_stats() -> dict[str, Any]:
         "source_coverage_rate": round(source_coverage, 2),
         "avg_sources_per_response": round(avg_sources, 1),
     }
+    _transparency_cache["data"] = result
+    _transparency_cache["ts"] = _time.monotonic()
+    return result
 
 
 @router.get("/contributors")

@@ -184,7 +184,12 @@ export function QualityClient() {
       <article className="space-y-3">
         <h2 className="text-sm font-medium text-fg-default">투명성 지표</h2>
         {transparency.isLoading ? (
-          <Skeleton className="h-24" />
+          <div className="space-y-2">
+            <Skeleton className="h-24" />
+            <p className="text-[11px] text-fg-subtle">
+              전체 Qdrant 컬렉션 스캔 중 — 첫 호출은 수십 초 걸릴 수 있습니다 (이후 5분간 캐시).
+            </p>
+          </div>
         ) : transparency.isError ? (
           <p className="text-xs text-fg-muted">
             투명성 지표를 불러올 수 없습니다.
