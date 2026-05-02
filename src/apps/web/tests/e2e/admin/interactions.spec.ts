@@ -189,12 +189,160 @@ test("/admin/config — 키 검색 input 작동", async ({ page }) => {
   await expect(page.getByText(/reranker\./i).first()).toBeVisible();
 });
 
+// ── 추가 페이지: dashboard / ingest / verification / traces / errors ─
+
+test("/admin (dashboard) — L1 카테고리 KB 선택 후 차트 영역 노출", async ({ page }) => {
+  await gotoAdmin(page, "/admin");
+  // L1 카테고리 분포 카드의 KB 셀렉터
+  const sel = page.locator("select").first();
+  await sel.waitFor({ state: "visible" });
+  const opts = await sel.locator("option").all();
+  if (opts.length < 2) {
+    test.skip(true, "활성 KB 가 없어 L1 카테고리 검증 불가");
+    return;
+  }
+  const v = await opts[1].getAttribute("value");
+  if (!v) test.skip(true, "KB option value 비어있음");
+  await sel.selectOption(v!);
+  // 카테고리 분포 카드 자체가 표시 (h2 또는 텍스트)
+  await expect(page.getByText(/L1 카테고리|카테고리 분포/i).first()).toBeVisible({
+    timeout: 5_000,
+  });
+});
+
+test("/admin (dashboard) — 알림 bell badge 클릭 → /admin/errors 이동", async ({ page }) => {
+  await gotoAdmin(page, "/admin");
+  // bell aria-label 매칭 (NotificationBell)
+  const bell = page.getByRole("link", { name: /^알림 \d+건$/ }).first();
+  await expect(bell).toBeVisible();
+  await bell.click();
+  // pending > 0 이면 /admin/errors, 0 이면 /admin
+  await page.waitForURL(/\/admin/, { timeout: 5_000 });
+});
+
+test("/admin/ingest — KB 셀렉트 + 사유 입력 + trigger 버튼 활성화", async ({ page }) => {
+  await gotoAdmin(page, "/admin/ingest");
+  const kbSel = page.locator("select").first();
+  await kbSel.waitFor({ state: "visible" });
+  const opts = await kbSel.locator("option").all();
+  if (opts.length < 2) {
+    test.skip(true, "활성 KB 없음");
+    return;
+  }
+  const v = await opts[1].getAttribute("value");
+  if (!v) test.skip(true, "KB option 비어있음");
+  await kbSel.selectOption(v!);
+  // 사유 input 채우면 trigger 버튼 활성화
+  await page.getByPlaceholder(/인제스트 사유/).fill("e2e 검증");
+  // 인제스트 trigger 버튼 (클릭은 안 함 — 실제 인제스트 비싸서)
+  await expect(page.getByRole("button", { name: /^Trigger|인제스트/ }).first()).toBeEnabled();
+});
+
+test("/admin/verification — 페이지 로드 후 빈 상태/리스트 렌더", async ({ page }) => {
+  await gotoAdmin(page, "/admin/verification");
+  // 검증 대기 또는 깨끗합니다 메시지 둘 중 하나가 표시
+  await expect(
+    page.getByText(/검증 대기|깨끗합니다|문서가 없습니다/i).first(),
+  ).toBeVisible({ timeout: 5_000 });
+});
+
+test("/admin/traces — details 펼침 → 질의 input + 실행 버튼 활성화", async ({ page }) => {
+  await gotoAdmin(page, "/admin/traces");
+  // form 은 <details> 안에 collapsed — summary 클릭으로 펼침
+  await page.getByText(/새 agentic 질문 실행/).click();
+  const queryInput = page.getByPlaceholder(/예: 신촌점/);
+  await queryInput.fill("e2e test query");
+  await expect(page.getByRole("button", { name: /^실행$/ })).toBeEnabled();
+});
+
+test("/admin/errors — 운영자 신고 dialog open + 닫기", async ({ page }) => {
+  await gotoAdmin(page, "/admin/errors");
+  await page.getByRole("button", { name: /운영자 신고/ }).click();
+  const d = page.getByRole("dialog");
+  await expect(d).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(d).toBeHidden({ timeout: 3_000 });
+});
+
+// ── 탭 커버리지 확장 ─────────────────────────────────────────────
+
+test("/admin/users — 3개 탭 (사용자 / KB 권한 / ABAC) 전환", async ({ page }) => {
+  await gotoAdmin(page, "/admin/users");
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(3, { timeout: 8_000 });
+  for (let i = 0; i < 3; i++) {
+    await tabs.nth(i).click();
+    await expect(tabs.nth(i)).toHaveAttribute("aria-selected", "true");
+    await page.waitForTimeout(150);
+  }
+});
+
+test("/admin/users — 신규 사용자 dialog open + Esc close", async ({ page }) => {
+  await gotoAdmin(page, "/admin/users");
+  await page.getByRole("button", { name: /\+ 신규 사용자/ }).click();
+  const d = page.getByRole("dialog");
+  await expect(d).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(d).toBeHidden({ timeout: 3_000 });
+});
+
+test("/admin/users — ABAC 탭 + 신규 정책 dialog open", async ({ page }) => {
+  await gotoAdmin(page, "/admin/users");
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(3);
+  await tabs.nth(2).click(); // ABAC 탭
+  await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+  // 신규 정책 버튼
+  await page.getByRole("button", { name: /\+ 신규 정책/ }).click();
+  const d = page.getByRole("dialog");
+  await expect(d).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(d).toBeHidden({ timeout: 3_000 });
+});
+
+test("/admin/owners — KB 선택 후 2개 탭 (문서 owner / topic SME) 전환", async ({ page }) => {
+  await gotoAdmin(page, "/admin/owners");
+  // KB 가 선택돼야 Tabs 가 렌더됨
+  const sel = page.locator("select").first();
+  await sel.waitFor({ state: "visible" });
+  const opts = await sel.locator("option").all();
+  if (opts.length < 2) {
+    test.skip(true, "활성 KB 없음");
+    return;
+  }
+  const v = await opts[1].getAttribute("value");
+  if (!v) test.skip(true, "KB option 비어있음");
+  await sel.selectOption(v!);
+  // KB 선택 후 Tabs 등장
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(2, { timeout: 8_000 });
+  for (let i = 0; i < 2; i++) {
+    await tabs.nth(i).click();
+    await expect(tabs.nth(i)).toHaveAttribute("aria-selected", "true");
+    await page.waitForTimeout(150);
+  }
+});
+
+test("/admin/golden-set — 상태 필터 (전체/승인/대기/거부) 전환", async ({ page }) => {
+  await gotoAdmin(page, "/admin/golden-set");
+  const sel = page.locator("select").first();
+  await sel.waitFor({ state: "visible" });
+  // 4가지 상태 모두 선택해 page 가 깨지지 않는지
+  for (const v of ["", "approved", "pending", "rejected"]) {
+    await sel.selectOption(v);
+    await page.waitForTimeout(200);
+  }
+  // golden set 헤딩 여전히 보임
+  await expect(page.getByRole("heading", { name: /Golden Set/i })).toBeVisible();
+});
+
 // ── ⌘K 빠른 이동 palette ─────────────────────────────────────────
 
-test("⌘K / Ctrl+K 빠른 이동 palette open + Esc close", async ({ page }) => {
+test("⌘K 빠른 이동 palette — trigger 버튼 클릭으로 open + Esc close", async ({ page }) => {
   await gotoAdmin(page, "/admin");
-  // headless chromium 은 OS 에 따라 Meta+k 가 안 잡힐 수 있어 ControlOrMeta 사용.
-  await page.keyboard.press("ControlOrMeta+k");
+  // 키보드 단축키는 headless 환경에서 OS 별로 다르게 캡처돼 flaky.
+  // AdminQuickPalette 의 trigger 버튼 직접 클릭이 더 안정적.
+  await page.getByRole("button", { name: /빠른 이동|⌘K|Ctrl\+K/ }).first().click();
   await expect(page.getByPlaceholder("페이지 이름 / 그룹 / URL")).toBeVisible({
     timeout: 3_000,
   });

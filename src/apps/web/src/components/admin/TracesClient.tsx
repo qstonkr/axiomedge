@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Plus } from "lucide-react";
 
 import {
   Button,
@@ -53,8 +54,9 @@ function NewAgenticForm({ onTraceId }: { onTraceId: (id: string) => void }) {
 
   return (
     <details className="rounded-lg border border-border-default bg-bg-canvas">
-      <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-default">
-        ➕ 새 agentic 질문 실행
+      <summary className="inline-flex cursor-pointer items-center gap-1.5 px-4 py-3 text-sm font-medium text-fg-default">
+        <Plus size={14} strokeWidth={1.75} aria-hidden />
+        새 agentic 질문 실행
       </summary>
       <form onSubmit={onSubmit} className="space-y-3 px-4 pb-4">
         <p className="text-xs text-fg-muted">
