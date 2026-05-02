@@ -236,14 +236,11 @@ test("/admin/ingest — KB 셀렉트 + 사유 입력 + trigger 버튼 활성화"
   await gotoAdmin(page, "/admin/ingest");
   const kbSel = page.locator("select").first();
   await kbSel.waitFor({ state: "visible" });
-  const opts = await kbSel.locator("option").all();
-  if (opts.length < 2) {
-    test.skip(true, "활성 KB 없음");
-    return;
-  }
-  const v = await opts[1].getAttribute("value");
-  if (!v) test.skip(true, "KB option 비어있음");
-  await kbSel.selectOption(v!);
+  // KB 옵션이 모두 로드될 때까지 대기 (useSearchableKbs 훅 lazy)
+  await expect.poll(async () => kbSel.locator("option").count(), { timeout: 8_000 })
+    .toBeGreaterThan(1);
+  // index 로 선택 (value 가 빈 옵션도 포함된 환경 대비 안정적)
+  await kbSel.selectOption({ index: 1 });
   // 사유 input 채우면 trigger 버튼 활성화
   await page.getByPlaceholder(/인제스트 사유/).fill("e2e 검증");
   // 인제스트 trigger 버튼 (클릭은 안 함 — 실제 인제스트 비싸서)
@@ -353,10 +350,12 @@ test("/admin/golden-set — 상태 필터 (전체/승인/대기/거부) 전환",
 test("⌘K 빠른 이동 palette — trigger 버튼 클릭으로 open + Esc close", async ({ page }) => {
   await gotoAdmin(page, "/admin");
   // 키보드 단축키는 headless 환경에서 OS 별로 다르게 캡처돼 flaky.
-  // AdminQuickPalette 의 trigger 버튼 직접 클릭이 더 안정적.
-  await page.getByRole("button", { name: /빠른 이동|⌘K|Ctrl\+K/ }).first().click();
+  // AdminQuickPalette 의 trigger 버튼 (aria-label="명령 팔레트 열기 (⌘K)") 직접 클릭.
+  const trigger = page.getByRole("button", { name: /명령 팔레트|빠른 이동/ }).first();
+  await trigger.waitFor({ state: "visible", timeout: 8_000 });
+  await trigger.click();
   await expect(page.getByPlaceholder("페이지 이름 / 그룹 / URL")).toBeVisible({
-    timeout: 3_000,
+    timeout: 8_000,
   });
   await page.keyboard.press("Escape");
 });
