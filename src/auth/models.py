@@ -60,13 +60,15 @@ class UserModel(KnowledgeBase):
     )
 
     # Relationships
-    # passive_deletes=True — DB 의 ON DELETE CASCADE 에 위임. 기본값은 SQLAlchemy
-    # 가 자식 row 를 먼저 SELECT 후 user_id=NULL UPDATE → 자식의 NOT NULL FK
-    # constraint 위반으로 500. DB 트리거에 맡기면 안전하게 cascade.
+    # passive_deletes=True 만으로는 부족 — SQLAlchemy 의 cascade 기본값이
+    # "save-update, merge" 라 delete 시 자식 unset 시도. cascade="all, delete"
+    # 로 SQLAlchemy 도 cascade 알게 하고 + passive_deletes=True 로 ORM 이
+    # 자식 row 직접 건드리지 않게. 그러면 DB 의 ON DELETE CASCADE 가 동작.
     role_assignments = relationship(
         "UserRoleModel",
         back_populates="user",
         lazy="selectin",
+        cascade="all, delete",
         passive_deletes=True,
     )
 

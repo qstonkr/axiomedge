@@ -25,7 +25,12 @@ function neighborPos(i: number, total: number): { x: number; y: number } {
 }
 
 function neighborKey(n: GraphNeighbor, idx: number): string {
-  return n.id ?? n.node_id ?? `n-${idx}`;
+  // (id, type, idx) 합쳐서 unique 보장. 같은 name 의 다른 type 노드 (예:
+  // "(주)지에스리테일" 가 Team + Store 둘 다) 가 React key duplicate 만들던
+  // 문제 회피 — idx 까지 추가해야 안전.
+  const base = n.id ?? n.node_id ?? "anon";
+  const type = (n.entity_type as string | undefined) ?? (n.type as string | undefined) ?? "";
+  return `${base}|${type}|${idx}`;
 }
 
 function neighborLabel(n: GraphNeighbor): string {
