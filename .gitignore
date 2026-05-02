@@ -54,6 +54,9 @@ models/
 coverage.xml
 htmlcov/
 
+# SonarQube scanner 런타임 (.sonar_lock, report-task.txt 등 — 매 스캔마다 갱신)
+.scannerwork/
+
 # ===========================
 # 개발용 임시 파일
 # ===========================
