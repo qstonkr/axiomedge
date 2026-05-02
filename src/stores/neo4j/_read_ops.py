@@ -63,11 +63,19 @@ class ReadOpsMixin:
         *,
         max_hops: int = 1,
     ) -> list[dict[str, Any]]:
-        """Entity neighbor lookup."""
+        """Entity neighbor lookup.
+
+        과거에는 ``MATCH (e:{type} {name: ...})`` 라벨까지 매칭했는데, NODE_LABELS
+        SSOT (Person/Store 등) 에 등록 안 된 GraphRAG label (Event, Location,
+        Policy, Process 등) 은 ``_resolve_node_type`` 가 "Entity" 로 fallback
+        → cypher 매칭 실패로 0 neighbor.
+
+        실제로는 Neo4j 에 Event 라벨로 노드가 들어가 있으므로 label 제약을
+        풀고 name 매칭만 사용. 동일 이름 중복 노드는 거의 없어 안전.
+        """
         safe_hops = max(1, min(int(max_hops), 5))
-        safe_type = self._resolve_node_type(entity_type)
         cypher = f"""
-        MATCH (e:{safe_type} {{name: $entity_name}})-[*1..{safe_hops}]-(neighbor)
+        MATCH (e {{name: $entity_name}})-[*1..{safe_hops}]-(neighbor)
         RETURN DISTINCT neighbor.name AS name,
                labels(neighbor)[0] AS type,
                neighbor.id AS id
