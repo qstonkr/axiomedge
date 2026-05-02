@@ -85,10 +85,10 @@ function Section({
   if (items.length === 0) return null;
   return (
     <section>
-      <h3 className="mb-2 text-sm font-medium text-fg-default">
+      <h2 className="mb-2 text-sm font-medium text-fg-default">
         {title}{" "}
         <span className="font-normal text-fg-muted">({items.length})</span>
-      </h3>
+      </h2>
       <ul className="space-y-2">
         {items.slice(0, 10).map((it, idx) => (
           <li

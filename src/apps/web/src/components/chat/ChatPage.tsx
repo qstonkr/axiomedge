@@ -103,7 +103,10 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
         onMobileClose={() => setConvListOpen(false)}
       />
 
-      <main className="flex min-h-0 flex-1 flex-col">
+      <section
+        aria-label="채팅 영역"
+        className="flex min-h-0 flex-1 flex-col"
+      >
         {/* Conversation header — KB scope 가 input 옆이 아니라 main 상단에서
           * 항상 보이도록 (B2). 사용자가 "지금 이 답변이 어떤 KB 기반"을 즉시
           * 인지 가능. ModeForceMenu 는 input 옆으로 collapse 유지 (per-message
@@ -196,7 +199,7 @@ export function ChatPage({ userEmail }: { userEmail?: string } = {}) {
           </div>
           <ChatInput onSubmit={handleSubmit} pending={send.isPending} />
         </footer>
-      </main>
+      </section>
 
       <SourcePanel
         chunks={sourceChunks}

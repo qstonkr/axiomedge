@@ -147,7 +147,10 @@ export function ConversationSidebar({
   return (
     <>
       {/* desktop aside — md+ 에서 항상 표시, mobile 에서는 위 mobile drawer 가 대체 */}
-      <aside className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-3 md:flex md:flex-col">
+      <aside
+        aria-label="대화 목록"
+        className="hidden w-64 shrink-0 self-stretch border-r border-border-default bg-bg-subtle px-3 py-3 md:flex md:flex-col"
+      >
         {inner}
       </aside>
 

@@ -23,9 +23,9 @@ export function NotificationsTab() {
 
       <section className="space-y-3">
         <header className="flex items-end justify-between">
-          <h3 className="text-sm font-medium text-fg-default">
+          <h2 className="text-sm font-medium text-fg-default">
             오래된 문서 (90일 이상 미검증)
-          </h3>
+          </h2>
           <label className="block w-48 space-y-1 text-xs font-medium text-fg-muted">
             KB 필터
             <Select

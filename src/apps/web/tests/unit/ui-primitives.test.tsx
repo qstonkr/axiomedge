@@ -126,7 +126,11 @@ describe("Badge / Skeleton / EmptyState", () => {
         action={<Button>추가</Button>}
       />,
     );
-    expect(screen.getByRole("heading", { name: "비어 있음" })).toBeInTheDocument();
+    // EmptyState 는 heading 이 아니라 status (role=status) — 페이지 위계
+    // (h1→h3 점프) axe-core heading-order 위반 없애고 "정보 없음" 안내라는
+    // 의미를 그대로 살리려 변경.
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("비어 있음");
     expect(screen.getByRole("button", { name: "추가" })).toBeInTheDocument();
   });
 });

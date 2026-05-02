@@ -35,9 +35,9 @@ export function DocumentList({
   if (isLoading) {
     return (
       <section aria-labelledby="docs-heading" className="space-y-2">
-        <h3 id="docs-heading" className="text-sm font-medium text-fg-default">
+        <h2 id="docs-heading" className="text-sm font-medium text-fg-default">
           업로드한 문서
-        </h3>
+        </h2>
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, idx) => (
             <Skeleton key={idx} className="h-12" />
@@ -50,9 +50,9 @@ export function DocumentList({
   if (isError) {
     return (
       <section aria-labelledby="docs-heading" className="space-y-2">
-        <h3 id="docs-heading" className="text-sm font-medium text-fg-default">
+        <h2 id="docs-heading" className="text-sm font-medium text-fg-default">
           업로드한 문서
-        </h3>
+        </h2>
         <div className="rounded-md border border-danger-default/30 bg-danger-subtle p-3 text-sm">
           <div className="mb-1 font-medium text-danger-default">
             문서 목록을 불러올 수 없습니다
@@ -68,9 +68,9 @@ export function DocumentList({
   if (documents.length === 0) {
     return (
       <section aria-labelledby="docs-heading" className="space-y-2">
-        <h3 id="docs-heading" className="text-sm font-medium text-fg-default">
+        <h2 id="docs-heading" className="text-sm font-medium text-fg-default">
           업로드한 문서
-        </h3>
+        </h2>
         <p className="rounded-md border border-dashed border-border-default bg-bg-subtle px-4 py-6 text-center text-xs text-fg-muted">
           아직 이 KB 에 업로드된 문서가 없습니다. 위 영역에서 파일을 끌어다
           놓으면 인제스트가 시작됩니다.
@@ -82,9 +82,9 @@ export function DocumentList({
   return (
     <section aria-labelledby="docs-heading" className="space-y-2">
       <header className="flex items-baseline justify-between gap-2">
-        <h3 id="docs-heading" className="text-sm font-medium text-fg-default">
+        <h2 id="docs-heading" className="text-sm font-medium text-fg-default">
           업로드한 문서
-        </h3>
+        </h2>
         <span className="text-xs text-fg-muted">총 {total}개</span>
       </header>
       <ul className="divide-y divide-border-default rounded-md border border-border-default bg-bg-canvas">

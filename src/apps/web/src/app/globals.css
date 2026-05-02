@@ -90,6 +90,9 @@
   --color-accent-default: #8389e3;
   --color-accent-emphasis: #6770d4;
   --color-accent-subtle: #2c2e54;
+  /* dark accent 가 light indigo 라 흰 텍스트 contrast 3.2:1 fail.
+   * fg-onAccent 를 slate-900 으로 → light indigo 위 8.5:1 ✓. */
+  --color-fg-onAccent: #0f172a;
 
   /* dark 에서는 default 색이 dark subtle bg 위에 어둡게 깔리면 contrast 1.5:1 로
    * 무너짐. 400 단계로 밝게 → subtle 위 6~7:1 AA normal text. */

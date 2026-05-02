@@ -32,6 +32,7 @@ export function Sidebar({ userEmail }: { userEmail?: string } = {}) {
   const collapsed = pathname.startsWith("/chat");
   return (
     <aside
+      aria-label="기본 메뉴"
       className={cn(
         "hidden shrink-0 self-stretch border-r border-border-default bg-bg-subtle py-4 md:flex md:flex-col",
         collapsed ? "w-14 px-2" : "w-56 px-3",
