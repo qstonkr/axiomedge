@@ -1526,15 +1526,45 @@ export type GraphSearchHit = {
   kb_id?: string;
 };
 
-export const searchGraphEntities = (body: {
+/**
+ * Backend `/admin/graph/search` 는 `{query, entities: [{name, type, entity_id,
+ * score, relationships: [...]}]}` 형태로 반환. 기존 프론트 코드는 `hits` /
+ * `results` 키 + `entity_name` / `entity_type` 필드를 기대 — 항상 빈 배열로
+ * 보였던 이유. 여기서 transform 해 frontend 가 기대하는 hit shape 으로 변환.
+ */
+export const searchGraphEntities = async (body: {
   query: string;
   entity_types?: string[];
   limit?: number;
-}) =>
-  request<{ hits?: GraphSearchHit[]; results?: GraphSearchHit[] }>(
-    "api/v1/admin/graph/search",
-    { method: "POST", body: JSON.stringify(body) },
-  );
+}): Promise<{ hits: GraphSearchHit[] }> => {
+  const raw = await request<{
+    query?: string;
+    entities?: Array<{
+      name?: string;
+      type?: string;
+      entity_id?: string;
+      score?: number;
+      relationships?: unknown[];
+      kb_id?: string;
+    }>;
+    // 구버전 / 다른 endpoint shape 호환
+    hits?: GraphSearchHit[];
+    results?: GraphSearchHit[];
+  }>("api/v1/admin/graph/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (raw.hits) return { hits: raw.hits };
+  if (raw.results) return { hits: raw.results };
+  const hits: GraphSearchHit[] = (raw.entities ?? []).map((e) => ({
+    entity_id: e.entity_id,
+    entity_name: e.name ?? e.entity_id ?? "",
+    entity_type: e.type,
+    related_count: Array.isArray(e.relationships) ? e.relationships.length : undefined,
+    kb_id: e.kb_id,
+  }));
+  return { hits };
+};
 
 export type GraphNeighbor = {
   id?: string;

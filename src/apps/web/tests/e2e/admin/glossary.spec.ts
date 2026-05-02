@@ -21,10 +21,13 @@ test("Glossary: 신규 용어 등록 (POST 200)", async ({ page }) => {
 
   await gotoAdmin(page, "/admin/glossary");
 
-  // 1. 신규 용어 dialog 열기
-  await page.getByRole("button", { name: /\+ 신규 용어/ }).click();
+  // 1. 신규 용어 dialog 열기 — glossary 223k 행 렌더가 끝날 때까지 button
+  // 클릭이 캡처 안 될 수 있어 명시적 대기
+  const newBtn = page.getByRole("button", { name: /\+ 신규 용어/ });
+  await expect(newBtn).toBeEnabled({ timeout: 10_000 });
+  await newBtn.click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 8_000 });
 
   // 2. KB 옵션 로드 후 첫 옵션 선택
   const kbSelect = dialog.locator("select").first();

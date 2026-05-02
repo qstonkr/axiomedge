@@ -51,8 +51,8 @@ export function GraphClient() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6);
 
-  const hits =
-    search.data?.hits ?? search.data?.results ?? ([] as GraphSearchHit[]);
+  // searchGraphEntities 가 backend `entities` → frontend `hits` 로 transform.
+  const hits = search.data?.hits ?? ([] as GraphSearchHit[]);
 
   const columns: Column<GraphSearchHit>[] = [
     {
