@@ -101,10 +101,10 @@ export function GlossaryClient() {
       ),
     },
     {
-      key: "domain",
+      key: "domain_name",
       header: "도메인",
       render: (t) => (
-        <span className="text-fg-muted">{t.domain || "—"}</span>
+        <span className="text-fg-muted">{t.domain_name || "—"}</span>
       ),
     },
     {
@@ -228,7 +228,7 @@ function GlossaryFormDialog({
   const [termKo, setTermKo] = useState(initial?.term_ko ?? "");
   const [definition, setDefinition] = useState(initial?.definition ?? "");
   const [synonyms, setSynonyms] = useState((initial?.synonyms ?? []).join(", "));
-  const [domain, setDomain] = useState(initial?.domain ?? "");
+  const [domain, setDomain] = useState(initial?.domain_name ?? "");
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -241,7 +241,8 @@ function GlossaryFormDialog({
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
-      domain: domain.trim() || null,
+      // DB 모델 컬럼명은 domain_name. 이전엔 'domain' 으로 보내서 항상 500.
+      domain_name: domain.trim() || null,
     });
   }
 
