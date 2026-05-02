@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button, Skeleton } from "@/components/ui";
 import { useGraphExpand } from "@/hooks/admin/useOps";
@@ -73,6 +73,14 @@ export function GraphView({
     type: hubType,
   });
   const [history, setHistory] = useState<{ id: string; label: string; type?: string }[]>([]);
+
+  // 검색 결과의 다른 행 클릭 시 nodeId prop 이 바뀌지만 useState 는 mount-once.
+  // 새 entity 로 hub 바뀔 때마다 activeNode + history 초기화 — 그렇지 않으면
+  // 이전 entity 의 1-hop 이 그대로 보이거나 "다시 클릭 시 표기 안 됨".
+  useEffect(() => {
+    setActiveNode({ id: nodeId, label: hubLabel ?? nodeId, type: hubType });
+    setHistory([]);
+  }, [nodeId, hubLabel, hubType]);
 
   const expand = useGraphExpand(activeNode.id, 24, activeNode.type);
 
