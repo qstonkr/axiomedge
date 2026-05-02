@@ -44,6 +44,9 @@ export function useTransparencyStats() {
     queryKey: ["admin", "transparency"],
     queryFn: () => getTransparencyStats(),
     staleTime: 5 * 60 * 1000,
+    // 일부 환경에서 mount 후 queryFn 이 즉시 호출되지 않는 경우가 있어
+    // (TanStack v5 + React 19 + Turbopack 의 알려진 이슈 가능성) 명시.
+    refetchOnMount: "always",
   });
 }
 
