@@ -29,9 +29,9 @@ export function GlossarySimilarityPanel() {
   return (
     <article className="space-y-3">
       <header className="space-y-1">
-        <h3 className="text-sm font-medium text-fg-default">
+        <h2 className="text-sm font-medium text-fg-default">
           용어 유사도 분포
-        </h3>
+        </h2>
         <p className="text-xs text-fg-muted">
           RapidFuzz 로 random sample {data.sample_size} 쌍을 비교 → 0~1
           유사도 bucket 분포. 평균 {data.mean_similarity.toFixed(3)} ·

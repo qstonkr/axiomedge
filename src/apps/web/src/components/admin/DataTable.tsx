@@ -64,7 +64,9 @@ export function DataTable<Row extends Record<string, unknown>>({
                 )}
                 style={c.width ? { width: c.width } : undefined}
               >
-                {c.header}
+                {/* header 가 비어있는 actions 컬럼도 sr-only fallback 으로
+                    스크린리더 / axe-core empty-table-header 룰 통과 */}
+                {c.header || <span className="sr-only">작업</span>}
               </th>
             ))}
           </tr>
