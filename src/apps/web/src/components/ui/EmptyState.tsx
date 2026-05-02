@@ -27,7 +27,9 @@ export function EmptyState({
           {icon}
         </div>
       )}
-      <h3 className="text-base font-medium text-fg-default">{title}</h3>
+      <p className="text-base font-medium text-fg-default" role="status">
+        {title}
+      </p>
       {description && (
         <p className="max-w-sm text-sm text-fg-muted">{description}</p>
       )}

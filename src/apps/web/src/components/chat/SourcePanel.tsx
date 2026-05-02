@@ -140,7 +140,10 @@ export function SourcePanel({
   return (
     <>
       {/* desktop xl+ — 영구 right panel */}
-      <aside className="hidden w-[360px] shrink-0 self-stretch border-l border-border-default bg-bg-subtle xl:flex xl:flex-col">
+      <aside
+        aria-label="출처 및 메타"
+        className="hidden w-[360px] shrink-0 self-stretch border-l border-border-default bg-bg-subtle xl:flex xl:flex-col"
+      >
         {tabs}
         {body}
       </aside>
