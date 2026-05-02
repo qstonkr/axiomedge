@@ -734,7 +734,7 @@ export type GlossaryTerm = {
   term_ko?: string | null;
   definition?: string | null;
   synonyms?: string[];
-  domain?: string | null;
+  domain_name?: string | null;
   source?: string | null;
   status?: string | null;
   created_at?: string;
@@ -761,7 +761,7 @@ export type GlossaryUpsertBody = {
   term_ko?: string | null;
   definition?: string | null;
   synonyms?: string[];
-  domain?: string | null;
+  domain_name?: string | null;
 };
 
 export const createGlossaryTerm = (body: GlossaryUpsertBody) =>

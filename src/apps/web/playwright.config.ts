@@ -14,6 +14,9 @@ export default defineConfig({
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
+  // admin CRUD 테스트 후 잔존 e2e-* 데이터 SQL 일괄 삭제. 단일 파일이라
+  // admin 폴더 내부 경로 그대로 참조.
+  globalTeardown: "./tests/e2e/admin/global-teardown.ts",
   use: {
     baseURL: BASE_URL,
     trace: "retain-on-failure",
