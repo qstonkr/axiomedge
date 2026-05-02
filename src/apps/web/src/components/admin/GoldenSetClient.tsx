@@ -47,6 +47,12 @@ export function GoldenSetClient() {
     page_size: PAGE_SIZE,
     status: statusFilter || undefined,
   });
+  // KB 분포 / 상태 카운트는 "전체" 기준이어야 의미. 별도 query 로
+  // 서버 max page_size (1000) 한 번 fetch — 현재 261개라 1 page 내 충분.
+  // 페이지네이션 도입 전엔 100 한 번 fetch 라 byKb 가 첫 100건만 봐서
+  // a-ari 만 보이던 버그.
+  const aggregate = useGoldenSet({ page: 1, page_size: 1000 });
+  const allItems = aggregate.data?.items ?? [];
   const del = useDeleteGoldenItem();
   const upd = useUpdateGoldenItem();
 
@@ -59,14 +65,14 @@ export function GoldenSetClient() {
       )
     : items;
 
-  // KB 별 분포 — server-side status filter 와 별개. 서버 응답 기준.
+  // KB 별 분포 — 전체 261건 기준 (현재 페이지 50건이 아닌).
   const byKb = new Map<string, number>();
-  items.forEach((g) =>
+  allItems.forEach((g) =>
     byKb.set(g.kb_id ?? "—", (byKb.get(g.kb_id ?? "—") ?? 0) + 1),
   );
 
-  // 상태별 카운트 — 사용자가 빠르게 검토할 수 있게 metric 카드에.
-  const statusCounts = items.reduce<Record<string, number>>((acc, g) => {
+  // 상태별 카운트 — 전체 기준 (metric 카드의 의미를 살리려면).
+  const statusCounts = allItems.reduce<Record<string, number>>((acc, g) => {
     const k = g.status ?? "pending";
     acc[k] = (acc[k] ?? 0) + 1;
     return acc;

@@ -767,7 +767,9 @@ async def list_golden_set(
     kb_id: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+    # admin 전용 + 데이터셋 작아서 (현재 261개) 1000 까지 허용 — frontend 가
+    # KB 분포 / 상태 카운트 집계용으로 한 번에 fetch.
+    page_size: Annotated[int, Query(ge=1, le=1000)] = 50,
 ) -> dict[str, Any]:
     """List golden set Q&A pairs."""
     from src.api.routes.quality_helpers import query_golden_set
