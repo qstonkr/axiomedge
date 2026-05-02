@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import {
   Button,
   Dialog,
+  ErrorFallback,
   Input,
   Skeleton,
   Textarea,
@@ -37,7 +38,7 @@ export function GlossaryClient() {
   const del = useDeleteGlossaryTerm();
   const approve = useApproveGlossaryTerm();
 
-  const { data, isLoading, isError, error } = useGlossary({
+  const { data, isLoading, isError, error, refetch } = useGlossary({
     page: 1,
     page_size: 100,
   });
@@ -160,14 +161,11 @@ export function GlossaryClient() {
       {isLoading ? (
         <Skeleton className="h-48" />
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            용어집을 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="용어집을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <DataTable<GlossaryTerm>
           columns={columns}

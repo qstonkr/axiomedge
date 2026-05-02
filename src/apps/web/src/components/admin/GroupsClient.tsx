@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 
-import { Badge, Button, Dialog, Input, Skeleton, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Dialog, ErrorFallback, Input, Skeleton, Textarea, useToast } from "@/components/ui";
 import {
   useCreateSearchGroup,
   useDeleteSearchGroup,
@@ -18,7 +18,7 @@ import { MetricCard } from "./MetricCard";
 export function GroupsClient() {
   const toast = useToast();
   const { data: kbs } = useSearchableKbs();
-  const { data, isLoading, isError, error } = useSearchGroups();
+  const { data, isLoading, isError, error, refetch } = useSearchGroups();
   const create = useCreateSearchGroup();
   const update = useUpdateSearchGroup();
   const del = useDeleteSearchGroup();
@@ -127,14 +127,11 @@ export function GroupsClient() {
       {isLoading ? (
         <Skeleton className="h-48" />
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            검색 그룹을 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="검색 그룹을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <DataTable<SearchGroup>
           columns={columns}

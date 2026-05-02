@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Button, Skeleton, useToast } from "@/components/ui";
+import { Button, ErrorFallback, Skeleton, useToast } from "@/components/ui";
 import {
   useDedupConflicts,
   useResolveDedupConflict,
@@ -18,7 +18,7 @@ type Tab = "pending" | "history";
 export function ConflictsClient() {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("pending");
-  const { data, isLoading, isError, error } = useDedupConflicts({
+  const { data, isLoading, isError, error, refetch } = useDedupConflicts({
     page: 1,
     page_size: 100,
   });
@@ -183,14 +183,11 @@ export function ConflictsClient() {
       {isLoading ? (
         <Skeleton className="h-48" />
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            충돌 목록을 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="충돌 목록을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <DataTable<DedupConflict>
           columns={columns}

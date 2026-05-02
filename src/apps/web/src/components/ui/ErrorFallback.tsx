@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { RotateCcw } from "lucide-react";
 
 import { Button } from "./Button";
 
@@ -70,8 +71,13 @@ export function ErrorFallback({
       )}
       {onRetry && (
         <div className="mt-3">
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            🔄 다시 시도
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<RotateCcw size={14} strokeWidth={1.75} aria-hidden />}
+            onClick={onRetry}
+          >
+            다시 시도
           </Button>
         </div>
       )}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from "react";
 
-import { Button, Skeleton, useToast } from "@/components/ui";
+import { Button, ErrorFallback, Skeleton, useToast } from "@/components/ui";
 import { usePendingVerifications } from "@/hooks/admin/useContent";
 import { useVerificationVote } from "@/hooks/admin/useLifecycle";
 
@@ -35,7 +35,7 @@ function fmtDate(s: unknown): string {
 
 export function VerificationClient() {
   const toast = useToast();
-  const { data, isLoading, isError, error } = usePendingVerifications();
+  const { data, isLoading, isError, error, refetch } = usePendingVerifications();
   const vote = useVerificationVote();
   const [voting, setVoting] = useState<string | null>(null);
   // `data` 자체가 매 render 마다 같은 reference 이므로 useMemo 의 dep 안정화에 충분.
@@ -175,14 +175,11 @@ export function VerificationClient() {
       {isLoading ? (
         <Skeleton className="h-48" />
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            검증 대기 목록을 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-        </div>
+        <ErrorFallback
+          title="검증 대기 목록을 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <DataTable<VerificationRow>
           columns={columns}

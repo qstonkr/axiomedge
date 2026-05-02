@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Boxes, FileText, MessageSquare, Search, ShieldAlert, Layers } from "lucide-react";
 
-import { Skeleton } from "@/components/ui";
+import { ErrorFallback, Skeleton } from "@/components/ui";
 import { useAdminDashboardSummary } from "@/hooks/admin/useAdminDashboard";
 
 import { AreaChartHero, type HeroPoint } from "./AreaChartHero";
@@ -104,21 +104,11 @@ export function AdminDashboardClient() {
           </div>
         </div>
       ) : isError ? (
-        <div className="rounded-lg border border-danger-default/30 bg-danger-subtle p-4 text-sm">
-          <div className="mb-2 font-medium text-danger-default">
-            대시보드를 불러올 수 없습니다
-          </div>
-          <p className="font-mono text-xs text-fg-muted">
-            {(error as Error)?.message ?? "알 수 없는 오류"}
-          </p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="mt-3 rounded-md border border-border-default px-3 py-1 text-xs text-fg-default hover:bg-bg-muted"
-          >
-            다시 시도
-          </button>
-        </div>
+        <ErrorFallback
+          title="대시보드를 불러올 수 없습니다"
+          error={error}
+          onRetry={() => refetch()}
+        />
       ) : (
         <>
           {/* Hero — 24h 검색 큰 시계열 */}
